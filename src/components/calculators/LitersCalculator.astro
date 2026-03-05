@@ -1,0 +1,104 @@
+---
+interface Props {
+  idPrefix: string;
+  eventSource: string;
+  copyToolName: string;
+  labels: {
+    inputLabel: string;
+    typeLabel: string;
+    optionUs: string;
+    optionUk: string;
+    submitLabel: string;
+    copyLabel: string;
+    invalidMessage: string;
+  };
+}
+
+const { idPrefix, eventSource, copyToolName, labels } = Astro.props;
+
+const formId = `${idPrefix}-form`;
+const inputId = `${idPrefix}-input`;
+const typeId = `${idPrefix}-type`;
+const resultId = `${idPrefix}-result`;
+const copyId = `${idPrefix}-copy`;
+---
+
+<form id={formId} class="tool-form">
+  <div class="form-grid">
+    <label for={inputId}>
+      {labels.inputLabel}
+      <input id={inputId} name="liters" type="number" inputmode="decimal" step="any" required />
+    </label>
+    <label for={typeId}>
+      {labels.typeLabel}
+      <select id={typeId} name="gallonType">
+        <option value="us">{labels.optionUs}</option>
+        <option value="uk">{labels.optionUk}</option>
+      </select>
+    </label>
+  </div>
+  <button class="btn btn-primary" type="submit">{labels.submitLabel}</button>
+</form>
+<p id={resultId} class="result-box" data-copy=""></p>
+<div class="result-actions">
+  <button id={copyId} class="btn btn-link" type="button">{labels.copyLabel}</button>
+</div>
+
+<script
+  is:inline
+  define:vars={{ formId, inputId, typeId, resultId, copyId, labels, eventSource, copyToolName }}
+>
+  (() => {
+    const form = document.getElementById(formId);
+    const input = document.getElementById(inputId);
+    const type = document.getElementById(typeId);
+    const result = document.getElementById(resultId);
+    const copyButton = document.getElementById(copyId);
+    const formatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+
+    const parseNumber = (value) => Number.parseFloat(String(value).replace(",", "."));
+
+    const writeResult = (text) => {
+      if (!result) return;
+      result.textContent = text;
+      result.setAttribute("data-copy", text);
+    };
+
+    form?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const liters = parseNumber(input?.value ?? "");
+      const gallonType = type?.value === "uk" ? "uk" : "us";
+
+      if (!Number.isFinite(liters)) {
+        writeResult(labels.invalidMessage);
+        return;
+      }
+
+      const divisor = gallonType === "uk" ? 4.54609 : 3.785411784;
+      const gallons = liters / divisor;
+      const unitLabel = gallonType === "uk" ? "gal UK" : "gal US";
+      writeResult(`${formatter.format(liters)} L = ${formatter.format(gallons)} ${unitLabel}`);
+
+      if (typeof window.trackEvent === "function") {
+        window.trackEvent("convert_liters_gallons", {
+          liters,
+          gallon_type: gallonType,
+          source: eventSource
+        });
+      }
+    });
+
+    copyButton?.addEventListener("click", async () => {
+      const text = result?.getAttribute("data-copy");
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        if (typeof window.trackEvent === "function") {
+          window.trackEvent("copy_result", { tool: copyToolName });
+        }
+      } catch (error) {
+        console.error("Copy failed.", error);
+      }
+    });
+  })();
+</script>

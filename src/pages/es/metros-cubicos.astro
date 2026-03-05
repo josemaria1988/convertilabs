@@ -1,0 +1,124 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import CubicCalculator from "../../components/calculators/CubicCalculator.astro";
+import Hero from "../../components/Hero.astro";
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createSoftwareApplicationSchema,
+  createWebPageSchema
+} from "../../lib/schema";
+
+const routeKey = "cubic";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Calculadora de metros cubicos (m3)";
+const description =
+  "Calcula volumen en metros cubicos con largo, ancho y alto. Incluye ejemplos de flete, almacenamiento y tabla de volumenes.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/metros-cubicos/",
+    locale: "es"
+  }),
+  createSoftwareApplicationSchema({
+    name: "Calculadora de metros cubicos",
+    description:
+      "Herramienta web para calcular volumen en m3 para logistica, deposito e inventario.",
+    path: "/es/metros-cubicos/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([
+    { name: "Inicio", path: "/es/" },
+    { name: "Metros cubicos", path: "/es/metros-cubicos/" }
+  ])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/metros-cubicos/"
+  keywords="calculadora metros cubicos, volumen m3, calcular volumen caja"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Calculadora de metros cubicos"
+    subtitle="Calcula volumen en m3 para transporte, almacenaje y planificacion de capacidad."
+    primaryCta={{ href: "#calculadora", label: "Calcular m3" }}
+    secondaryCta={{ href: "/es/pulgadas-a-milimetros/", label: "Pulgadas a milimetros" }}
+  />
+
+  <div class="container stack">
+    <section class="panel" id="calculadora">
+      <h2>Calculadora de volumen m3</h2>
+      <CubicCalculator
+        idPrefix="es-cubic"
+        eventSource="landing_cubic_es"
+        copyToolName="cubic_meters_es"
+        labels={{
+          lengthLabel: "Largo",
+          widthLabel: "Ancho",
+          heightLabel: "Alto",
+          unitLabel: "Unidad de entrada",
+          optionMeters: "Metros (m)",
+          optionCentimeters: "Centimetros (cm)",
+          submitLabel: "Calcular volumen",
+          copyLabel: "Copiar resultado",
+          invalidMessage: "Completa largo, ancho y alto con valores validos."
+        }}
+      />
+    </section>
+
+    <section class="panel">
+      <h2>Formula y casos de uso</h2>
+      <p>
+        Formula: <strong>m3 = largo x ancho x alto</strong>. Si ingresas centimetros, la calculadora convierte
+        automaticamente a metros antes de resolver el volumen.
+      </p>
+      <ul class="list">
+        <li>Pallet 1.2 x 1.0 x 1.4 m = 1.68 m3.</li>
+        <li>Caja 0.5 x 0.4 x 0.3 m = 0.06 m3.</li>
+        <li>Tanque 2.5 x 1.2 x 1.8 m = 5.4 m3.</li>
+      </ul>
+    </section>
+
+    <AdSlot slotName="cubic_top" note="Banner sugerido fuera de campos y botones." />
+
+    <section class="panel">
+      <h2>Tabla de volumenes frecuentes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Largo (m)</th>
+              <th>Ancho (m)</th>
+              <th>Alto (m)</th>
+              <th>Volumen (m3)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1.0</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+            <tr><td>1.2</td><td>0.8</td><td>0.6</td><td>0.576</td></tr>
+            <tr><td>1.2</td><td>1.0</td><td>1.4</td><td>1.68</td></tr>
+            <tr><td>2.0</td><td>1.5</td><td>1.2</td><td>3.6</td></tr>
+            <tr><td>3.0</td><td>2.0</td><td>1.5</td><td>9.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Enlaces utiles:
+        <a href="/es/litros-a-galones/"> litros a galones</a> y
+        <a href="/es/pulgadas-a-milimetros/"> pulgadas a milimetros</a>.
+      </p>
+    </section>
+
+    <AdSlot slotName="cubic_bottom" note="Bloque final de monetizacion no invasiva." />
+  </div>
+</Layout>

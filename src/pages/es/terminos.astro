@@ -1,0 +1,50 @@
+---
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import { createBreadcrumbSchema, createWebPageSchema } from "../../lib/schema";
+
+const routeKey = "terms";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Terminos y condiciones";
+const description =
+  "Terminos de uso de ConvertiLab para calculadoras de conversion, limites de responsabilidad y cambios del servicio.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/terminos/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([
+    { name: "Inicio", path: "/es/" },
+    { name: "Terminos", path: "/es/terminos/" }
+  ])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/terminos/"
+  structuredData={structuredData}
+>
+  <div class="container stack">
+    <section class="panel">
+      <h1>Terminos y condiciones</h1>
+      <p>
+        Al usar ConvertiLab aceptas estos terminos. Las calculadoras se ofrecen con criterios tecnicos, pero cada
+        usuario debe validar resultados en procesos criticos o regulados.
+      </p>
+      <p>
+        No esta permitido el uso automatizado abusivo que degrade el servicio. Podemos actualizar funciones y textos
+        legales para mantener calidad y seguridad.
+      </p>
+      <p>Ultima actualizacion: 4 de marzo de 2026.</p>
+    </section>
+  </div>
+</Layout>

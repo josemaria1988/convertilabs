@@ -1,0 +1,120 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import Hero from "../../components/Hero.astro";
+import LitersCalculator from "../../components/calculators/LitersCalculator.astro";
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createSoftwareApplicationSchema,
+  createWebPageSchema
+} from "../../lib/schema";
+
+const routeKey = "liters";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Conversor de litros a galones (US y UK)";
+const description =
+  "Convierte litros a galones US o UK con formula exacta, tabla comparativa y recomendaciones para transporte, combustibles y procesos.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/litros-a-galones/",
+    locale: "es"
+  }),
+  createSoftwareApplicationSchema({
+    name: "Conversor de litros a galones",
+    description:
+      "Herramienta gratuita para convertir litros a galones US o UK en operaciones industriales y logisticos.",
+    path: "/es/litros-a-galones/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([
+    { name: "Inicio", path: "/es/" },
+    { name: "Litros a galones", path: "/es/litros-a-galones/" }
+  ])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/litros-a-galones/"
+  keywords="litros a galones, galon US, galon UK, conversion litros"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Conversor de litros a galones"
+    subtitle="Selecciona galon US o galon UK para evitar errores de volumen en compras internacionales, combustible y despacho."
+    primaryCta={{ href: "#calculadora", label: "Convertir litros" }}
+    secondaryCta={{ href: "/es/metros-cubicos/", label: "Metros cubicos" }}
+  />
+
+  <div class="container stack">
+    <section class="panel" id="calculadora">
+      <h2>Calculadora litros a galones US/UK</h2>
+      <LitersCalculator
+        idPrefix="es-liters"
+        eventSource="landing_liters_es"
+        copyToolName="liters_gallons_es"
+        labels={{
+          inputLabel: "Litros",
+          typeLabel: "Tipo de galon",
+          optionUs: "Galon US",
+          optionUk: "Galon UK",
+          submitLabel: "Convertir litros a galones",
+          copyLabel: "Copiar resultado",
+          invalidMessage: "Ingresa un valor valido en litros."
+        }}
+      />
+    </section>
+
+    <section class="panel">
+      <h2>Diferencia clave: galon US vs galon UK</h2>
+      <ul class="list">
+        <li>1 galon US = 3.785411784 litros</li>
+        <li>1 galon UK = 4.54609 litros</li>
+      </ul>
+      <p>
+        Ejemplo: 100 L equivalen a 26.4172 gal US, pero 21.9969 gal UK. Si no validas el sistema, puedes cotizar mal
+        o cargar capacidad incorrecta.
+      </p>
+    </section>
+
+    <AdSlot slotName="liters_top" note="Banner sugerido fuera de la zona de controles." />
+
+    <section class="panel">
+      <h2>Tabla comparativa rapida</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Litros</th>
+              <th>Galones US</th>
+              <th>Galones UK</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>0.2642</td><td>0.22</td></tr>
+            <tr><td>10</td><td>2.6417</td><td>2.1997</td></tr>
+            <tr><td>20</td><td>5.2834</td><td>4.3994</td></tr>
+            <tr><td>100</td><td>26.4172</td><td>21.9969</td></tr>
+            <tr><td>1000</td><td>264.1721</td><td>219.9692</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Enlaces utiles:
+        <a href="/es/pulgadas-a-milimetros/"> pulgadas a milimetros</a> y
+        <a href="/es/metros-cubicos/"> metros cubicos</a>.
+      </p>
+    </section>
+
+    <AdSlot slotName="liters_bottom" note="Bloque final para monetizar sin cortar la herramienta." />
+  </div>
+</Layout>

@@ -1,0 +1,32 @@
+---
+interface Props {
+  title: string;
+  subtitle: string;
+  primaryCta?: { href: string; label: string };
+  secondaryCta?: { href: string; label: string };
+}
+
+const { title, subtitle, primaryCta, secondaryCta } = Astro.props;
+---
+
+<section class="hero">
+  <div class="container hero-inner">
+    <p class="hero-kicker">Conversiones exactas para industria, obra y logistica</p>
+    <h1>{title}</h1>
+    <p class="hero-subtitle">{subtitle}</p>
+    {(primaryCta || secondaryCta) && (
+      <div class="hero-actions">
+        {primaryCta && (
+          <a class="btn btn-primary" href={primaryCta.href}>
+            {primaryCta.label}
+          </a>
+        )}
+        {secondaryCta && (
+          <a class="btn btn-ghost" href={secondaryCta.href}>
+            {secondaryCta.label}
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+</section>

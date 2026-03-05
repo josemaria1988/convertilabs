@@ -1,0 +1,16 @@
+---
+interface Props {
+  title: string;
+  description: string;
+  href: string;
+  ctaLabel?: string;
+}
+
+const { title, description, href, ctaLabel = "Abrir herramienta" } = Astro.props;
+---
+
+<article class="calculator-card">
+  <h3>{title}</h3>
+  <p>{description}</p>
+  <a class="btn btn-link" href={href}>{ctaLabel}</a>
+</article>

@@ -1,0 +1,127 @@
+---
+interface Props {
+  idPrefix: string;
+  eventSource: string;
+  copyToolName: string;
+  labels: {
+    lengthLabel: string;
+    widthLabel: string;
+    heightLabel: string;
+    unitLabel: string;
+    optionMeters: string;
+    optionCentimeters: string;
+    submitLabel: string;
+    copyLabel: string;
+    invalidMessage: string;
+  };
+}
+
+const { idPrefix, eventSource, copyToolName, labels } = Astro.props;
+
+const formId = `${idPrefix}-form`;
+const lengthId = `${idPrefix}-length`;
+const widthId = `${idPrefix}-width`;
+const heightId = `${idPrefix}-height`;
+const unitId = `${idPrefix}-unit`;
+const resultId = `${idPrefix}-result`;
+const copyId = `${idPrefix}-copy`;
+const ids = { formId, lengthId, widthId, heightId, unitId, resultId, copyId };
+---
+
+<form id={formId} class="tool-form">
+  <div class="form-grid">
+    <label for={lengthId}>
+      {labels.lengthLabel}
+      <input id={lengthId} name="length" type="number" inputmode="decimal" step="any" required />
+    </label>
+    <label for={widthId}>
+      {labels.widthLabel}
+      <input id={widthId} name="width" type="number" inputmode="decimal" step="any" required />
+    </label>
+    <label for={heightId}>
+      {labels.heightLabel}
+      <input id={heightId} name="height" type="number" inputmode="decimal" step="any" required />
+    </label>
+    <label for={unitId}>
+      {labels.unitLabel}
+      <select id={unitId} name="unit">
+        <option value="m">{labels.optionMeters}</option>
+        <option value="cm">{labels.optionCentimeters}</option>
+      </select>
+    </label>
+  </div>
+  <button class="btn btn-primary" type="submit">{labels.submitLabel}</button>
+</form>
+<p id={resultId} class="result-box" data-copy=""></p>
+<div class="result-actions">
+  <button id={copyId} class="btn btn-link" type="button">{labels.copyLabel}</button>
+</div>
+
+<script
+  is:inline
+  define:vars={{ ids, labels, eventSource, copyToolName }}
+>
+  (() => {
+    const form = document.getElementById(ids.formId);
+    const lengthInput = document.getElementById(ids.lengthId);
+    const widthInput = document.getElementById(ids.widthId);
+    const heightInput = document.getElementById(ids.heightId);
+    const unitSelect = document.getElementById(ids.unitId);
+    const result = document.getElementById(ids.resultId);
+    const copyButton = document.getElementById(ids.copyId);
+    const formatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+
+    const parseNumber = (value) => Number.parseFloat(String(value).replace(",", "."));
+
+    const writeResult = (text) => {
+      if (!result) return;
+      result.textContent = text;
+      result.setAttribute("data-copy", text);
+    };
+
+    form?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const length = parseNumber(lengthInput?.value ?? "");
+      const width = parseNumber(widthInput?.value ?? "");
+      const height = parseNumber(heightInput?.value ?? "");
+      const unit = unitSelect?.value === "cm" ? "cm" : "m";
+
+      if (![length, width, height].every((value) => Number.isFinite(value) && value >= 0)) {
+        writeResult(labels.invalidMessage);
+        return;
+      }
+
+      const factor = unit === "cm" ? 0.01 : 1;
+      const lengthM = length * factor;
+      const widthM = width * factor;
+      const heightM = height * factor;
+      const volume = lengthM * widthM * heightM;
+
+      const message = `${formatter.format(volume)} m3 (${formatter.format(lengthM)} x ${formatter.format(widthM)} x ${formatter.format(heightM)} m)`;
+      writeResult(message);
+
+      if (typeof window.trackEvent === "function") {
+        window.trackEvent("calculate_cubic_meters", {
+          length: lengthM,
+          width: widthM,
+          height: heightM,
+          input_unit: unit,
+          source: eventSource
+        });
+      }
+    });
+
+    copyButton?.addEventListener("click", async () => {
+      const text = result?.getAttribute("data-copy");
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        if (typeof window.trackEvent === "function") {
+          window.trackEvent("copy_result", { tool: copyToolName });
+        }
+      } catch (error) {
+        console.error("Copy failed.", error);
+      }
+    });
+  })();
+</script>

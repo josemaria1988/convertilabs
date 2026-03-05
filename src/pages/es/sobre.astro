@@ -1,0 +1,53 @@
+---
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import { createBreadcrumbSchema, createWebPageSchema } from "../../lib/schema";
+
+const routeKey = "about";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Sobre ConvertiLab";
+const description =
+  "Conoce el enfoque de ConvertiLab: conversiones utiles, contenido tecnico claro y monetizacion responsable.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/sobre/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([
+    { name: "Inicio", path: "/es/" },
+    { name: "Sobre", path: "/es/sobre/" }
+  ])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/sobre/"
+  structuredData={structuredData}
+>
+  <div class="container stack">
+    <section class="panel">
+      <h1>Sobre ConvertiLab</h1>
+      <p>
+        ConvertiLab es un mini servicio SaaS para conversiones de medidas usadas en industria, obra y logistica.
+      </p>
+      <p>
+        Priorizamos rapidez, precision y contenido util. La publicidad se integra con reglas de separacion para no
+        bloquear el uso de las herramientas.
+      </p>
+      <div class="quick-links">
+        <a href="/es/pulgadas-a-milimetros/">Pulgadas a milimetros</a>
+        <a href="/es/litros-a-galones/">Litros a galones</a>
+        <a href="/es/metros-cubicos/">Metros cubicos</a>
+      </div>
+    </section>
+  </div>
+</Layout>

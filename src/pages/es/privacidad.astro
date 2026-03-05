@@ -1,0 +1,51 @@
+---
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import { createBreadcrumbSchema, createWebPageSchema } from "../../lib/schema";
+
+const routeKey = "privacy";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Politica de privacidad";
+const description =
+  "Politica de privacidad de ConvertiLab sobre analytics, publicidad y tratamiento de datos de navegacion.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/privacidad/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([
+    { name: "Inicio", path: "/es/" },
+    { name: "Privacidad", path: "/es/privacidad/" }
+  ])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/privacidad/"
+  structuredData={structuredData}
+>
+  <div class="container stack">
+    <section class="panel">
+      <h1>Politica de privacidad</h1>
+      <p>
+        ConvertiLab recopila datos minimos de navegacion para medir rendimiento, mejorar el producto y operar
+        publicidad de forma responsable.
+      </p>
+      <ul class="list">
+        <li>Cloudflare Web Analytics para metricas anonimas.</li>
+        <li>GA4 opcional para eventos de uso.</li>
+        <li>AdSense opcional para monetizacion.</li>
+      </ul>
+      <p>Ultima actualizacion: 4 de marzo de 2026.</p>
+    </section>
+  </div>
+</Layout>

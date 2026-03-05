@@ -1,0 +1,124 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import CubicCalculator from "../../components/calculators/CubicCalculator.astro";
+import Hero from "../../components/Hero.astro";
+import Layout from "../../components/Layout.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createSoftwareApplicationSchema,
+  createWebPageSchema
+} from "../../lib/schema";
+
+const routeKey = "cubic";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Cubic meters calculator (m3)";
+const description =
+  "Calculate cubic meters using length, width and height. Includes practical examples for shipping, storage and warehouse planning.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/en/cubic-meters/",
+    locale: "en"
+  }),
+  createSoftwareApplicationSchema({
+    name: "Cubic meters calculator",
+    description:
+      "Web tool to calculate m3 volume for freight quotations, storage planning and operations.",
+    path: "/en/cubic-meters/",
+    locale: "en"
+  }),
+  createBreadcrumbSchema([
+    { name: "Home", path: "/en/" },
+    { name: "Cubic meters", path: "/en/cubic-meters/" }
+  ])
+];
+---
+
+<Layout
+  locale="en"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/en/cubic-meters/"
+  keywords="cubic meters calculator, m3 volume calculation, freight volume tool"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Cubic meters calculator"
+    subtitle="Compute m3 volume for transport, storage, packaging and capacity planning."
+    primaryCta={{ href: "#calculator", label: "Calculate m3" }}
+    secondaryCta={{ href: "/en/inches-to-millimeters/", label: "Inches to mm" }}
+  />
+
+  <div class="container stack">
+    <section class="panel" id="calculator">
+      <h2>Cubic volume calculator</h2>
+      <CubicCalculator
+        idPrefix="en-cubic"
+        eventSource="landing_cubic_en"
+        copyToolName="cubic_meters_en"
+        labels={{
+          lengthLabel: "Length",
+          widthLabel: "Width",
+          heightLabel: "Height",
+          unitLabel: "Input unit",
+          optionMeters: "Meters (m)",
+          optionCentimeters: "Centimeters (cm)",
+          submitLabel: "Calculate volume",
+          copyLabel: "Copy result",
+          invalidMessage: "Provide valid length, width, and height values."
+        }}
+      />
+    </section>
+
+    <section class="panel">
+      <h2>Formula and practical use cases</h2>
+      <p>
+        Formula: <strong>m3 = length x width x height</strong>. If you input centimeters, values are converted to
+        meters before calculating the final cubic volume.
+      </p>
+      <ul class="list">
+        <li>Pallet 1.2 x 1.0 x 1.4 m = 1.68 m3.</li>
+        <li>Box 0.5 x 0.4 x 0.3 m = 0.06 m3.</li>
+        <li>Tank 2.5 x 1.2 x 1.8 m = 5.4 m3.</li>
+      </ul>
+    </section>
+
+    <AdSlot slotName="cubic_top" note="Suggested ad position outside interactive controls." />
+
+    <section class="panel">
+      <h2>Frequent volume table</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Length (m)</th>
+              <th>Width (m)</th>
+              <th>Height (m)</th>
+              <th>Volume (m3)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1.0</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+            <tr><td>1.2</td><td>0.8</td><td>0.6</td><td>0.576</td></tr>
+            <tr><td>1.2</td><td>1.0</td><td>1.4</td><td>1.68</td></tr>
+            <tr><td>2.0</td><td>1.5</td><td>1.2</td><td>3.6</td></tr>
+            <tr><td>3.0</td><td>2.0</td><td>1.5</td><td>9.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Related tools:
+        <a href="/en/liters-to-gallons/"> liters to gallons</a> and
+        <a href="/en/inches-to-millimeters/"> inches to millimeters</a>.
+      </p>
+    </section>
+
+    <AdSlot slotName="cubic_bottom" note="Final ad block with clear spacing." />
+  </div>
+</Layout>

@@ -1,0 +1,188 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import CalculatorCard from "../../components/CalculatorCard.astro";
+import CubicCalculator from "../../components/calculators/CubicCalculator.astro";
+import Hero from "../../components/Hero.astro";
+import InchesCalculator from "../../components/calculators/InchesCalculator.astro";
+import Layout from "../../components/Layout.astro";
+import LitersCalculator from "../../components/calculators/LitersCalculator.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createWebPageSchema,
+  createWebSiteSchema
+} from "../../lib/schema";
+
+const routeKey = "home";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Inches to millimeters, liters to gallons and cubic meters calculator";
+const description =
+  "English hub for ConvertiLab: accurate converters for inches to mm, liters to US/UK gallons and cubic meter volume calculations.";
+
+const structuredData = [
+  createWebSiteSchema("en"),
+  createWebPageSchema({
+    title,
+    description,
+    path: "/en/",
+    locale: "en"
+  }),
+  createBreadcrumbSchema([{ name: "Home", path: "/en/" }])
+];
+---
+
+<Layout
+  locale="en"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/en/"
+  keywords="inches to millimeters, liters to gallons converter, cubic meters calculator, measurement converter"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Measurement converters for real operations"
+    subtitle="ConvertiLab brings together practical tools for engineering and logistics: inches to millimeters, liters to gallons, and cubic meter volume calculations."
+    primaryCta={{ href: "#calculators", label: "Use calculators" }}
+    secondaryCta={{ href: "/en/about/", label: "About project" }}
+  />
+
+  <div class="container home-shell">
+    <aside class="home-rail home-rail-left">
+      <AdSlot
+        slotName="home_left"
+        variant="vertical"
+        note="Left vertical ad with enough whitespace to keep the UI clean."
+      />
+    </aside>
+
+    <div class="stack home-content">
+      <section class="panel">
+        <h2>One visual hub plus dedicated SEO landing pages</h2>
+        <p>
+          This homepage is a fast hub, while each tool has its own indexable URL. That improves international organic
+          discoverability while keeping the interface simple.
+        </p>
+        <p>
+          Ads are intentionally separated from all critical controls so conversions remain easy to use on desktop and
+          mobile.
+        </p>
+        <div class="quick-links">
+          <a href="/en/inches-to-millimeters/">Go to inches to millimeters</a>
+          <a href="/en/liters-to-gallons/">Go to liters to gallons</a>
+          <a href="/en/cubic-meters/">Go to cubic meters</a>
+          <a href="/en/contact/">Contact</a>
+        </div>
+      </section>
+
+      <figure class="mobile-layout-photo">
+        <img
+          src="/images/mobile-layout-preview.svg"
+          alt="Mobile reference with top, middle, and bottom ad positions separated from tool controls."
+          width="390"
+          height="760"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>Suggested mobile sequence: top, middle and bottom.</figcaption>
+      </figure>
+
+      <section class="panel" id="calculators">
+        <h2>Calculator 1: Inches to millimeters</h2>
+        <p>
+          Exact formula: <strong>millimeters = inches x 25.4</strong>. Supports fractional values like `1/4` or
+          `1 1/2`.
+        </p>
+        <InchesCalculator
+          idPrefix="en-home-inches"
+          eventSource="home_en"
+          copyToolName="inches_mm_home_en"
+          labels={{
+            inputLabel: "Value in inches",
+            placeholder: 'Example: 1/4, 1 1/2, 2.75',
+            submitLabel: "Convert inches to mm",
+            copyLabel: "Copy result",
+            invalidMessage: "Enter a valid inches value. Examples: 1/4, 1 1/2, or 2.75."
+          }}
+        />
+      </section>
+
+      <section class="panel">
+        <h2>Calculator 2: Liters to gallons (US or UK)</h2>
+        <p>
+          Pick the correct gallon system before quoting or shipping. US and UK gallons are not the same unit.
+        </p>
+        <LitersCalculator
+          idPrefix="en-home-liters"
+          eventSource="home_en"
+          copyToolName="liters_gallons_home_en"
+          labels={{
+            inputLabel: "Liters",
+            typeLabel: "Gallon type",
+            optionUs: "US gallon",
+            optionUk: "UK gallon",
+            submitLabel: "Convert liters to gallons",
+            copyLabel: "Copy result",
+            invalidMessage: "Enter a valid liters value."
+          }}
+        />
+      </section>
+
+      <AdSlot slotName="home_middle" note="Middle ad slot separated between calculator 2 and 3." />
+
+      <section class="panel">
+        <h2>Calculator 3: Cubic meters</h2>
+        <p>
+          Calculate volume with length, width and height for freight, storage, and packaging planning.
+        </p>
+        <CubicCalculator
+          idPrefix="en-home-cubic"
+          eventSource="home_en"
+          copyToolName="cubic_meters_home_en"
+          labels={{
+            lengthLabel: "Length",
+            widthLabel: "Width",
+            heightLabel: "Height",
+            unitLabel: "Input unit",
+            optionMeters: "Meters (m)",
+            optionCentimeters: "Centimeters (cm)",
+            submitLabel: "Calculate cubic meters",
+            copyLabel: "Copy result",
+            invalidMessage: "Provide valid length, width, and height values."
+          }}
+        />
+      </section>
+
+      <section class="panel">
+        <h2>Indexable landing pages by intent</h2>
+        <div class="calculator-grid">
+          <CalculatorCard
+            title="Inches to millimeters"
+            description="Exact conversion with formulas, table values, and practical examples."
+            href="/en/inches-to-millimeters/"
+          />
+          <CalculatorCard
+            title="Liters to gallons"
+            description="US vs UK comparison to prevent capacity and shipping mistakes."
+            href="/en/liters-to-gallons/"
+          />
+          <CalculatorCard
+            title="Cubic meters"
+            description="Volume calculations for logistics, storage, and operations."
+            href="/en/cubic-meters/"
+          />
+        </div>
+      </section>
+    </div>
+
+    <aside class="home-rail home-rail-right">
+      <AdSlot
+        slotName="home_right"
+        variant="vertical"
+        note="Right vertical ad with generous spacing to avoid visual overload."
+      />
+    </aside>
+  </div>
+</Layout>

@@ -1,0 +1,132 @@
+---
+interface Props {
+  idPrefix: string;
+  eventSource: string;
+  copyToolName: string;
+  labels: {
+    inputLabel: string;
+    placeholder: string;
+    submitLabel: string;
+    copyLabel: string;
+    invalidMessage: string;
+  };
+}
+
+const { idPrefix, eventSource, copyToolName, labels } = Astro.props;
+
+const formId = `${idPrefix}-form`;
+const inputId = `${idPrefix}-input`;
+const resultId = `${idPrefix}-result`;
+const copyId = `${idPrefix}-copy`;
+---
+
+<form id={formId} class="tool-form">
+  <div class="form-grid">
+    <label for={inputId}>
+      {labels.inputLabel}
+      <input
+        id={inputId}
+        name="inches"
+        type="text"
+        inputmode="text"
+        placeholder={labels.placeholder}
+        required
+      />
+    </label>
+  </div>
+  <button class="btn btn-primary" type="submit">{labels.submitLabel}</button>
+</form>
+<p id={resultId} class="result-box" data-copy=""></p>
+<div class="result-actions">
+  <button id={copyId} class="btn btn-link" type="button">{labels.copyLabel}</button>
+</div>
+
+<script
+  is:inline
+  define:vars={{ formId, inputId, resultId, copyId, labels, eventSource, copyToolName }}
+>
+  (() => {
+    const form = document.getElementById(formId);
+    const input = document.getElementById(inputId);
+    const result = document.getElementById(resultId);
+    const copyButton = document.getElementById(copyId);
+    const formatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+
+    const parseInches = (value) => {
+      const raw = String(value ?? "").trim().replace(/"/g, "");
+      if (!raw) return Number.NaN;
+
+      const normalized = raw.replace(",", ".").replace(/\s+/g, " ");
+      let sign = 1;
+      let source = normalized;
+
+      if (source.startsWith("-")) {
+        sign = -1;
+        source = source.slice(1).trim();
+      } else if (source.startsWith("+")) {
+        source = source.slice(1).trim();
+      }
+
+      if (!source) return Number.NaN;
+
+      const mixedMatch = source.match(/^(\d+(?:\.\d+)?)[\s-]+(\d+)\s*\/\s*(\d+)$/);
+      if (mixedMatch) {
+        const whole = Number.parseFloat(mixedMatch[1]);
+        const numerator = Number.parseFloat(mixedMatch[2]);
+        const denominator = Number.parseFloat(mixedMatch[3]);
+        if (denominator === 0) return Number.NaN;
+        return sign * (whole + numerator / denominator);
+      }
+
+      const fractionMatch = source.match(/^(\d+)\s*\/\s*(\d+)$/);
+      if (fractionMatch) {
+        const numerator = Number.parseFloat(fractionMatch[1]);
+        const denominator = Number.parseFloat(fractionMatch[2]);
+        if (denominator === 0) return Number.NaN;
+        return sign * (numerator / denominator);
+      }
+
+      const decimalValue = Number.parseFloat(source);
+      return sign * decimalValue;
+    };
+
+    const writeResult = (text) => {
+      if (!result) return;
+      result.textContent = text;
+      result.setAttribute("data-copy", text);
+    };
+
+    form?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const inches = parseInches(input?.value ?? "");
+      if (!Number.isFinite(inches)) {
+        writeResult(labels.invalidMessage);
+        return;
+      }
+
+      const millimeters = inches * 25.4;
+      const message = `${formatter.format(inches)} in = ${formatter.format(millimeters)} mm`;
+      writeResult(message);
+
+      if (typeof window.trackEvent === "function") {
+        window.trackEvent("convert_inches_mm", {
+          value: inches,
+          source: eventSource
+        });
+      }
+    });
+
+    copyButton?.addEventListener("click", async () => {
+      const text = result?.getAttribute("data-copy");
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        if (typeof window.trackEvent === "function") {
+          window.trackEvent("copy_result", { tool: copyToolName });
+        }
+      } catch (error) {
+        console.error("Copy failed.", error);
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,225 @@
+---
+import Layout from "../components/Layout.astro";
+import type { AlternateUrl } from "../lib/i18n/types";
+import { createBreadcrumbSchema, createWebSiteSchema } from "../lib/schema";
+
+const title = "ConvertiLab | Global measurement converters in Spanish and English";
+const description =
+  "Choose your language in ConvertiLab. Access inches to millimeters, liters to gallons, and cubic meters calculators in Spanish or English.";
+
+const alternateUrls: AlternateUrl[] = [
+  { locale: "es", path: "/es/" },
+  { locale: "en", path: "/en/" },
+  { locale: "x-default", path: "/" }
+];
+
+const structuredData = [
+  createWebSiteSchema(),
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: "ConvertiLab language gateway",
+    description,
+    url: "https://www.convertilab.com/",
+    inLanguage: ["es", "en"]
+  },
+  createBreadcrumbSchema([{ name: "Home", path: "/" }])
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  canonicalPath="/"
+  alternateUrls={alternateUrls}
+  keywords="global unit converter, convert inches to mm, liters to gallons, calculadora medidas"
+  structuredData={structuredData}
+>
+  <div class="container stack">
+    <section class="panel">
+      <h1>Choose language / Elegi idioma</h1>
+      <p>
+        ConvertiLab is available in English and Spanish with localized URLs for SEO and better user experience.
+      </p>
+      <p>
+        ConvertiLab esta disponible en ingles y espanol, con rutas dedicadas por idioma para mejorar SEO y
+        usabilidad.
+      </p>
+      <div class="locale-grid">
+        <article class="locale-card">
+          <h2>Espanol</h2>
+          <p>Herramientas de conversion para pulgadas a milimetros, litros a galones y metros cubicos.</p>
+          <a class="btn btn-primary" href="/es/" data-locale-choice="es">Entrar en Espanol</a>
+        </article>
+        <article class="locale-card">
+          <h2>English</h2>
+          <p>Conversion tools for inches to millimeters, liters to gallons, and cubic meters.</p>
+          <a class="btn btn-primary" href="/en/" data-locale-choice="en">Enter in English</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel locale-suggestion" id="locale-suggestion" hidden>
+      <h2 id="locale-suggestion-title">Language suggestion</h2>
+      <p id="locale-suggestion-text"></p>
+      <div class="hero-actions">
+        <a id="locale-suggestion-switch" class="btn btn-primary" href="/en/">Switch</a>
+        <button id="locale-suggestion-stay" class="btn btn-ghost" type="button">Stay here</button>
+      </div>
+    </section>
+  </div>
+
+  <script is:inline>
+    (() => {
+      const spanishCountries = new Set([
+        "AR",
+        "BO",
+        "CL",
+        "CO",
+        "CR",
+        "CU",
+        "DO",
+        "EC",
+        "ES",
+        "GT",
+        "HN",
+        "MX",
+        "NI",
+        "PA",
+        "PE",
+        "PR",
+        "PY",
+        "SV",
+        "UY",
+        "VE"
+      ]);
+
+      const localePaths = { es: "/es/", en: "/en/" };
+      const localeNames = { es: "Espanol", en: "English" };
+      const suggestionBox = document.getElementById("locale-suggestion");
+      const suggestionText = document.getElementById("locale-suggestion-text");
+      const suggestionSwitch = document.getElementById("locale-suggestion-switch");
+      const suggestionStay = document.getElementById("locale-suggestion-stay");
+      const storedLocale = (() => {
+        try {
+          const locale = window.localStorage.getItem("preferredLocale");
+          return locale === "es" || locale === "en" ? locale : null;
+        } catch (error) {
+          console.error("Could not read language preference.", error);
+          return null;
+        }
+      })();
+
+      const browserSuggestsSpanish = () => {
+        if (!Array.isArray(window.navigator.languages)) {
+          return String(window.navigator.language || "").toLowerCase().startsWith("es");
+        }
+        return window.navigator.languages.some((lang) => String(lang).toLowerCase().startsWith("es"));
+      };
+
+      const computeSuggestion = async () => {
+        const browserIsSpanish = browserSuggestsSpanish();
+        let country = null;
+        let countryIsSpanish = false;
+
+        try {
+          const response = await fetch("/api/locale", { headers: { Accept: "application/json" } });
+          if (response.ok) {
+            const data = await response.json();
+            country = typeof data.country === "string" ? data.country.toUpperCase() : null;
+            countryIsSpanish = country ? spanishCountries.has(country) : false;
+          }
+        } catch (error) {
+          console.error("Locale API unavailable, browser signal only.", error);
+        }
+
+        const suggestedLocale = browserIsSpanish || countryIsSpanish ? "es" : "en";
+        const sourceSignal =
+          browserIsSpanish && countryIsSpanish
+            ? "both"
+            : browserIsSpanish
+              ? "browser"
+              : countryIsSpanish
+                ? "country"
+                : "browser";
+
+        return { suggestedLocale, sourceSignal, country };
+      };
+
+      const showSuggestion = (suggestedLocale, sourceSignal, country) => {
+        if (!suggestionBox || !suggestionText || !suggestionSwitch || !suggestionStay) return;
+        if (storedLocale === suggestedLocale) return;
+
+        suggestionText.textContent = `Suggested language: ${localeNames[suggestedLocale]}.`;
+        suggestionSwitch.textContent = `Switch to ${localeNames[suggestedLocale]}`;
+        suggestionSwitch.setAttribute("href", localePaths[suggestedLocale]);
+        suggestionSwitch.setAttribute("data-suggested-locale", suggestedLocale);
+        suggestionSwitch.setAttribute("data-source-signal", sourceSignal);
+        if (country) {
+          suggestionSwitch.setAttribute("data-country", country);
+        }
+        suggestionBox.removeAttribute("hidden");
+
+        if (typeof window.trackEvent === "function") {
+          window.trackEvent("language_suggestion_shown", {
+            suggested_locale: suggestedLocale,
+            source_signal: sourceSignal,
+            country: country || ""
+          });
+        }
+      };
+
+      const savePreference = (locale) => {
+        if (locale !== "es" && locale !== "en") return;
+        try {
+          window.localStorage.setItem("preferredLocale", locale);
+        } catch (error) {
+          console.error("Could not store language preference.", error);
+        }
+      };
+
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const directChoice = target.closest("a[data-locale-choice]");
+        if (directChoice) {
+          const locale = directChoice.getAttribute("data-locale-choice");
+          savePreference(locale);
+          if (typeof window.trackEvent === "function") {
+            window.trackEvent("language_switch", {
+              from_locale: "x-default",
+              to_locale: locale || ""
+            });
+          }
+          return;
+        }
+
+        const acceptSuggestion = target.closest("#locale-suggestion-switch");
+        if (acceptSuggestion) {
+          const locale = acceptSuggestion.getAttribute("data-suggested-locale");
+          const sourceSignal = acceptSuggestion.getAttribute("data-source-signal") || "";
+          savePreference(locale);
+          if (typeof window.trackEvent === "function") {
+            window.trackEvent("language_suggestion_accept", {
+              suggested_locale: locale || "",
+              source_signal: sourceSignal
+            });
+          }
+          return;
+        }
+
+        if (target.closest("#locale-suggestion-stay")) {
+          suggestionBox?.setAttribute("hidden", "true");
+          if (typeof window.trackEvent === "function") {
+            window.trackEvent("language_suggestion_dismiss", {});
+          }
+        }
+      });
+
+      computeSuggestion().then(({ suggestedLocale, sourceSignal, country }) => {
+        showSuggestion(suggestedLocale, sourceSignal, country);
+      });
+    })();
+  </script>
+</Layout>

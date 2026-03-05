@@ -1,0 +1,120 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import Hero from "../../components/Hero.astro";
+import Layout from "../../components/Layout.astro";
+import LitersCalculator from "../../components/calculators/LitersCalculator.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createSoftwareApplicationSchema,
+  createWebPageSchema
+} from "../../lib/schema";
+
+const routeKey = "liters";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Liters to gallons converter (US and UK)";
+const description =
+  "Convert liters to US or UK gallons with exact factors, practical transport examples, and a quick dual conversion table.";
+
+const structuredData = [
+  createWebPageSchema({
+    title,
+    description,
+    path: "/en/liters-to-gallons/",
+    locale: "en"
+  }),
+  createSoftwareApplicationSchema({
+    name: "Liters to gallons converter",
+    description:
+      "Free tool to convert liters to US or UK gallons for shipping, fuels and industrial liquids.",
+    path: "/en/liters-to-gallons/",
+    locale: "en"
+  }),
+  createBreadcrumbSchema([
+    { name: "Home", path: "/en/" },
+    { name: "Liters to gallons", path: "/en/liters-to-gallons/" }
+  ])
+];
+---
+
+<Layout
+  locale="en"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/en/liters-to-gallons/"
+  keywords="liters to gallons, US gallon, UK gallon converter"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Liters to gallons converter"
+    subtitle="Choose US or UK gallon to avoid volume mismatches in logistics, fuel planning and procurement."
+    primaryCta={{ href: "#calculator", label: "Convert liters" }}
+    secondaryCta={{ href: "/en/cubic-meters/", label: "Cubic meters" }}
+  />
+
+  <div class="container stack">
+    <section class="panel" id="calculator">
+      <h2>Liters to gallons calculator</h2>
+      <LitersCalculator
+        idPrefix="en-liters"
+        eventSource="landing_liters_en"
+        copyToolName="liters_gallons_en"
+        labels={{
+          inputLabel: "Liters",
+          typeLabel: "Gallon type",
+          optionUs: "US gallon",
+          optionUk: "UK gallon",
+          submitLabel: "Convert liters to gallons",
+          copyLabel: "Copy result",
+          invalidMessage: "Enter a valid liters value."
+        }}
+      />
+    </section>
+
+    <section class="panel">
+      <h2>US vs UK gallon: critical difference</h2>
+      <ul class="list">
+        <li>1 US gallon = 3.785411784 L</li>
+        <li>1 UK gallon = 4.54609 L</li>
+      </ul>
+      <p>
+        Example: 100 liters equals 26.4172 US gallons, but only 21.9969 UK gallons. Always document which gallon
+        system your quote or shipment uses.
+      </p>
+    </section>
+
+    <AdSlot slotName="liters_top" note="Suggested ad placement outside tool controls." />
+
+    <section class="panel">
+      <h2>Quick comparison table</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Liters</th>
+              <th>US gallons</th>
+              <th>UK gallons</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>0.2642</td><td>0.22</td></tr>
+            <tr><td>10</td><td>2.6417</td><td>2.1997</td></tr>
+            <tr><td>20</td><td>5.2834</td><td>4.3994</td></tr>
+            <tr><td>100</td><td>26.4172</td><td>21.9969</td></tr>
+            <tr><td>1000</td><td>264.1721</td><td>219.9692</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Related tools:
+        <a href="/en/inches-to-millimeters/"> inches to millimeters</a> and
+        <a href="/en/cubic-meters/"> cubic meters</a>.
+      </p>
+    </section>
+
+    <AdSlot slotName="liters_bottom" note="Final ad slot with non-intrusive spacing." />
+  </div>
+</Layout>

@@ -1,0 +1,188 @@
+---
+import AdSlot from "../../components/AdSlot.astro";
+import CalculatorCard from "../../components/CalculatorCard.astro";
+import CubicCalculator from "../../components/calculators/CubicCalculator.astro";
+import Hero from "../../components/Hero.astro";
+import InchesCalculator from "../../components/calculators/InchesCalculator.astro";
+import Layout from "../../components/Layout.astro";
+import LitersCalculator from "../../components/calculators/LitersCalculator.astro";
+import { getAlternateUrls } from "../../lib/i18n/routes";
+import {
+  createBreadcrumbSchema,
+  createWebPageSchema,
+  createWebSiteSchema
+} from "../../lib/schema";
+
+const routeKey = "home";
+const alternateUrls = getAlternateUrls(routeKey);
+
+const title = "Conversor de pulgadas a milimetros, litros a galones y metros cubicos";
+const description =
+  "Hub en espanol de ConvertiLab con conversiones exactas para pulgadas a mm, litros a galones US/UK y volumen en metros cubicos.";
+
+const structuredData = [
+  createWebSiteSchema("es"),
+  createWebPageSchema({
+    title,
+    description,
+    path: "/es/",
+    locale: "es"
+  }),
+  createBreadcrumbSchema([{ name: "Inicio", path: "/es/" }])
+];
+---
+
+<Layout
+  locale="es"
+  routeKey={routeKey}
+  alternateUrls={alternateUrls}
+  title={title}
+  description={description}
+  canonicalPath="/es/"
+  keywords="conversor pulgadas a milimetros, litros a galones, calculadora metros cubicos, conversiones online"
+  structuredData={structuredData}
+>
+  <Hero
+    title="Conversores de medidas para uso real"
+    subtitle="ConvertiLab concentra conversiones industriales y logisticas en una sola vista: pulgadas a milimetros, litros a galones y calculo de volumen en metros cubicos."
+    primaryCta={{ href: "#calculadoras", label: "Usar calculadoras" }}
+    secondaryCta={{ href: "/es/sobre/", label: "Sobre el proyecto" }}
+  />
+
+  <div class="container home-shell">
+    <aside class="home-rail home-rail-left">
+      <AdSlot
+        slotName="home_left"
+        variant="vertical"
+        note="Banner vertical izquierdo con buen margen para mantener lectura y uso claros."
+      />
+    </aside>
+
+    <div class="stack home-content">
+      <section class="panel">
+        <h2>One-page visual con URLs indexables</h2>
+        <p>
+          Esta portada es un hub rapido, pero cada herramienta tiene su landing SEO dedicada. Asi mejoras
+          posicionamiento por intencion de busqueda y mantienes una experiencia clara para el usuario.
+        </p>
+        <p>
+          Los anuncios se ubican con separacion amplia y nunca pegados a los campos de entrada ni a los botones de
+          conversion.
+        </p>
+        <div class="quick-links">
+          <a href="/es/pulgadas-a-milimetros/">Ir a pulgadas a milimetros</a>
+          <a href="/es/litros-a-galones/">Ir a litros a galones</a>
+          <a href="/es/metros-cubicos/">Ir a metros cubicos</a>
+          <a href="/es/contacto/">Contacto</a>
+        </div>
+      </section>
+
+      <figure class="mobile-layout-photo">
+        <img
+          src="/images/mobile-layout-preview.svg"
+          alt="Vista mobile con banner superior, banner medio y banner inferior sin invadir las herramientas."
+          width="390"
+          height="760"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>Distribucion mobile sugerida: superior, medio e inferior.</figcaption>
+      </figure>
+
+      <section class="panel" id="calculadoras">
+        <h2>Calculadora 1: Pulgadas a milimetros</h2>
+        <p>
+          Formula directa: <strong>milimetros = pulgadas x 25.4</strong>. Soporta fracciones como `1/4` o `1 1/2`.
+        </p>
+        <InchesCalculator
+          idPrefix="es-home-inches"
+          eventSource="home_es"
+          copyToolName="inches_mm_home_es"
+          labels={{
+            inputLabel: "Valor en pulgadas",
+            placeholder: 'Ej: 1/4, 1 1/2, 2.75',
+            submitLabel: "Convertir pulgadas a mm",
+            copyLabel: "Copiar resultado",
+            invalidMessage: "Ingresa pulgadas validas. Ejemplos: 1/4, 1 1/2 o 2.75."
+          }}
+        />
+      </section>
+
+      <section class="panel">
+        <h2>Calculadora 2: Litros a galones (US o UK)</h2>
+        <p>
+          Elige el tipo de galon correcto antes de cotizar o despachar. El galon US y el galon UK no equivalen al
+          mismo volumen.
+        </p>
+        <LitersCalculator
+          idPrefix="es-home-liters"
+          eventSource="home_es"
+          copyToolName="liters_gallons_home_es"
+          labels={{
+            inputLabel: "Litros",
+            typeLabel: "Tipo de galon",
+            optionUs: "Galon US",
+            optionUk: "Galon UK",
+            submitLabel: "Convertir litros a galones",
+            copyLabel: "Copiar resultado",
+            invalidMessage: "Ingresa un valor valido en litros."
+          }}
+        />
+      </section>
+
+      <AdSlot slotName="home_middle" note="Banner medio separado entre calculadora 2 y 3." />
+
+      <section class="panel">
+        <h2>Calculadora 3: Metros cubicos</h2>
+        <p>
+          Calcula volumen con largo, ancho y alto para flete, almacenaje y cotizaciones operativas.
+        </p>
+        <CubicCalculator
+          idPrefix="es-home-cubic"
+          eventSource="home_es"
+          copyToolName="cubic_meters_home_es"
+          labels={{
+            lengthLabel: "Largo",
+            widthLabel: "Ancho",
+            heightLabel: "Alto",
+            unitLabel: "Unidad de entrada",
+            optionMeters: "Metros (m)",
+            optionCentimeters: "Centimetros (cm)",
+            submitLabel: "Calcular metros cubicos",
+            copyLabel: "Copiar resultado",
+            invalidMessage: "Completa largo, ancho y alto con valores validos."
+          }}
+        />
+      </section>
+
+      <section class="panel">
+        <h2>Landings indexables por herramienta</h2>
+        <div class="calculator-grid">
+          <CalculatorCard
+            title="Pulgadas a milimetros"
+            description="Conversion exacta con formula, tabla y casos de uso tecnicos."
+            href="/es/pulgadas-a-milimetros/"
+          />
+          <CalculatorCard
+            title="Litros a galones"
+            description="Comparativa US/UK para evitar errores de capacidad y despacho."
+            href="/es/litros-a-galones/"
+          />
+          <CalculatorCard
+            title="Metros cubicos"
+            description="Calculo de volumen para logistica, almacenamiento e inventario."
+            href="/es/metros-cubicos/"
+          />
+        </div>
+      </section>
+    </div>
+
+    <aside class="home-rail home-rail-right">
+      <AdSlot
+        slotName="home_right"
+        variant="vertical"
+        note="Banner vertical derecho con separacion amplia para evitar saturacion visual."
+      />
+    </aside>
+  </div>
+</Layout>

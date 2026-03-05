@@ -1,0 +1,21 @@
+<svg width="390" height="760" viewBox="0 0 390 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Distribucion mobile con tres banners separados y herramientas claras">
+  <rect width="390" height="760" rx="24" fill="#F4F7F2"/>
+  <rect x="24" y="28" width="342" height="84" rx="16" fill="#E4EFE8" stroke="#9CB9AB" stroke-width="2"/>
+  <text x="195" y="77" text-anchor="middle" fill="#2A4A3B" font-size="16" font-family="Arial, sans-serif">Banner superior</text>
+
+  <rect x="24" y="138" width="342" height="160" rx="16" fill="#FFFFFF" stroke="#B9CEC0" stroke-width="2"/>
+  <text x="195" y="186" text-anchor="middle" fill="#214230" font-size="15" font-family="Arial, sans-serif">Herramienta 1</text>
+  <line x1="54" y1="208" x2="336" y2="208" stroke="#C4D7CB" stroke-width="2"/>
+  <rect x="54" y="224" width="282" height="30" rx="8" fill="#F7FCF8" stroke="#9FBBAE"/>
+
+  <rect x="24" y="328" width="342" height="84" rx="16" fill="#FFF1E2" stroke="#D9B68E" stroke-width="2"/>
+  <text x="195" y="377" text-anchor="middle" fill="#8A531A" font-size="16" font-family="Arial, sans-serif">Banner medio</text>
+
+  <rect x="24" y="438" width="342" height="160" rx="16" fill="#FFFFFF" stroke="#B9CEC0" stroke-width="2"/>
+  <text x="195" y="486" text-anchor="middle" fill="#214230" font-size="15" font-family="Arial, sans-serif">Herramienta 2 / 3</text>
+  <line x1="54" y1="508" x2="336" y2="508" stroke="#C4D7CB" stroke-width="2"/>
+  <rect x="54" y="524" width="282" height="30" rx="8" fill="#F7FCF8" stroke="#9FBBAE"/>
+
+  <rect x="24" y="626" width="342" height="96" rx="16" fill="#E4EFE8" stroke="#9CB9AB" stroke-width="2"/>
+  <text x="195" y="681" text-anchor="middle" fill="#2A4A3B" font-size="16" font-family="Arial, sans-serif">Banner inferior</text>
+</svg>

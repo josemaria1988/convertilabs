@@ -1,0 +1,43 @@
+---
+interface Props {
+  slotName: string;
+  note?: string;
+  variant?: "horizontal" | "vertical";
+}
+
+const {
+  slotName,
+  note = "Espacio recomendado para banner manual de AdSense.",
+  variant = "horizontal"
+} = Astro.props;
+
+const adsenseClient = import.meta.env.PUBLIC_ADSENSE_CLIENT_ID;
+const envKey = `PUBLIC_ADSENSE_SLOT_${slotName.toUpperCase()}`;
+const adsenseSlot = (import.meta.env as Record<string, string | undefined>)[envKey];
+---
+
+<aside
+  class:list={["ad-slot", variant === "vertical" && "ad-slot--vertical"]}
+  aria-label={`Publicidad ${slotName}`}
+>
+  {adsenseClient && adsenseSlot ? (
+    <>
+      <ins
+        class="adsbygoogle"
+        style="display:block"
+        data-ad-client={adsenseClient}
+        data-ad-slot={adsenseSlot}
+        data-ad-format="auto"
+        data-full-width-responsive="true"
+      />
+      <script is:inline>
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      </script>
+    </>
+  ) : (
+    <div class="ad-slot-placeholder">
+      <p>Slot publicitario: {slotName}</p>
+      <small>{note}</small>
+    </div>
+  )}
+</aside>

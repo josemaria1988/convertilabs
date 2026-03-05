@@ -1,0 +1,217 @@
+---
+import "../styles/global.css";
+import SEO from "./SEO.astro";
+import { SITE_NAME } from "../lib/seo";
+import { getPath, legalRouteKeys, navRouteKeys } from "../lib/i18n/routes";
+import { layoutStrings } from "../lib/i18n/layout";
+import type { AlternateUrl, Locale, RouteKey } from "../lib/i18n/types";
+
+interface Props {
+  locale?: Locale;
+  routeKey?: RouteKey;
+  alternateUrls?: AlternateUrl[];
+  title?: string;
+  description?: string;
+  canonicalPath?: string;
+  keywords?: string;
+  noindex?: boolean;
+  structuredData?: Array<Record<string, unknown>>;
+}
+
+const {
+  locale,
+  routeKey,
+  alternateUrls = [],
+  title,
+  description,
+  canonicalPath,
+  keywords,
+  noindex,
+  structuredData
+} = Astro.props;
+
+const ga4Id = import.meta.env.PUBLIC_GA4_ID;
+const cloudflareToken = import.meta.env.PUBLIC_CF_WEB_ANALYTICS_TOKEN;
+const adsenseClient = import.meta.env.PUBLIC_ADSENSE_CLIENT_ID;
+const cfBeaconData = cloudflareToken ? JSON.stringify({ token: cloudflareToken }) : "";
+
+const navLinks = locale
+  ? navRouteKeys.map((key) => ({
+      href: getPath(locale, key),
+      label: layoutStrings[locale].navLabels[key]
+    }))
+  : [
+      { href: "/es/", label: "Espanol" },
+      { href: "/en/", label: "English" }
+    ];
+
+const legalLinks = locale
+  ? legalRouteKeys.map((key) => ({
+      href: getPath(locale, key),
+      label: layoutStrings[locale].navLabels[key]
+    }))
+  : [];
+
+const localeUi = locale ? layoutStrings[locale] : null;
+const esPath = alternateUrls.find((item) => item.locale === "es")?.path ?? getPath("es", routeKey ?? "home");
+const enPath = alternateUrls.find((item) => item.locale === "en")?.path ?? getPath("en", routeKey ?? "home");
+---
+
+<!doctype html>
+<html lang={locale ?? "en"}>
+  <head>
+    <SEO
+      title={title}
+      description={description}
+      canonicalPath={canonicalPath}
+      keywords={keywords}
+      noindex={noindex}
+      structuredData={structuredData}
+      locale={locale}
+      alternateUrls={alternateUrls}
+    />
+    {adsenseClient && (
+      <script
+        is:inline
+        async
+        src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
+        crossorigin="anonymous"
+      />
+    )}
+    {ga4Id && <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${ga4Id}`} />}
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">{SITE_NAME}</a>
+        <nav aria-label={localeUi?.navAriaLabel ?? "Main navigation"}>
+          <ul class="nav-list">
+            {
+              navLinks.map((link) => (
+                <li>
+                  <a href={link.href}>{link.label}</a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        {locale && localeUi && (
+          <div class="lang-toggle" aria-label={localeUi.languageToggleLabel}>
+            <a
+              class:list={["lang-pill", locale === "es" && "is-active"]}
+              href={esPath}
+              data-language-switch="true"
+              data-from-locale={locale}
+              data-to-locale="es"
+              data-switch-path={esPath}
+            >
+              {localeUi.localeNames.es}
+            </a>
+            <a
+              class:list={["lang-pill", locale === "en" && "is-active"]}
+              href={enPath}
+              data-language-switch="true"
+              data-from-locale={locale}
+              data-to-locale="en"
+              data-switch-path={enPath}
+            >
+              {localeUi.localeNames.en}
+            </a>
+          </div>
+        )}
+      </div>
+    </header>
+
+    <main class="site-main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <p>{new Date().getFullYear()} {SITE_NAME}. {localeUi?.footerClaim ?? "Bilingual conversion tools for global users."}</p>
+        {legalLinks.length > 0 && (
+          <nav aria-label={localeUi?.legalAriaLabel ?? "Legal navigation"}>
+            <ul class="footer-nav">
+              {
+                legalLinks.map((link) => (
+                  <li>
+                    <a href={link.href}>{link.label}</a>
+                  </li>
+                ))
+              }
+            </ul>
+          </nav>
+        )}
+      </div>
+    </footer>
+
+    {ga4Id && (
+      <script is:inline define:vars={{ ga4Id }}>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() {
+          window.dataLayer.push(arguments);
+        }
+        window.gtag = gtag;
+        gtag("js", new Date());
+        gtag("config", ga4Id);
+      </script>
+    )}
+
+    <script is:inline>
+      window.trackEvent = function (eventName, params) {
+        if (typeof window.gtag === "function") {
+          window.gtag("event", eventName, params || {});
+        }
+      };
+
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const switchLink = target.closest("a[data-language-switch='true']");
+        if (switchLink) {
+          const fromLocale = switchLink.getAttribute("data-from-locale") || "";
+          const toLocale = switchLink.getAttribute("data-to-locale") || "";
+          const switchPath = switchLink.getAttribute("data-switch-path");
+
+          try {
+            if (toLocale === "es" || toLocale === "en") {
+              window.localStorage.setItem("preferredLocale", toLocale);
+            }
+          } catch (error) {
+            console.error("No se pudo guardar preferencia de idioma.", error);
+          }
+
+          if (switchPath) {
+            switchLink.setAttribute("href", switchPath);
+          }
+
+          if (typeof window.trackEvent === "function") {
+            window.trackEvent("language_switch", {
+              from_locale: fromLocale,
+              to_locale: toLocale
+            });
+          }
+        }
+
+        const outbound = target.closest("a[data-ad-outbound='true']");
+        if (!outbound) return;
+        if (typeof window.trackEvent === "function") {
+          window.trackEvent("ad_click_outbound", {
+            href: outbound.getAttribute("href") || "",
+            placement: outbound.getAttribute("data-ad-placement") || "manual"
+          });
+        }
+      });
+    </script>
+
+    {cloudflareToken && (
+      <script
+        is:inline
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={cfBeaconData}
+      />
+    )}
+  </body>
+</html>
