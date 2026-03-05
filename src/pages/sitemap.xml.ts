@@ -39,7 +39,7 @@ function getAlternates(routeKey: RouteKey) {
   return [
     { hreflang: "es", href: toAbsolute(routePaths[routeKey].es) },
     { hreflang: "en", href: toAbsolute(routePaths[routeKey].en) },
-    { hreflang: "x-default", href: toAbsolute("/") }
+    { hreflang: "x-default", href: toAbsolute("/en/") }
   ];
 }
 
@@ -71,7 +71,6 @@ function buildXml(entries: SitemapEntry[]) {
 
   return `<?xml version="1.0" encoding="UTF-8"?>` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` +
-    `<url><loc>${toAbsolute("/")}</loc><xhtml:link rel="alternate" hreflang="es" href="${toAbsolute("/es/")}" /><xhtml:link rel="alternate" hreflang="en" href="${toAbsolute("/en/")}" /><xhtml:link rel="alternate" hreflang="x-default" href="${toAbsolute("/")}" /><changefreq>weekly</changefreq><priority>1.0</priority></url>` +
     urls +
     `</urlset>`;
 }

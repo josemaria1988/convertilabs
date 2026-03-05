@@ -22,6 +22,6 @@ export function getAlternateUrls(routeKey: RouteKey): AlternateUrl[] {
   return [
     { locale: "es", path: routePaths[routeKey].es },
     { locale: "en", path: routePaths[routeKey].en },
-    { locale: "x-default", path: "/" }
+    { locale: "x-default", path: "/en/" }
   ];
 }

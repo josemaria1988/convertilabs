@@ -72,7 +72,7 @@ Scripts:
 
 Archivo: `astro.config.mjs`
 
-- `site: "https://www.convertilab.com"`
+- `site: "https://www.convertilabs.com"`
 - `trailingSlash: "always"`
 - `build.format: "directory"`
 
@@ -353,7 +353,7 @@ Archivo: `public/robots.txt`
 Contiene:
 
 - `Allow: /`
-- referencia a `https://www.convertilab.com/sitemap.xml`
+- referencia a `https://www.convertilabs.com/sitemap.xml`
 
 ---
 

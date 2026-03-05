@@ -1,7 +1,7 @@
 import { defineConfig } from "astro/config";
 
 export default defineConfig({
-  site: "https://www.convertilab.com",
+  site: "https://www.convertilabs.com",
   trailingSlash: "always",
   build: {
     format: "directory"

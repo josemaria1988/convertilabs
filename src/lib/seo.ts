@@ -1,5 +1,5 @@
 export const SITE_NAME = "ConvertiLab";
-export const SITE_URL = "https://www.convertilab.com";
+export const SITE_URL = "https://www.convertilabs.com";
 export const DEFAULT_TITLE =
   "ConvertiLab: Global converters for inches, liters and cubic meters";
 export const DEFAULT_DESCRIPTION =
