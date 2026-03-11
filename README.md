@@ -1,76 +1,68 @@
-# ConvertiLab
+# Convertilabs
 
-Mini servicio SaaS de conversiones tecnicas construido con Astro + TypeScript.
+Base inicial de producto en Next.js con App Router, TypeScript y Tailwind CSS.
 
-## URLs incluidas
+## Stack
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- PostgreSQL como destino
+- Supabase o Neon como punto de partida
+- Vercel para deploy web
+
+## Estructura
+
+```text
+convertilabs/
+  app/
+    (marketing)/
+    dashboard/
+    api/
+  components/
+  lib/
+  modules/
+    auth/
+    organizations/
+    documents/
+    accounting/
+    tax/
+    ai/
+  public/
+  styles/
+  docs/
+```
+
+## Rutas incluidas
+
+Sitio publico:
 
 - `/`
-- `/es/`
-- `/es/pulgadas-a-milimetros/`
-- `/es/litros-a-galones/`
-- `/es/metros-cubicos/`
-- `/es/sobre/`
-- `/es/contacto/`
-- `/es/privacidad/`
-- `/es/terminos/`
-- `/en/`
-- `/en/inches-to-millimeters/`
-- `/en/liters-to-gallons/`
-- `/en/cubic-meters/`
-- `/en/about/`
-- `/en/contact/`
-- `/en/privacy-policy/`
-- `/en/terms/`
-- `/robots.txt`
-- `/sitemap.xml`
-- `/api/locale` (Cloudflare Pages Function)
+- `/product`
+- `/api`
+- `/pricing`
+- `/about`
+- `/contact`
 
-## Requisitos
+App:
 
-- Node.js 20+
-- npm 10+
+- `/login`
+- `/dashboard`
+- `/documents`
+- `/journal-entries`
+- `/tax`
+- `/settings`
 
-## Desarrollo local
+Endpoint tecnico:
+
+- `/api/health`
+
+## Desarrollo
 
 ```bash
-npm install
 npm run dev
 ```
 
-## Build
+## Nota de entorno
 
-```bash
-npm run build
-npm run preview
-```
-
-## Variables de entorno
-
-Copia `.env.example` a `.env` y completa segun corresponda:
-
-- `PUBLIC_GA4_ID`: medicion GA4 opcional.
-- `PUBLIC_CF_WEB_ANALYTICS_TOKEN`: token de Cloudflare Web Analytics.
-- `PUBLIC_ADSENSE_CLIENT_ID`: cliente de AdSense.
-- `PUBLIC_ADSENSE_SLOT_HOME_LEFT`: banner vertical izquierdo de home.
-- `PUBLIC_ADSENSE_SLOT_HOME_MIDDLE`: banner medio de home.
-- `PUBLIC_ADSENSE_SLOT_HOME_RIGHT`: banner vertical derecho de home.
-- `PUBLIC_ADSENSE_SLOT_*`: IDs de slots manuales por posicion.
-
-## Deploy en Cloudflare Pages
-
-1. Conecta el repo en Cloudflare Pages.
-2. Configura:
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-3. Carga variables `PUBLIC_*` en el panel de Pages.
-4. El endpoint `functions/api/locale.ts` queda disponible como `/api/locale` en Pages.
-5. Enlaza el dominio final en Cloudflare Registrar y habilita HTTPS.
-
-## Checklist SEO inicial
-
-- Metadata unica por URL.
-- Canonical en todas las paginas.
-- `hreflang` para ES, EN y `x-default`.
-- JSON-LD (WebSite, WebPage, SoftwareApplication, BreadcrumbList).
-- `robots.txt` y `sitemap.xml`.
-- Enlaces internos entre herramientas.
+Durante la instalacion aparecieron warnings de engine para parte del toolchain con `Node 20.2.0`, pero en esta maquina `npm run typecheck`, `npm run build` y `npm run lint` pasaron correctamente. Aun asi, conviene subir Node cuando definamos baseline de equipo.
