@@ -12,7 +12,7 @@ export function MarketingHeader() {
           <div>
             <p className="text-lg font-semibold tracking-[-0.04em]">Convertilabs</p>
             <p className="text-sm text-[color:var(--color-muted)]">
-              Finance ops for modern teams
+              Accounting and tax infrastructure
             </p>
           </div>
         </Link>
@@ -32,15 +32,15 @@ export function MarketingHeader() {
         <div className="flex items-center gap-3">
           <Link
             href="/login"
-            className="rounded-full border border-[color:var(--color-border)] px-4 py-2 text-sm font-medium"
+            className="rounded-full border border-[color:var(--color-border)] bg-white/70 px-4 py-2 text-sm font-medium"
           >
             Login
           </Link>
           <Link
-            href="/dashboard"
-            className="rounded-full bg-[color:var(--color-foreground)] px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85"
+            href="/contact"
+            className="rounded-full bg-[color:var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[color:var(--color-accent-strong)]"
           >
-            Ver dashboard
+            Request demo
           </Link>
         </div>
       </div>

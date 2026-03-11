@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: "Convertilabs",
   description:
-    "Sistema operativo para equipos financieros que necesitan documentos, contabilidad y fiscalidad conectados.",
+    "Accounting and tax infrastructure for Uruguay, from document intake to structured fiscal workflows.",
   contactEmail: "hola@convertilabs.com",
   location: "Montevideo / remoto",
 };

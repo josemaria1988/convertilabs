@@ -11,8 +11,8 @@ export function MarketingFooter() {
         <div className="space-y-3">
           <p className="text-lg font-semibold tracking-[-0.04em]">{siteConfig.name}</p>
           <p className="max-w-md text-sm text-[color:var(--color-muted)]">
-            Operaciones contables, documentos, fiscalidad y automatizacion bajo
-            un mismo producto.
+            Accounting and tax infrastructure for Uruguay, from document intake
+            to structured fiscal workflows.
           </p>
           <p className="text-sm text-[color:var(--color-muted)]">
             {siteConfig.contactEmail}
@@ -47,7 +47,7 @@ export function MarketingFooter() {
       </div>
 
       <div className="border-t border-[color:var(--color-border)] px-6 py-4 text-center text-sm text-[color:var(--color-muted)]">
-        {year} {siteConfig.name}. Base de producto inicial en Next.js.
+        {year} {siteConfig.name}. Built for Uruguay accounting and fiscal operations.
       </div>
     </footer>
   );
