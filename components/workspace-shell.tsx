@@ -21,7 +21,7 @@ export function WorkspaceShell({
     <div className="min-h-screen">
       <div className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="panel h-fit p-5 lg:sticky lg:top-6">
-          <Link href="/" className="mb-6 flex items-center gap-3">
+          <Link href="/app" className="mb-6 flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--color-accent)] text-sm font-semibold text-white">
               CL
             </span>

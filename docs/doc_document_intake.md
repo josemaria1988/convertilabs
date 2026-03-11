@@ -48,6 +48,7 @@ Limited support in Phase 1:
 
 Suggested statuses:
 
+- `uploading`
 - `uploaded`
 - `queued`
 - `extracting`
@@ -58,6 +59,7 @@ Suggested statuses:
 - `rejected`
 - `duplicate`
 - `archived`
+- `error`
 
 A single document may move through these states as processing advances.
 
@@ -67,8 +69,9 @@ A single document may move through these states as processing advances.
 User uploads a file through the UI or API.
 
 System actions:
+- create document metadata first with status `uploading`
 - store original file in private storage
-- create document row
+- finalize the row as `uploaded` when Storage confirms the object
 - compute file hash
 - assign organization and uploader
 - capture basic metadata
@@ -171,7 +174,7 @@ Suggested private buckets:
 ### File naming
 Suggested storage path:
 ```txt
-/{organization_id}/documents/{yyyy}/{mm}/{document_id}/{original_filename}
+orgs/{organization_id}/{document_id}/{sanitized_filename}
 ```
 
 ### Metadata

@@ -225,10 +225,12 @@ Response:
 ```json
 {
   "id": "uuid",
-  "status": "uploaded",
+  "status": "uploading",
   "filename": "invoice-001.pdf"
 }
 ```
+
+For the dashboard upload flow used in Week 1, the server prepares metadata first and the browser uploads directly to private storage. The document is then finalized to `uploaded`.
 
 ### GET `/api/v1/documents/:id`
 Fetch document metadata, status, extraction summary, and linked suggestion.

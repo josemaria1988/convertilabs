@@ -3,8 +3,11 @@
 import { useActionState, useState } from "react";
 import {
   createOrganizationAction,
-  initialOnboardingActionState,
 } from "@/app/onboarding/actions";
+import {
+  initialOnboardingActionState,
+  normalizeOnboardingActionState,
+} from "@/modules/organizations/onboarding-action-state";
 import {
   organizationNameMaxLength,
   organizationNameMinLength,
@@ -23,14 +26,15 @@ export function OrganizationOnboardingForm({
     createOrganizationAction,
     initialOnboardingActionState,
   );
+  const safeState = normalizeOnboardingActionState(state);
   const slugPreview = slugifyOrganizationNamePreview(organizationName);
 
   return (
     <form className="space-y-5" action={formAction}>
       <div aria-live="polite" className="min-h-6">
-        {state.message ? (
+        {safeState.message ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            {state.message}
+            {safeState.message}
           </div>
         ) : null}
       </div>
@@ -46,15 +50,15 @@ export function OrganizationOnboardingForm({
           }}
           maxLength={organizationNameMaxLength}
           placeholder="Rontil SAS"
-          aria-invalid={Boolean(state.fieldErrors.name)}
+          aria-invalid={Boolean(safeState.fieldErrors.name)}
           className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
         />
         <p className="text-sm leading-6 text-[color:var(--color-muted)]">
           Usa entre {organizationNameMinLength} y {organizationNameMaxLength}{" "}
           caracteres. El slug final se genera en servidor.
         </p>
-        {state.fieldErrors.name ? (
-          <p className="text-sm text-amber-800">{state.fieldErrors.name}</p>
+        {safeState.fieldErrors.name ? (
+          <p className="text-sm text-amber-800">{safeState.fieldErrors.name}</p>
         ) : null}
       </label>
 

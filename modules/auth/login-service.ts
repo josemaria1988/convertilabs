@@ -1,5 +1,6 @@
 import "server-only";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { logAuthEvent, logSupabaseAuthError } from "@/modules/auth/auth-logging";
 import {
   getAuthStateForUser,
   resolvePostAuthDestination,
@@ -66,7 +67,25 @@ export async function loginUser(input: LoginInput): Promise<LoginServiceResult> 
   });
 
   if (error) {
-    if (matchAny(error.message, pendingConfirmationMarkers)) {
+    const isPendingConfirmation = matchAny(
+      error.message,
+      pendingConfirmationMarkers,
+    );
+    const isInvalidCredentials = matchAny(
+      error.message,
+      invalidCredentialMarkers,
+    );
+
+    logSupabaseAuthError(
+      isPendingConfirmation || isInvalidCredentials ? "warn" : "error",
+      "login_failed",
+      error,
+      {
+        requestedNext: next ?? null,
+      },
+    );
+
+    if (isPendingConfirmation) {
       return {
         ok: false,
         status: 401,
@@ -78,7 +97,7 @@ export async function loginUser(input: LoginInput): Promise<LoginServiceResult> 
       };
     }
 
-    if (matchAny(error.message, invalidCredentialMarkers)) {
+    if (isInvalidCredentials) {
       return {
         ok: false,
         status: 401,
@@ -111,6 +130,12 @@ export async function loginUser(input: LoginInput): Promise<LoginServiceResult> 
   }
 
   if (!data.user || !data.session) {
+    logAuthEvent("error", "login_missing_session", {
+      hasUser: Boolean(data.user),
+      hasSession: Boolean(data.session),
+      requestedNext: next ?? null,
+    });
+
     return {
       ok: false,
       status: 502,

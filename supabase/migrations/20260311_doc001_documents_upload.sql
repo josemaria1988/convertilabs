@@ -1,29 +1,16 @@
-create table if not exists public.documents (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  direction public.document_direction not null default 'purchase',
-  document_type text,
-  status public.document_status not null default 'uploaded',
-  storage_bucket text not null default 'documents-private',
-  storage_path text not null unique,
-  original_filename text not null,
-  mime_type text,
-  file_size bigint,
-  file_hash text,
-  upload_source text not null default 'web',
-  uploaded_by uuid references public.profiles(id),
-  document_date date,
-  external_reference text,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_documents_org_status
-  on public.documents (organization_id, status);
-
-create index if not exists idx_documents_file_hash
-  on public.documents (organization_id, file_hash);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'documents_storage_path_key'
+      and conrelid = 'public.documents'::regclass
+  ) then
+    alter table public.documents
+      add constraint documents_storage_path_key unique (storage_path);
+  end if;
+end
+$$;
 
 create index if not exists idx_documents_uploaded_by
   on public.documents (uploaded_by);
@@ -54,33 +41,6 @@ set
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
-
-create table if not exists public.document_extractions (
-  id uuid primary key default gen_random_uuid(),
-  document_id uuid not null references public.documents(id) on delete cascade,
-  version_no integer not null,
-  provider text,
-  raw_text text,
-  extracted_json jsonb not null default '{}'::jsonb,
-  confidence numeric(5,4),
-  is_active boolean not null default false,
-  created_by uuid references public.profiles(id),
-  created_at timestamptz not null default now(),
-  unique (document_id, version_no)
-);
-
-create index if not exists idx_document_extractions_active
-  on public.document_extractions (document_id, is_active);
-
-create table if not exists public.document_relations (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  source_document_id uuid not null references public.documents(id) on delete cascade,
-  target_document_id uuid references public.documents(id) on delete cascade,
-  relation_type text not null,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
 
 create or replace function public.sanitize_document_filename(p_original_filename text)
 returns text
@@ -351,55 +311,6 @@ begin
 end;
 $$;
 
-create or replace function public.list_dashboard_documents(
-  p_org_id uuid,
-  p_limit integer default 12
-)
-returns table (
-  id uuid,
-  original_filename text,
-  status public.document_status,
-  created_at timestamptz,
-  uploaded_by_display text
-)
-language plpgsql
-stable
-security definer
-set search_path = public
-as $$
-declare
-  v_limit integer := greatest(1, least(coalesce(p_limit, 12), 50));
-begin
-  if auth.role() <> 'authenticated' or auth.uid() is null then
-    raise exception 'Authentication required.'
-      using errcode = '42501';
-  end if;
-
-  if not public.is_org_member(p_org_id) then
-    raise exception 'Not allowed to access this organization.'
-      using errcode = '42501';
-  end if;
-
-  return query
-  select
-    d.id,
-    d.original_filename,
-    d.status,
-    d.created_at,
-    coalesce(
-      nullif(p.full_name, ''),
-      nullif(p.email, ''),
-      'Usuario sin perfil'
-    ) as uploaded_by_display
-  from public.documents as d
-  left join public.profiles as p
-    on p.id = d.uploaded_by
-  where d.organization_id = p_org_id
-  order by d.created_at desc
-  limit v_limit;
-end;
-$$;
-
 revoke all on function public.prepare_document_upload(uuid, text, text, bigint, public.document_direction) from public;
 grant execute on function public.prepare_document_upload(uuid, text, text, bigint, public.document_direction) to authenticated;
 grant execute on function public.prepare_document_upload(uuid, text, text, bigint, public.document_direction) to service_role;
@@ -412,6 +323,42 @@ revoke all on function public.fail_document_upload(uuid, text) from public;
 grant execute on function public.fail_document_upload(uuid, text) to authenticated;
 grant execute on function public.fail_document_upload(uuid, text) to service_role;
 
-revoke all on function public.list_dashboard_documents(uuid, integer) from public;
-grant execute on function public.list_dashboard_documents(uuid, integer) to authenticated;
-grant execute on function public.list_dashboard_documents(uuid, integer) to service_role;
+do $$
+begin
+  if exists (
+    select 1
+    from pg_class as c
+    join pg_namespace as n
+      on n.oid = c.relnamespace
+    where n.nspname = 'storage'
+      and c.relname = 'objects'
+      and pg_get_userbyid(c.relowner) = current_user
+  ) then
+    execute 'alter table storage.objects enable row level security';
+    execute 'drop policy if exists "storage_documents_private_select_member" on storage.objects';
+    execute '
+      create policy "storage_documents_private_select_member"
+      on storage.objects
+      for select
+      to authenticated
+      using (
+        bucket_id = ''documents-private''
+        and public.can_access_document_storage_object(bucket_id, name)
+      )
+    ';
+    execute 'drop policy if exists "storage_documents_private_insert_uploader" on storage.objects';
+    execute '
+      create policy "storage_documents_private_insert_uploader"
+      on storage.objects
+      for insert
+      to authenticated
+      with check (
+        bucket_id = ''documents-private''
+        and public.can_upload_document_storage_object(bucket_id, name)
+      )
+    ';
+  else
+    raise notice 'Skipping storage.objects policies because current role % does not own storage.objects.', current_user;
+  end if;
+end
+$$;

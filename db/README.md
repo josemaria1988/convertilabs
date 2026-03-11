@@ -35,3 +35,5 @@ Si cambia el schema o la estrategia de RLS:
 - `npm run db:verify:parity` compara la base real contra tablas, columnas, FKs, uniques, indices, enums, funciones, triggers y politicas esperadas.
 - `npm run db:smoke:profile-sync` crea un usuario temporal en Supabase Auth para verificar la creacion espejo inicial en `public.profiles`.
 - `npm run db:smoke:organization-onboarding` crea usuarios temporales para verificar el RPC de onboarding, la membership owner y la resolucion de colision de slug.
+- `npm run db:smoke:private-dashboard` crea un tenant temporal y un documento real para verificar el conteo SSR y el RPC `list_dashboard_documents`.
+- `npm run db:smoke:document-upload` crea un usuario y tenant temporales, prepara metadata con `prepare_document_upload`, sube un PDF real a `documents-private`, finaliza el estado y valida que el dashboard lo liste.

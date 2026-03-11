@@ -7,31 +7,19 @@ import {
   getAuthStateForUser,
   resolvePostAuthDestination,
 } from "@/modules/auth/server-auth";
+import type { OnboardingActionState } from "@/modules/organizations/onboarding-action-state";
 import {
-  type OrganizationOnboardingFieldErrors,
   validateOrganizationOnboardingInput,
 } from "@/modules/organizations/onboarding-schema";
-
-export type OnboardingActionState = {
-  status: "idle" | "error";
-  message: string;
-  fieldErrors: OrganizationOnboardingFieldErrors;
-};
 
 type CreateOrganizationRpcResult = {
   organization_id: string;
   slug: string;
 };
 
-export const initialOnboardingActionState: OnboardingActionState = {
-  status: "idle",
-  message: "",
-  fieldErrors: {},
-};
-
 function buildActionError(
   message: string,
-  fieldErrors: OrganizationOnboardingFieldErrors = {},
+  fieldErrors = {},
 ): OnboardingActionState {
   return {
     status: "error",

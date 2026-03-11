@@ -441,6 +441,46 @@ with check (
   )
 );
 
+do $$
+begin
+  if exists (
+    select 1
+    from pg_class as c
+    join pg_namespace as n
+      on n.oid = c.relnamespace
+    where n.nspname = 'storage'
+      and c.relname = 'objects'
+      and pg_get_userbyid(c.relowner) = current_user
+  ) then
+    execute 'alter table storage.objects enable row level security';
+    execute 'drop policy if exists "storage_documents_private_select_member" on storage.objects';
+    execute '
+      create policy "storage_documents_private_select_member"
+      on storage.objects
+      for select
+      to authenticated
+      using (
+        bucket_id = ''documents-private''
+        and public.can_access_document_storage_object(bucket_id, name)
+      )
+    ';
+    execute 'drop policy if exists "storage_documents_private_insert_uploader" on storage.objects';
+    execute '
+      create policy "storage_documents_private_insert_uploader"
+      on storage.objects
+      for insert
+      to authenticated
+      with check (
+        bucket_id = ''documents-private''
+        and public.can_upload_document_storage_object(bucket_id, name)
+      )
+    ';
+  else
+    raise notice 'Skipping storage.objects policies because current role % does not own storage.objects.', current_user;
+  end if;
+end
+$$;
+
 drop policy if exists "document_extractions_select_member" on public.document_extractions;
 create policy "document_extractions_select_member"
 on public.document_extractions

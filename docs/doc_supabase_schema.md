@@ -40,7 +40,7 @@ create extension if not exists pgcrypto;
 ```sql
 create type public.member_role as enum ('owner', 'admin', 'accountant', 'reviewer', 'operator', 'developer', 'viewer');
 create type public.document_direction as enum ('purchase', 'sale', 'other');
-create type public.document_status as enum ('uploaded', 'queued', 'extracting', 'extracted', 'classified', 'needs_review', 'approved', 'rejected', 'duplicate', 'archived');
+create type public.document_status as enum ('uploaded', 'queued', 'extracting', 'extracted', 'classified', 'needs_review', 'approved', 'rejected', 'duplicate', 'archived', 'uploading', 'error');
 create type public.suggestion_status as enum ('drafted', 'needs_review', 'ready_for_review', 'approved', 'rejected', 'superseded');
 create type public.entry_status as enum ('draft', 'reviewed', 'posted', 'exported', 'void');
 create type public.tax_type as enum ('VAT', 'IRAE', 'IP');
@@ -199,7 +199,7 @@ create table if not exists public.documents (
   document_type text,
   status public.document_status not null default 'uploaded',
   storage_bucket text not null default 'documents-private',
-  storage_path text not null,
+  storage_path text not null unique,
   original_filename text not null,
   mime_type text,
   file_size bigint,
@@ -214,6 +214,9 @@ create table if not exists public.documents (
 );
 create index if not exists idx_documents_org_status on public.documents (organization_id, status);
 create index if not exists idx_documents_file_hash on public.documents (organization_id, file_hash);
+create index if not exists idx_documents_uploaded_by on public.documents (uploaded_by);
+create index if not exists idx_documents_status on public.documents (status);
+create index if not exists idx_documents_org_created_at on public.documents (organization_id, created_at desc);
 ```
 
 ## 8. document_extractions

@@ -11,7 +11,9 @@
     "db:generate:migration": "node scripts/supabase/generate-canonical-migration.mjs",
     "db:verify:parity": "node scripts/supabase/verify-schema-parity.mjs",
     "db:smoke:profile-sync": "node scripts/supabase/smoke-profile-sync.mjs",
-    "db:smoke:organization-onboarding": "node scripts/supabase/smoke-organization-onboarding.mjs"
+    "db:smoke:organization-onboarding": "node scripts/supabase/smoke-organization-onboarding.mjs",
+    "db:smoke:private-dashboard": "node scripts/supabase/smoke-private-dashboard.mjs",
+    "db:smoke:document-upload": "node scripts/supabase/smoke-document-upload.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",

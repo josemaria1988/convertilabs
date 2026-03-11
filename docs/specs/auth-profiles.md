@@ -35,3 +35,5 @@ Cerrar el flujo base de identidad para Semana 1:
 - Si la base remota ya tiene la version vieja de `profiles`, aplica primero `20260311_auth001_profiles_ssr.sql`.
 - Luego regenera la migracion canonica desde `db/` con `npm run db:generate:migration`.
 - Finalmente corre `npm run db:verify:parity` y `npm run db:smoke:profile-sync`.
+- En Supabase Auth, la plantilla de confirmacion debe apuntar a `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+- Las Redirect URLs permitidas en Supabase deben incluir la ruta activa `/auth/confirm` para local, preview y produccion.

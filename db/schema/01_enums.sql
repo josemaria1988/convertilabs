@@ -20,7 +20,9 @@ create type public.document_status as enum (
   'approved',
   'rejected',
   'duplicate',
-  'archived'
+  'archived',
+  'uploading',
+  'error'
 );
 
 create type public.suggestion_status as enum (

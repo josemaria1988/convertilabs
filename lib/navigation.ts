@@ -13,7 +13,7 @@ export const marketingNav: NavItem[] = [
 ];
 
 export const workspaceNav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", description: "Resumen operativo" },
+  { href: "/app", label: "Dashboard", description: "Resumen operativo" },
   { href: "/documents", label: "Documents", description: "Captura y validacion" },
   {
     href: "/journal-entries",
