@@ -1,7 +1,8 @@
 export const siteConfig = {
   name: "Convertilabs",
+  tagline: "Infraestructura contable y fiscal para Uruguay",
   description:
-    "Accounting and tax infrastructure for Uruguay, from document intake to structured fiscal workflows.",
+    "Infraestructura contable y fiscal para Uruguay, desde el ingreso documental hasta los flujos tributarios estructurados.",
   contactEmail: "hola@convertilabs.com",
-  location: "Montevideo / remoto",
+  location: "Montevideo, Uruguay",
 };

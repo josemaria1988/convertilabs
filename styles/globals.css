@@ -52,6 +52,14 @@ a {
   background: rgba(15, 118, 110, 0.18);
 }
 
+.mobile-nav {
+  scrollbar-width: none;
+}
+
+.mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
 .page-shell {
   margin: 0 auto;
   width: 100%;

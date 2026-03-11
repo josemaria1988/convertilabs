@@ -5,11 +5,11 @@ export type NavItem = {
 };
 
 export const marketingNav: NavItem[] = [
-  { href: "/product", label: "Product" },
+  { href: "/product", label: "Producto" },
   { href: "/api", label: "API" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
+  { href: "/pricing", label: "Precios" },
+  { href: "/about", label: "Nosotros" },
+  { href: "/contact", label: "Contacto" },
 ];
 
 export const workspaceNav: NavItem[] = [

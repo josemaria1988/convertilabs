@@ -1,254 +1,226 @@
 import Link from "next/link";
+import { MarketingCtaBanner } from "@/components/marketing-cta-banner";
+import { MarketingSectionHeading } from "@/components/marketing-section-heading";
+import { PageHero } from "@/components/page-hero";
 import { siteConfig } from "@/lib/site";
 
-const capabilities = [
-  "Extract data from invoices and receipts",
-  "Suggest journal entries",
-  "Apply tax treatment rules",
-  "Keep year-specific regulatory logic",
-  "Export to external systems and APIs",
+const capacidades = [
+  {
+    titulo: "Extrae datos de facturas y recibos",
+    descripcion:
+      "Captura evidencia de proveedores y gastos de una forma que el flujo contable puede usar sin retrabajo.",
+  },
+  {
+    titulo: "Sugiere asientos contables",
+    descripcion:
+      "Reduce trabajo repetitivo manteniendo revision humana sobre reglas, cuentas y criterio profesional.",
+  },
+  {
+    titulo: "Aplica reglas de tratamiento fiscal",
+    descripcion:
+      "Ordena IVA y criterios tributarios sin depender de planillas separadas o chequeos manuales dispersos.",
+  },
+  {
+    titulo: "Mantiene logica regulatoria por ejercicio",
+    descripcion:
+      "Permite sostener cambios normativos sin perder auditabilidad ni mezclar tratamientos de distintos anos.",
+  },
+  {
+    titulo: "Exporta a sistemas externos y APIs",
+    descripcion:
+      "Entrega datos estructurados para ERPs, herramientas internas y futuras integraciones externas.",
+  },
 ];
 
-const audiences = [
+const segmentos = [
   {
-    name: "SMEs",
-    description:
-      "Companies that need cleaner bookkeeping, VAT workflows, and less manual document handling.",
+    nombre: "Pymes",
+    descripcion:
+      "Empresas que necesitan ordenar documentos, contabilidad e IVA sin multiplicar herramientas.",
   },
   {
-    name: "Accounting firms",
-    description:
-      "Teams managing multiple clients, recurring fiscal routines, and review-heavy processes.",
+    nombre: "Estudios contables",
+    descripcion:
+      "Equipos que gestionan varios clientes, ciclos fiscales repetitivos y validaciones operativas intensivas.",
   },
   {
-    name: "ERP / management systems",
-    description:
-      "Platforms that want Uruguay-specific accounting and tax logic without rebuilding it from scratch.",
+    nombre: "ERPs y sistemas de gestion",
+    descripcion:
+      "Plataformas que quieren sumar logica contable y fiscal para Uruguay sin reconstruirla desde cero.",
   },
   {
-    name: "Developers",
-    description:
-      "Product teams integrating tax and accounting workflows into internal tools or customer-facing software.",
+    nombre: "Equipos de desarrollo",
+    descripcion:
+      "Productos e integraciones internas que necesitan incorporar flujos contables o tributarios de manera confiable.",
   },
 ];
 
 const roadmap = [
   {
-    phase: "Phase 1",
-    title: "Document ingestion + accounting entries + VAT",
-    detail:
-      "Capture invoices and receipts, extract key fields, and turn them into structured accounting with VAT logic.",
+    fase: "Fase 1",
+    titulo: "Ingreso documental + asientos contables + IVA",
+    detalle:
+      "Captura documentos, extrae campos clave y los convierte en contabilidad estructurada con criterio de IVA.",
   },
   {
-    phase: "Phase 2",
-    title: "IRAE + Wealth Tax",
-    detail:
-      "Expand the fiscal engine with year-aware corporate tax and patrimonio workflows for Uruguay.",
+    fase: "Fase 2",
+    titulo: "IRAE + Impuesto al Patrimonio",
+    detalle:
+      "Amplia el motor fiscal con capas tributarias por ejercicio para cobertura corporativa mas profunda.",
   },
   {
-    phase: "Phase 3",
-    title: "Payroll + BPS",
-    detail:
-      "Add payroll operations and social security processes to extend the platform beyond bookkeeping.",
+    fase: "Fase 3",
+    titulo: "Nomina + BPS",
+    detalle:
+      "Suma procesos laborales y de seguridad social para extender la plataforma mas alla de la operacion contable.",
   },
   {
-    phase: "Phase 4",
-    title: "Public API for third-party systems",
-    detail:
-      "Open the platform for software vendors, ERPs, and partners that need reliable accounting and tax building blocks.",
+    fase: "Fase 4",
+    titulo: "API publica para terceros",
+    detalle:
+      "Abre el sistema para ERPs, socios e integradores que necesiten bloques contables y fiscales reutilizables.",
   },
 ];
 
-const operatingSignals = [
-  { label: "Document intake", value: "Automated" },
-  { label: "VAT workflows", value: "Structured" },
-  { label: "Fiscal logic", value: "Year-specific" },
-];
-
-const workflowCards = [
+const flujoOperativo = [
   {
-    step: "01",
-    title: "Document intake",
-    description: "Invoices and receipts are collected, normalized, and prepared for review.",
+    paso: "01",
+    titulo: "Ingreso documental",
+    descripcion:
+      "Facturas y recibos entran, se normalizan y quedan listos para validacion operativa.",
   },
   {
-    step: "02",
-    title: "Accounting logic",
-    description: "The system suggests entries and applies reusable posting rules.",
+    paso: "02",
+    titulo: "Logica contable",
+    descripcion:
+      "El sistema sugiere asientos y aplica reglas reutilizables por categoria, proveedor y organizacion.",
   },
   {
-    step: "03",
-    title: "Tax treatment",
-    description: "VAT and fiscal rules are applied without splitting the workflow into separate tools.",
+    paso: "03",
+    titulo: "Tratamiento fiscal",
+    descripcion:
+      "IVA y reglas tributarias se resuelven dentro del mismo flujo, sin saltos a herramientas aparte.",
   },
   {
-    step: "04",
-    title: "External output",
-    description: "Structured data can be exported to external systems or exposed through APIs.",
+    paso: "04",
+    titulo: "Salida estructurada",
+    descripcion:
+      "La informacion queda lista para exportacion, conciliacion o integracion con otros sistemas.",
   },
 ];
 
 export default function HomePage() {
   return (
     <div className="page-shell space-y-6">
-      <section className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(135deg,rgba(19,24,31,0.98),rgba(31,29,26,0.94))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.18)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(15,118,110,0.32),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(217,119,6,0.18),transparent_18%)]" />
-        <div className="absolute inset-y-0 right-0 hidden w-[42%] border-l border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] lg:block" />
-
-        <div className="relative grid gap-10 px-6 py-8 md:px-8 md:py-10 lg:grid-cols-[minmax(0,1.05fr)_430px] lg:px-10 lg:py-12">
-          <div className="space-y-8">
-            <span className="inline-flex items-center gap-3 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-white/72">
-              <span className="h-2 w-2 rounded-full bg-[color:var(--color-warm)]" />
-              Built for Uruguay
-            </span>
-
-            <div className="space-y-5">
-              <h1 className="max-w-4xl text-5xl font-semibold tracking-[-0.07em] text-balance md:text-6xl lg:text-7xl">
-                Accounting and tax infrastructure for Uruguay
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-white/74 md:text-xl">
-                Automate document intake, accounting entries, VAT workflows, and
-                fiscal logic for SMEs, firms, and software platforms.
-              </p>
+      <PageHero
+        eyebrow="Infraestructura contable y fiscal"
+        title="Infraestructura de contabilidad e impuestos para Uruguay"
+        description="Automatiza ingreso documental, asientos contables, flujos de IVA y logica fiscal para pymes, estudios, ERPs y plataformas de software."
+        actions={
+          <>
+            <Link
+              href="/contact"
+              className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
+            >
+              Solicitar demo
+            </Link>
+            <a
+              href="#waitlist"
+              className="rounded-full border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              Sumarme a la lista de espera
+            </a>
+          </>
+        }
+        highlights={[
+          { label: "Ingreso documental", value: "Automatizado" },
+          { label: "Flujos de IVA", value: "Estructurados" },
+          { label: "Logica fiscal", value: "Por ejercicio" },
+        ]}
+        aside={
+          <div className="space-y-5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Vista operativa
+                </p>
+                <p className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
+                  De documentos a salida fiscal
+                </p>
+              </div>
+              <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                Uruguay 2026
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/contact"
-                className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
-              >
-                Request demo
-              </Link>
-              <a
-                href="#waitlist"
-                className="rounded-full border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Join waitlist
-              </a>
-            </div>
-
-            <div className="grid gap-3 pt-2 md:grid-cols-3">
-              {operatingSignals.map((signal) => (
+            <div className="space-y-3">
+              {flujoOperativo.map((item) => (
                 <div
-                  key={signal.label}
-                  className="rounded-[1.4rem] border border-white/10 bg-white/[0.045] p-4"
+                  key={item.paso}
+                  className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4"
                 >
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/50">
-                    {signal.label}
-                  </p>
-                  <p className="mt-3 text-xl font-semibold tracking-[-0.05em]">
-                    {signal.value}
-                  </p>
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/8 font-mono text-sm text-white/72">
+                      {item.paso}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{item.titulo}</p>
+                      <p className="mt-2 text-sm leading-6 text-white/56">
+                        {item.descripcion}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
 
-          <div className="relative">
-            <div className="absolute -left-4 top-10 hidden h-24 w-24 rounded-full bg-[color:var(--color-accent)]/35 blur-3xl lg:block" />
-            <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(9,14,18,0.92),rgba(24,24,27,0.88))] p-5 shadow-[0_22px_80px_rgba(0,0,0,0.24)]">
-              <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                    Operating preview
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-                    From inbox to fiscal output
-                  </p>
-                </div>
-                <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                  Uruguay 2026 logic
-                </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[1.25rem] border border-white/8 bg-[color:var(--color-accent)]/14 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Motor fiscal
+                </p>
+                <p className="mt-2 text-sm leading-6 text-white/80">
+                  Empieza con IVA y deja base para IRAE, Patrimonio, nomina y BPS.
+                </p>
               </div>
-
-              <div className="mt-5 space-y-3">
-                {workflowCards.map((card) => (
-                  <div
-                    key={card.step}
-                    className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/8 font-mono text-sm text-white/72">
-                        {card.step}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">{card.title}</p>
-                        <p className="mt-2 text-sm leading-6 text-white/56">
-                          {card.description}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[1.25rem] border border-white/8 bg-[color:var(--color-accent)]/14 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                    Tax engine
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-white/80">
-                    VAT first, with room to expand into IRAE, Wealth Tax, Payroll,
-                    and BPS.
-                  </p>
-                </div>
-                <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                    Integration model
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-white/80">
-                    Start inside the product, then expose APIs or export flows as
-                    integration points mature.
-                  </p>
-                </div>
+              <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Integraciones
+                </p>
+                <p className="mt-2 text-sm leading-6 text-white/80">
+                  Primero dentro del producto, despues como exportaciones y APIs para terceros.
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        }
+      />
 
       <section className="grid gap-4 lg:grid-cols-[0.72fr_minmax(0,1fr)]">
         <div className="panel px-6 py-7 md:px-8 md:py-8">
-          <span className="eyebrow">What it does</span>
-          <div className="mt-6 space-y-4">
-            <h2 className="text-4xl font-semibold tracking-[-0.06em] text-balance">
-              From documents to structured accounting
-            </h2>
-            <p className="max-w-xl text-base leading-8 text-[color:var(--color-muted)]">
-              The goal is not just to digitize inputs. It is to turn messy
-              accounting and fiscal workflows into structured, reusable system
-              logic that can serve operators and software products alike.
-            </p>
-          </div>
+          <MarketingSectionHeading
+            eyebrow="Lo que hace"
+            title="De documentos a contabilidad estructurada"
+            description="No se trata solo de digitalizar entradas. La propuesta es convertir procesos contables y fiscales desordenados en logica reutilizable para equipos operativos y productos de software."
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {capabilities.map((capability, index) => (
+          {capacidades.map((capacidad, index) => (
             <article
-              key={capability}
-              className={`panel p-6 ${
-                index === 4 ? "md:col-span-2" : ""
-              }`}
+              key={capacidad.titulo}
+              className={`panel p-6 ${index === 4 ? "md:col-span-2" : ""}`}
             >
               <div className="flex items-start justify-between gap-4">
                 <p className="max-w-sm text-xl font-semibold tracking-[-0.05em]">
-                  {capability}
+                  {capacidad.titulo}
                 </p>
                 <span className="font-mono text-sm text-[color:var(--color-muted)]">
                   0{index + 1}
                 </span>
               </div>
               <p className="mt-4 max-w-xl text-sm leading-7 text-[color:var(--color-muted)]">
-                {index === 0 &&
-                  "Capture supplier and expense evidence in a way that downstream accounting can actually use."}
-                {index === 1 &&
-                  "Keep human review in the loop while reducing repetitive posting work for accounting teams."}
-                {index === 2 &&
-                  "Apply fiscal classification consistently instead of relying on fragmented spreadsheets and checklists."}
-                {index === 3 &&
-                  "Support Uruguay-specific rules that change over time without losing auditability across fiscal years."}
-                {index === 4 &&
-                  "Move clean data to ERPs, internal tools, or partner systems through exports and API-ready structures."}
+                {capacidad.descripcion}
               </p>
             </article>
           ))}
@@ -257,18 +229,23 @@ export default function HomePage() {
 
       <section className="grid gap-4 lg:grid-cols-[1fr_0.92fr]">
         <div className="panel px-6 py-7 md:px-8 md:py-8">
-          <span className="eyebrow">Built for</span>
+          <MarketingSectionHeading
+            eyebrow="Pensado para"
+            title="Una base util para operadores y para plataformas"
+            description="El producto puede servir a equipos internos, estudios y software que necesiten incorporar contabilidad e impuestos de Uruguay sin armar un sistema paralelo."
+          />
+
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {audiences.map((audience) => (
+            {segmentos.map((segmento) => (
               <article
-                key={audience.name}
+                key={segmento.nombre}
                 className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-white/72 p-5"
               >
                 <p className="text-xl font-semibold tracking-[-0.05em]">
-                  {audience.name}
+                  {segmento.nombre}
                 </p>
                 <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
-                  {audience.description}
+                  {segmento.descripcion}
                 </p>
               </article>
             ))}
@@ -276,113 +253,88 @@ export default function HomePage() {
         </div>
 
         <div className="panel overflow-hidden bg-[linear-gradient(180deg,rgba(223,245,242,0.7),rgba(255,255,255,0.72))] px-6 py-7 md:px-8 md:py-8">
-          <span className="eyebrow">Uruguay-specific by design</span>
-          <div className="mt-6 space-y-5">
-            <h2 className="text-4xl font-semibold tracking-[-0.06em] text-balance">
-              A product surface for operators, with an infrastructure mindset underneath.
-            </h2>
-            <p className="max-w-xl text-base leading-8 text-[color:var(--color-muted)]">
-              Convertilabs is positioned as application software first, but its
-              structure is meant to support a deeper platform model over time:
-              reusable document processing, accounting rules, tax treatments, and
-              eventually external integrations.
-            </p>
+          <MarketingSectionHeading
+            eyebrow="Disenado para Uruguay"
+            title="Superficie de producto arriba, pensamiento de infraestructura abajo"
+            description="Convertilabs se presenta como software de aplicacion, pero se organiza para sostener un modelo de plataforma a medida que maduren los dominios contables y tributarios."
+          />
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                  Current scope
-                </p>
-                <p className="mt-2 text-sm leading-7">
-                  Document intake, journal suggestions, VAT workflows, and fiscal
-                  rule handling for Uruguay.
-                </p>
-              </div>
-              <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                  Expansion path
-                </p>
-                <p className="mt-2 text-sm leading-7">
-                  Add deeper tax coverage, payroll, BPS, and a public API when the
-                  domain model is stable enough.
-                </p>
-              </div>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Alcance actual
+              </p>
+              <p className="mt-2 text-sm leading-7">
+                Ingreso documental, sugerencias contables, IVA y reglas fiscales para Uruguay.
+              </p>
+            </div>
+            <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Camino de expansion
+              </p>
+              <p className="mt-2 text-sm leading-7">
+                Mas cobertura tributaria, nomina, BPS y API publica cuando el modelo de dominio este firme.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
       <section className="panel px-6 py-7 md:px-8 md:py-8" id="roadmap">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="space-y-4">
-            <span className="eyebrow">Roadmap</span>
-            <h2 className="text-4xl font-semibold tracking-[-0.06em] text-balance">
-              A phased rollout for accounting and fiscal coverage
-            </h2>
-          </div>
-          <p className="max-w-xl text-sm leading-7 text-[color:var(--color-muted)]">
-            The roadmap starts with the workflows that generate the most leverage
-            for Uruguay teams, then expands into a broader operating layer.
-          </p>
-        </div>
+        <MarketingSectionHeading
+          eyebrow="Hoja de ruta"
+          title="Un despliegue por fases para cubrir contabilidad e impuestos"
+          description="La hoja de ruta prioriza los flujos que generan mas palanca para equipos de Uruguay y despues amplifica la cobertura funcional."
+        />
 
         <div className="mt-8 grid gap-4 lg:grid-cols-4">
           {roadmap.map((item, index) => (
             <article
-              key={item.phase}
+              key={item.fase}
               className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-white/72 p-5"
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="rounded-full bg-[color:var(--color-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-accent-strong)]">
-                  {item.phase}
+                  {item.fase}
                 </span>
                 <span className="font-mono text-sm text-[color:var(--color-muted)]">
                   0{index + 1}
                 </span>
               </div>
               <h3 className="mt-5 text-xl font-semibold tracking-[-0.05em]">
-                {item.title}
+                {item.titulo}
               </h3>
               <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
-                {item.detail}
+                {item.detalle}
               </p>
             </article>
           ))}
         </div>
       </section>
 
-      <section
-        id="waitlist"
-        className="panel overflow-hidden bg-[linear-gradient(135deg,rgba(255,252,247,0.92),rgba(223,245,242,0.56))] px-6 py-7 md:px-8 md:py-8"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-6">
-          <div className="max-w-2xl space-y-4">
-            <span className="eyebrow">Early access</span>
-            <h2 className="text-4xl font-semibold tracking-[-0.06em] text-balance">
-              Request a demo or join the waitlist for Uruguay-focused accounting infrastructure.
-            </h2>
-            <p className="text-base leading-8 text-[color:var(--color-muted)]">
-              Early conversations are especially relevant for firms, SMEs, and
-              software teams dealing with local accounting and tax workflows.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/contact"
-              className="rounded-full bg-[color:var(--color-foreground)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/86"
-            >
-              Request demo
-            </Link>
-            <a
-              href={`mailto:${siteConfig.contactEmail}?subject=Convertilabs%20waitlist`}
-              className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
-            >
-              Join waitlist
-            </a>
-          </div>
-        </div>
-      </section>
+      <div id="waitlist">
+        <MarketingCtaBanner
+          eyebrow="Acceso temprano"
+          title="Solicita una demo o sumate a la lista de espera"
+          description="Las primeras conversaciones tienen especial valor para pymes, estudios y equipos de software que ya conviven con procesos contables o fiscales en Uruguay."
+          actions={
+            <>
+              <Link
+                href="/contact"
+                className="rounded-full bg-[color:var(--color-foreground)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/86"
+              >
+                Solicitar demo
+              </Link>
+              <a
+                href={`mailto:${siteConfig.contactEmail}?subject=Lista%20de%20espera%20Convertilabs`}
+                className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
+              >
+                Sumarme a la lista de espera
+              </a>
+            </>
+          }
+        />
+      </div>
     </div>
   );
 }
