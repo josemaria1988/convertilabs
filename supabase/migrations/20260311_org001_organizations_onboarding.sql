@@ -1,74 +1,8 @@
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  full_name text,
-  avatar_url text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_profiles_email
-  on public.profiles (email);
-
-create table if not exists public.organizations (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  slug text not null unique,
-  country_code text not null default 'UY',
-  base_currency text not null default 'UYU',
-  legal_entity_type text,
-  tax_id text,
-  default_locale text not null default 'es-UY',
-  active boolean not null default true,
-  created_by uuid references public.profiles(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.organization_members (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  role public.member_role not null,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (organization_id, user_id)
-);
-
 create index if not exists idx_organization_members_user_id
   on public.organization_members (user_id);
 
 create index if not exists idx_organization_members_organization_id
   on public.organization_members (organization_id);
-
-drop function if exists public.sync_profile_from_auth_user();
-
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.profiles (id, email, full_name, avatar_url)
-  values (
-    new.id,
-    new.email,
-    nullif(new.raw_user_meta_data ->> 'full_name', ''),
-    nullif(new.raw_user_meta_data ->> 'avatar_url', '')
-  )
-  on conflict (id) do nothing;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
-
-drop trigger if exists on_auth_user_updated on auth.users;
 
 create or replace function public.is_org_member(p_org_id uuid)
 returns boolean
@@ -232,3 +166,20 @@ $$;
 revoke all on function public.create_organization_with_owner(text) from public;
 grant execute on function public.create_organization_with_owner(text) to authenticated;
 grant execute on function public.create_organization_with_owner(text) to service_role;
+
+drop policy if exists "organizations_select_member_or_creator" on public.organizations;
+create policy "organizations_select_member_or_creator"
+on public.organizations
+for select
+using (public.is_org_member(id));
+
+drop policy if exists "organizations_insert_authenticated_creator" on public.organizations;
+
+drop policy if exists "organization_members_select_self_or_owner_admin" on public.organization_members;
+drop policy if exists "organization_members_select_member" on public.organization_members;
+create policy "organization_members_select_member"
+on public.organization_members
+for select
+using (public.is_org_member(organization_id));
+
+drop policy if exists "organization_members_insert_owner_admin_or_bootstrap" on public.organization_members;

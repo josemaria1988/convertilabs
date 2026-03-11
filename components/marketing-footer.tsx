@@ -4,7 +4,7 @@ import { siteConfig } from "@/lib/site";
 
 const appLinks = [
   { href: "/login", label: "Ingreso" },
-  { href: "/dashboard", label: "Panel" },
+  { href: "/app", label: "Panel" },
   { href: "/documents", label: "Documentos" },
   { href: "/journal-entries", label: "Asientos" },
   { href: "/tax", label: "Impuestos" },

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   signupPasswordMinLength,
@@ -25,6 +26,7 @@ type SignupApiResponse = {
     email: string;
     message: string;
     next_step: string;
+    redirect_to?: string | null;
   };
   error?: {
     code: string;
@@ -53,6 +55,7 @@ function getClientFieldErrors(input: SignupInput, confirmPassword: string) {
 }
 
 export function AuthSignupForm() {
+  const router = useRouter();
   const [state, setState] = useState<SignupFormState>(initialState);
   const [isPending, startTransition] = useTransition();
 
@@ -79,6 +82,12 @@ export function AuthSignupForm() {
             "No se pudo crear la cuenta. Intenta de nuevo.",
           fieldErrors: body.error?.details ?? {},
         });
+        return;
+      }
+
+      if (body.data?.next_step === "redirect" && body.data.redirect_to) {
+        router.replace(body.data.redirect_to);
+        router.refresh();
         return;
       }
 

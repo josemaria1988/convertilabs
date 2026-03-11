@@ -137,7 +137,36 @@ Notes:
 - return generic success for already-registered emails to reduce account enumeration
 - store `full_name` in auth user metadata
 - keep service-role user creation for admin-only flows, not public signup
-- default redirect after email confirmation: `/login?signup=confirmed`
+- default redirect after email confirmation: `/auth/confirm`
+
+### POST `/api/v1/auth/login`
+Create an SSR-backed web-app session in Supabase Auth.
+
+Request:
+```json
+{
+  "email": "jose@convertilabs.com",
+  "password": "lab2026seguro",
+  "next": "/documents"
+}
+```
+
+Response:
+```json
+{
+  "data": {
+    "status": "authenticated",
+    "message": "Sesion iniciada. Redirigiendo...",
+    "redirect_to": "/app/o/rontil-sas/dashboard"
+  }
+}
+```
+
+Notes:
+- route handler writes auth cookies through `@supabase/ssr`
+- `next` is sanitized to internal safe paths only
+- if the authenticated user has no memberships yet, redirect target becomes `/onboarding`
+- if the authenticated user already belongs to an organization, the default target is `/app/o/[slug]/dashboard`
 
 ## Organizations
 

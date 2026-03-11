@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SectionCard } from "@/components/section-card";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requirePrivateAppPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
   title: "Tax",
@@ -12,7 +13,9 @@ const obligations = [
   "Cierres y declaraciones",
 ];
 
-export default function TaxPage() {
+export default async function TaxPage() {
+  await requirePrivateAppPage("/tax");
+
   return (
     <WorkspaceShell
       activePath="/tax"

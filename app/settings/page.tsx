@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SectionCard } from "@/components/section-card";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requirePrivateAppPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -13,7 +14,9 @@ const areas = [
   "Facturacion",
 ];
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requirePrivateAppPage("/settings");
+
   return (
     <WorkspaceShell
       activePath="/settings"

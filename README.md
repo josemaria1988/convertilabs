@@ -17,6 +17,8 @@ Base inicial de producto en Next.js con App Router, TypeScript y Tailwind CSS.
 convertilabs/
   app/
     (marketing)/
+    app/
+    onboarding/
     dashboard/
     api/
   components/
@@ -47,6 +49,9 @@ Sitio publico:
 App:
 
 - `/login`
+- `/onboarding`
+- `/app`
+- `/app/o/[slug]/dashboard`
 - `/dashboard`
 - `/documents`
 - `/journal-entries`

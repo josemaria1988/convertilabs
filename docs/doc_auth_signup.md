@@ -1,24 +1,27 @@
 # Convertilabs Auth Signup Flow
 
-**Status:** Implemented draft v0.1
+**Status:** Implemented v0.2
 
 ## Goal
 
-Provide a first production-shaped user creation flow for the web app using Supabase Auth without exposing server-side secrets in the browser.
+Provide the first production-shaped auth flow for the web app using Supabase Auth SSR without exposing server-side secrets in the browser.
 
 ## Scope
 
 This delivery covers:
 - public signup page
-- backend signup endpoint
+- backend signup and login endpoints
 - shared validation rules
-- Supabase profile-sync migration draft
+- SSR session persistence in cookies
+- `/auth/confirm` for email confirmation
+- `/logout` route
+- `public.profiles` mirror + backfill
 
 This delivery does not yet cover:
-- interactive login
-- session persistence in cookies
 - password reset
 - invite-only organization onboarding
+- social login
+- MFA
 
 ## Implemented Flow
 
@@ -30,8 +33,12 @@ This delivery does not yet cover:
    - email
    - password
    - `full_name` in user metadata
-   - `emailRedirectTo` pointing to `/login?signup=confirmed`
-6. API returns a generic success payload when signup is accepted.
+   - `emailRedirectTo` pointing to `/auth/confirm`
+6. If email confirmation is active, the API returns the "check email" state.
+7. If Supabase returns a session immediately, the API redirects the client to onboarding or to `/app/o/[slug]/dashboard`.
+8. `/login` calls `POST /api/v1/auth/login`, persists the SSR session cookie and redirects server-driven to onboarding or to `/app/o/[slug]/dashboard`.
+9. `/auth/confirm` exchanges `token_hash` for a session and lands on the same authenticated destination.
+10. `/logout` clears the SSR session and returns the user to `/login`.
 
 ## Security Decisions
 
@@ -65,6 +72,12 @@ Reason:
 - anon/public values may be exposed client-side
 - service-role and JWT secrets stay server-only in `.env`
 
+### 6. Session handling uses `@supabase/ssr`
+Reason:
+- Supabase deprecated the old auth helpers path
+- the app needs cookie-based SSR auth for protected routes
+- middleware refresh is required because Server Components cannot write cookies by themselves
+
 ## Architecture Decisions Taken Because Specs Were Missing
 
 The existing docs defined:
@@ -74,20 +87,23 @@ The existing docs defined:
 
 The docs did not yet define:
 - the signup endpoint
+- the login endpoint
 - password policy
 - public vs admin creation strategy
 - duplicate-email response behavior
+- the concrete SSR confirm route
 
 Chosen implementation:
 - endpoint: `POST /api/v1/auth/signup`
+- endpoint: `POST /api/v1/auth/login`
 - strategy: backend proxy to `supabase.auth.signUp()`
-- redirect after email confirmation: `/login?signup=confirmed`
-- `full_name` stored in auth metadata for later profile sync
+- login strategy: backend proxy to `supabase.auth.signInWithPassword()`
+- redirect after email confirmation: `/auth/confirm`
+- `full_name` and `avatar_url` live in auth metadata for profile mirror creation
+- `public.profiles` is backfilled for pre-existing `auth.users`
 
 ## Follow-Ups
 
-- implement real login and session handling
 - add password reset
 - add invite-based organization membership onboarding
-- apply the SQL migration in Supabase so `public.profiles` mirrors `auth.users`
 - add rate limiting at the edge or proxy layer

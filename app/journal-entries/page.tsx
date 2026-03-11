@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SectionCard } from "@/components/section-card";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requirePrivateAppPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
   title: "Journal Entries",
@@ -12,7 +13,9 @@ const journals = [
   { title: "Ajustes", description: "Correcciones, accruals y cierres periodicos." },
 ];
 
-export default function JournalEntriesPage() {
+export default async function JournalEntriesPage() {
+  await requirePrivateAppPage("/journal-entries");
+
   return (
     <WorkspaceShell
       activePath="/journal-entries"

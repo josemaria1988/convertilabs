@@ -2,6 +2,10 @@ import "server-only";
 import { getPublicEnv } from "@/lib/env";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import {
+  getAuthStateForUser,
+  resolvePostAuthDestination,
+} from "@/modules/auth/server-auth";
+import {
   type SignupInput,
   validateSignupInput,
 } from "@/modules/auth/signup-schema";
@@ -15,10 +19,11 @@ type ApiError = {
 export type SignupServiceResult =
   | {
       ok: true;
-      status: "signup_requested";
+      status: "signup_requested" | "signed_in";
       email: string;
       message: string;
-      nextStep: "check_email";
+      nextStep: "check_email" | "redirect";
+      redirectTo?: string;
     }
   | {
       ok: false;
@@ -34,7 +39,7 @@ const duplicateSignupMarkers = [
 
 function buildEmailRedirectTo() {
   const { appUrl } = getPublicEnv();
-  const redirectUrl = new URL("/login?signup=confirmed", appUrl);
+  const redirectUrl = new URL("/auth/confirm", appUrl);
 
   return redirectUrl.toString();
 }
@@ -73,7 +78,7 @@ export async function signupUser(input: SignupInput): Promise<SignupServiceResul
     };
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
   const { fullName, email, password } = validation.data;
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -120,6 +125,19 @@ export async function signupUser(input: SignupInput): Promise<SignupServiceResul
         code: "auth_signup_failed",
         message: "Supabase no devolvio un resultado valido para el alta.",
       },
+    };
+  }
+
+  if (data.user && data.session) {
+    const authState = await getAuthStateForUser(supabase, data.user);
+
+    return {
+      ok: true,
+      status: "signed_in",
+      email,
+      message: "Cuenta creada. Redirigiendo al espacio privado.",
+      nextStep: "redirect",
+      redirectTo: resolvePostAuthDestination(authState),
     };
   }
 

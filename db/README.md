@@ -28,3 +28,10 @@ Si cambia el schema o la estrategia de RLS:
 1. actualizar primero `db/`
 2. luego sincronizar `docs/`
 3. y recien despues generar o ajustar migraciones de despliegue
+
+## Scripts operativos
+
+- `npm run db:generate:migration` regenera `supabase/migrations/20260311_sync_canonical_schema_and_rls.sql` desde el canon de `db/`.
+- `npm run db:verify:parity` compara la base real contra tablas, columnas, FKs, uniques, indices, enums, funciones, triggers y politicas esperadas.
+- `npm run db:smoke:profile-sync` crea un usuario temporal en Supabase Auth para verificar la creacion espejo inicial en `public.profiles`.
+- `npm run db:smoke:organization-onboarding` crea usuarios temporales para verificar el RPC de onboarding, la membership owner y la resolucion de colision de slug.

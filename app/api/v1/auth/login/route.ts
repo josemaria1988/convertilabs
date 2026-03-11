@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { signupUser } from "@/modules/auth/signup-service";
-import type { SignupInput } from "@/modules/auth/signup-schema";
+import { loginUser } from "@/modules/auth/login-service";
+import type { LoginInput } from "@/modules/auth/login-schema";
 
-function toSignupInput(payload: unknown): SignupInput {
+function toLoginInput(payload: unknown): LoginInput {
   if (!payload || typeof payload !== "object") {
     return {
-      fullName: "",
       email: "",
       password: "",
     };
@@ -14,9 +13,9 @@ function toSignupInput(payload: unknown): SignupInput {
   const record = payload as Record<string, unknown>;
 
   return {
-    fullName: typeof record.fullName === "string" ? record.fullName : "",
     email: typeof record.email === "string" ? record.email : "",
     password: typeof record.password === "string" ? record.password : "",
+    next: typeof record.next === "string" ? record.next : undefined,
   };
 }
 
@@ -37,7 +36,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await signupUser(toSignupInput(payload));
+  const result = await loginUser(toLoginInput(payload));
 
   if (!result.ok) {
     return NextResponse.json(
@@ -48,16 +47,11 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json(
-    {
-      data: {
-        status: result.status,
-        email: result.email,
-        message: result.message,
-        next_step: result.nextStep,
-        redirect_to: result.redirectTo ?? null,
-      },
+  return NextResponse.json({
+    data: {
+      status: result.status,
+      message: result.message,
+      redirect_to: result.redirectTo,
     },
-    { status: result.nextStep === "redirect" ? 200 : 202 },
-  );
+  });
 }

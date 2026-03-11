@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SectionCard } from "@/components/section-card";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requirePrivateAppPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -18,7 +19,9 @@ const queues = [
   "Vencimientos del mes por revisar",
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requirePrivateAppPage("/dashboard");
+
   return (
     <WorkspaceShell
       activePath="/dashboard"

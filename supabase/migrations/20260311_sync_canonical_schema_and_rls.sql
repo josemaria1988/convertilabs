@@ -1,3 +1,783 @@
+-- Generated from db/ canonical SQL. Do not edit manually.
+-- Regenerate with: npm run db:generate:migration
+
+-- >>> db/schema/00_extensions.sql
+create extension if not exists pgcrypto;
+-- <<< db/schema/00_extensions.sql
+
+-- >>> db/schema/01_enums.sql
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'member_role'
+  ) then
+    create type public.member_role as enum (
+  'owner',
+  'admin',
+  'accountant',
+  'reviewer',
+  'operator',
+  'developer',
+  'viewer'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'document_direction'
+  ) then
+    create type public.document_direction as enum ('purchase', 'sale', 'other');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'document_status'
+  ) then
+    create type public.document_status as enum (
+  'uploaded',
+  'queued',
+  'extracting',
+  'extracted',
+  'classified',
+  'needs_review',
+  'approved',
+  'rejected',
+  'duplicate',
+  'archived'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'suggestion_status'
+  ) then
+    create type public.suggestion_status as enum (
+  'drafted',
+  'needs_review',
+  'ready_for_review',
+  'approved',
+  'rejected',
+  'superseded'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'entry_status'
+  ) then
+    create type public.entry_status as enum (
+  'draft',
+  'reviewed',
+  'posted',
+  'exported',
+  'void'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'tax_type'
+  ) then
+    create type public.tax_type as enum ('VAT', 'IRAE', 'IP');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'tax_period_status'
+  ) then
+    create type public.tax_period_status as enum (
+  'open',
+  'review',
+  'closed',
+  'locked'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'export_status'
+  ) then
+    create type public.export_status as enum (
+  'queued',
+  'generating',
+  'generated',
+  'downloaded',
+  'failed',
+  'expired'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'rule_scope'
+  ) then
+    create type public.rule_scope as enum ('global', 'package', 'organization');
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'account_type'
+  ) then
+    create type public.account_type as enum (
+  'asset',
+  'liability',
+  'equity',
+  'revenue',
+  'expense',
+  'memo'
+);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type as t
+    join pg_namespace as n
+      on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'normal_side'
+  ) then
+    create type public.normal_side as enum ('debit', 'credit');
+  end if;
+end
+$$;
+-- <<< db/schema/01_enums.sql
+
+-- >>> db/schema/02_identity_and_tenants.sql
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  avatar_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_profiles_email
+  on public.profiles (email);
+
+create table if not exists public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  country_code text not null default 'UY',
+  base_currency text not null default 'UYU',
+  legal_entity_type text,
+  tax_id text,
+  default_locale text not null default 'es-UY',
+  active boolean not null default true,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.organization_members (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role public.member_role not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create index if not exists idx_organization_members_user_id
+  on public.organization_members (user_id);
+
+create index if not exists idx_organization_members_organization_id
+  on public.organization_members (organization_id);
+
+drop function if exists public.sync_profile_from_auth_user();
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name, avatar_url)
+  values (
+    new.id,
+    new.email,
+    nullif(new.raw_user_meta_data ->> 'full_name', ''),
+    nullif(new.raw_user_meta_data ->> 'avatar_url', '')
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+
+drop trigger if exists on_auth_user_updated on auth.users;
+
+create or replace function public.is_org_member(p_org_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organization_members as om
+    where om.organization_id = p_org_id
+      and om.user_id = auth.uid()
+      and om.is_active = true
+  );
+$$;
+
+create or replace function public.is_org_owner(p_org_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organization_members as om
+    where om.organization_id = p_org_id
+      and om.user_id = auth.uid()
+      and om.is_active = true
+      and om.role = 'owner'::public.member_role
+  );
+$$;
+
+create or replace function public.slugify_organization_name(p_name text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select trim(
+    both '-'
+    from regexp_replace(
+      regexp_replace(
+        translate(
+          lower(coalesce(p_name, '')),
+          U&'\00E1\00E0\00E4\00E2\00E3\00E5\00E9\00E8\00EB\00EA\00ED\00EC\00EF\00EE\00F3\00F2\00F6\00F4\00F5\00FA\00F9\00FC\00FB\00F1\00E7',
+          'aaaaaaeeeeiiiiooooouuuunc'
+        ),
+        '[^a-z0-9]+',
+        '-',
+        'g'
+      ),
+      '-{2,}',
+      '-',
+      'g'
+    )
+  );
+$$;
+
+create or replace function public.create_organization_with_owner(p_name text)
+returns table (organization_id uuid, slug text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_normalized_name text;
+  v_base_slug text;
+  v_slug text;
+  v_suffix integer := 0;
+  v_organization_id uuid;
+begin
+  if auth.role() <> 'authenticated' or v_user_id is null then
+    raise exception 'Authentication required.'
+      using errcode = '42501';
+  end if;
+
+  v_normalized_name := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+
+  if char_length(v_normalized_name) < 2 then
+    raise exception 'Organization name must contain at least 2 characters.'
+      using errcode = '22023';
+  end if;
+
+  if char_length(v_normalized_name) > 120 then
+    raise exception 'Organization name must contain at most 120 characters.'
+      using errcode = '22023';
+  end if;
+
+  if not exists (
+    select 1
+    from public.profiles as p
+    where p.id = v_user_id
+  ) then
+    raise exception 'Profile missing for authenticated user.'
+      using errcode = '23503';
+  end if;
+
+  if exists (
+    select 1
+    from public.organization_members as om
+    where om.user_id = v_user_id
+      and om.is_active = true
+  ) then
+    raise exception 'User already belongs to an active organization.'
+      using errcode = 'P0001';
+  end if;
+
+  v_base_slug := public.slugify_organization_name(v_normalized_name);
+
+  if v_base_slug = '' then
+    raise exception 'Organization name must include letters or numbers.'
+      using errcode = '22023';
+  end if;
+
+  v_slug := v_base_slug;
+
+  loop
+    exit when not exists (
+      select 1
+      from public.organizations as o
+      where o.slug = v_slug
+    );
+
+    v_suffix := v_suffix + 1;
+    v_slug := format('%s-%s', v_base_slug, v_suffix);
+  end loop;
+
+  insert into public.organizations (
+    name,
+    slug,
+    created_by
+  )
+  values (
+    v_normalized_name,
+    v_slug,
+    v_user_id
+  )
+  returning id into v_organization_id;
+
+  insert into public.organization_members (
+    organization_id,
+    user_id,
+    role
+  )
+  values (
+    v_organization_id,
+    v_user_id,
+    'owner'::public.member_role
+  );
+
+  organization_id := v_organization_id;
+  slug := v_slug;
+
+  return next;
+end;
+$$;
+
+revoke all on function public.create_organization_with_owner(text) from public;
+grant execute on function public.create_organization_with_owner(text) to authenticated;
+grant execute on function public.create_organization_with_owner(text) to service_role;
+-- <<< db/schema/02_identity_and_tenants.sql
+
+-- >>> db/schema/03_master_data.sql
+create table if not exists public.chart_of_accounts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  code text not null,
+  name text not null,
+  account_type public.account_type not null,
+  normal_side public.normal_side not null,
+  is_postable boolean not null default true,
+  parent_id uuid references public.chart_of_accounts(id),
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, code)
+);
+
+create table if not exists public.vendors (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  tax_id text,
+  default_account_id uuid references public.chart_of_accounts(id),
+  default_payment_account_id uuid references public.chart_of_accounts(id),
+  default_tax_profile jsonb not null default '{}'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.customers (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  tax_id text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+-- <<< db/schema/03_master_data.sql
+
+-- >>> db/schema/04_documents.sql
+create table if not exists public.documents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  direction public.document_direction not null default 'purchase',
+  document_type text,
+  status public.document_status not null default 'uploaded',
+  storage_bucket text not null default 'documents-private',
+  storage_path text not null,
+  original_filename text not null,
+  mime_type text,
+  file_size bigint,
+  file_hash text,
+  upload_source text not null default 'web',
+  uploaded_by uuid references public.profiles(id),
+  document_date date,
+  external_reference text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_documents_org_status
+  on public.documents (organization_id, status);
+
+create index if not exists idx_documents_file_hash
+  on public.documents (organization_id, file_hash);
+
+create table if not exists public.document_extractions (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid not null references public.documents(id) on delete cascade,
+  version_no integer not null,
+  provider text,
+  raw_text text,
+  extracted_json jsonb not null default '{}'::jsonb,
+  confidence numeric(5,4),
+  is_active boolean not null default false,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  unique (document_id, version_no)
+);
+
+create index if not exists idx_document_extractions_active
+  on public.document_extractions (document_id, is_active);
+
+create table if not exists public.document_relations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  source_document_id uuid not null references public.documents(id) on delete cascade,
+  target_document_id uuid references public.documents(id) on delete cascade,
+  relation_type text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+-- <<< db/schema/04_documents.sql
+
+-- >>> db/schema/05_accounting.sql
+create table if not exists public.accounting_suggestions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  extraction_id uuid references public.document_extractions(id) on delete set null,
+  version_no integer not null,
+  status public.suggestion_status not null default 'drafted',
+  confidence numeric(5,4),
+  explanation text,
+  tax_treatment_json jsonb not null default '{}'::jsonb,
+  rule_trace_json jsonb not null default '[]'::jsonb,
+  generated_by text not null default 'system',
+  approved_by uuid references public.profiles(id),
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (document_id, version_no)
+);
+
+create index if not exists idx_accounting_suggestions_org_doc
+  on public.accounting_suggestions (organization_id, document_id);
+
+create table if not exists public.accounting_suggestion_lines (
+  id uuid primary key default gen_random_uuid(),
+  suggestion_id uuid not null references public.accounting_suggestions(id) on delete cascade,
+  line_no integer not null,
+  side public.normal_side not null,
+  account_id uuid not null references public.chart_of_accounts(id),
+  amount numeric(18,2) not null,
+  tax_tag text,
+  memo text,
+  metadata jsonb not null default '{}'::jsonb,
+  unique (suggestion_id, line_no)
+);
+
+create table if not exists public.journal_entries (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  source_document_id uuid references public.documents(id) on delete set null,
+  source_suggestion_id uuid references public.accounting_suggestions(id) on delete set null,
+  entry_date date not null,
+  period_id uuid,
+  status public.entry_status not null default 'draft',
+  currency_code text not null default 'UYU',
+  reference text,
+  description text,
+  total_debit numeric(18,2) not null default 0,
+  total_credit numeric(18,2) not null default 0,
+  created_by uuid references public.profiles(id),
+  approved_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_journal_entries_org_date
+  on public.journal_entries (organization_id, entry_date);
+
+create table if not exists public.journal_entry_lines (
+  id uuid primary key default gen_random_uuid(),
+  journal_entry_id uuid not null references public.journal_entries(id) on delete cascade,
+  line_no integer not null,
+  account_id uuid not null references public.chart_of_accounts(id),
+  debit numeric(18,2) not null default 0,
+  credit numeric(18,2) not null default 0,
+  tax_tag text,
+  vendor_id uuid references public.vendors(id),
+  customer_id uuid references public.customers(id),
+  description text,
+  metadata jsonb not null default '{}'::jsonb,
+  unique (journal_entry_id, line_no)
+);
+-- <<< db/schema/05_accounting.sql
+
+-- >>> db/schema/06_tax_and_rules.sql
+create table if not exists public.normative_packages (
+  id uuid primary key default gen_random_uuid(),
+  country_code text not null default 'UY',
+  tax_type public.tax_type not null,
+  package_year integer not null,
+  name text not null,
+  status text not null default 'active',
+  effective_from date,
+  effective_to date,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (country_code, tax_type, package_year, name)
+);
+
+create table if not exists public.normative_documents (
+  id uuid primary key default gen_random_uuid(),
+  package_id uuid not null references public.normative_packages(id) on delete cascade,
+  title text not null,
+  document_type text,
+  source_reference text,
+  storage_bucket text not null default 'normative-private',
+  storage_path text,
+  extracted_text text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.tax_rules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  package_id uuid references public.normative_packages(id) on delete cascade,
+  tax_type public.tax_type not null,
+  scope public.rule_scope not null,
+  name text not null,
+  priority integer not null default 0,
+  active boolean not null default true,
+  valid_from date,
+  valid_to date,
+  conditions_json jsonb not null default '[]'::jsonb,
+  effects_json jsonb not null default '[]'::jsonb,
+  source_reference text,
+  notes text,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_tax_rules_scope_active
+  on public.tax_rules (tax_type, scope, active);
+
+create table if not exists public.tax_periods (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  tax_type public.tax_type not null,
+  period_year integer not null,
+  period_month integer,
+  start_date date not null,
+  end_date date not null,
+  status public.tax_period_status not null default 'open',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, tax_type, period_year, period_month)
+);
+
+create table if not exists public.vat_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  period_id uuid not null references public.tax_periods(id) on delete cascade,
+  status text not null default 'draft',
+  input_snapshot_json jsonb not null default '{}'::jsonb,
+  result_json jsonb not null default '{}'::jsonb,
+  output_vat numeric(18,2) not null default 0,
+  input_vat_creditable numeric(18,2) not null default 0,
+  input_vat_non_deductible numeric(18,2) not null default 0,
+  adjustments numeric(18,2) not null default 0,
+  net_vat_payable numeric(18,2) not null default 0,
+  version_no integer not null default 1,
+  created_by uuid references public.profiles(id),
+  finalized_by uuid references public.profiles(id),
+  finalized_at timestamptz,
+  created_at timestamptz not null default now()
+);
+-- <<< db/schema/06_tax_and_rules.sql
+
+-- >>> db/schema/07_integrations_and_audit.sql
+create table if not exists public.exports (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  export_type text not null,
+  target_system text not null,
+  status public.export_status not null default 'queued',
+  storage_bucket text not null default 'exports-private',
+  storage_path text,
+  payload_json jsonb not null default '{}'::jsonb,
+  checksum text,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.api_clients (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.api_keys (
+  id uuid primary key default gen_random_uuid(),
+  api_client_id uuid not null references public.api_clients(id) on delete cascade,
+  key_prefix text not null,
+  key_hash text not null,
+  last_used_at timestamptz,
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.webhook_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  endpoint_url text not null,
+  secret_hash text not null,
+  events text[] not null default '{}',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  actor_user_id uuid references public.profiles(id),
+  entity_type text not null,
+  entity_id uuid,
+  action text not null,
+  before_json jsonb,
+  after_json jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_audit_log_org_created
+  on public.audit_log (organization_id, created_at desc);
+-- <<< db/schema/07_integrations_and_audit.sql
+
+-- >>> db/rls/supabase_rls_policies.sql
 create or replace function public.is_active_member(p_org_id uuid)
 returns boolean
 language sql
@@ -1346,3 +2126,4 @@ using (
   organization_id is not null
   and public.is_active_member(organization_id)
 );
+-- <<< db/rls/supabase_rls_policies.sql

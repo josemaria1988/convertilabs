@@ -80,7 +80,17 @@ export function WorkspaceShell({
                   </p>
                 </div>
               </div>
-              {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
+              <div className="flex flex-wrap gap-3">
+                {actions}
+                <form action="/logout" method="post">
+                  <button
+                    type="submit"
+                    className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-4 py-2 text-sm font-medium"
+                  >
+                    Cerrar sesion
+                  </button>
+                </form>
+              </div>
             </div>
           </section>
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SectionCard } from "@/components/section-card";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { requirePrivateAppPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
   title: "Documents",
@@ -14,7 +15,9 @@ const pipeline = [
   "Publicacion contable",
 ];
 
-export default function DocumentsPage() {
+export default async function DocumentsPage() {
+  await requirePrivateAppPage("/documents");
+
   return (
     <WorkspaceShell
       activePath="/documents"

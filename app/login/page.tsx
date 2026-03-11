@@ -1,25 +1,64 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthLoginForm } from "@/components/auth-login-form";
 import { MarketingSectionHeading } from "@/components/marketing-section-heading";
 import { PageHero } from "@/components/page-hero";
 import { SectionCard } from "@/components/section-card";
+import {
+  normalizeNextPath,
+  redirectAuthenticatedUserFromPublicAuthPage,
+} from "@/modules/auth/server-auth";
 import { siteConfig } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Ingreso",
 };
 
-export default function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{
+    next?: string | string[];
+    auth_message?: string | string[];
+  }>;
+};
+
+function readSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getAuthNotice(authMessage: string | null) {
+  switch (authMessage) {
+    case "signed_out":
+      return {
+        tone: "success" as const,
+        message: "La sesion se cerro correctamente.",
+      };
+    case "invalid_confirmation_link":
+      return {
+        tone: "error" as const,
+        message:
+          "El enlace de confirmacion es invalido o ya expiro. Inicia sesion o solicita un nuevo correo.",
+      };
+    default:
+      return null;
+  }
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = await searchParams;
+  const nextPath = normalizeNextPath(readSearchParam(params.next));
+  await redirectAuthenticatedUserFromPublicAuthPage(nextPath);
+  const notice = getAuthNotice(readSearchParam(params.auth_message) ?? null);
+
   return (
     <div className="page-shell space-y-6">
       <PageHero
         eyebrow="Ingreso"
         title="Entrar al espacio privado de Convertilabs"
-        description="El alta de usuario ya se conecta con Supabase Auth. El siguiente paso es completar el flujo real de ingreso y sesion sobre esta misma base."
+        description="El login ahora usa Supabase SSR con cookies de sesion, refresh via middleware y redireccion limpia hacia el espacio autenticado."
         highlights={[
           { label: "Acceso", value: "Privado" },
-          { label: "Alta", value: "Activa" },
-          { label: "Siguiente paso", value: "Sesion real" },
+          { label: "Sesion", value: "SSR + cookies" },
+          { label: "Confirmacion", value: "/auth/confirm" },
         ]}
         aside={
           <div className="space-y-4">
@@ -28,7 +67,7 @@ export default function LoginPage() {
             </p>
             <div className="space-y-3 text-sm leading-7 text-white/72">
               <p>Revision documental, seguimiento de asientos y control fiscal desde una misma operacion.</p>
-              <p>La creacion de cuentas ya corre sobre Supabase. El ingreso interactivo todavia no esta habilitado en esta pantalla.</p>
+              <p>El ingreso ya persiste la sesion en cookies SSR y protege las rutas privadas sin depender de estado cliente suelto.</p>
             </div>
           </div>
         }
@@ -39,7 +78,7 @@ export default function LoginPage() {
           <MarketingSectionHeading
             eyebrow="Acceso"
             title="Un ingreso simple, alineado con el resto del producto"
-            description="La autenticacion ya empezo a integrarse por el alta de usuario. Esta pantalla conserva el lugar del login mientras cerramos el manejo real de sesion."
+            description="La autenticacion ya corre sobre Supabase SSR y deja listo el salto a onboarding o al dashboard privado de la organizacion segun el estado organizacional del usuario."
           />
 
           <div className="mt-6 grid gap-3">
@@ -50,9 +89,9 @@ export default function LoginPage() {
               </p>
             </div>
             <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/72 p-4">
-              <p className="text-sm font-semibold">Contabilidad e impuestos</p>
+              <p className="text-sm font-semibold">Confirmacion SSR</p>
               <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-                Asientos, IVA y control tributario sobre la misma base de datos operativa.
+                Los enlaces de email confirman la cuenta en `/auth/confirm`, canjean el `token_hash` y aterrizan con sesion valida.
               </p>
             </div>
           </div>
@@ -66,35 +105,24 @@ export default function LoginPage() {
             <h2 className="text-3xl font-semibold tracking-[-0.05em]">
               Ingresa con tu cuenta
             </h2>
+            <p className="text-sm leading-7 text-[color:var(--color-muted)]">
+              Si tu usuario todavia no tiene memberships activas, esta sesion te llevara al onboarding.
+            </p>
           </div>
 
-          <form className="space-y-5">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Email</span>
-              <input
-                type="email"
-                placeholder="equipo@convertilabs.com"
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
-              />
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Contrasena</span>
-              <input
-                type="password"
-                placeholder="........"
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
-              />
-            </label>
-
-            <button
-              type="button"
-              disabled
-              className="w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-medium text-white opacity-70"
+          {notice ? (
+            <div
+              className={`mb-5 rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                notice.tone === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                  : "border-amber-200 bg-amber-50 text-amber-950"
+              }`}
             >
-              Ingreso disponible pronto
-            </button>
-          </form>
+              {notice.message}
+            </div>
+          ) : null}
+
+          <AuthLoginForm nextPath={nextPath} />
 
           <div className="mt-6 flex flex-wrap gap-3 text-sm">
             <Link
@@ -121,7 +149,7 @@ export default function LoginPage() {
 
       <SectionCard
         title="Todavia no tienes acceso?"
-        description="Si quieres ver el producto por dentro, puedes crear tu cuenta ahora o escribir a nuestro equipo para preparar un acceso asistido."
+        description="Si quieres ver el producto por dentro, crea tu cuenta ahora o escribe a nuestro equipo para preparar un acceso asistido."
       >
         <div className="flex flex-wrap gap-3">
           <Link
