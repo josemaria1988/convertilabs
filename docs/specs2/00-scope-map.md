@@ -1,74 +1,99 @@
-# Scope map - De la idea inicial al alcance corregido
+# Scope map - Corte V1 aprobado
 
-**Estado:** Draft  
-**Objetivo:** dejar trazado qué cambió respecto al corte anterior
-
----
-
-## 1. Alcance inicial simplificado
-
-El corte anterior proponía:
-
-- PDF de factura de compra
-- extracción
-- draft editable
-- sugerencia de asiento
-- sugerencia fiscal
-- confirmación final
-- normativa tributaria base para ese caso
+**Estado:** Approved  
+**Objetivo:** dejar trazado el alcance real del V1 despues de las decisiones cerradas
 
 ---
 
-## 2. Corrección de alcance necesaria
+## 1. Corte comercial aprobado
 
-Ese corte es útil como slice técnico, pero insuficiente como sistema tributario serio porque omitía dos bases:
+El V1 aprobado es:
 
-1. **perfil jurídico/tributario de la organización**
-2. **factura de venta** como pata simétrica y tributariamente crítica
+- Uruguay only
+- IVA only
+- compra automatizable
+- venta incluida dentro de V1
+- sin emision ni pre-emision
+- confirmacion final unica
+- `journal_entry` generado en estado `draft`
 
----
-
-## 3. Alcance corregido para decisiones
-
-El sistema ahora debe considerarse dividido en:
-
-### Base 1 - Perfil organizacional
-Sin esto, no hay encuadre correcto.
-
-### Base 2 - Pipeline documental
-Sin esto, no hay datos.
-
-### Base 3 - Compra
-Primer slice operativo razonable.
-
-### Base 4 - Venta
-Segundo slice bloqueante o V1.1, según decisión.
-
-### Base 5 - Draft editable
-Human-in-the-loop con persistencia.
-
-### Base 6 - Sugerencia contable
-Editable, estructurada y auditada.
-
-### Base 7 - Sugerencia fiscal
-Editable, estructurada y soportada por normativa.
-
-### Base 8 - Confirmación y reapertura
-Para no perder control cuando el usuario se apura.
-
-### Base 9 - Base normativa viva
-Para que el sistema no envejezca mal.
+No existe ya decision abierta entre `V1A`, `V1B` o `V1C`.
 
 ---
 
-## 4. Decisión pendiente de producto
+## 2. Bases del producto
 
-**OPEN:** ¿El release V1 comercialmente aceptable es:
+El sistema queda dividido en estas bases:
 
-- `V1A`: perfil + compra + draft + fiscal + asiento + confirmación + normativa base
-- `V1B`: todo lo anterior + venta procesada
-- `V1C`: todo lo anterior + pre-emisión de venta
-
-No debe asumirse ninguna de las tres opciones sin decisión explícita.
+1. Perfil organizacional versionado
+2. Pipeline documental con IA acotada por snapshot
+3. Compra V1
+4. Venta V1
+5. Draft editable persistente
+6. Sugerencia contable
+7. Sugerencia fiscal IVA
+8. Confirmacion y reapertura
+9. Base normativa interna curada
 
 ---
+
+## 3. Decision de ventas
+
+La venta entra en V1, pero solo bajo este modelo:
+
+- Convertilabs procesa PDFs o imagenes ya emitidos por otro sistema
+- tambien soporta carga/import manual resumida para ventas
+- no emite comprobantes
+- no pre-emite comprobantes
+- no integra CFE en runtime
+
+---
+
+## 4. Decision de IA
+
+OpenAI entra en V1 solo para intake documental.
+
+Reglas obligatorias:
+
+- siempre server-side
+- `gpt-4o-mini`
+- Responses API
+- salida estructurada con `json_schema`
+- la IA nunca recibe toda la normativa DGI
+- en runtime solo recibe el snapshot resumido y aprobado para esa organizacion
+
+---
+
+## 5. Limites de alcance
+
+Fuera del alcance automatizado de V1:
+
+- IRAE
+- IP
+- retenciones
+- BPS
+- prorrata compleja
+- emision CFE
+- importaciones
+- servicios del exterior
+- monotributo puro
+- cooperativas, asociaciones civiles y otras formas fuera del set soportado
+
+---
+
+## 6. Estado actual de implementacion
+
+Ya implementado:
+
+- onboarding fiscal minimo
+- upload privado
+- intake documental con OpenAI
+- `document_processing_runs`
+- `document_drafts`
+- snapshots por organizacion
+
+Pendiente de hardening:
+
+- worker/cola real para ejecutar el pipeline fuera de la server action
+- highlights de origen
+- backoffice normativo completo

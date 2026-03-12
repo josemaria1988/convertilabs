@@ -1,92 +1,60 @@
 # Open questions - Paquete SDD Convertilabs v1
 
-**Estado:** Activo  
-**Objetivo:** cerrar decisiones antes de codificar comportamiento no definido
+**Estado:** Updated  
+**Objetivo:** registrar que decisiones quedaron cerradas y cuales siguen postergadas
 
 ---
 
-## Instrucciones de uso
+## P0 - Resueltas
 
-- Marcar cada pregunta como `Respondida`, `Postergada` o `Fuera de alcance`.
-- No mover un spec a `Approved` mientras tenga preguntas P0 sin resolver.
-- Si una respuesta cambia el comportamiento del sistema, registrar también un ADR o decision log asociado.
-
----
-
-## P0 - Bloqueantes absolutas
-
-| ID | Pregunta | Por qué importa | Respuesta |
+| ID | Pregunta | Estado | Respuesta |
 |---|---|---|---|
-| P0-01 | ¿Qué formas jurídicas entraremos a soportar explícitamente en V1? | Afecta onboarding, catálogos y lógica normativa | |
-| P0-02 | ¿Qué regímenes tributarios entraremos a soportar explícitamente en V1? | Sin esto no existe encuadre fiscal real | |
-| P0-03 | ¿La factura de venta entra en V1 o V1.1? | Define alcance real del producto | |
-| P0-04 | Si entra factura de venta, ¿Convertilabs la procesa desde PDF o también la emite/preemite? | Cambia por completo arquitectura y riesgos | |
-| P0-05 | ¿Qué tributos o dominios fiscales cubre el V1? | Delimita motor fiscal y base normativa | |
-| P0-06 | ¿Qué campos mínimos del perfil organizacional son obligatorios para habilitar clasificación, fiscal y asiento? | Define gating del sistema | |
-| P0-07 | ¿El usuario puede confirmar fiscal y asiento por separado, o solo existe confirmación final única? | Afecta estados y UX | |
-| P0-08 | ¿Qué roles pueden confirmar, reabrir y reconfirmar? | Afecta permisos y auditoría | |
-| P0-09 | ¿Qué catálogo inicial de operaciones de compra y venta se soportará? | Afecta reglas y formularios | |
-| P0-10 | ¿Qué ocurre si cambia el perfil organizacional con drafts abiertos? | Afecta consistencia del sistema | |
+| P0-01 | Formas juridicas V1 | Respondida | `SA`, `SRL`, `SAS`, `UNIPERSONAL` |
+| P0-02 | Regimenes V1 | Respondida | `IRAE_GENERAL`, `IRAE_LITERAL_E` |
+| P0-03 | Venta entra en V1 o V1.1 | Respondida | Entra en V1 |
+| P0-04 | Venta procesa o emite | Respondida | Procesa; no emite ni pre-emite |
+| P0-05 | Dominios fiscales V1 | Respondida | Solo IVA |
+| P0-06 | Minimo del perfil organizacional | Respondida | `country_code='UY'`, `tax_id`, `legal_entity_type`, `tax_regime_code` |
+| P0-07 | Confirmaciones por paso o final | Respondida | Solo confirmacion final unica |
+| P0-08 | Roles de confirmar/reabrir | Respondida | Confirmar: owner/admin/accountant/reviewer. Reabrir: owner/admin |
+| P0-09 | Catalogo inicial de operaciones | Respondida | Compras: goods_resale, services, admin_expense, transport, fuel_and_lubricants, professional_fees, rent. Ventas: taxed_basic_22, taxed_minimum_10, exempt_or_export, non_taxed |
+| P0-10 | Cambio de perfil con drafts abiertos | Respondida | Drafts viejos quedan congelados y muestran advertencia |
 
 ---
 
-## P1 - Muy importantes
+## P1 - Resueltas
 
-| ID | Pregunta | Por qué importa | Respuesta |
+| ID | Pregunta | Estado | Respuesta |
 |---|---|---|---|
-| P1-01 | ¿PDF solamente en V1 o también imágenes? | Afecta pipeline técnico y UX | |
-| P1-02 | ¿Se bloquean documentos duplicados por hash o solo se advierte? | Afecta trazabilidad y experiencia | |
-| P1-03 | ¿Compra V1 incluye importaciones y servicios del exterior? | Cambia taxonomía fiscal y contable | |
-| P1-04 | ¿Venta V1 incluye exportación desde el inicio? | Cambia perfiles de operación y normativa | |
-| P1-05 | ¿Los usuarios pueden agregar líneas manuales al asiento? | Afecta UI y control | |
-| P1-06 | ¿Centro de costo y auxiliares son obligatorios? | Afecta modelo contable | |
-| P1-07 | ¿Se puede confirmar con warnings o todo warning bloquea? | Afecta UX y prudencia del sistema | |
-| P1-08 | ¿El usuario verá texto extraído crudo y/o highlights del origen? | Afecta transparencia y UI | |
-| P1-09 | ¿Habrá multiusuario concurrente editando el mismo draft? | Afecta locking/versionado | |
-| P1-10 | ¿La normativa interna mostrará texto completo, resumen o ambos? | Afecta almacenamiento y UX | |
+| P1-01 | PDF o imagen | Respondida | PDF, JPG y PNG |
+| P1-02 | Duplicados por hash | Respondida | Warning, no bloqueo |
+| P1-03 | Compra incluye importaciones | Respondida | No en automatizacion V1 |
+| P1-04 | Venta incluye exportacion | Respondida | Si, dentro de la categoria resumida `exempt_or_export` |
+| P1-05 | Lineas manuales al asiento | Postergada | No cerrado para una UI rica; la implementacion actual prioriza sugerencia estructurada |
+| P1-06 | Centro de costo y auxiliares obligatorios | Respondida | No obligatorios en V1 |
+| P1-07 | Confirmar con warnings | Postergada | La implementacion actual bloquea por faltantes criticos, no por cualquier warning |
+| P1-08 | Texto crudo / highlights | Respondida | Texto crudo visible; highlights postergados |
+| P1-09 | Multiusuario concurrente | Respondida | No en V1; control optimista simple |
+| P1-10 | Norma completa o resumen | Respondida | Resumen en runtime; corpus interno curado fuera del prompt |
 
 ---
 
-## P2 - Convenientes para evitar retrabajo
+## P2 - Postergadas
 
-| ID | Pregunta | Por qué importa | Respuesta |
-|---|---|---|---|
-| P2-01 | ¿Habrá catálogo de proveedores y clientes desde el inicio? | Enriquece sugerencias | |
-| P2-02 | ¿Se soportará multi-moneda desde el primer corte? | Afecta importes, asiento y fiscal | |
-| P2-03 | ¿Se versionarán plantillas contables por vigencia? | Afecta mantenimiento | |
-| P2-04 | ¿La reapertura de un clasificado pedirá motivo obligatorio? | Afecta auditoría | |
-| P2-05 | ¿Existirá aprobación doble para cambios fiscales sensibles? | Afecta seguridad del proceso | |
-| P2-06 | ¿Se generarán embeddings normativos desde el inicio o en fase siguiente? | Afecta arquitectura de búsqueda | |
-| P2-07 | ¿La base normativa debe cubrir solo Uruguay en esta etapa? | Afecta diseño multi-jurisdicción | |
-| P2-08 | ¿Se permitirá override de reglas por organización? | Afecta flexibilidad vs control | |
+- catalogo inicial de proveedores/clientes enriquecido
+- multi-moneda
+- doble aprobacion fiscal
+- embeddings normativos
+- overrides normativos por organizacion
 
 ---
 
-## Respuestas ya sugeridas por el análisis, pero NO cerradas
+## Checklist de salida
 
-### 1. Separar forma jurídica de régimen tributario
-Se recomienda modelarlos por separado. No cerrar un único campo “tipo de empresa”.
-
-### 2. Versionar por vigencia
-Se recomienda que el perfil organizacional y las reglas tengan vigencia temporal.
-
-### 3. Todo automático vive primero como draft
-Se recomienda que ningún output automático salte directamente a estado definitivo.
-
-### 4. Factura de venta requiere spec propio
-Se recomienda no ocultarla dentro de “otros documentos”.
-
----
-
-## Checklist de salida antes de implementar
-
-- [ ] P0 respondidas
-- [ ] Catálogos iniciales aprobados
-- [ ] Estados del documento aprobados
-- [ ] Estados del draft aprobados
-- [ ] Roles y permisos aprobados
-- [ ] Alcance fiscal de V1 aprobado
-- [ ] Alcance de venta aprobado
-- [ ] Política de recalculo aprobada
-
----
+- [x] P0 respondidas
+- [x] Catalogos iniciales aprobados
+- [x] Estados del documento aprobados
+- [x] Roles y permisos aprobados
+- [x] Alcance fiscal V1 aprobado
+- [x] Alcance de venta aprobado
+- [x] Politica de recalculo aprobada

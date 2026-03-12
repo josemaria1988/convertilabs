@@ -1,303 +1,72 @@
-# Spec 05 - Wizard modal de draft editable
+# Spec 05 - Draft editable
 
-**Estado:** Draft  
+**Estado:** Approved  
 **Prioridad:** P0  
-**Dependencias:** `02`, `03`, `04`, `06`, `07`  
-**Objetivo:** modelar el flujo visual y transaccional del usuario
+**Dependencias:** `02`, `03`, `04`, `06`, `07`
 
 ---
 
-## 1. Propósito
+## 1. Decision cerrada
 
-Definir el flujo visual del dashboard donde el usuario revisa, corrige y confirma la información sugerida por el sistema.
+V1 tiene un unico punto de aprobacion:
 
-El requisito clave es doble:
+- confirmacion final unica
 
-1. los datos deben mostrarse como **inputs editables**, y
-2. todo debe persistir automáticamente como **borrador** mientras no exista confirmación final.
-
----
-
-## 2. Principios UX
-
-### 2.1 Modal secuencial
-El flujo MUST abrirse como modal por pasos consecutivos.
-
-### 2.2 Autosave
-Todo cambio relevante MUST guardarse automáticamente como borrador.
-
-### 2.3 Reversibilidad
-El usuario MUST poder volver al paso anterior, incluso después de haberlo “confirmado” dentro del mismo flujo.
-
-### 2.4 Transparencia
-La UI MUST mostrar:
-- qué sugirió el sistema,
-- qué cambió el usuario,
-- qué pasos están confirmados,
-- qué pasos quedaron invalidos por un cambio posterior.
-
-### 2.5 Cierre sin pérdida
-Cerrar el modal no puede implicar pérdida de trabajo.
+No existen confirmaciones por paso.
 
 ---
 
-## 3. Paso a paso del wizard
+## 2. Flujo V1
 
-### Paso 0 - Preview del documento
-Muestra:
-- PDF preview
-- metadata básica
-- estado del documento
-- origen del procesamiento
+El draft editable expone estos bloques:
 
-Acciones:
-- cerrar
-- continuar
+1. preview
+2. identidad
+3. datos extraidos
+4. importes
+5. contexto de operacion
+6. sugerencia contable
+7. sugerencia fiscal
+8. confirmacion final
 
-### Paso 1 - Identidad del documento
-Campos:
-- rol sugerido: compra / venta / otro
-- tipo documental sugerido
-- subtipo u operación si aplica
-
-Persistencia:
-- autosave inmediato
-
-### Paso 2 - Datos extraídos
-Campos editables:
-- cabecera
-- contraparte
-- fechas
-- moneda
-- identificadores
-
-Persistencia:
-- autosave con debounce
-
-### Paso 3 - Importes y consistencias
-Campos editables:
-- neto
-- impuestos
-- total
-- descuentos / recargos
-
-Comportamiento:
-- recalcular consistencias al editar
-
-### Paso 4 - Contexto de operación
-Campos editables:
-- tipo de compra o venta
-- local / exterior
-- gravado / exento / otro
-- flags de operación
-
-Comportamiento:
-- cambios aquí pueden invalidar sugerencia contable/fiscal
-
-### Paso 5 - Sugerencia de asiento
-Vista estructurada editable:
-- líneas
-- cuentas
-- débitos / créditos
-- explicación
-
-### Paso 6 - Sugerencia fiscal
-Vista estructurada editable:
-- tratamiento
-- bases imponibles
-- referencias normativas
-- warnings
-
-### Paso 7 - Confirmación final
-Resumen:
-- documento
-- campos editados
-- asiento
-- tratamiento fiscal
-- diferencias vs sugerencia original
-
-Acción:
-- `Confirmar documento`
+La implementacion puede usar pagina o modal. Lo importante es que el draft viva como entidad persistente y editable.
 
 ---
 
-## 4. Estado por paso
+## 3. Persistencia
 
-Cada paso debería tener su propio estado interno.
+El draft vive en:
 
-Valores propuestos:
-- `not_started`
-- `draft_saved`
-- `confirmed`
-- `stale_after_upstream_change`
-- `blocked`
-- `error`
+- `document_drafts`
+- `document_draft_steps`
+- `document_draft_autosaves`
+- `document_revisions`
 
-### Regla crítica
-Si el usuario cambia un paso anterior, todos los pasos dependientes MUST pasar a `stale_after_upstream_change`.
-
-Ejemplo:
-- cambia importes -> asiento y fiscal quedan stale
-- cambia tipo de documento -> importes, asiento y fiscal pueden quedar stale
-- cambia naturaleza de operación -> fiscal y asiento quedan stale
+Cada cambio guarda estado de borrador y deja traza.
 
 ---
 
-## 5. Modelo de datos sugerido
+## 4. Politicas V1
 
-### `document_drafts`
-Borrador principal.
-
-Campos:
-- `id`
-- `document_id`
-- `organization_id`
-- `revision_number`
-- `status` (`open`, `ready_for_confirmation`, `confirmed`, `superseded`)
-- `document_role`
-- `document_type`
-- `operation_context_json`
-- `fields_json`
-- `journal_suggestion_json`
-- `tax_treatment_json`
-- `created_by`
-- `updated_by`
-- `created_at`
-- `updated_at`
-
-### `document_draft_steps`
-Estado por paso.
-
-Campos:
-- `id`
-- `draft_id`
-- `step_code`
-- `status`
-- `last_saved_at`
-- `last_confirmed_at`
-- `stale_reason`
-- `snapshot_json`
-
-### `document_draft_autosaves`
-Historial liviano de persistencia automática.
-
-Campos:
-- `id`
-- `draft_id`
-- `step_code`
-- `payload_patch_json`
-- `saved_by`
-- `saved_at`
+- control optimista simple
+- no multiusuario concurrente pleno
+- al cambiar datos upstream, asiento/IVA deben recalcularse
+- cerrar la vista no puede perder trabajo guardado
 
 ---
 
-## 6. Reglas de autosave
+## 5. Estado de implementacion
 
-### 6.1 Cuándo guardar
-Autosave MUST correr:
-- al blur de un input importante,
-- con debounce en texto libre,
-- al avanzar de paso,
-- al cambiar selects críticos,
-- al cerrar el modal si hay cambios pendientes.
+Implementado:
 
-### 6.2 Feedback visual
-La UI MUST mostrar:
-- `Guardando...`
-- `Borrador guardado`
-- `Error al guardar`
+- review page org-scoped
+- guardado de secciones sobre el draft
+- estados por paso
+- confirmacion final unica
+- reapertura a nueva revision
 
-### 6.3 Colisiones
-**OPEN:** qué hacer si dos usuarios editan el mismo borrador.
+Pendiente:
 
-Opciones:
-- lock optimista con versión,
-- lock pesimista,
-- merge parcial.
-
----
-
-## 7. Confirmaciones parciales
-
-Cada paso MAY tener un botón interno de “confirmar este paso”, pero esa confirmación:
-
-- no puede convertir el documento en `classified`,
-- no puede bloquear volver atrás,
-- solo debe servir para marcar revisión hecha por el usuario.
-
----
-
-## 8. Confirmación final
-
-Solo la acción final del wizard puede:
-
-- cambiar el estado del documento a `classified`,
-- congelar una revisión confirmada,
-- registrar snapshot final.
-
----
-
-## 9. Reapertura
-
-Si un documento ya confirmado se reabre:
-
-1. se muestra la última revisión confirmada,
-2. al primer cambio se crea una nueva revisión en borrador,
-3. los pasos posteriores se marcan `stale` si corresponde,
-4. la revisión anterior permanece inmutable.
-
----
-
-## 10. Validaciones de UX
-
-La UI MUST impedir confirmar si:
-- hay autosave pendiente fallido,
-- hay pasos `blocked`,
-- hay sugerencias stale no recalculadas,
-- el asiento no balancea,
-- faltan campos obligatorios,
-- el tratamiento fiscal no está completo.
-
----
-
-## 11. API sugerida
-
-### `GET /api/documents/:id/draft/current`
-### `POST /api/documents/:id/draft/autosave`
-### `POST /api/documents/:id/draft/confirm-step`
-### `POST /api/documents/:id/draft/recalculate-dependent-steps`
-### `POST /api/documents/:id/draft/final-confirmation`
-
----
-
-## 12. Escenarios de aceptación
-
-### Escenario A - Cerrar y retomar
-**Given** un usuario modifica campos  
-**When** cierra el modal  
-**Then** el borrador persiste  
-**And** al reabrir ve los cambios
-
-### Escenario B - Volver atrás tras confirmar paso
-**Given** el usuario confirmó un paso intermedio  
-**When** vuelve al paso anterior y cambia datos  
-**Then** el sistema lo permite  
-**And** invalida los pasos dependientes
-
-### Escenario C - Error de autosave
-**Given** una falla al guardar  
-**When** el usuario sigue editando  
-**Then** la UI debe advertir claramente  
-**And** no permitir confirmación final hasta resolverlo
-
----
-
-## 13. Preguntas abiertas
-
-1. ¿Qué pasos exactos lleva el V1: 5, 6 o 7?
-2. ¿Habrá confirmación por paso o solo final?
-3. ¿Se permitirá multiusuario concurrente?
-4. ¿La UI debe mostrar el texto extraído crudo?
-5. ¿Debe existir comparación “sugerencia original vs edición final” visible al usuario?
-
----
+- modal multi-step mas pulido
+- autosave con debounce mas fino
+- highlights visuales del origen dentro del preview

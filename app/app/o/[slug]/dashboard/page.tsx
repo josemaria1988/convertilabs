@@ -7,6 +7,7 @@ import { SectionCard } from "@/components/section-card";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadOrganizationDashboardDocuments } from "@/modules/documents/dashboard";
+import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 
 type OrganizationDashboardPageProps = {
   params: Promise<{
@@ -28,7 +29,6 @@ export default async function OrganizationDashboardPage({
     supabase,
     organization.id,
   );
-  const dashboardHref = `/app/o/${organization.slug}/dashboard`;
   const uploadHref = "#document-upload-panel";
 
   return (
@@ -38,36 +38,9 @@ export default async function OrganizationDashboardPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Dashboard"
-      description="Vista privada SSR del tenant actual con contexto por slug, membresia validada y lista base de documentos lista para crecer en Semana 2."
+      description="Inbox privado del tenant actual con upload, intake documental con OpenAI, estados enriquecidos y entrada directa a la revision del draft persistido."
       uploadHref={uploadHref}
-      navItems={[
-        {
-          href: dashboardHref,
-          label: "Dashboard",
-          description: "Resumen privado y estado documental",
-          current: true,
-        },
-        {
-          href: "/documents",
-          label: "Documents",
-          description: "Carga y revision documental",
-        },
-        {
-          href: "/journal-entries",
-          label: "Journal entries",
-          description: "Motor contable y aprobacion",
-        },
-        {
-          href: "/tax",
-          label: "Tax",
-          description: "Soporte fiscal y periodos",
-        },
-        {
-          href: "/settings",
-          label: "Settings",
-          description: "Tenant, miembros e integraciones",
-        },
-      ]}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "dashboard")}
     >
       <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="grid gap-4">
@@ -82,7 +55,7 @@ export default async function OrganizationDashboardPage({
             title="Documentos recientes"
             description={
               documentsState.status === "populated"
-                ? `Lista SSR de la organizacion actual. ${documentsState.totalDocuments} documento(s) cargado(s).`
+                ? `Lista SSR de la organizacion actual. ${documentsState.totalDocuments} documento(s) cargado(s) con acceso directo al draft.`
                 : "Estado inicial del tenant para empezar carga documental y seguimiento desde una sola entrada privada."
             }
           >
@@ -97,7 +70,10 @@ export default async function OrganizationDashboardPage({
             ) : null}
 
             {documentsState.status === "populated" ? (
-              <DashboardDocumentList documents={documentsState.documents} />
+              <DashboardDocumentList
+                documents={documentsState.documents}
+                organizationSlug={organization.slug}
+              />
             ) : null}
           </SectionCard>
         </div>
