@@ -50,6 +50,24 @@ function mapCreateOrganizationError(message: string) {
     );
   }
 
+  if (normalizedMessage.includes("legal entity type is required")) {
+    return buildActionError("Falta la forma juridica de la organizacion.", {
+      legalEntityType: "Selecciona una forma juridica para continuar.",
+    });
+  }
+
+  if (normalizedMessage.includes("tax id is required")) {
+    return buildActionError("Falta el RUT de la organizacion.", {
+      taxId: "Ingresa un RUT valido para continuar.",
+    });
+  }
+
+  if (normalizedMessage.includes("tax regime code is required")) {
+    return buildActionError("Falta el regimen tributario de la organizacion.", {
+      taxRegimeCode: "Selecciona un regimen tributario soportado para V1.",
+    });
+  }
+
   return buildActionError(
     "No se pudo crear la organizacion en este momento. Intenta de nuevo.",
   );
@@ -70,6 +88,9 @@ export async function createOrganizationAction(
 
   const validation = validateOrganizationOnboardingInput({
     name: String(formData.get("name") ?? ""),
+    legalEntityType: String(formData.get("legalEntityType") ?? ""),
+    taxId: String(formData.get("taxId") ?? ""),
+    taxRegimeCode: String(formData.get("taxRegimeCode") ?? ""),
   });
 
   if (!validation.success) {
@@ -88,6 +109,9 @@ export async function createOrganizationAction(
   const rpcResult = await supabase
     .rpc("create_organization_with_owner", {
       p_name: validation.data.name,
+      p_legal_entity_type: validation.data.legalEntityType,
+      p_tax_id: validation.data.taxId,
+      p_tax_regime_code: validation.data.taxRegimeCode,
     })
     .single();
 

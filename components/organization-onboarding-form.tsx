@@ -12,6 +12,8 @@ import {
   organizationNameMaxLength,
   organizationNameMinLength,
   slugifyOrganizationNamePreview,
+  supportedLegalEntityTypes,
+  supportedTaxRegimeCodes,
 } from "@/modules/organizations/onboarding-schema";
 
 type OrganizationOnboardingFormProps = {
@@ -22,6 +24,9 @@ export function OrganizationOnboardingForm({
   userEmail,
 }: OrganizationOnboardingFormProps) {
   const [organizationName, setOrganizationName] = useState("");
+  const [legalEntityType, setLegalEntityType] = useState("SAS");
+  const [taxRegimeCode, setTaxRegimeCode] = useState("IRAE_GENERAL");
+  const [taxId, setTaxId] = useState("");
   const [state, formAction, isPending] = useActionState(
     createOrganizationAction,
     initialOnboardingActionState,
@@ -59,6 +64,79 @@ export function OrganizationOnboardingForm({
         </p>
         {safeState.fieldErrors.name ? (
           <p className="text-sm text-amber-800">{safeState.fieldErrors.name}</p>
+        ) : null}
+      </label>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Forma juridica</span>
+          <select
+            name="legalEntityType"
+            value={legalEntityType}
+            onChange={(event) => {
+              setLegalEntityType(event.target.value);
+            }}
+            aria-invalid={Boolean(safeState.fieldErrors.legalEntityType)}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+          >
+            {supportedLegalEntityTypes.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          {safeState.fieldErrors.legalEntityType ? (
+            <p className="text-sm text-amber-800">
+              {safeState.fieldErrors.legalEntityType}
+            </p>
+          ) : null}
+        </label>
+
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Regimen tributario</span>
+          <select
+            name="taxRegimeCode"
+            value={taxRegimeCode}
+            onChange={(event) => {
+              setTaxRegimeCode(event.target.value);
+            }}
+            aria-invalid={Boolean(safeState.fieldErrors.taxRegimeCode)}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+          >
+            {supportedTaxRegimeCodes.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          {safeState.fieldErrors.taxRegimeCode ? (
+            <p className="text-sm text-amber-800">
+              {safeState.fieldErrors.taxRegimeCode}
+            </p>
+          ) : null}
+        </label>
+      </div>
+
+      <label className="block space-y-2">
+        <span className="text-sm font-medium">RUT de la organizacion</span>
+        <input
+          type="text"
+          name="taxId"
+          value={taxId}
+          onChange={(event) => {
+            setTaxId(event.target.value);
+          }}
+          inputMode="numeric"
+          placeholder="211234560019"
+          aria-invalid={Boolean(safeState.fieldErrors.taxId)}
+          className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+        />
+        <p className="text-sm leading-6 text-[color:var(--color-muted)]">
+          V1 usa pais UY y exige RUT + forma juridica + regimen para materializar
+          el perfil base y las reglas resumidas.
+        </p>
+        {safeState.fieldErrors.taxId ? (
+          <p className="text-sm text-amber-800">{safeState.fieldErrors.taxId}</p>
         ) : null}
       </label>
 

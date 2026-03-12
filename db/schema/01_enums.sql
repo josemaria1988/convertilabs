@@ -15,7 +15,9 @@ create type public.document_status as enum (
   'queued',
   'extracting',
   'extracted',
+  'draft_ready',
   'classified',
+  'classified_with_open_revision',
   'needs_review',
   'approved',
   'rejected',
@@ -32,6 +34,61 @@ create type public.suggestion_status as enum (
   'approved',
   'rejected',
   'superseded'
+);
+
+create type public.organization_profile_status as enum (
+  'draft',
+  'active',
+  'superseded'
+);
+
+create type public.organization_rule_snapshot_status as enum (
+  'draft',
+  'active',
+  'superseded'
+);
+
+create type public.document_processing_run_status as enum (
+  'queued',
+  'processing',
+  'completed',
+  'error',
+  'skipped'
+);
+
+create type public.document_draft_status as enum (
+  'open',
+  'ready_for_confirmation',
+  'confirmed',
+  'superseded'
+);
+
+create type public.document_draft_step_status as enum (
+  'not_started',
+  'draft_saved',
+  'confirmed',
+  'stale_after_upstream_change',
+  'blocked',
+  'error'
+);
+
+create type public.document_revision_status as enum (
+  'open',
+  'pending_reconfirmation',
+  'reconfirmed',
+  'superseded'
+);
+
+create type public.document_confirmation_type as enum (
+  'final',
+  'reconfirmation'
+);
+
+create type public.normative_update_run_status as enum (
+  'queued',
+  'processing',
+  'completed',
+  'error'
 );
 
 create type public.entry_status as enum (

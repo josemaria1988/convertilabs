@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 const onboardingChecks = [
   "Crear tenant con slug unico",
   "Asignar membership owner",
+  "Capturar forma juridica, RUT y regimen fiscal base",
   "Entrar al dashboard privado de la org",
 ];
 
@@ -46,8 +47,8 @@ export default async function OnboardingPage() {
             </h2>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
               La creacion se ejecuta en servidor mediante una operacion atomica
-              que inserta la organizacion y tu membership owner en la misma
-              transaccion logica.
+              que inserta la organizacion, su perfil base fiscal y tu
+              membership owner en la misma transaccion logica.
             </p>
           </div>
 

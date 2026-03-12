@@ -17,11 +17,16 @@ function formatStatusLabel(status: string) {
 function getStatusClasses(status: string) {
   switch (status) {
     case "uploading":
+    case "queued":
+    case "extracting":
       return "bg-sky-100 text-sky-900";
+    case "draft_ready":
+      return "bg-indigo-100 text-indigo-900";
     case "approved":
       return "bg-emerald-100 text-emerald-900";
     case "needs_review":
     case "classified":
+    case "classified_with_open_revision":
       return "bg-amber-100 text-amber-900";
     case "rejected":
     case "error":

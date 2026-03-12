@@ -6,6 +6,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { processUploadedDocument } from "@/modules/documents/processing";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 
 type PrepareDocumentUploadInput = {
@@ -115,7 +116,7 @@ export async function prepareDashboardDocumentUpload(
 export async function finalizeDashboardDocumentUpload(
   input: FinalizeDocumentUploadInput,
 ): Promise<{ ok: true } | UploadActionError> {
-  await requireOrganizationDashboardPage(input.slug);
+  const { authState } = await requireOrganizationDashboardPage(input.slug);
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("complete_document_upload", {
     p_document_id: input.documentId,
@@ -128,6 +129,19 @@ export async function finalizeDashboardDocumentUpload(
         error.message
         ?? "El archivo subio, pero no pudimos cerrar el estado del documento.",
     };
+  }
+
+  const processingResult = await processUploadedDocument({
+    documentId: input.documentId,
+    requestedBy: authState.user?.id ?? null,
+    triggeredBy: "upload",
+  });
+
+  if (!processingResult.ok) {
+    console.error(
+      "Document processing did not complete after upload finalization.",
+      processingResult,
+    );
   }
 
   revalidatePath(buildDashboardPath(input.slug));

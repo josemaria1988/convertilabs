@@ -18,6 +18,7 @@ create table if not exists public.organizations (
   base_currency text not null default 'UYU',
   legal_entity_type text,
   tax_id text,
+  tax_regime_code text,
   default_locale text not null default 'es-UY',
   active boolean not null default true,
   created_by uuid references public.profiles(id),
@@ -129,7 +130,12 @@ as $$
   );
 $$;
 
-create or replace function public.create_organization_with_owner(p_name text)
+create or replace function public.create_organization_with_owner(
+  p_name text,
+  p_legal_entity_type text default null,
+  p_tax_id text default null,
+  p_tax_regime_code text default null
+)
 returns table (organization_id uuid, slug text)
 language plpgsql
 security definer
@@ -157,6 +163,21 @@ begin
 
   if char_length(v_normalized_name) > 120 then
     raise exception 'Organization name must contain at most 120 characters.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_legal_entity_type, '')), '') is null then
+    raise exception 'Organization legal entity type is required.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_tax_id, '')), '') is null then
+    raise exception 'Organization tax id is required.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_tax_regime_code, '')), '') is null then
+    raise exception 'Organization tax regime code is required.'
       using errcode = '22023';
   end if;
 
@@ -202,11 +223,17 @@ begin
   insert into public.organizations (
     name,
     slug,
+    legal_entity_type,
+    tax_id,
+    tax_regime_code,
     created_by
   )
   values (
     v_normalized_name,
     v_slug,
+    trim(p_legal_entity_type),
+    trim(p_tax_id),
+    trim(p_tax_regime_code),
     v_user_id
   )
   returning id into v_organization_id;
@@ -229,6 +256,6 @@ begin
 end;
 $$;
 
-revoke all on function public.create_organization_with_owner(text) from public;
-grant execute on function public.create_organization_with_owner(text) to authenticated;
-grant execute on function public.create_organization_with_owner(text) to service_role;
+revoke all on function public.create_organization_with_owner(text, text, text, text) from public;
+grant execute on function public.create_organization_with_owner(text, text, text, text) to authenticated;
+grant execute on function public.create_organization_with_owner(text, text, text, text) to service_role;

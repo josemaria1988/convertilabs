@@ -73,7 +73,7 @@ export default async function OrganizationDashboardPage({
         <div className="grid gap-4">
           <SectionCard
             title="Ingreso documental"
-            description="Semana 1 sube el archivo directo a Storage privado y mantiene la metadata alineada en `documents` desde el primer momento."
+            description="La subida va a Storage privado y luego dispara procesamiento server-side con OpenAI Responses API usando solo el snapshot de reglas relevante para la organizacion."
           >
             <DocumentUploadDropzone slug={organization.slug} />
           </SectionCard>
@@ -117,7 +117,7 @@ export default async function OrganizationDashboardPage({
 
           <SectionCard
             title="Upload conectado"
-            description="La subida ya crea metadata, usa el bucket privado y refresca esta misma pantalla al completar o fallar."
+            description="La subida crea metadata, usa el bucket privado y deja trazabilidad del run de procesamiento, snapshot de reglas y salida estructurada del intake."
           >
             <div className="space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
               <p>El path de Storage queda fijado como `orgs/&lt;organization_id&gt;/&lt;document_id&gt;/archivo`.</p>

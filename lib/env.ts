@@ -10,10 +10,32 @@ function firstDefined(...values: Array<string | undefined>) {
   return values.find((value) => typeof value === "string" && value.length > 0);
 }
 
+const canonicalProductionAppUrl = "https://convertilabs.com";
+
+function isLocalhostUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.hostname === "localhost"
+      || url.hostname === "127.0.0.1"
+      || url.hostname === "::1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function resolveAppUrl() {
-  const explicitAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const explicitAppUrl = firstDefined(
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+  );
 
   if (explicitAppUrl) {
+    if (process.env.NODE_ENV === "production" && isLocalhostUrl(explicitAppUrl)) {
+      return canonicalProductionAppUrl;
+    }
+
     return explicitAppUrl;
   }
 
@@ -29,6 +51,10 @@ function resolveAppUrl() {
 
   if (vercelHost) {
     return `https://${vercelHost}`;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return canonicalProductionAppUrl;
   }
 
   return "http://localhost:3000";
@@ -87,6 +113,9 @@ export function getServerEnv() {
       process.env.SUPABASE_JWT_SECRET,
       process.env.SUPABASE_CONVERTILABS_SUPABASE_JWT_SECRET,
     ) ?? "";
+  const openAiApiKey = process.env.OPENAI_API_KEY ?? "";
+  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini";
+  const openAiRulesModel = process.env.OPENAI_RULES_MODEL ?? openAiDocumentModel;
 
   return {
     databaseUrl: requireEnv(
@@ -99,6 +128,24 @@ export function getServerEnv() {
       supabaseServiceRoleKey,
     ),
     supabaseJwtSecret,
+    openAiApiKey,
+    openAiDocumentModel,
+    openAiRulesModel,
+  };
+}
+
+export function getOpenAIEnv() {
+  if (typeof window !== "undefined") {
+    throw new Error("getOpenAIEnv can only be used on the server.");
+  }
+
+  return {
+    openAiApiKey: requireEnv("OPENAI_API_KEY", process.env.OPENAI_API_KEY),
+    openAiDocumentModel: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
+    openAiRulesModel:
+      process.env.OPENAI_RULES_MODEL
+      ?? process.env.OPENAI_DOCUMENT_MODEL
+      ?? "gpt-4o-mini",
   };
 }
 
@@ -132,6 +179,9 @@ export function getSupabaseConfigStatus() {
     process.env.SUPABASE_JWT_SECRET,
     process.env.SUPABASE_CONVERTILABS_SUPABASE_JWT_SECRET,
   );
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL;
+  const openAiRulesModel = process.env.OPENAI_RULES_MODEL;
 
   return {
     publicClientConfigured: Boolean(publicSupabaseUrl && publicSupabaseAnonKey),
@@ -140,5 +190,8 @@ export function getSupabaseConfigStatus() {
     directDatabaseConfigured: Boolean(directUrl),
     serviceRoleConfigured: Boolean(serviceRoleKey),
     jwtSecretConfigured: Boolean(jwtSecret),
+    openAiConfigured: Boolean(openAiApiKey),
+    openAiDocumentModelConfigured: Boolean(openAiDocumentModel),
+    openAiRulesModelConfigured: Boolean(openAiRulesModel),
   };
 }
