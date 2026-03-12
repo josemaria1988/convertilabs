@@ -8,6 +8,13 @@ import type {
 } from "@/modules/ai/document-intake-contract";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
+import {
+  resolveUyVatTreatment,
+  type DeterministicRuleRef,
+  type OrganizationFiscalProfile,
+  type OrganizationRuleSnapshotContext,
+  type VatEngineResult,
+} from "@/modules/tax/uy-vat-engine";
 import { rebuildMonthlyVatRunFromConfirmations } from "@/modules/tax/vat-runs";
 
 type JsonRecord = Record<string, unknown>;
@@ -76,8 +83,12 @@ type RuleSnapshotRow = {
   effective_from: string;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   prompt_summary: string;
   deterministic_rule_refs_json: unknown;
+  snapshot_json: JsonRecord | null;
 };
 
 type ProfileVersionRow = {
@@ -86,6 +97,9 @@ type ProfileVersionRow = {
   effective_from: string;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   country_code: string;
   tax_id: string;
 };
@@ -138,18 +152,16 @@ type DocumentListRow = {
   direction: DocumentRoleCandidate;
   document_type: string | null;
   status: string;
+  storage_bucket: string;
+  storage_path: string;
   original_filename: string;
+  mime_type: string | null;
   created_at: string;
   document_date: string | null;
   current_draft_id: string | null;
 };
 
-type ReviewRuleRef = {
-  id: string | null;
-  scope: string | null;
-  priority: number | null;
-  sourceReference: string | null;
-};
+type ReviewRuleRef = DeterministicRuleRef;
 
 type ReviewJournalLine = {
   lineNumber: number;
@@ -160,20 +172,7 @@ type ReviewJournalLine = {
   provenance: string;
 };
 
-type ReviewTaxTreatment = {
-  ready: boolean;
-  treatmentCode: string;
-  label: string;
-  vatBucket: "input_creditable" | "input_non_deductible" | "input_exempt" | "output_vat" | null;
-  taxableAmount: number;
-  taxAmount: number;
-  rate: number | null;
-  explanation: string;
-  warnings: string[];
-  blockingReasons: string[];
-  normativeSummary: string;
-  deterministicRuleRefs: ReviewRuleRef[];
-};
+type ReviewTaxTreatment = VatEngineResult;
 
 type ReviewJournalSuggestion = {
   ready: boolean;
@@ -196,32 +195,38 @@ type DerivedDraftArtifacts = {
 
 export type DocumentWorkspaceListItem = {
   id: string;
-  href: string;
+  processedHref: string | null;
   originalFilename: string;
+  mimeType: string | null;
+  previewUrl: string | null;
   status: string;
   role: DocumentRoleCandidate;
   documentType: string | null;
   createdAt: string;
   documentDate: string | null;
-  hasDraft: boolean;
+  hasProcessedDraft: boolean;
+};
+
+type DocumentViewModel = {
+  id: string;
+  status: string;
+  direction: DocumentRoleCandidate;
+  documentType: string | null;
+  originalFilename: string;
+  mimeType: string | null;
+  createdAt: string;
+  documentDate: string | null;
+  previewUrl: string | null;
+  metadataWarnings: string[];
+  processedHref: string | null;
+  hasProcessedDraft: boolean;
 };
 
 export type DocumentReviewPageData = {
   organizationId: string;
   organizationSlug: string;
   userRole: OrganizationMemberRole;
-  document: {
-    id: string;
-    status: string;
-    direction: DocumentRoleCandidate;
-    documentType: string | null;
-    originalFilename: string;
-    mimeType: string | null;
-    createdAt: string;
-    documentDate: string | null;
-    previewUrl: string | null;
-    metadataWarnings: string[];
-  };
+  document: DocumentViewModel;
   draft: {
     id: string;
     revisionNumber: number;
@@ -243,6 +248,9 @@ export type DocumentReviewPageData = {
     effectiveFrom: string;
     legalEntityType: string;
     taxRegimeCode: string;
+    vatRegime: string;
+    dgiGroup: string;
+    cfeStatus: string;
     promptSummary: string;
   } | null;
   profileVersion: {
@@ -251,6 +259,9 @@ export type DocumentReviewPageData = {
     effectiveFrom: string;
     legalEntityType: string;
     taxRegimeCode: string;
+    vatRegime: string;
+    dgiGroup: string;
+    cfeStatus: string;
     countryCode: string;
     taxId: string;
   } | null;
@@ -270,6 +281,13 @@ export type DocumentReviewPageData = {
   canReopen: boolean;
 };
 
+export type DocumentOriginalPageData = {
+  organizationId: string;
+  organizationSlug: string;
+  userRole: OrganizationMemberRole;
+  document: DocumentViewModel;
+};
+
 export type SaveDraftReviewInput = {
   organizationId: string;
   documentId: string;
@@ -283,99 +301,29 @@ export type SaveDraftReviewInput = {
   };
 };
 
-const purchaseCategoryCatalog = [
-  {
-    code: "goods_resale",
-    label: "Mercaderias para reventa",
-    accountCode: "5101",
-    accountName: "Mercaderias para reventa",
-    keywords: ["mercader", "reventa", "stock", "inventario"],
-    vatBucket: "input_creditable" as const,
-  },
-  {
-    code: "services",
-    label: "Servicios",
-    accountCode: "5201",
-    accountName: "Servicios",
-    keywords: ["servicio", "service"],
-    vatBucket: "input_creditable" as const,
-  },
-  {
-    code: "admin_expense",
-    label: "Gastos administrativos / oficina",
-    accountCode: "6101",
-    accountName: "Gastos administrativos",
-    keywords: ["oficina", "administr", "papeler", "licencia"],
-    vatBucket: "input_creditable" as const,
-  },
-  {
-    code: "transport",
-    label: "Transporte / fletes",
-    accountCode: "6199",
-    accountName: "Transporte y fletes",
-    keywords: ["transporte", "flete", "envio", "logistica"],
-    vatBucket: "input_creditable" as const,
-  },
-  {
-    code: "fuel_and_lubricants",
-    label: "Combustible y lubricantes",
-    accountCode: "6125",
-    accountName: "Combustible y lubricantes",
-    keywords: ["combustible", "nafta", "gasoil", "lubric"],
-    vatBucket: "input_non_deductible" as const,
-  },
-  {
-    code: "professional_fees",
-    label: "Honorarios profesionales",
-    accountCode: "6210",
-    accountName: "Honorarios profesionales",
-    keywords: ["honorario", "profesional", "contador", "abogado"],
-    vatBucket: "input_creditable" as const,
-  },
-  {
-    code: "rent",
-    label: "Alquileres",
-    accountCode: "6220",
-    accountName: "Alquileres",
-    keywords: ["alquiler", "arrendamiento", "rent"],
-    vatBucket: "input_creditable" as const,
-  },
-];
+const purchaseOperationCategoryOptions = [
+  { code: "goods_resale", label: "Mercaderias para reventa" },
+  { code: "services", label: "Servicios" },
+  { code: "admin_expense", label: "Gastos administrativos / oficina" },
+  { code: "transport", label: "Transporte / fletes" },
+  { code: "fuel_and_lubricants", label: "Combustible y lubricantes" },
+  { code: "professional_fees", label: "Honorarios profesionales" },
+  { code: "rent", label: "Alquileres" },
+] as const;
 
-const saleCategoryCatalog = [
-  {
-    code: "taxed_basic_22",
-    label: "Gravadas basico (22%)",
-    accountCode: "4101",
-    accountName: "Ventas gravadas 22%",
-    keywords: ["22", "basico", "gravada"],
-    rate: 22,
-  },
-  {
-    code: "taxed_minimum_10",
-    label: "Gravadas minimo (10%)",
-    accountCode: "4102",
-    accountName: "Ventas gravadas 10%",
-    keywords: ["10", "minimo"],
-    rate: 10,
-  },
-  {
-    code: "exempt_or_export",
-    label: "Exentas / exportaciones",
-    accountCode: "4103",
-    accountName: "Ventas exentas o exportacion",
-    keywords: ["exenta", "export", "exonerada"],
-    rate: 0,
-  },
-  {
-    code: "non_taxed",
-    label: "No gravadas",
-    accountCode: "4104",
-    accountName: "Ventas no gravadas",
-    keywords: ["no grav", "sin iva"],
-    rate: 0,
-  },
-];
+const saleOperationCategoryOptions = [
+  { code: "taxed_basic_22", label: "Gravadas basico (22%)" },
+  { code: "taxed_minimum_10", label: "Gravadas minimo (10%)" },
+  { code: "exempt_or_export", label: "Exentas / exportaciones" },
+  { code: "non_taxed", label: "No gravadas" },
+] as const;
+
+export class MissingPersistedDraftError extends Error {
+  constructor() {
+    super("El documento aun no tiene draft persistido.");
+    this.name = "MissingPersistedDraftError";
+  }
+}
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -403,18 +351,6 @@ function roundCurrency(value: number | null) {
   }
 
   return Math.round(value * 100) / 100;
-}
-
-function normalizeToken(value: string | null | undefined) {
-  if (!value) {
-    return "";
-  }
-
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
 }
 
 function parseDraftFacts(fieldsJson: JsonRecord | null): DocumentIntakeFactMap {
@@ -474,85 +410,6 @@ function getOperationCategoryValue(draft: DraftRow, facts: DocumentIntakeFactMap
   return null;
 }
 
-function inferTaxRate(
-  amountBreakdown: DocumentIntakeAmountBreakdown[],
-  facts: DocumentIntakeFactMap,
-) {
-  const explicitRates = amountBreakdown
-    .map((entry) => entry.tax_rate)
-    .filter((entry): entry is number => typeof entry === "number");
-
-  if (explicitRates.includes(22)) {
-    return 22;
-  }
-
-  if (explicitRates.includes(10)) {
-    return 10;
-  }
-
-  if (
-    typeof facts.subtotal === "number"
-    && typeof facts.tax_amount === "number"
-    && facts.subtotal > 0
-    && facts.tax_amount > 0
-  ) {
-    const ratio = Math.round((facts.tax_amount / facts.subtotal) * 100);
-
-    if (ratio >= 18) {
-      return 22;
-    }
-
-    if (ratio >= 8) {
-      return 10;
-    }
-  }
-
-  return null;
-}
-
-function resolvePurchaseCategory(code: string | null) {
-  if (!code) {
-    return null;
-  }
-
-  const normalizedCode = normalizeToken(code);
-
-  return (
-    purchaseCategoryCatalog.find((category) => category.code === normalizedCode)
-    ?? purchaseCategoryCatalog.find((category) =>
-      category.keywords.some((keyword) => normalizedCode.includes(keyword)))
-    ?? null
-  );
-}
-
-function resolveSaleCategory(code: string | null, rate: number | null) {
-  if (code) {
-    const normalizedCode = normalizeToken(code);
-    const exact = saleCategoryCatalog.find((category) => category.code === normalizedCode);
-
-    if (exact) {
-      return exact;
-    }
-
-    const keywordMatch = saleCategoryCatalog.find((category) =>
-      category.keywords.some((keyword) => normalizedCode.includes(keyword)));
-
-    if (keywordMatch) {
-      return keywordMatch;
-    }
-  }
-
-  if (rate === 22) {
-    return saleCategoryCatalog.find((category) => category.code === "taxed_basic_22") ?? null;
-  }
-
-  if (rate === 10) {
-    return saleCategoryCatalog.find((category) => category.code === "taxed_minimum_10") ?? null;
-  }
-
-  return null;
-}
-
 function getDeterministicRuleRefs(ruleSnapshot: RuleSnapshotRow | null) {
   if (!ruleSnapshot) {
     return [];
@@ -574,114 +431,93 @@ function getDeterministicRuleRefs(ruleSnapshot: RuleSnapshotRow | null) {
   });
 }
 
+function buildOrganizationFiscalProfile(
+  profileVersion: ProfileVersionRow | null,
+): OrganizationFiscalProfile | null {
+  if (!profileVersion) {
+    return null;
+  }
+
+  return {
+    countryCode: profileVersion.country_code,
+    legalEntityType: profileVersion.legal_entity_type,
+    taxRegimeCode: profileVersion.tax_regime_code,
+    vatRegime: profileVersion.vat_regime,
+    dgiGroup: profileVersion.dgi_group,
+    cfeStatus: profileVersion.cfe_status,
+    taxId: profileVersion.tax_id,
+  };
+}
+
+function buildRuleSnapshotContext(
+  ruleSnapshot: RuleSnapshotRow | null,
+): OrganizationRuleSnapshotContext | null {
+  if (!ruleSnapshot) {
+    return null;
+  }
+
+  return {
+    id: ruleSnapshot.id,
+    versionNumber: ruleSnapshot.version_number,
+    effectiveFrom: ruleSnapshot.effective_from,
+    promptSummary: ruleSnapshot.prompt_summary,
+    deterministicRuleRefs: getDeterministicRuleRefs(ruleSnapshot),
+  };
+}
+
 function buildDerivedDraftArtifacts(input: {
   draft: DraftRow;
   facts: DocumentIntakeFactMap;
   amountBreakdown: DocumentIntakeAmountBreakdown[];
   ruleSnapshot: RuleSnapshotRow | null;
+  profileVersion: ProfileVersionRow | null;
 }) {
-  const facts = input.facts;
-  const totalAmount = roundCurrency(
-    facts.total_amount ?? (
-      typeof facts.subtotal === "number" && typeof facts.tax_amount === "number"
-        ? facts.subtotal + facts.tax_amount
-        : null
-    ),
-  );
-  const subtotal = roundCurrency(facts.subtotal);
-  const taxAmount = roundCurrency(facts.tax_amount);
-  const taxRate = inferTaxRate(input.amountBreakdown, facts);
-  const operationCategory = getOperationCategoryValue(input.draft, facts);
-  const deterministicRuleRefs = getDeterministicRuleRefs(input.ruleSnapshot);
-  const blockers: string[] = [];
-  let taxTreatment: ReviewTaxTreatment;
+  const operationCategory = getOperationCategoryValue(input.draft, input.facts);
+  const taxTreatment = resolveUyVatTreatment({
+    documentRole: input.draft.document_role,
+    facts: input.facts,
+    amountBreakdown: input.amountBreakdown,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(input.profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(input.ruleSnapshot),
+  });
   let journalSuggestion: ReviewJournalSuggestion;
+  const journalSeed = taxTreatment.journalSeed;
 
-  if (input.draft.document_role === "purchase") {
-    const category = resolvePurchaseCategory(operationCategory);
-
-    if (!category) {
-      blockers.push("La categoria de compra sigue fuera del catalogo V1.");
-    }
-
-    if (!facts.document_date) {
-      blockers.push("Falta la fecha del documento.");
-    }
-
-    if (totalAmount <= 0) {
-      blockers.push("Falta el total del documento para confirmar.");
-    }
-
-    const vatBucket =
-      taxAmount > 0
-        ? (category?.vatBucket ?? "input_creditable")
-        : "input_exempt";
-
-    taxTreatment = {
-      ready: blockers.length === 0,
-      treatmentCode:
-        vatBucket === "input_creditable"
-          ? "vat_purchase_creditable"
-          : vatBucket === "input_non_deductible"
-            ? "vat_purchase_non_deductible"
-            : "vat_purchase_exempt",
-      label:
-        vatBucket === "input_creditable"
-          ? "IVA compras acreditable"
-          : vatBucket === "input_non_deductible"
-            ? "IVA compras no deducible"
-            : "Compra exenta o sin IVA creditable",
-      vatBucket,
-      taxableAmount: subtotal,
-      taxAmount,
-      rate: taxAmount > 0 ? taxRate : null,
-      explanation: category
-        ? `La compra se encuadra como "${category.label}" y usa solo reglas IVA resumidas del snapshot organizacional.`
-        : "La compra requiere clasificacion manual antes de confirmar tratamiento IVA.",
-      warnings: taxAmount > 0 && taxRate === null
-        ? ["No pudimos inferir una tasa IVA explicita; se conserva el monto detectado."]
-        : [],
-      blockingReasons: blockers,
-      normativeSummary: input.ruleSnapshot
-        ? `Snapshot v${input.ruleSnapshot.version_number} (${input.ruleSnapshot.legal_entity_type} / ${input.ruleSnapshot.tax_regime_code}).`
-        : "Sin snapshot historico; se requiere revision manual.",
-      deterministicRuleRefs,
-    };
-
-    if (category && blockers.length === 0) {
-      const expenseDebit =
-        vatBucket === "input_creditable"
-          ? subtotal
-          : totalAmount;
+  if (taxTreatment.ready && journalSeed) {
+    if (input.draft.document_role === "purchase") {
       const lines: ReviewJournalLine[] = [
         {
           lineNumber: 1,
-          accountCode: category.accountCode,
-          accountName: category.accountName,
-          debit: expenseDebit,
+          accountCode: journalSeed.accountCode,
+          accountName: journalSeed.accountName,
+          debit:
+            taxTreatment.vatBucket === "input_creditable"
+              ? taxTreatment.taxableAmount
+              : journalSeed.totalAmount,
           credit: 0,
-          provenance: "deterministic_catalog",
+          provenance: "uy_vat_engine",
         },
       ];
 
-      if (vatBucket === "input_creditable" && taxAmount > 0) {
+      if (taxTreatment.vatBucket === "input_creditable" && taxTreatment.taxAmount > 0) {
         lines.push({
           lineNumber: 2,
           accountCode: "1181",
           accountName: "IVA compras credito fiscal",
-          debit: taxAmount,
+          debit: taxTreatment.taxAmount,
           credit: 0,
-          provenance: "deterministic_vat_rule",
+          provenance: "uy_vat_engine",
         });
       }
 
       lines.push({
         lineNumber: lines.length + 1,
-        accountCode: "2110",
-        accountName: "Proveedores",
+        accountCode: journalSeed.counterpartyAccountCode,
+        accountName: journalSeed.counterpartyAccountName,
         debit: 0,
-        credit: totalAmount,
-        provenance: "deterministic_counterparty",
+        credit: journalSeed.totalAmount,
+        provenance: "uy_vat_engine",
       });
 
       journalSuggestion = {
@@ -689,109 +525,38 @@ function buildDerivedDraftArtifacts(input: {
         isBalanced: true,
         totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
         totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-        explanation: `Asiento sugerido para compra V1 usando categoria ${category.label}.`,
+        explanation: `Asiento sugerido desde motor IVA Uruguay para ${taxTreatment.label.toLowerCase()}.`,
         lines,
         blockingReasons: [],
       };
-    } else {
-      journalSuggestion = {
-        ready: false,
-        isBalanced: false,
-        totalDebit: 0,
-        totalCredit: 0,
-        explanation: "No existe sugerencia contable confirmable hasta resolver la categoria o datos faltantes.",
-        lines: [],
-        blockingReasons: [...blockers],
-      };
-    }
-  } else if (input.draft.document_role === "sale") {
-    const category = resolveSaleCategory(operationCategory, taxRate);
-
-    if (!category) {
-      blockers.push("La venta necesita una categoria resumida V1 antes de confirmar.");
-    }
-
-    if (!facts.document_date) {
-      blockers.push("Falta la fecha del documento.");
-    }
-
-    if (totalAmount <= 0) {
-      blockers.push("Falta el total del documento para confirmar.");
-    }
-
-    taxTreatment = {
-      ready: blockers.length === 0,
-      treatmentCode:
-        category?.code === "taxed_basic_22"
-          ? "vat_sale_basic_rate"
-          : category?.code === "taxed_minimum_10"
-            ? "vat_sale_minimum_rate"
-            : category?.code === "non_taxed"
-              ? "vat_sale_non_taxed"
-              : "vat_sale_exempt_or_export",
-      label: category?.label ?? "Venta pendiente de clasificacion resumida",
-      vatBucket: "output_vat",
-      taxableAmount:
-        category?.code === "exempt_or_export" || category?.code === "non_taxed"
-          ? totalAmount
-          : subtotal,
-      taxAmount: category?.code === "exempt_or_export" || category?.code === "non_taxed"
-        ? 0
-        : taxAmount,
-      rate:
-        category?.code === "taxed_basic_22"
-          ? 22
-          : category?.code === "taxed_minimum_10"
-            ? 10
-            : 0,
-      explanation: category
-        ? `La venta se muestra en modo resumido V1 (${category.label}) y el IVA output se calcula con reglas deterministicas.`
-        : "La venta requiere categoria manual para poder confirmar IVA output.",
-      warnings: category && category.rate === 0 && taxAmount > 0
-        ? ["El documento trae IVA detectado pero la categoria elegida no deberia llevar output IVA."]
-        : [],
-      blockingReasons: blockers,
-      normativeSummary: input.ruleSnapshot
-        ? `Snapshot v${input.ruleSnapshot.version_number} (${input.ruleSnapshot.legal_entity_type} / ${input.ruleSnapshot.tax_regime_code}).`
-        : "Sin snapshot historico; se requiere revision manual.",
-      deterministicRuleRefs,
-    };
-
-    if (category && blockers.length === 0) {
-      const revenueCredit =
-        category.code === "exempt_or_export" || category.code === "non_taxed"
-          ? totalAmount
-          : subtotal;
-      const outputTax = category.code === "taxed_basic_22" || category.code === "taxed_minimum_10"
-        ? taxAmount
-        : 0;
+    } else if (input.draft.document_role === "sale") {
       const lines: ReviewJournalLine[] = [
         {
           lineNumber: 1,
-          accountCode: "1130",
-          accountName: "Clientes",
-          debit: totalAmount,
+          accountCode: journalSeed.counterpartyAccountCode,
+          accountName: journalSeed.counterpartyAccountName,
+          debit: journalSeed.totalAmount,
           credit: 0,
-          provenance: "deterministic_counterparty",
+          provenance: "uy_vat_engine",
         },
         {
           lineNumber: 2,
-          accountCode: category.accountCode,
-          accountName: category.accountName,
+          accountCode: journalSeed.accountCode,
+          accountName: journalSeed.accountName,
           debit: 0,
-          credit: revenueCredit,
-          provenance: "deterministic_catalog",
+          credit: taxTreatment.taxableAmount,
+          provenance: "uy_vat_engine",
         },
       ];
 
-      if (outputTax > 0) {
+      if (taxTreatment.taxAmount > 0) {
         lines.push({
           lineNumber: 3,
           accountCode: "2131",
           accountName: "IVA ventas debito fiscal",
           debit: 0,
-          credit: outputTax,
-          provenance: "deterministic_vat_rule",
+          credit: taxTreatment.taxAmount,
+          provenance: "uy_vat_engine",
         });
       }
 
@@ -800,7 +565,7 @@ function buildDerivedDraftArtifacts(input: {
         isBalanced: true,
         totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
         totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-        explanation: `Asiento sugerido para venta V1 (${category.label}).`,
+        explanation: `Asiento sugerido desde motor IVA Uruguay para ${taxTreatment.label.toLowerCase()}.`,
         lines,
         blockingReasons: [],
       };
@@ -810,40 +575,25 @@ function buildDerivedDraftArtifacts(input: {
         isBalanced: false,
         totalDebit: 0,
         totalCredit: 0,
-        explanation: "La sugerencia contable de venta queda bloqueada hasta tener categoria resumida y totales validos.",
+        explanation: "No hay sugerencia contable automatica para documentos fuera de compra/venta en V1.",
         lines: [],
-        blockingReasons: [...blockers],
+        blockingReasons: [...taxTreatment.blockingReasons],
       };
     }
   } else {
-    blockers.push("Los documentos clasificados como 'other' no se confirman en V1.");
-    taxTreatment = {
-      ready: false,
-      treatmentCode: "manual_review_required",
-      label: "Revision manual requerida",
-      vatBucket: null,
-      taxableAmount: 0,
-      taxAmount: 0,
-      rate: null,
-      explanation: "Solo compra y venta entran en el flujo V1 confirmable.",
-      warnings: [],
-      blockingReasons: [...blockers],
-      normativeSummary: "Fuera del alcance automatizado de V1.",
-      deterministicRuleRefs,
-    };
     journalSuggestion = {
       ready: false,
       isBalanced: false,
       totalDebit: 0,
       totalCredit: 0,
-      explanation: "No hay sugerencia contable automatica para documentos fuera de compra/venta en V1.",
+      explanation:
+        "La sugerencia contable queda bloqueada hasta que el motor IVA deje el caso confirmable.",
       lines: [],
-      blockingReasons: [...blockers],
+      blockingReasons: [...taxTreatment.blockingReasons],
     };
   }
 
   const validationBlockers = [
-    ...blockers,
     ...taxTreatment.blockingReasons,
     ...journalSuggestion.blockingReasons,
   ].filter((value, index, array) => array.indexOf(value) === index);
@@ -981,8 +731,12 @@ async function loadCurrentDraft(
     : baseQuery;
   const { data, error } = await query.maybeSingle();
 
-  if (error || !data) {
-    throw new Error(error?.message ?? "El documento aun no tiene draft persistido.");
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new MissingPersistedDraftError();
   }
 
   return data as DraftRow;
@@ -1024,6 +778,9 @@ async function loadRuleSnapshot(
         effective_from: profileVersion.effective_from,
         legal_entity_type: profileVersion.legal_entity_type,
         tax_regime_code: profileVersion.tax_regime_code,
+        vat_regime: profileVersion.vat_regime,
+        dgi_group: profileVersion.dgi_group,
+        cfe_status: profileVersion.cfe_status,
         country_code: profileVersion.country_code,
         tax_id: profileVersion.tax_id,
       } satisfies ProfileVersionRow,
@@ -1033,8 +790,12 @@ async function loadRuleSnapshot(
         effective_from: ruleSnapshot.effective_from,
         legal_entity_type: ruleSnapshot.legal_entity_type,
         tax_regime_code: ruleSnapshot.tax_regime_code,
+        vat_regime: ruleSnapshot.vat_regime,
+        dgi_group: ruleSnapshot.dgi_group,
+        cfe_status: ruleSnapshot.cfe_status,
         prompt_summary: ruleSnapshot.prompt_summary,
         deterministic_rule_refs_json: ruleSnapshot.deterministic_rule_refs_json,
+        snapshot_json: ruleSnapshot.snapshot_json,
       } satisfies RuleSnapshotRow,
     };
   }
@@ -1043,7 +804,7 @@ async function loadRuleSnapshot(
     supabase
       .from("organization_rule_snapshots")
       .select(
-        "id, version_number, effective_from, legal_entity_type, tax_regime_code, prompt_summary, deterministic_rule_refs_json",
+        "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, deterministic_rule_refs_json, snapshot_json",
       )
       .eq("id", snapshotId)
       .limit(1)
@@ -1051,7 +812,7 @@ async function loadRuleSnapshot(
     supabase
       .from("organization_profile_versions")
       .select(
-        "id, version_number, effective_from, legal_entity_type, tax_regime_code, country_code, tax_id",
+        "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id",
       )
       .eq("organization_id", document.organization_id)
       .eq("status", "active")
@@ -1168,19 +929,38 @@ async function buildPreviewUrl(document: DocumentRow) {
   return data.signedUrl;
 }
 
+async function buildDocumentViewModel(
+  document: DocumentRow,
+  organizationSlug: string,
+): Promise<DocumentViewModel> {
+  const metadata = asRecord(document.metadata);
+  const processingError = asString(metadata.processing_error);
+
+  return {
+    id: document.id,
+    status: document.status,
+    direction: document.direction,
+    documentType: document.document_type,
+    originalFilename: document.original_filename,
+    mimeType: document.mime_type,
+    createdAt: document.created_at,
+    documentDate: document.document_date,
+    previewUrl: await buildPreviewUrl(document),
+    metadataWarnings: processingError ? [processingError] : [],
+    processedHref: document.current_draft_id
+      ? `/app/o/${organizationSlug}/documents/${document.id}`
+      : null,
+    hasProcessedDraft: Boolean(document.current_draft_id),
+  };
+}
+
 function getOperationCategoryOptions(role: DocumentRoleCandidate) {
   if (role === "purchase") {
-    return purchaseCategoryCatalog.map((category) => ({
-      code: category.code,
-      label: category.label,
-    }));
+    return purchaseOperationCategoryOptions.map((category) => ({ ...category }));
   }
 
   if (role === "sale") {
-    return saleCategoryCatalog.map((category) => ({
-      code: category.code,
-      label: category.label,
-    }));
+    return saleOperationCategoryOptions.map((category) => ({ ...category }));
   }
 
   return [];
@@ -1471,7 +1251,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
   const { data, error } = await supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, original_filename, created_at, document_date, current_draft_id",
+      "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
     )
     .eq("organization_id", input.organizationId)
     .order("created_at", { ascending: false })
@@ -1481,17 +1261,57 @@ export async function listOrganizationWorkspaceDocuments(input: {
     throw new Error(error.message);
   }
 
-  return (((data as DocumentListRow[] | null) ?? [])).map((row) => ({
+  const rows = ((data as DocumentListRow[] | null) ?? []);
+
+  return Promise.all(rows.map(async (row) => ({
     id: row.id,
-    href: `/app/o/${input.organizationSlug}/documents/${row.id}`,
+    processedHref: row.current_draft_id
+      ? `/app/o/${input.organizationSlug}/documents/${row.id}`
+      : null,
     originalFilename: row.original_filename,
+    mimeType: row.mime_type,
+    previewUrl: await buildPreviewUrl({
+      id: row.id,
+      organization_id: input.organizationId,
+      direction: row.direction,
+      document_type: row.document_type,
+      status: row.status,
+      storage_bucket: row.storage_bucket,
+      storage_path: row.storage_path,
+      original_filename: row.original_filename,
+      mime_type: row.mime_type,
+      document_date: row.document_date,
+      created_at: row.created_at,
+      metadata: null,
+      current_draft_id: row.current_draft_id,
+      current_processing_run_id: null,
+      last_rule_snapshot_id: null,
+      last_processed_at: null,
+    }),
     status: row.status,
     role: row.direction,
     documentType: row.document_type,
     createdAt: row.created_at,
     documentDate: row.document_date,
-    hasDraft: Boolean(row.current_draft_id),
-  } satisfies DocumentWorkspaceListItem));
+    hasProcessedDraft: Boolean(row.current_draft_id),
+  } satisfies DocumentWorkspaceListItem)));
+}
+
+export async function loadDocumentOriginalPageData(input: {
+  organizationId: string;
+  organizationSlug: string;
+  documentId: string;
+  userRole: OrganizationMemberRole;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+
+  return {
+    organizationId: input.organizationId,
+    organizationSlug: input.organizationSlug,
+    userRole: input.userRole,
+    document: await buildDocumentViewModel(document, input.organizationSlug),
+  } satisfies DocumentOriginalPageData;
 }
 
 export async function loadDocumentReviewPageData(input: {
@@ -1503,42 +1323,36 @@ export async function loadDocumentReviewPageData(input: {
 }) {
   const supabase = getSupabaseServiceRoleClient();
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+  const documentViewPromise = buildDocumentViewModel(document, input.organizationSlug);
   const draft = await loadCurrentDraft(supabase, document);
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
-  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, previewUrl] =
+  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView] =
     await Promise.all([
       loadRuleSnapshot(supabase, document, draft, input.actorId),
       loadDraftSteps(supabase, draft.id),
       loadProcessingRun(supabase, document, draft),
       loadRevision(supabase, draft),
       loadConfirmations(supabase, document.id),
-      buildPreviewUrl(document),
+      documentViewPromise,
     ]);
   const derived = buildDerivedDraftArtifacts({
     draft,
     facts,
     amountBreakdown,
     ruleSnapshot,
+    profileVersion,
   });
-  const metadata = asRecord(document.metadata);
-  const processingError = asString(metadata.processing_error);
 
   return {
     organizationId: input.organizationId,
     organizationSlug: input.organizationSlug,
     userRole: input.userRole,
     document: {
-      id: document.id,
-      status: document.status,
+      ...documentView,
       direction: draft.document_role,
       documentType: draft.document_type,
-      originalFilename: document.original_filename,
-      mimeType: document.mime_type,
-      createdAt: document.created_at,
       documentDate: facts.document_date ?? document.document_date,
-      previewUrl,
-      metadataWarnings: processingError ? [processingError] : [],
     },
     draft: {
       id: draft.id,
@@ -1562,6 +1376,9 @@ export async function loadDocumentReviewPageData(input: {
           effectiveFrom: ruleSnapshot.effective_from,
           legalEntityType: ruleSnapshot.legal_entity_type,
           taxRegimeCode: ruleSnapshot.tax_regime_code,
+          vatRegime: ruleSnapshot.vat_regime,
+          dgiGroup: ruleSnapshot.dgi_group,
+          cfeStatus: ruleSnapshot.cfe_status,
           promptSummary: ruleSnapshot.prompt_summary,
         }
       : null,
@@ -1572,6 +1389,9 @@ export async function loadDocumentReviewPageData(input: {
           effectiveFrom: profileVersion.effective_from,
           legalEntityType: profileVersion.legal_entity_type,
           taxRegimeCode: profileVersion.tax_regime_code,
+          vatRegime: profileVersion.vat_regime,
+          dgiGroup: profileVersion.dgi_group,
+          cfeStatus: profileVersion.cfe_status,
           countryCode: profileVersion.country_code,
           taxId: profileVersion.tax_id,
         }
@@ -1613,12 +1433,18 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
       amount_breakdown: parseAmountBreakdown(draft.fields_json),
     },
   };
-  const { ruleSnapshot } = await loadRuleSnapshot(supabase, document, nextDraft, input.actorId);
+  const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
+    supabase,
+    document,
+    nextDraft,
+    input.actorId,
+  );
   const derived = buildDerivedDraftArtifacts({
     draft: nextDraft,
     facts,
     amountBreakdown: parseAmountBreakdown(nextDraft.fields_json),
     ruleSnapshot,
+    profileVersion,
   });
 
   const { error: updateError } = await supabase
@@ -1669,12 +1495,18 @@ export async function confirmDocumentReview(input: {
   const draft = await loadCurrentDraft(supabase, document);
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
-  const { ruleSnapshot } = await loadRuleSnapshot(supabase, document, draft, input.actorId);
+  const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
+    supabase,
+    document,
+    draft,
+    input.actorId,
+  );
   const derived = buildDerivedDraftArtifacts({
     draft,
     facts,
     amountBreakdown,
     ruleSnapshot,
+    profileVersion,
   });
 
   if (!derived.validation.canConfirm) {

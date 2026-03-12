@@ -1,11 +1,17 @@
 "use client";
 
 import { useId, useRef } from "react";
+import {
+  buttonBaseClassName,
+  buttonPrimaryChromeClassName,
+} from "@/components/ui/button-styles";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 type DocumentUploadButtonProps = {
   label: string;
   accept: string;
   disabled?: boolean;
+  isLoading?: boolean;
   className?: string;
   onFileSelected: (file: File) => void;
 };
@@ -14,6 +20,7 @@ export function DocumentUploadButton({
   label,
   accept,
   disabled,
+  isLoading,
   className,
   onFileSelected,
 }: DocumentUploadButtonProps) {
@@ -46,9 +53,10 @@ export function DocumentUploadButton({
         }}
         className={
           className
-          ?? "rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+          ?? `${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`
         }
       >
+        {isLoading ? <InlineSpinner /> : null}
         {label}
       </button>
     </>

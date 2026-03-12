@@ -1,3 +1,12 @@
+import {
+  isSupportedCfeStatus,
+  isSupportedDgiGroup,
+  isSupportedVatRegime,
+  supportedCfeStatuses,
+  supportedDgiGroups,
+  supportedVatRegimes,
+} from "@/modules/tax/uy-vat-profile";
+
 export const organizationNameMinLength = 2;
 export const organizationNameMaxLength = 120;
 export const supportedLegalEntityTypes = [
@@ -16,6 +25,9 @@ export type OrganizationOnboardingInput = {
   legalEntityType: string;
   taxId: string;
   taxRegimeCode: string;
+  vatRegime: string;
+  dgiGroup: string;
+  cfeStatus: string;
 };
 
 export type OrganizationOnboardingFieldErrors = {
@@ -23,6 +35,9 @@ export type OrganizationOnboardingFieldErrors = {
   legalEntityType?: string;
   taxId?: string;
   taxRegimeCode?: string;
+  vatRegime?: string;
+  dgiGroup?: string;
+  cfeStatus?: string;
 };
 
 type ValidationSuccess = {
@@ -50,6 +65,9 @@ export function validateOrganizationOnboardingInput(
   const legalEntityType = input.legalEntityType.trim().toUpperCase();
   const taxId = normalizeTaxId(input.taxId);
   const taxRegimeCode = input.taxRegimeCode.trim().toUpperCase();
+  const vatRegime = input.vatRegime.trim().toUpperCase();
+  const dgiGroup = input.dgiGroup.trim().toUpperCase();
+  const cfeStatus = input.cfeStatus.trim().toUpperCase();
   const errors: OrganizationOnboardingFieldErrors = {};
 
   if (!name) {
@@ -72,6 +90,18 @@ export function validateOrganizationOnboardingInput(
     errors.taxRegimeCode = "Selecciona un regimen tributario soportado para V1.";
   }
 
+  if (!isSupportedVatRegime(vatRegime)) {
+    errors.vatRegime = "Selecciona un regimen IVA explicito para continuar.";
+  }
+
+  if (!isSupportedDgiGroup(dgiGroup)) {
+    errors.dgiGroup = "Selecciona el grupo DGI operativo de la organizacion.";
+  }
+
+  if (!isSupportedCfeStatus(cfeStatus)) {
+    errors.cfeStatus = "Selecciona el estado CFE actual de la organizacion.";
+  }
+
   if (Object.keys(errors).length > 0) {
     return {
       success: false,
@@ -79,16 +109,19 @@ export function validateOrganizationOnboardingInput(
     };
   }
 
-    return {
-      success: true,
-      data: {
-        name,
-        legalEntityType,
-        taxId,
-        taxRegimeCode,
-      },
-    };
-  }
+  return {
+    success: true,
+    data: {
+      name,
+      legalEntityType,
+      taxId,
+      taxRegimeCode,
+      vatRegime,
+      dgiGroup,
+      cfeStatus,
+    },
+  };
+}
 
 export function slugifyOrganizationNamePreview(value: string) {
   return normalizeOrganizationName(value)
@@ -99,3 +132,9 @@ export function slugifyOrganizationNamePreview(value: string) {
     .replace(/-{2,}/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+export {
+  supportedVatRegimes,
+  supportedDgiGroups,
+  supportedCfeStatuses,
+};

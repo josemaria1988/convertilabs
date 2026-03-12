@@ -71,15 +71,18 @@ function getTaxSnapshot(draft: ConfirmedDraftRow) {
   return {
     vatBucket:
       asString(taxJson.vat_bucket)
+      ?? asString(taxJson.vatBucket)
       ?? asString(taxJson.result_bucket)
       ?? asString(asRecord(taxJson.determination).vat_bucket),
     taxableAmount:
       asNumber(taxJson.taxable_amount)
+      ?? asNumber(taxJson.taxableAmount)
       ?? asNumber(asRecord(taxJson.determination).taxable_amount)
       ?? asNumber(getDraftFacts(draft.fields_json).subtotal)
       ?? 0,
     taxAmount:
       asNumber(taxJson.tax_amount)
+      ?? asNumber(taxJson.taxAmount)
       ?? asNumber(asRecord(taxJson.determination).tax_amount)
       ?? asNumber(getDraftFacts(draft.fields_json).tax_amount)
       ?? 0,

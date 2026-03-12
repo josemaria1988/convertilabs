@@ -12,8 +12,11 @@ import {
   organizationNameMaxLength,
   organizationNameMinLength,
   slugifyOrganizationNamePreview,
+  supportedCfeStatuses,
+  supportedDgiGroups,
   supportedLegalEntityTypes,
   supportedTaxRegimeCodes,
+  supportedVatRegimes,
 } from "@/modules/organizations/onboarding-schema";
 
 type OrganizationOnboardingFormProps = {
@@ -26,6 +29,9 @@ export function OrganizationOnboardingForm({
   const [organizationName, setOrganizationName] = useState("");
   const [legalEntityType, setLegalEntityType] = useState("SAS");
   const [taxRegimeCode, setTaxRegimeCode] = useState("IRAE_GENERAL");
+  const [vatRegime, setVatRegime] = useState("GENERAL");
+  const [dgiGroup, setDgiGroup] = useState("NO_CEDE");
+  const [cfeStatus, setCfeStatus] = useState("ELECTRONIC_ISSUER");
   const [taxId, setTaxId] = useState("");
   const [state, formAction, isPending] = useActionState(
     createOrganizationAction,
@@ -117,6 +123,74 @@ export function OrganizationOnboardingForm({
         </label>
       </div>
 
+      <div className="grid gap-5 md:grid-cols-3">
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Regimen IVA</span>
+          <select
+            name="vatRegime"
+            value={vatRegime}
+            onChange={(event) => {
+              setVatRegime(event.target.value);
+            }}
+            aria-invalid={Boolean(safeState.fieldErrors.vatRegime)}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+          >
+            {supportedVatRegimes.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          {safeState.fieldErrors.vatRegime ? (
+            <p className="text-sm text-amber-800">{safeState.fieldErrors.vatRegime}</p>
+          ) : null}
+        </label>
+
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Grupo DGI</span>
+          <select
+            name="dgiGroup"
+            value={dgiGroup}
+            onChange={(event) => {
+              setDgiGroup(event.target.value);
+            }}
+            aria-invalid={Boolean(safeState.fieldErrors.dgiGroup)}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+          >
+            {supportedDgiGroups.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          {safeState.fieldErrors.dgiGroup ? (
+            <p className="text-sm text-amber-800">{safeState.fieldErrors.dgiGroup}</p>
+          ) : null}
+        </label>
+
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Estado CFE</span>
+          <select
+            name="cfeStatus"
+            value={cfeStatus}
+            onChange={(event) => {
+              setCfeStatus(event.target.value);
+            }}
+            aria-invalid={Boolean(safeState.fieldErrors.cfeStatus)}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
+          >
+            {supportedCfeStatuses.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          {safeState.fieldErrors.cfeStatus ? (
+            <p className="text-sm text-amber-800">{safeState.fieldErrors.cfeStatus}</p>
+          ) : null}
+        </label>
+      </div>
+
       <label className="block space-y-2">
         <span className="text-sm font-medium">RUT de la organizacion</span>
         <input
@@ -132,8 +206,8 @@ export function OrganizationOnboardingForm({
           className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 outline-none transition focus:border-[color:var(--color-accent)]"
         />
         <p className="text-sm leading-6 text-[color:var(--color-muted)]">
-          V1 usa pais UY y exige RUT + forma juridica + regimen para materializar
-          el perfil base y las reglas resumidas.
+          V1 usa pais UY y exige RUT, forma juridica, regimen tributario, regimen IVA,
+          grupo DGI y estado CFE para materializar el perfil base y las reglas resumidas.
         </p>
         {safeState.fieldErrors.taxId ? (
           <p className="text-sm text-amber-800">{safeState.fieldErrors.taxId}</p>

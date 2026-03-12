@@ -162,6 +162,7 @@ export function DocumentUploadDropzone({
           label={status === "uploading" ? "Subiendo..." : "Seleccionar archivo"}
           accept={acceptedMimeLabel}
           disabled={status === "uploading" || isRefreshing}
+          isLoading={status === "uploading" || isRefreshing}
           onFileSelected={(file) => {
             void handleFile(file);
           }}

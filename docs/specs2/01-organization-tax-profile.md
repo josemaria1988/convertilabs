@@ -22,6 +22,11 @@ En V1 el minimo operativo para desbloquear clasificacion fiscal y contable es:
 - `tax_id`
 - `legal_entity_type`
 - `tax_regime_code`
+- `vat_regime`
+- `dgi_group`
+- `cfe_status`
+
+`vat_regime` es obligatorio y explicito. Nunca se infiere a partir de la forma juridica.
 
 ---
 
@@ -76,6 +81,9 @@ El onboarding captura desde el inicio:
 - forma juridica
 - RUT
 - regimen tributario
+- regimen IVA
+- grupo DGI
+- estado CFE
 
 ### Settings
 
@@ -95,6 +103,7 @@ No existe recalculo automatico de drafts abiertos al cambiar el perfil.
 1. La fecha efectiva del perfil importa para trazabilidad, pero en V1 la politica operativa es conservadora: drafts existentes no cambian.
 2. Si falta el perfil minimo, el documento puede procesarse tecnicamente, pero no queda listo para confirmar.
 3. El snapshot por organizacion es la unica fuente de contexto normativo que se manda al modelo.
+4. La automatizacion IVA solo se habilita para `vat_regime = GENERAL`.
 
 ---
 

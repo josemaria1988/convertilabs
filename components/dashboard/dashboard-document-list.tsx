@@ -1,9 +1,7 @@
-import Link from "next/link";
 import type { DashboardDocument } from "@/modules/documents/dashboard";
 
 type DashboardDocumentListProps = {
   documents: DashboardDocument[];
-  organizationSlug: string;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("es-UY", {
@@ -40,7 +38,6 @@ function getStatusClasses(status: string) {
 
 export function DashboardDocumentList({
   documents,
-  organizationSlug,
 }: DashboardDocumentListProps) {
   return (
     <div className="overflow-x-auto">
@@ -57,12 +54,7 @@ export function DashboardDocumentList({
           {documents.map((document) => (
             <tr key={document.id} className="align-top">
               <td className="rounded-l-2xl border border-r-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm font-medium">
-                <Link
-                  href={`/app/o/${organizationSlug}/documents/${document.id}`}
-                  className="hover:underline"
-                >
-                  {document.originalFilename}
-                </Link>
+                {document.originalFilename}
               </td>
               <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm">
                 <span

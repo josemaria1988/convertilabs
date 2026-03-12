@@ -1,10 +1,20 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { SectionCard } from "@/components/section-card";
+import {
+  buttonBaseClassName,
+  buttonPrimaryChromeClassName,
+} from "@/components/ui/button-styles";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { supportedLegalEntityTypes, supportedTaxRegimeCodes } from "@/modules/organizations/onboarding-schema";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadOrganizationSettingsData } from "@/modules/organizations/settings";
+import {
+  supportedCfeStatuses,
+  supportedDgiGroups,
+  supportedVatRegimes,
+} from "@/modules/tax/uy-vat-profile";
 import { activateOrganizationProfileVersionAction } from "./actions";
 
 type OrganizationSettingsPageProps = {
@@ -33,7 +43,6 @@ export default async function OrganizationSettingsPage({
       userRole={organization.role}
       title="Settings"
       description="Perfil versionado del tenant, snapshots de reglas por organizacion y advertencia explicita de que los drafts viejos quedan congelados con la configuracion previa."
-      uploadHref={`/app/o/${organization.slug}/dashboard#document-upload-panel`}
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -41,13 +50,16 @@ export default async function OrganizationSettingsPage({
           title="Perfil activo"
           description="El onboarding carga el minimo fiscal V1. Desde aqui se activan nuevas versiones del perfil que materializan nuevos snapshots."
         >
-          <div className="space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
-            <p>Organizacion: {settings.organization.name}</p>
-            <p>Pais: {settings.organization.countryCode}</p>
-            <p>Forma juridica: {settings.organization.legalEntityType ?? "Sin definir"}</p>
-            <p>Regimen: {settings.organization.taxRegimeCode ?? "Sin definir"}</p>
-            <p>RUT: {settings.organization.taxId ?? "Sin definir"}</p>
-          </div>
+            <div className="space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
+              <p>Organizacion: {settings.organization.name}</p>
+              <p>Pais: {settings.organization.countryCode}</p>
+              <p>Forma juridica: {settings.organization.legalEntityType ?? "Sin definir"}</p>
+              <p>Regimen tributario: {settings.organization.taxRegimeCode ?? "Sin definir"}</p>
+              <p>Regimen IVA: {settings.organization.vatRegime ?? "Sin definir"}</p>
+              <p>Grupo DGI: {settings.organization.dgiGroup ?? "Sin definir"}</p>
+              <p>Estado CFE: {settings.organization.cfeStatus ?? "Sin definir"}</p>
+              <p>RUT: {settings.organization.taxId ?? "Sin definir"}</p>
+            </div>
 
           <form action={activateOrganizationProfileVersionAction} className="mt-6 space-y-4">
             <input type="hidden" name="slug" value={organization.slug} />
@@ -77,6 +89,53 @@ export default async function OrganizationSettingsPage({
                   {supportedTaxRegimeCodes.map((option) => (
                     <option key={option} value={option}>
                       {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="space-y-2 text-sm">
+                <span className="font-medium">Regimen IVA</span>
+                <select
+                  name="vatRegime"
+                  defaultValue={settings.activeProfile?.vat_regime ?? "GENERAL"}
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                >
+                  {supportedVatRegimes.map((option) => (
+                    <option key={option} value={option}>
+                      {option.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span className="font-medium">Grupo DGI</span>
+                <select
+                  name="dgiGroup"
+                  defaultValue={settings.activeProfile?.dgi_group ?? "NO_CEDE"}
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                >
+                  {supportedDgiGroups.map((option) => (
+                    <option key={option} value={option}>
+                      {option.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span className="font-medium">Estado CFE</span>
+                <select
+                  name="cfeStatus"
+                  defaultValue={settings.activeProfile?.cfe_status ?? "ELECTRONIC_ISSUER"}
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                >
+                  {supportedCfeStatuses.map((option) => (
+                    <option key={option} value={option}>
+                      {option.replace(/_/g, " ")}
                     </option>
                   ))}
                 </select>
@@ -118,12 +177,12 @@ export default async function OrganizationSettingsPage({
               Los drafts existentes no se recalculan automaticamente. Quedan congelados y solo los documentos nuevos usan la nueva configuracion.
             </div>
 
-            <button
-              type="submit"
-              className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white"
+            <SubmitButton
+              pendingLabel="Activando..."
+              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
             >
               Activar nueva version
-            </button>
+            </SubmitButton>
           </form>
         </SectionCard>
 
@@ -140,6 +199,9 @@ export default async function OrganizationSettingsPage({
                   </p>
                   <p className="mt-2 text-[color:var(--color-muted)]">
                     {settings.activeRuleSnapshot.legal_entity_type} / {settings.activeRuleSnapshot.tax_regime_code}
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    IVA {settings.activeRuleSnapshot.vat_regime} / DGI {settings.activeRuleSnapshot.dgi_group} / CFE {settings.activeRuleSnapshot.cfe_status}
                   </p>
                 </div>
                 <pre className="max-h-[260px] overflow-auto rounded-3xl border border-[color:var(--color-border)] bg-white/75 p-5 text-xs leading-6 text-[color:var(--color-muted)]">
@@ -172,6 +234,9 @@ export default async function OrganizationSettingsPage({
                       {profile.legal_entity_type} / {profile.tax_regime_code}
                     </p>
                     <p className="mt-1 text-[color:var(--color-muted)]">
+                      IVA {profile.vat_regime} / DGI {profile.dgi_group} / CFE {profile.cfe_status}
+                    </p>
+                    <p className="mt-1 text-[color:var(--color-muted)]">
                       Desde {profile.effective_from}
                     </p>
                   </div>
@@ -190,6 +255,9 @@ export default async function OrganizationSettingsPage({
                     </p>
                     <p className="mt-2 text-[color:var(--color-muted)]">
                       {snapshot.legal_entity_type} / {snapshot.tax_regime_code}
+                    </p>
+                    <p className="mt-1 text-[color:var(--color-muted)]">
+                      IVA {snapshot.vat_regime} / DGI {snapshot.dgi_group} / CFE {snapshot.cfe_status}
                     </p>
                     <p className="mt-1 text-[color:var(--color-muted)]">
                       Desde {snapshot.effective_from}

@@ -12,6 +12,9 @@ type ProfileVersionRow = {
   effective_to: string | null;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   country_code: string;
   tax_id: string;
   profile_summary: string | null;
@@ -27,7 +30,11 @@ type RuleSnapshotRow = {
   effective_to: string | null;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   prompt_summary: string;
+  snapshot_json: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
@@ -41,6 +48,9 @@ export type OrganizationSettingsData = {
     taxId: string | null;
     legalEntityType: string | null;
     taxRegimeCode: string | null;
+    vatRegime: string | null;
+    dgiGroup: string | null;
+    cfeStatus: string | null;
   };
   activeProfile: ProfileVersionRow | null;
   profileHistory: ProfileVersionRow[];
@@ -66,7 +76,9 @@ async function loadOrganizationRow(
 ) {
   const { data, error } = await supabase
     .from("organizations")
-    .select("id, slug, name, country_code, tax_id, legal_entity_type, tax_regime_code")
+    .select(
+      "id, slug, name, country_code, tax_id, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
+    )
     .eq("id", organizationId)
     .limit(1)
     .maybeSingle();
@@ -83,6 +95,9 @@ async function loadOrganizationRow(
     taxId: (data.tax_id as string | null) ?? null,
     legalEntityType: (data.legal_entity_type as string | null) ?? null,
     taxRegimeCode: (data.tax_regime_code as string | null) ?? null,
+    vatRegime: (data.vat_regime as string | null) ?? null,
+    dgiGroup: (data.dgi_group as string | null) ?? null,
+    cfeStatus: (data.cfe_status as string | null) ?? null,
   };
 }
 
@@ -93,7 +108,7 @@ export async function loadOrganizationSettingsData(organizationId: string) {
     supabase
       .from("organization_profile_versions")
       .select(
-        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, country_code, tax_id, profile_summary, change_reason, created_at",
+        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_summary, change_reason, created_at",
       )
       .eq("organization_id", organizationId)
       .order("version_number", { ascending: false })
@@ -101,7 +116,7 @@ export async function loadOrganizationSettingsData(organizationId: string) {
     supabase
       .from("organization_rule_snapshots")
       .select(
-        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, prompt_summary, metadata, created_at",
+        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, snapshot_json, metadata, created_at",
       )
       .eq("organization_id", organizationId)
       .order("version_number", { ascending: false })
@@ -120,6 +135,7 @@ export async function loadOrganizationSettingsData(organizationId: string) {
   const ruleSnapshotHistory = (((snapshotResult.data as RuleSnapshotRow[] | null) ?? [])).map(
     (snapshot) => ({
       ...snapshot,
+      snapshot_json: asRecord(snapshot.snapshot_json),
       metadata: asRecord(snapshot.metadata),
     }),
   );
@@ -140,6 +156,9 @@ export async function activateOrganizationProfileVersion(input: {
   legalEntityType: string;
   taxId: string;
   taxRegimeCode: string;
+  vatRegime: string;
+  dgiGroup: string;
+  cfeStatus: string;
   effectiveFrom: string;
   changeReason: string;
 }) {
@@ -184,6 +203,9 @@ export async function activateOrganizationProfileVersion(input: {
       legal_entity_type: input.legalEntityType,
       tax_id: input.taxId,
       tax_regime_code: input.taxRegimeCode,
+      vat_regime: input.vatRegime,
+      dgi_group: input.dgiGroup,
+      cfe_status: input.cfeStatus,
       updated_at: new Date().toISOString(),
     })
     .eq("id", input.organizationId);
@@ -201,9 +223,17 @@ export async function activateOrganizationProfileVersion(input: {
       effective_from: input.effectiveFrom,
       legal_entity_type: input.legalEntityType,
       tax_regime_code: input.taxRegimeCode,
+      vat_regime: input.vatRegime,
+      dgi_group: input.dgiGroup,
+      cfe_status: input.cfeStatus,
       country_code: "UY",
       tax_id: input.taxId,
-      profile_summary: `Pais: UY. Forma juridica: ${input.legalEntityType}. Regimen: ${input.taxRegimeCode}.`,
+      profile_summary:
+        `Pais: UY. Forma juridica: ${input.legalEntityType}. `
+        + `Regimen tributario: ${input.taxRegimeCode}. `
+        + `Regimen IVA: ${input.vatRegime}. `
+        + `Grupo DGI: ${input.dgiGroup}. `
+        + `Estado CFE: ${input.cfeStatus}.`,
       change_reason: input.changeReason,
       profile_json: {
         activated_from_settings: true,

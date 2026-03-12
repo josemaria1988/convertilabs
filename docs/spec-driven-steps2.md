@@ -11,11 +11,11 @@ Convenciones base para esta etapa
 
 | Area | Backend implementado | Visible en UI | Pendiente |
 |---|---|---|---|
-| Onboarding fiscal minimo | Si | Si | hardening UX |
+| Onboarding fiscal minimo | Si | Si | validaciones y guiado asistido |
 | Upload privado | Si | Si | nada bloqueante |
 | Intake OpenAI | Si | Parcial | worker/cola real |
 | Draft persistente | Si | Si | autosave mas fino |
-| Sugerencia IVA | Si | Si | casos especiales mas ricos |
+| Sugerencia IVA | Si | Si | exportacion, mixtos y excepciones por rubro |
 | Sugerencia contable | Si | Si | mapping completo a plan de cuentas |
 | Confirmacion/reapertura | Si | Si | motivo obligatorio al reabrir |
 | VAT runs | Si | Si | backoffice fiscal mas rico |
@@ -42,6 +42,7 @@ Convenciones base para esta etapa
 
 - settings muestra perfil activo, historial y snapshots
 - settings permite activar nueva version del perfil
+- el perfil fiscal versionado incluye `vat_regime`, `dgi_group` y `cfe_status`
 - los drafts anteriores no se recalculan automaticamente
 
 ## Follow-up tecnico

@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { SectionCard } from "@/components/section-card";
+import {
+  buttonBaseClassName,
+  buttonPrimaryChromeClassName,
+  buttonSecondaryChromeClassName,
+} from "@/components/ui/button-styles";
+import { LoadingLink } from "@/components/ui/loading-link";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationWorkspaceDocuments } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
@@ -37,13 +43,12 @@ export default async function OrganizationDocumentsPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Documents"
-      description="Vista operativa de todos los documentos del tenant actual, con acceso directo al draft, su estado de revision y su confirmacion."
-      uploadHref={`/app/o/${organization.slug}/dashboard#document-upload-panel`}
+      description="Vista operativa de todos los documentos del tenant actual, con acceso separado al original subido y al draft procesado cuando ya existe."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
       <SectionCard
         title="Bandeja documental"
-        description="El dashboard sigue siendo la puerta de entrada. Aqui se concentra el trabajo de revision y confirmacion sobre drafts persistidos."
+        description="Cada fila separa el acceso al draft procesado del acceso al archivo original que se subio al bucket privado."
       >
         {documents.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
@@ -58,7 +63,7 @@ export default async function OrganizationDocumentsPage({
                   <th className="pb-1 pr-4">Estado</th>
                   <th className="pb-1 pr-4">Rol</th>
                   <th className="pb-1 pr-4">Fecha doc</th>
-                  <th className="pb-1">Accion</th>
+                  <th className="pb-1">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -77,12 +82,34 @@ export default async function OrganizationDocumentsPage({
                       {document.documentDate ?? "-"}
                     </td>
                     <td className="rounded-r-2xl border border-l-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm">
-                      <Link
-                        href={document.href}
-                        className="rounded-full border border-[color:var(--color-border)] bg-white px-4 py-2 font-semibold"
-                      >
-                        {document.hasDraft ? "Abrir draft" : "Ver documento"}
-                      </Link>
+                      <div className="flex flex-wrap gap-2">
+                        {document.processedHref ? (
+                          <LoadingLink
+                            href={document.processedHref}
+                            pendingLabel="Abriendo..."
+                            className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-2 text-sm`}
+                          >
+                            Ver documento procesado
+                          </LoadingLink>
+                        ) : (
+                          <span
+                            className="rounded-full border border-dashed border-[color:var(--color-border)] px-4 py-2 font-semibold text-[color:var(--color-muted)]"
+                            aria-disabled="true"
+                            title="Disponible cuando exista draft persistido."
+                          >
+                            Ver documento procesado
+                          </span>
+                        )}
+                        <DocumentOriginalModalTrigger
+                          previewUrl={document.previewUrl}
+                          mimeType={document.mimeType}
+                          originalFilename={document.originalFilename}
+                          triggerLabel="Ver documento original"
+                          triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+                          modalTitle={document.originalFilename}
+                          modalDescription="Archivo original subido por el usuario. Se abre en grande para contrastar la informacion real del comprobante."
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -37,6 +37,12 @@ La sugerencia fiscal sale de:
 
 No sale de pegar normativa completa dentro del prompt.
 
+El gating automatico exige:
+
+- `country_code = 'UY'`
+- `legal_entity_type in {SA, SRL, SAS}`
+- `vat_regime = GENERAL`
+
 ---
 
 ## 3. Salidas V1
@@ -63,6 +69,13 @@ Si no hay regla activa o el caso queda fuera del catalogo:
 - el sistema no inventa
 - deja el draft en revision o con bloqueo
 - mantiene trazabilidad al snapshot y a las refs deterministicas
+
+En este MVP quedan en revision manual por defecto:
+
+- exportaciones
+- operaciones mixtas
+- no gravadas/exentas sin regla aprobada
+- organizaciones con `vat_regime != GENERAL`
 
 ---
 

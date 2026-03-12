@@ -55,7 +55,6 @@ export default async function OrganizationTaxPage({
       userRole={organization.role}
       title="Tax"
       description="IVA mensual reconstruido desde documentos confirmados, con trazabilidad a drafts y snapshots organizacionales."
-      uploadHref={`/app/o/${organization.slug}/dashboard#document-upload-panel`}
       navItems={buildOrganizationPrivateNavItems(organization.slug, "tax")}
     >
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">

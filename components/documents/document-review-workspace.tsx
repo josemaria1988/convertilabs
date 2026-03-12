@@ -7,6 +7,13 @@ import type {
   DocumentIntakeFactMap,
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
+import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import {
+  buttonBaseClassName,
+  buttonPrimaryChromeClassName,
+  buttonSecondaryChromeClassName,
+} from "@/components/ui/button-styles";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 type StepCode = "identity" | "fields" | "amounts" | "operation_context";
 
@@ -110,6 +117,9 @@ type DocumentReviewWorkspaceProps = {
       effectiveFrom: string;
       legalEntityType: string;
       taxRegimeCode: string;
+      vatRegime: string;
+      dgiGroup: string;
+      cfeStatus: string;
       promptSummary: string;
     } | null;
     profileVersion: {
@@ -118,6 +128,9 @@ type DocumentReviewWorkspaceProps = {
       effectiveFrom: string;
       legalEntityType: string;
       taxRegimeCode: string;
+      vatRegime: string;
+      dgiGroup: string;
+      cfeStatus: string;
       countryCode: string;
       taxId: string;
     } | null;
@@ -236,6 +249,7 @@ export function DocumentReviewWorkspace({
     operation_context: "",
   });
   const [actionMessage, setActionMessage] = useState("");
+  const [pendingAction, setPendingAction] = useState<"confirm" | "reopen" | null>(null);
 
   useEffect(() => {
     setIdentity({
@@ -282,7 +296,11 @@ export function DocumentReviewWorkspace({
     });
   }
 
-  function runSimpleAction(action: ReviewSimpleAction) {
+  function runSimpleAction(
+    actionKey: "confirm" | "reopen",
+    action: ReviewSimpleAction,
+  ) {
+    setPendingAction(actionKey);
     setActionMessage("Procesando...");
     startTransition(async () => {
       try {
@@ -294,6 +312,8 @@ export function DocumentReviewWorkspace({
         }
       } catch (error) {
         setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
       }
     });
   }
@@ -315,24 +335,35 @@ export function DocumentReviewWorkspace({
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+              <DocumentOriginalModalTrigger
+                previewUrl={pageData.document.previewUrl}
+                mimeType={pageData.document.mimeType}
+                originalFilename={pageData.document.originalFilename}
+                triggerLabel="Ver documento original"
+                triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-5 py-3 text-sm`}
+                modalTitle={pageData.document.originalFilename}
+                modalDescription="Archivo original subido por el usuario. Se abre en grande para validar el comprobante real sin salir de la revision."
+              />
               <button
                 type="button"
                 disabled={!pageData.canConfirm || isPending}
                 onClick={() => {
-                  runSimpleAction(confirmDocumentAction);
+                  runSimpleAction("confirm", confirmDocumentAction);
                 }}
-                className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
               >
+                {pendingAction === "confirm" && isPending ? <InlineSpinner /> : null}
                 Confirmar documento
               </button>
               <button
                 type="button"
                 disabled={!pageData.canReopen || isPending}
                 onClick={() => {
-                  runSimpleAction(reopenDocumentAction);
+                  runSimpleAction("reopen", reopenDocumentAction);
                 }}
-                className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
               >
+                {pendingAction === "reopen" && isPending ? <InlineSpinner /> : null}
                 Reabrir revision
               </button>
             </div>
@@ -366,38 +397,6 @@ export function DocumentReviewWorkspace({
           <div aria-live="polite" className="mt-4 min-h-6 text-sm text-[color:var(--color-muted)]">
             {actionMessage}
           </div>
-        </article>
-
-        <article className="panel p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-2xl font-semibold tracking-[-0.05em]">Preview</h3>
-              <p className="text-sm leading-7 text-[color:var(--color-muted)]">
-                Vista del archivo original con acceso temporal firmado desde Storage privado.
-              </p>
-            </div>
-          </div>
-
-          {pageData.document.previewUrl ? (
-            pageData.document.mimeType === "application/pdf" ? (
-              <iframe
-                src={pageData.document.previewUrl}
-                className="h-[620px] w-full rounded-3xl border border-[color:var(--color-border)] bg-white"
-                title="Preview del documento"
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={pageData.document.previewUrl}
-                alt={pageData.document.originalFilename}
-                className="max-h-[620px] w-full rounded-3xl border border-[color:var(--color-border)] bg-white object-contain"
-              />
-            )
-          ) : (
-            <div className="rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/55 px-6 py-16 text-center text-sm text-[color:var(--color-muted)]">
-              No pudimos generar un preview firmado para este archivo.
-            </div>
-          )}
         </article>
 
         <article className="panel p-6">
@@ -646,7 +645,7 @@ export function DocumentReviewWorkspace({
               <p className="font-semibold">Snapshot aplicado</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.ruleSnapshot
-                  ? `v${pageData.ruleSnapshot.versionNumber} - ${pageData.ruleSnapshot.legalEntityType} / ${pageData.ruleSnapshot.taxRegimeCode}`
+                  ? `v${pageData.ruleSnapshot.versionNumber} - ${pageData.ruleSnapshot.legalEntityType} / ${pageData.ruleSnapshot.taxRegimeCode} / IVA ${pageData.ruleSnapshot.vatRegime}`
                   : "Sin snapshot"}
               </p>
               <p className="mt-2 text-[color:var(--color-muted)]">

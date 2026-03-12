@@ -2,6 +2,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { getUyVatFeatureFlags } from "@/modules/tax/feature-flags";
+
 type OrganizationRow = {
   id: string;
   name: string;
@@ -9,6 +11,9 @@ type OrganizationRow = {
   legal_entity_type: string | null;
   tax_id: string | null;
   tax_regime_code: string | null;
+  vat_regime: string | null;
+  dgi_group: string | null;
+  cfe_status: string | null;
 };
 
 type OrganizationProfileVersionRow = {
@@ -20,6 +25,9 @@ type OrganizationProfileVersionRow = {
   effective_to: string | null;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   country_code: string;
   tax_id: string;
   profile_summary: string | null;
@@ -48,9 +56,13 @@ type OrganizationRuleSnapshotRow = {
   effective_to: string | null;
   legal_entity_type: string;
   tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
   prompt_summary: string;
   rules_json: unknown;
   deterministic_rule_refs_json: unknown;
+  snapshot_json: Record<string, unknown> | null;
 };
 
 export type MaterializedOrganizationRuleSnapshot = {
@@ -61,6 +73,9 @@ export type MaterializedOrganizationRuleSnapshot = {
 function summarizeProfile(profile: {
   legalEntityType: string;
   taxRegimeCode: string;
+  vatRegime: string;
+  dgiGroup: string;
+  cfeStatus: string;
   countryCode: string;
   taxId: string;
 }) {
@@ -68,6 +83,9 @@ function summarizeProfile(profile: {
     `Pais: ${profile.countryCode}.`,
     `Forma juridica: ${profile.legalEntityType}.`,
     `Regimen tributario: ${profile.taxRegimeCode}.`,
+    `Regimen IVA: ${profile.vatRegime}.`,
+    `Grupo DGI: ${profile.dgiGroup}.`,
+    `Estado CFE: ${profile.cfeStatus}.`,
     `RUT de la organizacion: ${profile.taxId}.`,
     "V1 cubre solo IVA y procesamiento documental para Uruguay.",
   ].join(" ");
@@ -82,7 +100,10 @@ function buildPromptSummary(input: {
     `Organizacion: ${input.organizationName}.`,
     `Pais: ${input.profile.country_code}.`,
     `Forma juridica: ${input.profile.legal_entity_type}.`,
-    `Regimen: ${input.profile.tax_regime_code}.`,
+    `Regimen tributario: ${input.profile.tax_regime_code}.`,
+    `Regimen IVA: ${input.profile.vat_regime}.`,
+    `Grupo DGI: ${input.profile.dgi_group}.`,
+    `Estado CFE: ${input.profile.cfe_status}.`,
     "Solo aplica IVA de Uruguay para V1.",
     "No inventes criterio legal fuera de las reglas resumidas.",
   ].join(" ");
@@ -103,7 +124,9 @@ async function getOrganizationRow(
 ) {
   const { data, error } = await supabase
     .from("organizations")
-    .select("id, name, country_code, legal_entity_type, tax_id, tax_regime_code")
+    .select(
+      "id, name, country_code, legal_entity_type, tax_id, tax_regime_code, vat_regime, dgi_group, cfe_status",
+    )
     .eq("id", organizationId)
     .limit(1)
     .maybeSingle();
@@ -122,7 +145,7 @@ async function getCurrentProfileVersion(
   const { data, error } = await supabase
     .from("organization_profile_versions")
     .select(
-      "id, organization_id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, country_code, tax_id, profile_summary, profile_json",
+      "id, organization_id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_summary, profile_json",
     )
     .eq("organization_id", organizationId)
     .eq("status", "active")
@@ -167,9 +190,16 @@ async function createBootstrapProfileVersion(
   organization: OrganizationRow,
   requestedBy: string | null,
 ) {
-  if (!organization.legal_entity_type || !organization.tax_id || !organization.tax_regime_code) {
+  if (
+    !organization.legal_entity_type
+    || !organization.tax_id
+    || !organization.tax_regime_code
+    || !organization.vat_regime
+    || !organization.dgi_group
+    || !organization.cfe_status
+  ) {
     throw new Error(
-      "The organization is missing legal_entity_type, tax_id or tax_regime_code. Complete onboarding before processing documents.",
+      "The organization is missing legal_entity_type, tax_id, tax_regime_code or fiscal VAT profile fields. Complete onboarding before processing documents.",
     );
   }
 
@@ -182,6 +212,9 @@ async function createBootstrapProfileVersion(
   const profileSummary = summarizeProfile({
     legalEntityType: organization.legal_entity_type,
     taxRegimeCode: organization.tax_regime_code,
+    vatRegime: organization.vat_regime,
+    dgiGroup: organization.dgi_group,
+    cfeStatus: organization.cfe_status,
     countryCode: organization.country_code,
     taxId: organization.tax_id,
   });
@@ -195,6 +228,9 @@ async function createBootstrapProfileVersion(
       effective_from: effectiveFrom,
       legal_entity_type: organization.legal_entity_type,
       tax_regime_code: organization.tax_regime_code,
+      vat_regime: organization.vat_regime,
+      dgi_group: organization.dgi_group,
+      cfe_status: organization.cfe_status,
       country_code: organization.country_code,
       tax_id: organization.tax_id,
       profile_summary: profileSummary,
@@ -206,7 +242,7 @@ async function createBootstrapProfileVersion(
       approved_at: new Date().toISOString(),
     })
     .select(
-      "id, organization_id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, country_code, tax_id, profile_summary, profile_json",
+      "id, organization_id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_summary, profile_json",
     )
     .limit(1)
     .single();
@@ -247,7 +283,7 @@ async function getActiveRuleSnapshot(
   const { data, error } = await supabase
     .from("organization_rule_snapshots")
     .select(
-      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, prompt_summary, rules_json, deterministic_rule_refs_json",
+      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json",
     )
     .eq("organization_id", organizationId)
     .eq("profile_version_id", profileVersionId)
@@ -286,6 +322,7 @@ async function createRuleSnapshot(
     priority: rule.priority,
     source_reference: rule.source_reference,
   }));
+  const flags = getUyVatFeatureFlags();
 
   const { data, error } = await supabase
     .from("organization_rule_snapshots")
@@ -298,10 +335,27 @@ async function createRuleSnapshot(
       effective_to: profileVersion.effective_to,
       legal_entity_type: profileVersion.legal_entity_type,
       tax_regime_code: profileVersion.tax_regime_code,
+      vat_regime: profileVersion.vat_regime,
+      dgi_group: profileVersion.dgi_group,
+      cfe_status: profileVersion.cfe_status,
       country_code: profileVersion.country_code,
       prompt_summary: promptSummary,
       rules_json: rules,
       deterministic_rule_refs_json: deterministicRuleRefs,
+      snapshot_json: {
+        organization_profile: {
+          country_code: profileVersion.country_code,
+          legal_entity_type: profileVersion.legal_entity_type,
+          tax_regime_code: profileVersion.tax_regime_code,
+          vat_regime: profileVersion.vat_regime,
+          dgi_group: profileVersion.dgi_group,
+          cfe_status: profileVersion.cfe_status,
+          tax_id: profileVersion.tax_id,
+        },
+        feature_flags: flags,
+        rule_refs: deterministicRuleRefs,
+        rule_names: rules.map((rule) => rule.name),
+      },
       metadata: {
         materialized_from_profile_version_id: profileVersion.id,
         rule_count: rules.length,
@@ -311,7 +365,7 @@ async function createRuleSnapshot(
       approved_at: new Date().toISOString(),
     })
     .select(
-      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, prompt_summary, rules_json, deterministic_rule_refs_json",
+      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json",
     )
     .limit(1)
     .single();

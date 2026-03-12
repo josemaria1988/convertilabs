@@ -55,7 +55,6 @@ export default async function OrganizationJournalEntriesPage({
       userRole={organization.role}
       title="Journal entries"
       description="Cada confirmacion final genera un journal entry en draft y deja su sugerencia contable asociada."
-      uploadHref={`/app/o/${organization.slug}/dashboard#document-upload-panel`}
       navItems={buildOrganizationPrivateNavItems(organization.slug, "journal_entries")}
     >
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">

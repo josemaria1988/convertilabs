@@ -68,6 +68,24 @@ function mapCreateOrganizationError(message: string) {
     });
   }
 
+  if (normalizedMessage.includes("vat regime is required")) {
+    return buildActionError("Falta el regimen IVA de la organizacion.", {
+      vatRegime: "Selecciona un regimen IVA explicito para continuar.",
+    });
+  }
+
+  if (normalizedMessage.includes("dgi group is required")) {
+    return buildActionError("Falta el grupo DGI de la organizacion.", {
+      dgiGroup: "Selecciona el grupo DGI para continuar.",
+    });
+  }
+
+  if (normalizedMessage.includes("cfe status is required")) {
+    return buildActionError("Falta el estado CFE de la organizacion.", {
+      cfeStatus: "Selecciona el estado CFE para continuar.",
+    });
+  }
+
   return buildActionError(
     "No se pudo crear la organizacion en este momento. Intenta de nuevo.",
   );
@@ -91,6 +109,9 @@ export async function createOrganizationAction(
     legalEntityType: String(formData.get("legalEntityType") ?? ""),
     taxId: String(formData.get("taxId") ?? ""),
     taxRegimeCode: String(formData.get("taxRegimeCode") ?? ""),
+    vatRegime: String(formData.get("vatRegime") ?? ""),
+    dgiGroup: String(formData.get("dgiGroup") ?? ""),
+    cfeStatus: String(formData.get("cfeStatus") ?? ""),
   });
 
   if (!validation.success) {
@@ -112,6 +133,9 @@ export async function createOrganizationAction(
       p_legal_entity_type: validation.data.legalEntityType,
       p_tax_id: validation.data.taxId,
       p_tax_regime_code: validation.data.taxRegimeCode,
+      p_vat_regime: validation.data.vatRegime,
+      p_dgi_group: validation.data.dgiGroup,
+      p_cfe_status: validation.data.cfeStatus,
     })
     .single();
 

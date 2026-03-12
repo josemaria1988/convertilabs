@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AccountMenu } from "@/components/dashboard/account-menu";
+import { LoadingLink } from "@/components/ui/loading-link";
 
 export type PrivateDashboardNavItem = {
   href: string;
@@ -15,7 +17,6 @@ type PrivateDashboardShellProps = {
   userRole: string;
   title: string;
   description: string;
-  uploadHref: string;
   navItems: PrivateDashboardNavItem[];
   children: ReactNode;
 };
@@ -27,7 +28,6 @@ export function PrivateDashboardShell({
   userRole,
   title,
   description,
-  uploadHref,
   navItems,
   children,
 }: PrivateDashboardShellProps) {
@@ -64,26 +64,31 @@ export function PrivateDashboardShell({
 
         <div className="mt-6 space-y-2">
           {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`block rounded-2xl border px-4 py-3 transition ${
-                item.current
-                  ? "border-transparent bg-[color:var(--color-accent)] text-white"
-                  : "border-[color:var(--color-border)] bg-white/55 hover:bg-white/90"
-              }`}
-            >
-              <p className="text-sm font-semibold">{item.label}</p>
-              <p
-                className={`mt-1 text-xs ${
-                  item.current
-                    ? "text-white/80"
-                    : "text-[color:var(--color-muted)]"
-                }`}
+            item.current ? (
+              <div
+                key={item.href}
+                className="block rounded-2xl border border-transparent bg-[color:var(--color-accent)] px-4 py-3 text-white"
               >
-                {item.description}
-              </p>
-            </Link>
+                <p className="text-sm font-semibold">{item.label}</p>
+                <p className="mt-1 text-xs text-white/80">
+                  {item.description}
+                </p>
+              </div>
+            ) : (
+              <LoadingLink
+                key={item.href}
+                href={item.href}
+                pendingLabel="Abriendo..."
+                className="block rounded-2xl border border-[color:var(--color-border)] bg-white/55 px-4 py-3 transition hover:bg-white/90 hover:shadow-[0_10px_24px_rgba(31,29,26,0.06)]"
+              >
+                <span className="block">
+                  <span className="text-sm font-semibold">{item.label}</span>
+                  <span className="mt-1 block text-xs text-[color:var(--color-muted)]">
+                    {item.description}
+                  </span>
+                </span>
+              </LoadingLink>
+            )
           ))}
         </div>
 
@@ -93,38 +98,22 @@ export function PrivateDashboardShell({
         </div>
       </aside>
 
-      <main className="space-y-6">
-        <section className="panel px-6 py-8 md:px-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-3">
-              <span className="eyebrow">Private app</span>
-              <div className="space-y-2">
-                <h1 className="text-4xl font-semibold tracking-[-0.06em]">
-                  {title}
-                </h1>
-                <p className="max-w-2xl text-base leading-7 text-[color:var(--color-muted)]">
-                  {description}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href={uploadHref}
-                className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
-              >
-                Subir primer documento
-              </Link>
-              <form action="/logout" method="post">
-                <button
-                  type="submit"
-                  className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
-                >
-                  Cerrar sesion
-                </button>
-              </form>
-            </div>
-          </div>
-        </section>
+      <main className="space-y-6 pt-1">
+        <div className="flex justify-end">
+          <AccountMenu
+            organizationName={organizationName}
+            userEmail={userEmail}
+          />
+        </div>
+
+        <header className="px-1">
+          <h1 className="text-4xl font-semibold tracking-[-0.06em]">
+            {title}
+          </h1>
+          <p className="mt-3 max-w-3xl text-base leading-8 text-[color:var(--color-muted)]">
+            {description}
+          </p>
+        </header>
 
         {children}
       </main>
