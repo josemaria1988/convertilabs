@@ -469,6 +469,14 @@ input[type="checkbox"] {
   background: rgba(49, 60, 80, 0.76);
 }
 
+.data-table tbody tr[data-selected="true"] td {
+  background: rgba(58, 72, 96, 0.9);
+}
+
+.data-table tbody tr[data-selected="true"] td:first-child {
+  box-shadow: inset 2px 0 0 #5b84ce;
+}
+
 .ui-button {
   display: inline-flex;
   align-items: center;
@@ -605,6 +613,19 @@ input[type="checkbox"] {
   background: var(--paper);
   color: #1f232b;
   padding: 20px 18px;
+}
+
+.ui-invoice-sheet--preview {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-invoice-sheet__preview-frame {
+  height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--paper-line);
+  border-radius: 3px;
+  background: white;
 }
 
 .ui-invoice-sheet__row {

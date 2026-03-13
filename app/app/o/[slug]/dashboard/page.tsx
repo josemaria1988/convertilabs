@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { InvoiceSheetPreview } from "@/components/dashboard/invoice-sheet-preview";
+import { DashboardDocumentWorkspace } from "@/components/dashboard/dashboard-document-workspace";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
-import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationWorkspaceDocuments } from "@/modules/documents/review";
@@ -30,27 +28,6 @@ function formatAmount(value: number | null | undefined) {
   }).format(value);
 }
 
-function formatStatusLabel(status: string) {
-  const normalized = status.replace(/_/g, " ");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function getStatusVariant(status: string) {
-  if (["classified", "approved"].includes(status)) {
-    return "status-pill status-pill--success";
-  }
-
-  if (["needs_review", "draft_ready", "classified_with_open_revision"].includes(status)) {
-    return "status-pill status-pill--warning";
-  }
-
-  if (["error", "rejected"].includes(status)) {
-    return "status-pill status-pill--danger";
-  }
-
-  return "status-pill status-pill--info";
-}
-
 function getStatusBucket(status: string) {
   if (["uploading", "queued", "extracting"].includes(status)) {
     return "processing";
@@ -65,30 +42,6 @@ function getStatusBucket(status: string) {
   }
 
   return "other";
-}
-
-function getRoleVariant(role: string) {
-  if (role === "purchase") {
-    return "status-pill status-pill--success";
-  }
-
-  if (role === "sale") {
-    return "status-pill status-pill--info";
-  }
-
-  return "status-pill status-pill--warning";
-}
-
-function getRoleLabel(role: string) {
-  if (role === "purchase") {
-    return "Compra";
-  }
-
-  if (role === "sale") {
-    return "Venta";
-  }
-
-  return "Otro";
 }
 
 export default async function OrganizationDashboardPage({
@@ -112,7 +65,6 @@ export default async function OrganizationDashboardPage({
 
   const latestVatRun = vatRuns[0] ?? null;
   const dashboardDocuments = workspaceDocuments.slice(0, 5);
-  const focusDocument = dashboardDocuments[0] ?? null;
   const processingCount = workspaceDocuments.filter((document) => getStatusBucket(document.status) === "processing").length;
   const reviewCount = workspaceDocuments.filter((document) => getStatusBucket(document.status) === "review").length;
   const doneCount = workspaceDocuments.filter((document) => getStatusBucket(document.status) === "done").length;
@@ -214,114 +166,10 @@ export default async function OrganizationDashboardPage({
         </article>
       </section>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_250px]">
-        <div className="space-y-3">
-          <div className="ui-panel overflow-hidden p-0">
-            <div className="ui-panel-header border-b border-[color:var(--color-border)] px-4 py-3">
-              <h2 className="text-[16px] font-semibold text-white">Documentos</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="ui-filter">Escanear</span>
-                <span className="ui-filter">Filtrar</span>
-                <Link
-                  href={`/app/o/${organization.slug}/documents#document-upload-panel`}
-                  className="ui-button ui-button--primary"
-                >
-                  Cargar Documentos
-                </Link>
-                <span className="ui-button ui-button--secondary">Importar</span>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="data-table min-w-[880px]">
-                <thead>
-                  <tr>
-                    <th className="w-8"> </th>
-                    <th>Documento</th>
-                    <th>Tipo</th>
-                    <th>Periodo</th>
-                    <th>Asiento</th>
-                    <th>Sugerencia</th>
-                    <th className="text-right">IVA</th>
-                    <th className="text-right">Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(dashboardDocuments.length > 0 ? dashboardDocuments : [
-                    {
-                      id: "placeholder-1",
-                      originalFilename: "Sin documentos cargados",
-                      counterpartyName: "Bandeja vacia",
-                      documentType: "Documento fiscal",
-                      documentDate: "Pendiente",
-                      status: "queued",
-                      role: "other",
-                      processedHref: null,
-                      previewUrl: null,
-                      mimeType: null,
-                      taxAmount: null,
-                      totalAmount: null,
-                    },
-                  ]).map((document) => (
-                    <tr key={document.id}>
-                      <td>
-                        <span className="block h-3 w-3 rounded-full border border-white/20 bg-white/10" />
-                      </td>
-                      <td>
-                        <div className="font-semibold text-white">
-                          {document.counterpartyName ?? document.originalFilename}
-                        </div>
-                        <div className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {document.originalFilename}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
-                          {document.processedHref ? (
-                            <Link href={document.processedHref} className="text-white/80">
-                              Abrir revision
-                            </Link>
-                          ) : (
-                            <span>Draft pendiente</span>
-                          )}
-                          {document.previewUrl ? (
-                            <DocumentOriginalModalTrigger
-                              previewUrl={document.previewUrl}
-                              mimeType={document.mimeType}
-                              originalFilename={document.originalFilename}
-                              triggerLabel="Ver original"
-                              triggerClassName="text-[13px] text-[color:var(--color-accent-strong)]"
-                              modalTitle={document.originalFilename}
-                              modalDescription="Archivo original cargado al bucket privado."
-                            />
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>{document.documentType ?? "Documento fiscal"}</td>
-                      <td>{document.documentDate ?? "Pendiente"}</td>
-                      <td>
-                        <span className={getRoleVariant(document.role)}>
-                          {getRoleLabel(document.role)}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={getStatusVariant(document.status)}>
-                          {formatStatusLabel(document.status)}
-                        </span>
-                      </td>
-                      <td className="text-right">{formatAmount(document.taxAmount)}</td>
-                      <td className="text-right font-semibold text-white">
-                        {formatAmount(document.totalAmount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-4 pb-3">
-              <div className="ui-table-pager">1</div>
-            </div>
-          </div>
-
+      <DashboardDocumentWorkspace
+        documents={dashboardDocuments}
+        organizationSlug={organization.slug}
+      >
           <div className="grid gap-3 xl:grid-cols-[330px_minmax(0,1fr)]">
             <div className="ui-panel">
               <div className="ui-panel-header">
@@ -389,73 +237,7 @@ export default async function OrganizationDashboardPage({
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="space-y-3">
-          <InvoiceSheetPreview
-            title={focusDocument?.originalFilename}
-            counterpartyName={focusDocument?.counterpartyName}
-            documentType={focusDocument?.documentType}
-            documentDate={focusDocument?.documentDate}
-            taxAmount={focusDocument?.taxAmount}
-            totalAmount={focusDocument?.totalAmount}
-          />
-
-          {focusDocument ? (
-            <div className="flex flex-wrap gap-2">
-              {focusDocument.processedHref ? (
-                <Link
-                  href={focusDocument.processedHref}
-                  className="ui-button ui-button--secondary flex-1"
-                >
-                  Abrir revision
-                </Link>
-              ) : null}
-              {focusDocument.previewUrl ? (
-                <DocumentOriginalModalTrigger
-                  previewUrl={focusDocument.previewUrl}
-                  mimeType={focusDocument.mimeType}
-                  originalFilename={focusDocument.originalFilename}
-                  triggerLabel="Ver original"
-                  triggerClassName="ui-button ui-button--primary flex-1"
-                  modalTitle={focusDocument.originalFilename}
-                  modalDescription="Archivo original cargado al bucket privado."
-                />
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="ui-panel">
-            <div className="ui-panel-header">
-              <h2 className="text-[16px] font-semibold text-white">
-                Detalles del Documento
-              </h2>
-            </div>
-            <div className="ui-info-list mt-4">
-              <div className="ui-stat-row">
-                <span>Estado actual</span>
-                <span className="text-white">
-                  {focusDocument ? formatStatusLabel(focusDocument.status) : "Sin archivo"}
-                </span>
-              </div>
-              <div className="ui-stat-row">
-                <span>Periodo activo</span>
-                <span className="text-white">
-                  {focusDocument?.documentDate ?? "Pendiente"}
-                </span>
-              </div>
-              <div className="ui-stat-row">
-                <span>IVA detectado</span>
-                <span className="text-white">{formatAmount(focusDocument?.taxAmount)}</span>
-              </div>
-              <div className="ui-stat-row">
-                <span>Total estimado</span>
-                <span className="text-white">{formatAmount(focusDocument?.totalAmount)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      </DashboardDocumentWorkspace>
     </PrivateDashboardShell>
   );
 }

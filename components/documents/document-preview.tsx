@@ -2,7 +2,7 @@ type DocumentPreviewProps = {
   previewUrl: string | null;
   mimeType: string | null;
   originalFilename: string;
-  variant?: "inline" | "modal";
+  variant?: "inline" | "modal" | "sheet";
 };
 
 export function DocumentPreview({
@@ -12,16 +12,21 @@ export function DocumentPreview({
   variant = "inline",
 }: DocumentPreviewProps) {
   const isModal = variant === "modal";
+  const isSheet = variant === "sheet";
   const pdfSrc =
-    isModal && previewUrl
+    (isModal || isSheet) && previewUrl
       ? `${previewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`
       : previewUrl;
 
   if (!previewUrl) {
     return (
       <div
-        className={`rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/55 px-6 text-center text-sm text-[color:var(--color-muted)] ${
-          isModal ? "flex h-full items-center justify-center py-10" : "py-16"
+        className={`text-center text-sm text-[color:var(--color-muted)] ${
+          isModal
+            ? "flex h-full items-center justify-center rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/55 px-6 py-10"
+            : isSheet
+              ? "flex h-full items-center justify-center bg-white px-5 py-8"
+              : "rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/55 px-6 py-16"
         }`}
       >
         No pudimos generar un preview firmado para este archivo.
@@ -33,8 +38,12 @@ export function DocumentPreview({
     return (
       <iframe
         src={pdfSrc ?? undefined}
-        className={`w-full rounded-3xl border border-[color:var(--color-border)] bg-white ${
-          isModal ? "h-full" : "h-[420px]"
+        className={`w-full bg-white ${
+          isModal
+            ? "h-full rounded-3xl border border-[color:var(--color-border)]"
+            : isSheet
+              ? "h-full border-0"
+              : "h-[420px] rounded-3xl border border-[color:var(--color-border)]"
         }`}
         title="Preview del documento"
       />
@@ -43,8 +52,12 @@ export function DocumentPreview({
 
   return (
     <div
-      className={`rounded-3xl border border-[color:var(--color-border)] bg-white ${
-        isModal ? "flex h-full items-center justify-center overflow-auto p-4" : ""
+      className={`bg-white ${
+        isModal
+          ? "flex h-full items-center justify-center overflow-auto rounded-3xl border border-[color:var(--color-border)] p-4"
+          : isSheet
+            ? "flex h-full items-start justify-center overflow-auto"
+            : "rounded-3xl border border-[color:var(--color-border)]"
       }`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -52,7 +65,11 @@ export function DocumentPreview({
         src={previewUrl}
         alt={originalFilename}
         className={`w-full object-contain ${
-          isModal ? "h-full" : "max-h-[420px] rounded-3xl"
+          isModal
+            ? "h-full"
+            : isSheet
+              ? "min-h-full"
+              : "max-h-[420px] rounded-3xl"
         }`}
       />
     </div>

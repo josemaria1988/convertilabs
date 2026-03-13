@@ -1,3 +1,5 @@
+import { DocumentPreview } from "@/components/documents/document-preview";
+
 type InvoiceSheetPreviewProps = {
   title?: string;
   counterpartyName?: string | null;
@@ -5,6 +7,8 @@ type InvoiceSheetPreviewProps = {
   documentDate?: string | null;
   taxAmount?: number | null;
   totalAmount?: number | null;
+  previewUrl?: string | null;
+  mimeType?: string | null;
 };
 
 const moneyFormatter = new Intl.NumberFormat("es-UY", {
@@ -36,9 +40,11 @@ export function InvoiceSheetPreview({
   documentDate,
   taxAmount,
   totalAmount,
+  previewUrl,
+  mimeType,
 }: InvoiceSheetPreviewProps) {
   return (
-    <div className="ui-invoice-sheet">
+    <div className="ui-invoice-sheet ui-invoice-sheet--preview">
       <div className="border-b border-[color:var(--paper-line)] pb-3">
         <p className="text-[12px] uppercase tracking-[0.18em] text-[#7b7f88]">
           Documento fiscal
@@ -49,6 +55,15 @@ export function InvoiceSheetPreview({
         <p className="mt-2 text-[13px] text-[#60646d]">
           {counterpartyName ?? "Proveedor identificado"}
         </p>
+      </div>
+
+      <div className="ui-invoice-sheet__preview-frame mt-4">
+        <DocumentPreview
+          previewUrl={previewUrl ?? null}
+          mimeType={mimeType ?? null}
+          originalFilename={title ?? "Documento fiscal"}
+          variant="sheet"
+        />
       </div>
 
       <div className="mt-4 space-y-0.5">
