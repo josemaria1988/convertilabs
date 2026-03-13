@@ -4,20 +4,39 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   DocumentIntakeAmountBreakdown,
   DocumentIntakeFactMap,
+  DocumentIntakeLineItem,
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import {
+  asNumber,
+  asRecord,
+  asString,
+  asStringArray,
+  buildAccountingDraftArtifacts,
+  buildDraftFieldsPayload,
+  buildDraftStepSnapshots,
+  buildInvoiceIdentityResult,
+  getOperationCategoryValue,
+  loadDocumentInvoiceIdentity,
+  parseAmountBreakdown,
+  parseDraftFacts,
+  parseLineItems,
+  persistApprovedAccountingArtifacts,
+  resolveDocumentConcepts,
+  resolveDocumentDuplicateStatus,
+  resolveVendorFromFacts,
+  upsertDocumentInvoiceIdentity,
+  type DerivedDraftArtifacts,
+  type JsonRecord,
+} from "@/modules/accounting";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 import {
-  resolveUyVatTreatment,
   type DeterministicRuleRef,
   type OrganizationFiscalProfile,
   type OrganizationRuleSnapshotContext,
-  type VatEngineResult,
 } from "@/modules/tax/uy-vat-engine";
 import { rebuildMonthlyVatRunFromConfirmations } from "@/modules/tax/vat-runs";
-
-type JsonRecord = Record<string, unknown>;
 
 type OrganizationMemberRole =
   | "owner"
@@ -141,12 +160,6 @@ type ProfileDisplayRow = {
   email: string | null;
 };
 
-type ChartAccountRow = {
-  id: string;
-  code: string;
-  name: string;
-};
-
 type DocumentListRow = {
   id: string;
   direction: DocumentRoleCandidate;
@@ -162,36 +175,6 @@ type DocumentListRow = {
 };
 
 type ReviewRuleRef = DeterministicRuleRef;
-
-type ReviewJournalLine = {
-  lineNumber: number;
-  accountCode: string;
-  accountName: string;
-  debit: number;
-  credit: number;
-  provenance: string;
-};
-
-type ReviewTaxTreatment = VatEngineResult;
-
-type ReviewJournalSuggestion = {
-  ready: boolean;
-  isBalanced: boolean;
-  totalDebit: number;
-  totalCredit: number;
-  explanation: string;
-  lines: ReviewJournalLine[];
-  blockingReasons: string[];
-};
-
-type DerivedDraftArtifacts = {
-  taxTreatment: ReviewTaxTreatment;
-  journalSuggestion: ReviewJournalSuggestion;
-  validation: {
-    canConfirm: boolean;
-    blockers: string[];
-  };
-};
 
 export type DocumentWorkspaceListItem = {
   id: string;
@@ -236,6 +219,7 @@ export type DocumentReviewPageData = {
     warnings: string[];
     facts: DocumentIntakeFactMap;
     amountBreakdown: DocumentIntakeAmountBreakdown[];
+    lineItems: DocumentIntakeLineItem[];
     documentRole: DocumentRoleCandidate;
     documentType: string;
     operationCategory: string | null;
@@ -325,91 +309,6 @@ export class MissingPersistedDraftError extends Error {
   }
 }
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" ? value : null;
-}
-
-function asNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
-function roundCurrency(value: number | null) {
-  if (value === null) {
-    return 0;
-  }
-
-  return Math.round(value * 100) / 100;
-}
-
-function parseDraftFacts(fieldsJson: JsonRecord | null): DocumentIntakeFactMap {
-  const fields = asRecord(fieldsJson);
-  const facts = asRecord(fields.facts);
-
-  return {
-    issuer_name: asString(facts.issuer_name),
-    issuer_tax_id: asString(facts.issuer_tax_id),
-    receiver_name: asString(facts.receiver_name),
-    receiver_tax_id: asString(facts.receiver_tax_id),
-    document_number: asString(facts.document_number),
-    series: asString(facts.series),
-    currency_code: asString(facts.currency_code),
-    document_date: asString(facts.document_date),
-    due_date: asString(facts.due_date),
-    subtotal: asNumber(facts.subtotal),
-    tax_amount: asNumber(facts.tax_amount),
-    total_amount: asNumber(facts.total_amount),
-    purchase_category_candidate: asString(facts.purchase_category_candidate),
-    sale_category_candidate: asString(facts.sale_category_candidate),
-  };
-}
-
-function parseAmountBreakdown(fieldsJson: JsonRecord | null) {
-  const fields = asRecord(fieldsJson);
-  const entries = Array.isArray(fields.amount_breakdown) ? fields.amount_breakdown : [];
-
-  return entries.map((entry) => {
-    const record = asRecord(entry);
-
-    return {
-      label: asString(record.label) ?? "Concepto",
-      amount: asNumber(record.amount),
-      tax_rate: asNumber(record.tax_rate),
-      tax_code: asString(record.tax_code),
-    } satisfies DocumentIntakeAmountBreakdown;
-  });
-}
-
-function getOperationCategoryValue(draft: DraftRow, facts: DocumentIntakeFactMap) {
-  const operationContext = asRecord(draft.operation_context_json);
-  const explicitCategory = asString(operationContext.operation_category_candidate);
-
-  if (explicitCategory) {
-    return explicitCategory;
-  }
-
-  if (draft.document_role === "purchase") {
-    return facts.purchase_category_candidate;
-  }
-
-  if (draft.document_role === "sale") {
-    return facts.sale_category_candidate;
-  }
-
-  return null;
-}
-
 function getDeterministicRuleRefs(ruleSnapshot: RuleSnapshotRow | null) {
   if (!ruleSnapshot) {
     return [];
@@ -463,233 +362,6 @@ function buildRuleSnapshotContext(
     promptSummary: ruleSnapshot.prompt_summary,
     deterministicRuleRefs: getDeterministicRuleRefs(ruleSnapshot),
   };
-}
-
-function buildDerivedDraftArtifacts(input: {
-  draft: DraftRow;
-  facts: DocumentIntakeFactMap;
-  amountBreakdown: DocumentIntakeAmountBreakdown[];
-  ruleSnapshot: RuleSnapshotRow | null;
-  profileVersion: ProfileVersionRow | null;
-}) {
-  const operationCategory = getOperationCategoryValue(input.draft, input.facts);
-  const taxTreatment = resolveUyVatTreatment({
-    documentRole: input.draft.document_role,
-    facts: input.facts,
-    amountBreakdown: input.amountBreakdown,
-    operationCategory,
-    profile: buildOrganizationFiscalProfile(input.profileVersion),
-    ruleSnapshot: buildRuleSnapshotContext(input.ruleSnapshot),
-  });
-  let journalSuggestion: ReviewJournalSuggestion;
-  const journalSeed = taxTreatment.journalSeed;
-
-  if (taxTreatment.ready && journalSeed) {
-    if (input.draft.document_role === "purchase") {
-      const lines: ReviewJournalLine[] = [
-        {
-          lineNumber: 1,
-          accountCode: journalSeed.accountCode,
-          accountName: journalSeed.accountName,
-          debit:
-            taxTreatment.vatBucket === "input_creditable"
-              ? taxTreatment.taxableAmount
-              : journalSeed.totalAmount,
-          credit: 0,
-          provenance: "uy_vat_engine",
-        },
-      ];
-
-      if (taxTreatment.vatBucket === "input_creditable" && taxTreatment.taxAmount > 0) {
-        lines.push({
-          lineNumber: 2,
-          accountCode: "1181",
-          accountName: "IVA compras credito fiscal",
-          debit: taxTreatment.taxAmount,
-          credit: 0,
-          provenance: "uy_vat_engine",
-        });
-      }
-
-      lines.push({
-        lineNumber: lines.length + 1,
-        accountCode: journalSeed.counterpartyAccountCode,
-        accountName: journalSeed.counterpartyAccountName,
-        debit: 0,
-        credit: journalSeed.totalAmount,
-        provenance: "uy_vat_engine",
-      });
-
-      journalSuggestion = {
-        ready: true,
-        isBalanced: true,
-        totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
-        totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-        explanation: `Asiento sugerido desde motor IVA Uruguay para ${taxTreatment.label.toLowerCase()}.`,
-        lines,
-        blockingReasons: [],
-      };
-    } else if (input.draft.document_role === "sale") {
-      const lines: ReviewJournalLine[] = [
-        {
-          lineNumber: 1,
-          accountCode: journalSeed.counterpartyAccountCode,
-          accountName: journalSeed.counterpartyAccountName,
-          debit: journalSeed.totalAmount,
-          credit: 0,
-          provenance: "uy_vat_engine",
-        },
-        {
-          lineNumber: 2,
-          accountCode: journalSeed.accountCode,
-          accountName: journalSeed.accountName,
-          debit: 0,
-          credit: taxTreatment.taxableAmount,
-          provenance: "uy_vat_engine",
-        },
-      ];
-
-      if (taxTreatment.taxAmount > 0) {
-        lines.push({
-          lineNumber: 3,
-          accountCode: "2131",
-          accountName: "IVA ventas debito fiscal",
-          debit: 0,
-          credit: taxTreatment.taxAmount,
-          provenance: "uy_vat_engine",
-        });
-      }
-
-      journalSuggestion = {
-        ready: true,
-        isBalanced: true,
-        totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
-        totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-        explanation: `Asiento sugerido desde motor IVA Uruguay para ${taxTreatment.label.toLowerCase()}.`,
-        lines,
-        blockingReasons: [],
-      };
-    } else {
-      journalSuggestion = {
-        ready: false,
-        isBalanced: false,
-        totalDebit: 0,
-        totalCredit: 0,
-        explanation: "No hay sugerencia contable automatica para documentos fuera de compra/venta en V1.",
-        lines: [],
-        blockingReasons: [...taxTreatment.blockingReasons],
-      };
-    }
-  } else {
-    journalSuggestion = {
-      ready: false,
-      isBalanced: false,
-      totalDebit: 0,
-      totalCredit: 0,
-      explanation:
-        "La sugerencia contable queda bloqueada hasta que el motor IVA deje el caso confirmable.",
-      lines: [],
-      blockingReasons: [...taxTreatment.blockingReasons],
-    };
-  }
-
-  const validationBlockers = [
-    ...taxTreatment.blockingReasons,
-    ...journalSuggestion.blockingReasons,
-  ].filter((value, index, array) => array.indexOf(value) === index);
-
-  return {
-    taxTreatment,
-    journalSuggestion,
-    validation: {
-      canConfirm:
-        validationBlockers.length === 0
-        && journalSuggestion.isBalanced
-        && journalSuggestion.totalDebit > 0,
-      blockers: validationBlockers,
-    },
-  } satisfies DerivedDraftArtifacts;
-}
-
-function mapDraftSteps(input: {
-  derived: DerivedDraftArtifacts;
-  draft: DraftRow;
-}) {
-  return [
-    {
-      step_code: "identity",
-      status: "draft_saved",
-      last_saved_at: new Date().toISOString(),
-      stale_reason: null,
-      snapshot_json: {
-        document_role: input.draft.document_role,
-        document_type: input.draft.document_type,
-      },
-    },
-    {
-      step_code: "fields",
-      status: "draft_saved",
-      last_saved_at: new Date().toISOString(),
-      stale_reason: null,
-      snapshot_json: {
-        facts: parseDraftFacts(input.draft.fields_json),
-      },
-    },
-    {
-      step_code: "amounts",
-      status: "draft_saved",
-      last_saved_at: new Date().toISOString(),
-      stale_reason: null,
-      snapshot_json: {
-        amount_breakdown: parseAmountBreakdown(input.draft.fields_json),
-      },
-    },
-    {
-      step_code: "operation_context",
-      status: "draft_saved",
-      last_saved_at: new Date().toISOString(),
-      stale_reason: null,
-      snapshot_json: {
-        operation_category_candidate: getOperationCategoryValue(
-          input.draft,
-          parseDraftFacts(input.draft.fields_json),
-        ),
-      },
-    },
-    {
-      step_code: "journal",
-      status: input.derived.journalSuggestion.ready ? "draft_saved" : "blocked",
-      last_saved_at: new Date().toISOString(),
-      stale_reason:
-        input.derived.journalSuggestion.ready
-          ? null
-          : input.derived.journalSuggestion.blockingReasons.join(" "),
-      snapshot_json: input.derived.journalSuggestion,
-    },
-    {
-      step_code: "tax",
-      status: input.derived.taxTreatment.ready ? "draft_saved" : "blocked",
-      last_saved_at: new Date().toISOString(),
-      stale_reason:
-        input.derived.taxTreatment.ready
-          ? null
-          : input.derived.taxTreatment.blockingReasons.join(" "),
-      snapshot_json: input.derived.taxTreatment,
-    },
-    {
-      step_code: "confirmation",
-      status: input.derived.validation.canConfirm ? "draft_saved" : "blocked",
-      last_saved_at: new Date().toISOString(),
-      stale_reason:
-        input.derived.validation.canConfirm
-          ? null
-          : input.derived.validation.blockers.join(" "),
-      snapshot_json: {
-        can_confirm: input.derived.validation.canConfirm,
-        blockers: input.derived.validation.blockers,
-      },
-    },
-  ];
 }
 
 async function loadDocumentRow(
@@ -969,10 +641,19 @@ function getOperationCategoryOptions(role: DocumentRoleCandidate) {
 async function upsertDraftStepSnapshots(
   supabase: SupabaseClient,
   draft: DraftRow,
+  facts: DocumentIntakeFactMap,
+  amountBreakdown: DocumentIntakeAmountBreakdown[],
+  lineItems: DocumentIntakeLineItem[],
+  operationCategory: string | null,
   derived: DerivedDraftArtifacts,
 ) {
-  const stepRows = mapDraftSteps({
-    draft,
+  const stepRows = buildDraftStepSnapshots({
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
+    operationCategory,
+    facts,
+    amountBreakdown,
+    lineItems,
     derived,
   });
   const { error } = await supabase
@@ -1053,10 +734,16 @@ async function persistDraftArtifacts(
   derived: DerivedDraftArtifacts,
 ) {
   const facts = parseDraftFacts(draft.fields_json);
+  const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const lineItems = parseLineItems(draft.fields_json);
+  const operationCategory = getOperationCategoryValue(draft, facts);
+  const existingInvoiceIdentity = await loadDocumentInvoiceIdentity(supabase, document.id);
   const nextDocumentStatus =
     document.status === "classified" || document.status === "classified_with_open_revision"
       ? document.status
-      : "draft_ready";
+      : derived.validation.canConfirm
+        ? "draft_ready"
+        : "needs_review";
   const { error: draftError } = await supabase
     .from("document_drafts")
     .update({
@@ -1072,7 +759,36 @@ async function persistDraftArtifacts(
     throw new Error(draftError.message);
   }
 
-  await upsertDraftStepSnapshots(supabase, draft, derived);
+  if (derived.invoiceIdentity) {
+    await upsertDocumentInvoiceIdentity(supabase, {
+      organization_id: document.organization_id,
+      document_id: document.id,
+      source_draft_id: draft.id,
+      vendor_id: derived.vendorResolution.vendorId,
+      issuer_tax_id_normalized: derived.invoiceIdentity.issuerTaxIdNormalized,
+      issuer_name_normalized: derived.invoiceIdentity.issuerNameNormalized,
+      document_number_normalized: derived.invoiceIdentity.documentNumberNormalized,
+      document_date: derived.invoiceIdentity.documentDate,
+      total_amount: derived.invoiceIdentity.totalAmount,
+      currency_code: derived.invoiceIdentity.currencyCode,
+      identity_strategy: derived.invoiceIdentity.identityStrategy,
+      invoice_identity_key: derived.invoiceIdentity.invoiceIdentityKey,
+      duplicate_status: derived.invoiceIdentity.duplicateStatus,
+      duplicate_of_document_id: derived.invoiceIdentity.duplicateOfDocumentId,
+      duplicate_reason: derived.invoiceIdentity.duplicateReason,
+      resolution_notes: existingInvoiceIdentity?.resolution_notes ?? null,
+    });
+  }
+
+  await upsertDraftStepSnapshots(
+    supabase,
+    draft,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    derived,
+  );
 
   const { error: documentError } = await supabase
     .from("documents")
@@ -1082,6 +798,11 @@ async function persistDraftArtifacts(
       document_date: facts.document_date ?? document.document_date,
       status: nextDocumentStatus,
       current_draft_id: draft.id,
+      metadata: {
+        ...(document.metadata ?? {}),
+        duplicate_status: derived.invoiceIdentity?.duplicateStatus ?? null,
+        duplicate_reason: derived.invoiceIdentity?.duplicateReason ?? null,
+      },
       updated_at: new Date().toISOString(),
     })
     .eq("id", document.id);
@@ -1089,158 +810,6 @@ async function persistDraftArtifacts(
   if (documentError) {
     throw new Error(documentError.message);
   }
-}
-
-async function loadMatchingChartAccounts(
-  supabase: SupabaseClient,
-  organizationId: string,
-  codes: string[],
-) {
-  if (codes.length === 0) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from("chart_of_accounts")
-    .select("id, code, name")
-    .eq("organization_id", organizationId)
-    .eq("is_active", true)
-    .in("code", codes);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return ((data as ChartAccountRow[] | null) ?? []);
-}
-
-async function loadActiveExtractionId(
-  supabase: SupabaseClient,
-  documentId: string,
-) {
-  const { data, error } = await supabase
-    .from("document_extractions")
-    .select("id")
-    .eq("document_id", documentId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return typeof data?.id === "string" ? data.id : null;
-}
-
-async function createAccountingArtifacts(
-  supabase: SupabaseClient,
-  document: DocumentRow,
-  draft: DraftRow,
-  actorId: string | null,
-  derived: DerivedDraftArtifacts,
-) {
-  const extractionId = await loadActiveExtractionId(supabase, document.id);
-  const { data: suggestion, error: suggestionError } = await supabase
-    .from("accounting_suggestions")
-    .upsert(
-      {
-        organization_id: document.organization_id,
-        document_id: document.id,
-        extraction_id: extractionId,
-        version_no: draft.revision_number,
-        status: "approved",
-        confidence: draft.source_confidence,
-        explanation: derived.journalSuggestion.explanation,
-        tax_treatment_json: derived.taxTreatment,
-        rule_trace_json: derived.taxTreatment.deterministicRuleRefs,
-        approved_by: actorId,
-        approved_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "document_id,version_no",
-      },
-    )
-    .select("id")
-    .limit(1)
-    .single();
-
-  if (suggestionError || !suggestion?.id) {
-    throw new Error(suggestionError?.message ?? "No se pudo persistir la sugerencia contable.");
-  }
-
-  const journalLines = derived.journalSuggestion.lines;
-  const matchingAccounts = await loadMatchingChartAccounts(
-    supabase,
-    document.organization_id,
-    journalLines.map((line) => line.accountCode),
-  );
-  const accountLookup = new Map(matchingAccounts.map((account) => [account.code, account]));
-  const missingCodes = journalLines
-    .filter((line) => !accountLookup.has(line.accountCode))
-    .map((line) => line.accountCode);
-  const facts = parseDraftFacts(draft.fields_json);
-  const documentDate =
-    facts.document_date ?? document.document_date ?? new Date().toISOString().slice(0, 10);
-  const referenceParts = [facts.series, facts.document_number].filter(Boolean);
-  const reference = referenceParts.length > 0 ? referenceParts.join("-") : document.original_filename;
-  const description = missingCodes.length > 0
-    ? `${derived.journalSuggestion.explanation} Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
-    : derived.journalSuggestion.explanation;
-  const { data: journalEntry, error: journalEntryError } = await supabase
-    .from("journal_entries")
-    .insert({
-      organization_id: document.organization_id,
-      source_document_id: document.id,
-      source_suggestion_id: suggestion.id,
-      entry_date: documentDate,
-      status: "draft",
-      currency_code: facts.currency_code ?? "UYU",
-      reference,
-      description,
-      total_debit: derived.journalSuggestion.totalDebit,
-      total_credit: derived.journalSuggestion.totalCredit,
-      created_by: actorId,
-    })
-    .select("id")
-    .limit(1)
-    .single();
-
-  if (journalEntryError || !journalEntry?.id) {
-    throw new Error(journalEntryError?.message ?? "No se pudo crear el journal entry draft.");
-  }
-
-  const linePayload = journalLines
-    .map((line) => ({
-      line,
-      account: accountLookup.get(line.accountCode) ?? null,
-    }))
-    .filter((entry) => entry.account !== null)
-    .map((entry) => ({
-      journal_entry_id: journalEntry.id,
-      line_no: entry.line.lineNumber,
-      account_id: entry.account?.id,
-      debit: entry.line.debit,
-      credit: entry.line.credit,
-      description: entry.line.accountName,
-      tax_tag: derived.taxTreatment.treatmentCode,
-    }));
-
-  if (linePayload.length > 0) {
-    const { error: lineError } = await supabase
-      .from("journal_entry_lines")
-      .insert(linePayload);
-
-    if (lineError) {
-      throw new Error(lineError.message);
-    }
-  }
-
-  return {
-    suggestionId: suggestion.id as string,
-    journalEntryId: journalEntry.id as string,
-  };
 }
 
 export async function listOrganizationWorkspaceDocuments(input: {
@@ -1327,7 +896,9 @@ export async function loadDocumentReviewPageData(input: {
   const draft = await loadCurrentDraft(supabase, document);
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
-  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView] =
+  const lineItems = parseLineItems(draft.fields_json);
+  const operationCategory = getOperationCategoryValue(draft, facts);
+  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity] =
     await Promise.all([
       loadRuleSnapshot(supabase, document, draft, input.actorId),
       loadDraftSteps(supabase, draft.id),
@@ -1335,13 +906,34 @@ export async function loadDocumentReviewPageData(input: {
       loadRevision(supabase, draft),
       loadConfirmations(supabase, document.id),
       documentViewPromise,
+      loadDocumentInvoiceIdentity(supabase, document.id),
     ]);
-  const derived = buildDerivedDraftArtifacts({
-    draft,
+  const conceptResolution = resolveDocumentConcepts({
+    lineItems,
+    amountBreakdown,
+  });
+  const vendorResolution = resolveVendorFromFacts({
+    facts,
+    vendors: [],
+  });
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const derived = buildAccountingDraftArtifacts({
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
     facts,
     amountBreakdown,
-    ruleSnapshot,
-    profileVersion,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    vendorResolution,
+    invoiceIdentity,
+    conceptResolution,
   });
 
   return {
@@ -1363,9 +955,10 @@ export async function loadDocumentReviewPageData(input: {
       warnings: asStringArray(draft.warnings_json),
       facts,
       amountBreakdown,
+      lineItems,
       documentRole: draft.document_role,
       documentType: draft.document_type ?? "",
-      operationCategory: getOperationCategoryValue(draft, facts),
+      operationCategory,
     },
     steps,
     derived,
@@ -1416,6 +1009,8 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
   const draft = await loadCurrentDraft(supabase, document);
   const facts = mergeFacts(parseDraftFacts(draft.fields_json), normalized.facts);
+  const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const lineItems = parseLineItems(draft.fields_json);
   const nextDraft: DraftRow = {
     ...draft,
     document_role: normalized.documentRole ?? draft.document_role,
@@ -1429,8 +1024,11 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     },
     fields_json: {
       ...asRecord(draft.fields_json),
-      facts,
-      amount_breakdown: parseAmountBreakdown(draft.fields_json),
+      ...buildDraftFieldsPayload({
+        facts,
+        amountBreakdown,
+        lineItems,
+      }),
     },
   };
   const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
@@ -1439,12 +1037,37 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     nextDraft,
     input.actorId,
   );
-  const derived = buildDerivedDraftArtifacts({
-    draft: nextDraft,
+  const operationCategory = getOperationCategoryValue(nextDraft, facts);
+  const conceptResolution = resolveDocumentConcepts({
+    lineItems,
+    amountBreakdown,
+  });
+  const vendorResolution = resolveVendorFromFacts({
     facts,
-    amountBreakdown: parseAmountBreakdown(nextDraft.fields_json),
-    ruleSnapshot,
-    profileVersion,
+    vendors: [],
+  });
+  const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
+    supabase,
+    document.id,
+  );
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const derived = buildAccountingDraftArtifacts({
+    documentRole: nextDraft.document_role,
+    documentType: nextDraft.document_type,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    vendorResolution,
+    invoiceIdentity,
+    conceptResolution,
   });
 
   const { error: updateError } = await supabase
@@ -1495,18 +1118,44 @@ export async function confirmDocumentReview(input: {
   const draft = await loadCurrentDraft(supabase, document);
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const lineItems = parseLineItems(draft.fields_json);
   const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
     supabase,
     document,
     draft,
     input.actorId,
   );
-  const derived = buildDerivedDraftArtifacts({
-    draft,
+  const operationCategory = getOperationCategoryValue(draft, facts);
+  const conceptResolution = resolveDocumentConcepts({
+    lineItems,
+    amountBreakdown,
+  });
+  const vendorResolution = resolveVendorFromFacts({
+    facts,
+    vendors: [],
+  });
+  const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
+    supabase,
+    document.id,
+  );
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const derived = buildAccountingDraftArtifacts({
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
     facts,
     amountBreakdown,
-    ruleSnapshot,
-    profileVersion,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    vendorResolution,
+    invoiceIdentity,
+    conceptResolution,
   });
 
   if (!derived.validation.canConfirm) {
@@ -1517,12 +1166,26 @@ export async function confirmDocumentReview(input: {
   }
 
   await persistDraftArtifacts(supabase, document, draft, input.actorId, derived);
-  const accountingArtifacts = await createAccountingArtifacts(
+  const referenceParts = [facts.series, facts.document_number].filter(Boolean);
+  const accountingArtifacts = await persistApprovedAccountingArtifacts(
     supabase,
-    document,
-    draft,
-    input.actorId,
-    derived,
+    {
+      organizationId: document.organization_id,
+      documentId: document.id,
+      draftId: draft.id,
+      revisionNumber: draft.revision_number,
+      documentDate:
+        facts.document_date ?? document.document_date ?? new Date().toISOString().slice(0, 10),
+      originalFilename: document.original_filename,
+      currencyCode: facts.currency_code ?? "UYU",
+      reference:
+        referenceParts.length > 0
+          ? referenceParts.join("-")
+          : document.original_filename,
+      confidence: draft.source_confidence,
+      actorId: input.actorId,
+      derived,
+    },
   );
   const existingConfirmations = await loadConfirmations(supabase, document.id);
   const confirmationType = existingConfirmations.length > 0 ? "reconfirmation" : "final";
@@ -1645,6 +1308,24 @@ export async function confirmDocumentReview(input: {
   };
 }
 
+export async function resolveDocumentDuplicate(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate";
+  note: string | null;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  return resolveDocumentDuplicateStatus(supabase, {
+    organizationId: input.organizationId,
+    documentId: input.documentId,
+    actorId: input.actorId,
+    action: input.action,
+    note: input.note,
+  });
+}
+
 export async function reopenDocumentReview(input: {
   organizationId: string;
   documentId: string;
@@ -1714,55 +1395,77 @@ export async function reopenDocumentReview(input: {
   }
 
   const newDraft = insertedDraft as DraftRow;
+  const facts = parseDraftFacts(newDraft.fields_json);
+  const amountBreakdown = parseAmountBreakdown(newDraft.fields_json);
+  const lineItems = parseLineItems(newDraft.fields_json);
+  const operationCategory = getOperationCategoryValue(newDraft, facts);
+  const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
+    supabase,
+    document,
+    newDraft,
+    input.actorId,
+  );
+  const conceptResolution = resolveDocumentConcepts({
+    lineItems,
+    amountBreakdown,
+  });
+  const vendorResolution = resolveVendorFromFacts({
+    facts,
+    vendors: [],
+  });
+  const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
+    supabase,
+    document.id,
+  );
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const derived = buildAccountingDraftArtifacts({
+    documentRole: newDraft.document_role,
+    documentType: newDraft.document_type,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    vendorResolution,
+    invoiceIdentity,
+    conceptResolution,
+  });
+  const stepRows = buildDraftStepSnapshots({
+    documentRole: newDraft.document_role,
+    documentType: newDraft.document_type,
+    operationCategory,
+    facts,
+    amountBreakdown,
+    lineItems,
+    derived,
+    savedAt: reopenedAt,
+  }).map((step) =>
+    step.step_code === "confirmation"
+      ? {
+          ...step,
+          status: "blocked" as const,
+          stale_reason: "reopen_requires_reconfirmation",
+        }
+      : step,
+  );
   const { error: stepsError } = await supabase
     .from("document_draft_steps")
-    .insert([
-      {
+    .insert(
+      stepRows.map((step) => ({
         draft_id: newDraft.id,
-        step_code: "identity",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "fields",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "amounts",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "operation_context",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "journal",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-        snapshot_json: asRecord(currentDraft.journal_suggestion_json),
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "tax",
-        status: "draft_saved",
-        last_saved_at: reopenedAt,
-        snapshot_json: asRecord(currentDraft.tax_treatment_json),
-      },
-      {
-        draft_id: newDraft.id,
-        step_code: "confirmation",
-        status: "blocked",
-        last_saved_at: reopenedAt,
-        stale_reason: "reopen_requires_reconfirmation",
-      },
-    ]);
+        step_code: step.step_code,
+        status: step.status,
+        last_saved_at: step.last_saved_at,
+        stale_reason: step.stale_reason,
+        snapshot_json: step.snapshot_json,
+      })),
+    );
 
   if (stepsError) {
     throw new Error(stepsError.message);

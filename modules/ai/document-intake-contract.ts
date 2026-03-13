@@ -24,6 +24,18 @@ export type DocumentIntakeAmountBreakdown = {
   tax_code: string | null;
 };
 
+export type DocumentIntakeLineItem = {
+  line_number: number | null;
+  concept_code: string | null;
+  concept_description: string | null;
+  quantity: number | null;
+  unit_amount: number | null;
+  net_amount: number | null;
+  tax_rate: number | null;
+  tax_amount: number | null;
+  total_amount: number | null;
+};
+
 export type DocumentIntakeOutput = {
   extracted_text: string;
   confidence_score: number;
@@ -33,6 +45,7 @@ export type DocumentIntakeOutput = {
   operation_category_candidate: string | null;
   facts: DocumentIntakeFactMap;
   amount_breakdown: DocumentIntakeAmountBreakdown[];
+  line_items: DocumentIntakeLineItem[];
   explanations: {
     classification: string;
     facts: string;
@@ -65,6 +78,7 @@ export const documentIntakeJsonSchema = {
     "operation_category_candidate",
     "facts",
     "amount_breakdown",
+    "line_items",
     "explanations",
   ],
   properties: {
@@ -149,6 +163,35 @@ export const documentIntakeJsonSchema = {
         },
       },
     },
+    line_items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "line_number",
+          "concept_code",
+          "concept_description",
+          "quantity",
+          "unit_amount",
+          "net_amount",
+          "tax_rate",
+          "tax_amount",
+          "total_amount",
+        ],
+        properties: {
+          line_number: nullableNumberSchema("Line number when detectable."),
+          concept_code: nullableStringSchema("Vendor or document concept code."),
+          concept_description: nullableStringSchema("Goods or service description."),
+          quantity: nullableNumberSchema("Quantity for the line item."),
+          unit_amount: nullableNumberSchema("Unit amount for the line item."),
+          net_amount: nullableNumberSchema("Net amount before taxes."),
+          tax_rate: nullableNumberSchema("Tax rate for this line item, for example 22 or 10."),
+          tax_amount: nullableNumberSchema("Tax amount for the line item."),
+          total_amount: nullableNumberSchema("Line total including taxes when present."),
+        },
+      },
+    },
     explanations: {
       type: "object",
       additionalProperties: false,
@@ -213,6 +256,26 @@ function isAmountBreakdown(value: unknown): value is DocumentIntakeAmountBreakdo
   );
 }
 
+function isLineItem(value: unknown): value is DocumentIntakeLineItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const entry = value as Record<string, unknown>;
+
+  return (
+    isNullableNumber(entry.line_number)
+    && isNullableString(entry.concept_code)
+    && isNullableString(entry.concept_description)
+    && isNullableNumber(entry.quantity)
+    && isNullableNumber(entry.unit_amount)
+    && isNullableNumber(entry.net_amount)
+    && isNullableNumber(entry.tax_rate)
+    && isNullableNumber(entry.tax_amount)
+    && isNullableNumber(entry.total_amount)
+  );
+}
+
 export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeOutput {
   if (!value || typeof value !== "object") {
     return false;
@@ -239,6 +302,8 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
     && isDocumentIntakeFactMap(output.facts)
     && Array.isArray(output.amount_breakdown)
     && output.amount_breakdown.every((entry) => isAmountBreakdown(entry))
+    && Array.isArray(output.line_items)
+    && output.line_items.every((entry) => isLineItem(entry))
     && explanations !== null
     && typeof explanations.classification === "string"
     && typeof explanations.facts === "string"

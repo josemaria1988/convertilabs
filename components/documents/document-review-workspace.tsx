@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type {
   DocumentIntakeAmountBreakdown,
   DocumentIntakeFactMap,
+  DocumentIntakeLineItem,
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
@@ -36,6 +37,14 @@ type ReviewSimpleAction = () => Promise<{
   message: string;
 }>;
 
+type ResolveDuplicateAction = (input: {
+  action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate";
+  note: string | null;
+}) => Promise<{
+  ok: boolean;
+  message: string;
+}>;
+
 type DocumentReviewWorkspaceProps = {
   pageData: {
     document: {
@@ -59,6 +68,7 @@ type DocumentReviewWorkspaceProps = {
       warnings: string[];
       facts: DocumentIntakeFactMap;
       amountBreakdown: DocumentIntakeAmountBreakdown[];
+      lineItems: DocumentIntakeLineItem[];
       documentRole: DocumentRoleCandidate;
       documentType: string;
       operationCategory: string | null;
@@ -105,6 +115,42 @@ type DocumentReviewWorkspaceProps = {
           provenance: string;
         }>;
         blockingReasons: string[];
+      };
+      vendorResolution: {
+        status: string;
+        matchStrategy: string;
+        vendorId: string | null;
+        vendorName: string | null;
+        normalizedTaxId: string | null;
+        normalizedName: string | null;
+        blockingReasons: string[];
+      };
+      invoiceIdentity: {
+        issuerTaxIdNormalized: string | null;
+        issuerNameNormalized: string | null;
+        documentNumberNormalized: string | null;
+        documentDate: string | null;
+        totalAmount: number | null;
+        currencyCode: string | null;
+        identityStrategy: string;
+        invoiceIdentityKey: string | null;
+        duplicateStatus: string;
+        duplicateOfDocumentId: string | null;
+        duplicateReason: string | null;
+        shouldBlockConfirmation: boolean;
+        blockingReasons: string[];
+      } | null;
+      conceptResolution: {
+        lines: Array<{
+          lineNumber: number;
+          rawCode: string | null;
+          rawDescription: string | null;
+          normalizedCode: string | null;
+          normalizedDescription: string | null;
+          source: string;
+        }>;
+        fallbackUsed: boolean;
+        primaryConceptLabels: string[];
       };
       validation: {
         canConfirm: boolean;
@@ -172,6 +218,7 @@ type DocumentReviewWorkspaceProps = {
   };
   saveDraftReviewAction: SaveDraftReviewAction;
   confirmDocumentAction: ReviewSimpleAction;
+  resolveDuplicateAction: ResolveDuplicateAction;
   reopenDocumentAction: ReviewSimpleAction;
 };
 
@@ -230,6 +277,7 @@ export function DocumentReviewWorkspace({
   pageData,
   saveDraftReviewAction,
   confirmDocumentAction,
+  resolveDuplicateAction,
   reopenDocumentAction,
 }: DocumentReviewWorkspaceProps) {
   const router = useRouter();
@@ -250,6 +298,10 @@ export function DocumentReviewWorkspace({
   });
   const [actionMessage, setActionMessage] = useState("");
   const [pendingAction, setPendingAction] = useState<"confirm" | "reopen" | null>(null);
+  const [pendingDuplicateAction, setPendingDuplicateAction] = useState<
+    "confirmed_duplicate" | "false_positive" | "justified_non_duplicate" | null
+  >(null);
+  const [duplicateNote, setDuplicateNote] = useState("");
 
   useEffect(() => {
     setIdentity({
@@ -314,6 +366,31 @@ export function DocumentReviewWorkspace({
         setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
       } finally {
         setPendingAction(null);
+      }
+    });
+  }
+
+  function runDuplicateResolution(
+    action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate",
+  ) {
+    setPendingDuplicateAction(action);
+    setActionMessage("Resolviendo duplicado...");
+
+    startTransition(async () => {
+      try {
+        const result = await resolveDuplicateAction({
+          action,
+          note: duplicateNote.trim() || null,
+        });
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingDuplicateAction(null);
       }
     });
   }
@@ -587,6 +664,63 @@ export function DocumentReviewWorkspace({
 
         <article className="panel p-6">
           <div className="mb-4">
+            <h3 className="text-2xl font-semibold tracking-[-0.05em]">Lineas y conceptos</h3>
+            <p className="text-sm leading-7 text-[color:var(--color-muted)]">
+              El intake intenta extraer articulos o servicios. Si no puede, el draft cae a `amount_breakdown` como degradacion controlada.
+            </p>
+          </div>
+
+          {pageData.draft.lineItems.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+                <thead>
+                  <tr className="text-left uppercase tracking-[0.18em] text-[11px] text-[color:var(--color-muted)]">
+                    <th className="pr-4">Linea</th>
+                    <th className="pr-4">Descripcion</th>
+                    <th className="pr-4">Neto</th>
+                    <th className="pr-4">IVA</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageData.draft.lineItems.map((line, index) => (
+                    <tr key={`${line.line_number ?? index}-${line.concept_description ?? "line"}`}>
+                      <td className="rounded-l-2xl border border-r-0 border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                        {line.line_number ?? index + 1}
+                      </td>
+                      <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                        <div className="font-medium">
+                          {line.concept_description ?? "Sin descripcion"}
+                        </div>
+                        <div className="text-[color:var(--color-muted)]">
+                          {line.concept_code ?? "Sin codigo"}
+                        </div>
+                      </td>
+                      <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                        {line.net_amount !== null ? formatMoney(line.net_amount) : "-"}
+                      </td>
+                      <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                        {line.tax_amount !== null ? formatMoney(line.tax_amount) : "-"}
+                      </td>
+                      <td className="rounded-r-2xl border border-l-0 border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                        {line.total_amount !== null ? formatMoney(line.total_amount) : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
+              {pageData.derived.conceptResolution.fallbackUsed
+                ? "No hubo line_items confiables. El draft usa amount_breakdown como fallback."
+                : "Todavia no hay conceptos extraidos."}
+            </div>
+          )}
+        </article>
+
+        <article className="panel p-6">
+          <div className="mb-4">
             <h3 className="text-2xl font-semibold tracking-[-0.05em]">Texto extraido</h3>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
               Transparencia del intake estructurado que sale de OpenAI y queda congelado en el draft.
@@ -621,6 +755,85 @@ export function DocumentReviewWorkspace({
               </div>
             ))}
           </div>
+        </article>
+
+        <article className="panel p-6">
+          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Identidad y duplicados</h3>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Estrategia</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.invoiceIdentity?.identityStrategy ?? "Sin identidad usable"}
+              </p>
+              <p className="mt-2 font-semibold">Clave</p>
+              <p className="mt-2 break-all text-[color:var(--color-muted)]">
+                {pageData.derived.invoiceIdentity?.invoiceIdentityKey ?? "Sin clave de negocio"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Estado de duplicado</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear"}
+              </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.invoiceIdentity?.duplicateOfDocumentId
+                  ? `Documento relacionado: ${pageData.derived.invoiceIdentity.duplicateOfDocumentId}`
+                  : "Sin documento relacionado"}
+              </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.invoiceIdentity?.duplicateReason ?? "Sin motivo registrado"}
+              </p>
+            </div>
+          </div>
+
+          {pageData.derived.invoiceIdentity
+          && pageData.derived.invoiceIdentity.duplicateStatus !== "clear" ? (
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={duplicateNote}
+                onChange={(event) => {
+                  setDuplicateNote(event.target.value);
+                }}
+                placeholder="Agrega una nota si confirmas falso positivo o si quieres continuar con justificacion."
+                className="min-h-28 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+              />
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    runDuplicateResolution("confirmed_duplicate");
+                  }}
+                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
+                >
+                  {pendingDuplicateAction === "confirmed_duplicate" && isPending ? <InlineSpinner /> : null}
+                  Marcar duplicado
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    runDuplicateResolution("false_positive");
+                  }}
+                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
+                >
+                  {pendingDuplicateAction === "false_positive" && isPending ? <InlineSpinner /> : null}
+                  Marcar falso positivo
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending || !duplicateNote.trim()}
+                  onClick={() => {
+                    runDuplicateResolution("justified_non_duplicate");
+                  }}
+                  className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
+                >
+                  {pendingDuplicateAction === "justified_non_duplicate" && isPending ? <InlineSpinner /> : null}
+                  Continuar con justificacion
+                </button>
+              </div>
+            </div>
+          ) : null}
         </article>
 
         <article className="panel p-6">
@@ -717,6 +930,8 @@ export function DocumentReviewWorkspace({
           <div className="mt-4 space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
             <p>Processing run: {pageData.processingRun ? `${pageData.processingRun.provider_code}:${pageData.processingRun.model_code ?? "sin modelo"}` : "sin run"}</p>
             <p>Snapshot: {pageData.ruleSnapshot ? pageData.ruleSnapshot.id : "sin snapshot"}</p>
+            <p>Vendor: {pageData.derived.vendorResolution.vendorName ?? pageData.derived.vendorResolution.status}</p>
+            <p>Conceptos: {pageData.derived.conceptResolution.primaryConceptLabels.join(", ") || "sin conceptos normalizados"}</p>
             <p>Confirmaciones: {pageData.confirmations.length}</p>
             <p>Creado: {formatDate(pageData.document.createdAt)}</p>
           </div>

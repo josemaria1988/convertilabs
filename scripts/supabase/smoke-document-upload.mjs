@@ -87,11 +87,21 @@ async function signInAsUser(supabaseUrl, anonKey, email, password) {
   return client;
 }
 
+function buildOrganizationPayload(name) {
+  return {
+    p_name: name,
+    p_legal_entity_type: "SAS",
+    p_tax_id: "211234560019",
+    p_tax_regime_code: "IRAE_GENERAL",
+    p_vat_regime: "GENERAL",
+    p_dgi_group: "NO_CEDE",
+    p_cfe_status: "ELECTRONIC_ISSUER",
+  };
+}
+
 async function createOrganization(client, name) {
   const { data, error } = await client
-    .rpc("create_organization_with_owner", {
-      p_name: name,
-    })
+    .rpc("create_organization_with_owner", buildOrganizationPayload(name))
     .single();
 
   if (error) {

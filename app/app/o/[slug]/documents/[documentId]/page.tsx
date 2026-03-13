@@ -17,6 +17,7 @@ import { buildOrganizationPrivateNavItems } from "@/modules/organizations/privat
 import {
   confirmDocumentReviewAction,
   reopenDocumentReviewAction,
+  resolveDocumentDuplicateAction,
   saveDocumentDraftReviewAction,
 } from "./actions";
 
@@ -161,6 +162,14 @@ export default async function DocumentReviewPage({
           return confirmDocumentReviewAction({
             slug,
             documentId,
+          });
+        }}
+        resolveDuplicateAction={async (payload) => {
+          "use server";
+          return resolveDocumentDuplicateAction({
+            slug,
+            documentId,
+            ...payload,
           });
         }}
         reopenDocumentAction={async () => {

@@ -98,11 +98,21 @@ async function signInAsUser(supabaseUrl, anonKey, email, password) {
   return client;
 }
 
+function buildOrganizationPayload(name) {
+  return {
+    p_name: name,
+    p_legal_entity_type: "SAS",
+    p_tax_id: "211234560019",
+    p_tax_regime_code: "IRAE_GENERAL",
+    p_vat_regime: "GENERAL",
+    p_dgi_group: "NO_CEDE",
+    p_cfe_status: "ELECTRONIC_ISSUER",
+  };
+}
+
 async function createOrganization(client, name) {
   const { data, error } = await client
-    .rpc("create_organization_with_owner", {
-      p_name: name,
-    })
+    .rpc("create_organization_with_owner", buildOrganizationPayload(name))
     .single();
 
   if (error) {
@@ -119,7 +129,7 @@ async function createOrganization(client, name) {
 async function assertOrganizationOwner(serviceClient, organizationId, userId) {
   const { data: organization, error: organizationError } = await serviceClient
     .from("organizations")
-    .select("id, slug, created_by")
+    .select("id, slug, created_by, legal_entity_type, tax_id, tax_regime_code, vat_regime, dgi_group, cfe_status")
     .eq("id", organizationId)
     .maybeSingle();
 
@@ -129,6 +139,17 @@ async function assertOrganizationOwner(serviceClient, organizationId, userId) {
 
   if (!organization || organization.created_by !== userId) {
     throw new Error(`Organization ${organizationId} is missing or has an unexpected owner.`);
+  }
+
+  if (
+    organization.legal_entity_type !== "SAS"
+    || organization.tax_id !== "211234560019"
+    || organization.tax_regime_code !== "IRAE_GENERAL"
+    || organization.vat_regime !== "GENERAL"
+    || organization.dgi_group !== "NO_CEDE"
+    || organization.cfe_status !== "ELECTRONIC_ISSUER"
+  ) {
+    throw new Error("Organization onboarding did not persist the expected fiscal contract.");
   }
 
   const { data: membership, error: membershipError } = await serviceClient

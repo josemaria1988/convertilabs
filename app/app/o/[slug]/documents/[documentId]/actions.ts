@@ -5,6 +5,7 @@ import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
   confirmDocumentReview,
   reopenDocumentReview,
+  resolveDocumentDuplicate,
   saveDraftReview,
 } from "@/modules/documents/review";
 
@@ -78,6 +79,38 @@ export async function confirmDocumentReviewAction(input: {
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
   revalidatePath(paths.journalEntries);
+
+  return result;
+}
+
+export async function resolveDocumentDuplicateAction(input: {
+  slug: string;
+  documentId: string;
+  action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate";
+  note: string | null;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede resolver duplicados documentales.",
+    };
+  }
+
+  const result = await resolveDocumentDuplicate({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    action: input.action,
+    note: input.note,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
 
   return result;
 }

@@ -1397,6 +1397,7 @@ alter table public.document_draft_steps enable row level security;
 alter table public.document_draft_autosaves enable row level security;
 alter table public.document_confirmations enable row level security;
 alter table public.document_revisions enable row level security;
+alter table public.document_invoice_identities enable row level security;
 alter table public.normative_sources enable row level security;
 alter table public.normative_items enable row level security;
 alter table public.normative_update_runs enable row level security;
@@ -1806,6 +1807,58 @@ with check (
 drop policy if exists "document_revisions_update_document_roles" on public.document_revisions;
 create policy "document_revisions_update_document_roles"
 on public.document_revisions
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_invoice_identities_select_member" on public.document_invoice_identities;
+create policy "document_invoice_identities_select_member"
+on public.document_invoice_identities
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "document_invoice_identities_insert_document_roles" on public.document_invoice_identities;
+create policy "document_invoice_identities_insert_document_roles"
+on public.document_invoice_identities
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_invoice_identities_update_document_roles" on public.document_invoice_identities;
+create policy "document_invoice_identities_update_document_roles"
+on public.document_invoice_identities
 for update
 using (
   public.has_org_role(

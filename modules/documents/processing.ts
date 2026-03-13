@@ -11,6 +11,20 @@ import {
   documentIntakeJsonSchema,
   type DocumentIntakeOutput,
 } from "@/modules/ai/document-intake-contract";
+import {
+  asNumber,
+  asRecord,
+  asString,
+  buildAccountingDraftArtifacts,
+  buildDraftStepSnapshots,
+  buildDraftFieldsPayload,
+  buildInvoiceIdentityResult,
+  findDuplicateInvoiceIdentityDocumentId,
+  loadDocumentInvoiceIdentity,
+  resolveDocumentConcepts,
+  resolveVendorFromFacts,
+  upsertDocumentInvoiceIdentity,
+} from "@/modules/accounting";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type ProcessUploadedDocumentInput = {
@@ -73,7 +87,7 @@ function buildUserPrompt(input: {
     `Analyze the attached file: ${input.originalFilename}.`,
     `MIME type: ${input.mimeType ?? "unknown"}.`,
     "Classify it as purchase, sale, or other.",
-    "Extract core fields, totals, tax hints, and the closest V1 category candidate.",
+    "Extract core fields, totals, tax hints, line items, and the closest V1 category candidate.",
     "If the document is not clear enough, lower confidence and add warnings.",
   ].join(" ");
 }
@@ -124,7 +138,80 @@ function collectValidationWarnings(
     );
   }
 
+  if (output.line_items.length === 0 && output.amount_breakdown.length > 0) {
+    warnings.push(
+      "No se pudieron extraer line_items confiables. Se usa amount_breakdown como fallback temporal.",
+    );
+  }
+
   return warnings;
+}
+
+function getDeterministicRuleRefs(ruleSnapshot: {
+  deterministic_rule_refs_json: unknown;
+} | null) {
+  if (!ruleSnapshot) {
+    return [];
+  }
+
+  const refs = Array.isArray(ruleSnapshot.deterministic_rule_refs_json)
+    ? ruleSnapshot.deterministic_rule_refs_json
+    : [];
+
+  return refs.slice(0, 5).map((entry) => {
+    const record = asRecord(entry);
+
+    return {
+      id: asString(record.id),
+      scope: asString(record.scope),
+      priority: asNumber(record.priority),
+      sourceReference: asString(record.source_reference),
+    };
+  });
+}
+
+function buildOrganizationFiscalProfile(profileVersion: {
+  country_code: string;
+  legal_entity_type: string;
+  tax_regime_code: string;
+  vat_regime: string;
+  dgi_group: string;
+  cfe_status: string;
+  tax_id: string;
+} | null) {
+  if (!profileVersion) {
+    return null;
+  }
+
+  return {
+    countryCode: profileVersion.country_code,
+    legalEntityType: profileVersion.legal_entity_type,
+    taxRegimeCode: profileVersion.tax_regime_code,
+    vatRegime: profileVersion.vat_regime,
+    dgiGroup: profileVersion.dgi_group,
+    cfeStatus: profileVersion.cfe_status,
+    taxId: profileVersion.tax_id,
+  };
+}
+
+function buildRuleSnapshotContext(ruleSnapshot: {
+  id: string;
+  version_number: number;
+  effective_from: string;
+  prompt_summary: string;
+  deterministic_rule_refs_json: unknown;
+} | null) {
+  if (!ruleSnapshot) {
+    return null;
+  }
+
+  return {
+    id: ruleSnapshot.id,
+    versionNumber: ruleSnapshot.version_number,
+    effectiveFrom: ruleSnapshot.effective_from,
+    promptSummary: ruleSnapshot.prompt_summary,
+    deterministicRuleRefs: getDeterministicRuleRefs(ruleSnapshot),
+  };
 }
 
 async function loadDocument(documentId: string) {
@@ -285,6 +372,22 @@ async function persistDocumentArtifacts(input: {
   runId: string;
   runNumber: number;
   ruleSnapshotId: string;
+  profileVersion: {
+    country_code: string;
+    legal_entity_type: string;
+    tax_regime_code: string;
+    vat_regime: string;
+    dgi_group: string;
+    cfe_status: string;
+    tax_id: string;
+  };
+  ruleSnapshot: {
+    id: string;
+    version_number: number;
+    effective_from: string;
+    prompt_summary: string;
+    deterministic_rule_refs_json: unknown;
+  };
   requestedBy: string | null;
   openAiFileId: string;
   structuredOutput: DocumentIntakeOutput;
@@ -301,6 +404,47 @@ async function persistDocumentArtifacts(input: {
     input.structuredOutput,
     input.duplicateDocumentIds,
   );
+  const existingInvoiceIdentity = await loadDocumentInvoiceIdentity(
+    supabase,
+    input.document.id,
+  );
+  const businessDuplicateDocumentId = await findDuplicateInvoiceIdentityDocumentId(
+    supabase,
+    input.document.organization_id,
+    input.document.id,
+    buildInvoiceIdentityResult({
+      facts: input.structuredOutput.facts,
+    }).invoiceIdentityKey,
+  );
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts: input.structuredOutput.facts,
+    fileHashDuplicateDocumentIds: input.duplicateDocumentIds,
+    businessDuplicateDocumentId,
+    persistedDuplicateStatus: existingInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: existingInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: existingInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const conceptResolution = resolveDocumentConcepts({
+    lineItems: input.structuredOutput.line_items,
+    amountBreakdown: input.structuredOutput.amount_breakdown,
+  });
+  const vendorResolution = resolveVendorFromFacts({
+    facts: input.structuredOutput.facts,
+    vendors: [],
+  });
+  const derived = buildAccountingDraftArtifacts({
+    documentRole: input.structuredOutput.document_role_candidate,
+    documentType: input.structuredOutput.document_type_candidate,
+    facts: input.structuredOutput.facts,
+    amountBreakdown: input.structuredOutput.amount_breakdown,
+    lineItems: input.structuredOutput.line_items,
+    operationCategory: input.structuredOutput.operation_category_candidate,
+    profile: buildOrganizationFiscalProfile(input.profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(input.ruleSnapshot),
+    vendorResolution,
+    invoiceIdentity,
+    conceptResolution,
+  });
 
   await markExtractionActive(input.document.id);
 
@@ -399,10 +543,9 @@ async function persistDocumentArtifacts(input: {
   }
 
   const draftRevisionNumber = await getNextDraftRevisionNumber(input.document.id);
-  const draftStatus =
-    input.structuredOutput.confidence_score >= 0.85
-      ? "ready_for_confirmation"
-      : "open";
+  const draftStatus = derived.validation.canConfirm
+    ? "ready_for_confirmation"
+    : "open";
 
   const { data: draft, error: draftError } = await supabase
     .from("document_drafts")
@@ -419,11 +562,17 @@ async function persistDocumentArtifacts(input: {
         operation_category_candidate: input.structuredOutput.operation_category_candidate,
       },
       fields_json: {
-        facts: input.structuredOutput.facts,
-        amount_breakdown: input.structuredOutput.amount_breakdown,
+        ...buildDraftFieldsPayload({
+          facts: input.structuredOutput.facts,
+          amountBreakdown: input.structuredOutput.amount_breakdown,
+          lineItems: input.structuredOutput.line_items,
+        }),
+        model_explanations: input.structuredOutput.explanations,
       },
       extracted_text: input.structuredOutput.extracted_text,
       warnings_json: warnings,
+      journal_suggestion_json: derived.journalSuggestion,
+      tax_treatment_json: derived.taxTreatment,
       source_confidence: input.structuredOutput.confidence_score,
       created_by: input.requestedBy,
       updated_by: input.requestedBy,
@@ -436,30 +585,35 @@ async function persistDocumentArtifacts(input: {
     throw new Error(draftError?.message ?? "Could not persist the draft.");
   }
 
-  const stepRows = [
-    { step_code: "identity", status: "draft_saved" },
-    { step_code: "fields", status: "draft_saved" },
-    { step_code: "amounts", status: "draft_saved" },
-    { step_code: "operation_context", status: "draft_saved" },
-    {
-      step_code: "journal",
-      status: "blocked",
-      stale_reason: "pending_deterministic_accounting_engine",
-    },
-    {
-      step_code: "tax",
-      status: "blocked",
-      stale_reason: "pending_deterministic_vat_engine",
-    },
-    {
-      step_code: "confirmation",
-      status: draftStatus === "ready_for_confirmation" ? "draft_saved" : "blocked",
-      stale_reason:
-        draftStatus === "ready_for_confirmation"
-          ? null
-          : "complete_tax_and_accounting_review_first",
-    },
-  ];
+  await upsertDocumentInvoiceIdentity(supabase, {
+    organization_id: input.document.organization_id,
+    document_id: input.document.id,
+    source_draft_id: draft.id,
+    vendor_id: null,
+    issuer_tax_id_normalized: invoiceIdentity.issuerTaxIdNormalized,
+    issuer_name_normalized: invoiceIdentity.issuerNameNormalized,
+    document_number_normalized: invoiceIdentity.documentNumberNormalized,
+    document_date: invoiceIdentity.documentDate,
+    total_amount: invoiceIdentity.totalAmount,
+    currency_code: invoiceIdentity.currencyCode,
+    identity_strategy: invoiceIdentity.identityStrategy,
+    invoice_identity_key: invoiceIdentity.invoiceIdentityKey,
+    duplicate_status: invoiceIdentity.duplicateStatus,
+    duplicate_of_document_id: invoiceIdentity.duplicateOfDocumentId,
+    duplicate_reason: invoiceIdentity.duplicateReason,
+    resolution_notes: existingInvoiceIdentity?.resolution_notes ?? null,
+  });
+  const savedAt = new Date().toISOString();
+  const stepRows = buildDraftStepSnapshots({
+    documentRole: input.structuredOutput.document_role_candidate,
+    documentType: input.structuredOutput.document_type_candidate,
+    operationCategory: input.structuredOutput.operation_category_candidate,
+    facts: input.structuredOutput.facts,
+    amountBreakdown: input.structuredOutput.amount_breakdown,
+    lineItems: input.structuredOutput.line_items,
+    derived,
+    savedAt,
+  });
 
   const { error: stepError } = await supabase
     .from("document_draft_steps")
@@ -468,8 +622,9 @@ async function persistDocumentArtifacts(input: {
         draft_id: draft.id,
         step_code: step.step_code,
         status: step.status,
-        last_saved_at: new Date().toISOString(),
+        last_saved_at: step.last_saved_at,
         stale_reason: step.stale_reason,
+        snapshot_json: step.snapshot_json,
       })),
     );
 
@@ -493,7 +648,7 @@ async function persistDocumentArtifacts(input: {
   }
 
   const documentStatus =
-    input.structuredOutput.confidence_score >= 0.6
+    derived.validation.canConfirm && input.structuredOutput.confidence_score >= 0.6
       ? "draft_ready"
       : "needs_review";
 
@@ -511,9 +666,12 @@ async function persistDocumentArtifacts(input: {
       metadata: {
         ...(input.document.metadata ?? {}),
         duplicate_document_ids: input.duplicateDocumentIds,
+        duplicate_status: invoiceIdentity.duplicateStatus,
+        duplicate_reason: invoiceIdentity.duplicateReason,
         processing_model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
         processing_provider: "openai",
         warning_count: warnings.length,
+        line_item_count: input.structuredOutput.line_items.length,
       },
     })
     .eq("id", input.document.id);
@@ -601,7 +759,7 @@ export async function processUploadedDocument(
   try {
     const document = await loadDocument(input.documentId);
     const supabase = getSupabaseServiceRoleClient();
-    const { ruleSnapshot } = await materializeOrganizationRuleSnapshot(
+    const { profileVersion, ruleSnapshot } = await materializeOrganizationRuleSnapshot(
       supabase,
       document.organization_id,
       input.requestedBy,
@@ -670,6 +828,8 @@ export async function processUploadedDocument(
       runId,
       runNumber,
       ruleSnapshotId: ruleSnapshot.id,
+      profileVersion,
+      ruleSnapshot,
       requestedBy: input.requestedBy,
       openAiFileId: uploadedFile.fileId,
       structuredOutput: structuredResponse.output,

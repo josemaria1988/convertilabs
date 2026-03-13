@@ -11,7 +11,7 @@ Cerrar el primer flujo multi-tenant real de Semana 1:
 
 ## Decisiones implementadas
 
-- `db/` sigue siendo la fuente canonica del tenant model y ahora expone `public.create_organization_with_owner(text)` como RPC segura para el alta inicial.
+- `db/` sigue siendo la fuente canonica del tenant model y ahora expone `public.create_organization_with_owner(...)` como RPC segura para el alta inicial, incluyendo forma juridica, RUT, regimen tributario, regimen IVA, grupo DGI y estado CFE.
 - La creacion de organizacion no queda abierta por `INSERT` directo al cliente; se endurecieron las policies de `organizations` y `organization_members` para que el camino valido sea la funcion controlada.
 - Se agregaron helpers `public.is_org_member(uuid)` e `public.is_org_owner(uuid)` para reutilizar el criterio de autorizacion en RLS y en futuras capas.
 - El slug se normaliza en servidor con `public.slugify_organization_name(text)` y resuelve colisiones con sufijo incremental.

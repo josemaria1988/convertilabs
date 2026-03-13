@@ -19,6 +19,9 @@ create table if not exists public.organizations (
   legal_entity_type text,
   tax_id text,
   tax_regime_code text,
+  vat_regime text,
+  dgi_group text,
+  cfe_status text,
   default_locale text not null default 'es-UY',
   active boolean not null default true,
   created_by uuid references public.profiles(id),
@@ -134,7 +137,10 @@ create or replace function public.create_organization_with_owner(
   p_name text,
   p_legal_entity_type text default null,
   p_tax_id text default null,
-  p_tax_regime_code text default null
+  p_tax_regime_code text default null,
+  p_vat_regime text default null,
+  p_dgi_group text default null,
+  p_cfe_status text default null
 )
 returns table (organization_id uuid, slug text)
 language plpgsql
@@ -178,6 +184,21 @@ begin
 
   if nullif(trim(coalesce(p_tax_regime_code, '')), '') is null then
     raise exception 'Organization tax regime code is required.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_vat_regime, '')), '') is null then
+    raise exception 'Organization vat regime is required.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_dgi_group, '')), '') is null then
+    raise exception 'Organization dgi group is required.'
+      using errcode = '22023';
+  end if;
+
+  if nullif(trim(coalesce(p_cfe_status, '')), '') is null then
+    raise exception 'Organization cfe status is required.'
       using errcode = '22023';
   end if;
 
@@ -226,6 +247,9 @@ begin
     legal_entity_type,
     tax_id,
     tax_regime_code,
+    vat_regime,
+    dgi_group,
+    cfe_status,
     created_by
   )
   values (
@@ -234,6 +258,9 @@ begin
     trim(p_legal_entity_type),
     trim(p_tax_id),
     trim(p_tax_regime_code),
+    trim(p_vat_regime),
+    trim(p_dgi_group),
+    trim(p_cfe_status),
     v_user_id
   )
   returning id into v_organization_id;
@@ -256,6 +283,32 @@ begin
 end;
 $$;
 
+create or replace function public.create_organization_with_owner(
+  p_name text,
+  p_legal_entity_type text default null,
+  p_tax_id text default null,
+  p_tax_regime_code text default null
+)
+returns table (organization_id uuid, slug text)
+language sql
+security definer
+set search_path = public
+as $$
+  select *
+  from public.create_organization_with_owner(
+    p_name,
+    p_legal_entity_type,
+    p_tax_id,
+    p_tax_regime_code,
+    'UNKNOWN',
+    'UNKNOWN',
+    'UNKNOWN'
+  );
+$$;
+
 revoke all on function public.create_organization_with_owner(text, text, text, text) from public;
+revoke all on function public.create_organization_with_owner(text, text, text, text, text, text, text) from public;
 grant execute on function public.create_organization_with_owner(text, text, text, text) to authenticated;
 grant execute on function public.create_organization_with_owner(text, text, text, text) to service_role;
+grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to authenticated;
+grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to service_role;
