@@ -87,10 +87,14 @@ alter table public.organizations enable row level security;
 alter table public.organization_members enable row level security;
 alter table public.chart_of_accounts enable row level security;
 alter table public.vendors enable row level security;
+alter table public.vendor_aliases enable row level security;
 alter table public.customers enable row level security;
+alter table public.organization_concepts enable row level security;
+alter table public.organization_concept_aliases enable row level security;
 alter table public.documents enable row level security;
 alter table public.document_extractions enable row level security;
 alter table public.document_relations enable row level security;
+alter table public.accounting_rules enable row level security;
 alter table public.accounting_suggestions enable row level security;
 alter table public.accounting_suggestion_lines enable row level security;
 alter table public.journal_entries enable row level security;
@@ -313,6 +317,153 @@ create policy "vendors_delete_accounting_roles"
 on public.vendors
 for delete
 using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "vendor_aliases_select_member" on public.vendor_aliases;
+create policy "vendor_aliases_select_member"
+on public.vendor_aliases
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "vendor_aliases_insert_accounting_roles" on public.vendor_aliases;
+create policy "vendor_aliases_insert_accounting_roles"
+on public.vendor_aliases
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "vendor_aliases_update_accounting_roles" on public.vendor_aliases;
+create policy "vendor_aliases_update_accounting_roles"
+on public.vendor_aliases
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_concepts_select_member" on public.organization_concepts;
+create policy "organization_concepts_select_member"
+on public.organization_concepts
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "organization_concepts_insert_accounting_roles" on public.organization_concepts;
+create policy "organization_concepts_insert_accounting_roles"
+on public.organization_concepts
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_concepts_update_accounting_roles" on public.organization_concepts;
+create policy "organization_concepts_update_accounting_roles"
+on public.organization_concepts
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_concept_aliases_select_member" on public.organization_concept_aliases;
+create policy "organization_concept_aliases_select_member"
+on public.organization_concept_aliases
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "organization_concept_aliases_insert_accounting_roles" on public.organization_concept_aliases;
+create policy "organization_concept_aliases_insert_accounting_roles"
+on public.organization_concept_aliases
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_concept_aliases_update_accounting_roles" on public.organization_concept_aliases;
+create policy "organization_concept_aliases_update_accounting_roles"
+on public.organization_concept_aliases
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
   public.has_org_role(
     organization_id,
     array[
@@ -620,6 +771,55 @@ using (
       'accountant'::public.member_role,
       'reviewer'::public.member_role,
       'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rules_select_member" on public.accounting_rules;
+create policy "accounting_rules_select_member"
+on public.accounting_rules
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "accounting_rules_insert_accounting_roles" on public.accounting_rules;
+create policy "accounting_rules_insert_accounting_roles"
+on public.accounting_rules
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rules_update_accounting_roles" on public.accounting_rules;
+create policy "accounting_rules_update_accounting_roles"
+on public.accounting_rules
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
     ]
   )
 );
@@ -1395,6 +1595,8 @@ alter table public.document_classification_candidates enable row level security;
 alter table public.document_drafts enable row level security;
 alter table public.document_draft_steps enable row level security;
 alter table public.document_draft_autosaves enable row level security;
+alter table public.document_line_items enable row level security;
+alter table public.document_accounting_contexts enable row level security;
 alter table public.document_confirmations enable row level security;
 alter table public.document_revisions enable row level security;
 alter table public.document_invoice_identities enable row level security;
@@ -1756,6 +1958,110 @@ with check (
           'operator'::public.member_role
         ]
       )
+  )
+);
+
+drop policy if exists "document_line_items_select_member" on public.document_line_items;
+create policy "document_line_items_select_member"
+on public.document_line_items
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "document_line_items_insert_document_roles" on public.document_line_items;
+create policy "document_line_items_insert_document_roles"
+on public.document_line_items
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_line_items_update_document_roles" on public.document_line_items;
+create policy "document_line_items_update_document_roles"
+on public.document_line_items
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_accounting_contexts_select_member" on public.document_accounting_contexts;
+create policy "document_accounting_contexts_select_member"
+on public.document_accounting_contexts
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "document_accounting_contexts_insert_document_roles" on public.document_accounting_contexts;
+create policy "document_accounting_contexts_insert_document_roles"
+on public.document_accounting_contexts
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_accounting_contexts_update_document_roles" on public.document_accounting_contexts;
+create policy "document_accounting_contexts_update_document_roles"
+on public.document_accounting_contexts
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
   )
 );
 

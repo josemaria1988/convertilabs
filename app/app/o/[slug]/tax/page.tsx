@@ -4,8 +4,13 @@ import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-
 import { SectionCard } from "@/components/section-card";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { loadRecentExports } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
+import {
+  createVatRunExportAction,
+  updateVatRunLifecycleAction,
+} from "./actions";
 
 type OrganizationTaxPageProps = {
   params: Promise<{
@@ -32,6 +37,7 @@ export default async function OrganizationTaxPage({
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
   const vatRuns = await loadOrganizationVatRuns(supabase, organization.id);
+  const exports = await loadRecentExports(organization.id);
   const [{ count: normativeSources }, { count: normativeItems }] = await Promise.all([
     supabase
       .from("normative_sources")
@@ -98,6 +104,121 @@ export default async function OrganizationTaxPage({
                       No deducible: {formatMoney(run.inputVatNonDeductible)}
                     </div>
                   </div>
+
+                  <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+                    Flags de revision: {run.reviewFlagsCount}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: run.id,
+                          action: "review",
+                        });
+                      }}
+                    >
+                      <button className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm font-semibold">
+                        Marcar revisado
+                      </button>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: run.id,
+                          action: "finalize",
+                        });
+                      }}
+                    >
+                      <button className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm font-semibold">
+                        Finalizar
+                      </button>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: run.id,
+                          action: "lock",
+                        });
+                      }}
+                    >
+                      <button className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm font-semibold">
+                        Bloquear
+                      </button>
+                    </form>
+                    <form
+                      action={async (formData: FormData) => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: run.id,
+                          action: "reopen",
+                          reason: String(formData.get("reason") ?? ""),
+                        });
+                      }}
+                      className="space-y-2"
+                    >
+                      <input
+                        name="reason"
+                        placeholder="Motivo de reapertura"
+                        className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                      />
+                      <button className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm font-semibold">
+                        Reabrir
+                      </button>
+                    </form>
+                  </div>
+
+                  <form
+                    action={async () => {
+                      "use server";
+                      await createVatRunExportAction({
+                        slug,
+                        vatRunId: run.id,
+                      });
+                    }}
+                    className="mt-4"
+                  >
+                    <button className="rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm font-semibold">
+                      Generar export Excel
+                    </button>
+                  </form>
+
+                  {exports.filter((artifact) => artifact.targetId === run.id).length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-sm font-semibold">Exports recientes</p>
+                      {exports
+                        .filter((artifact) => artifact.targetId === run.id)
+                        .map((artifact) => (
+                          <div
+                            key={artifact.id}
+                            className="rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                          >
+                            <p>{artifact.filename ?? artifact.id}</p>
+                            <p className="mt-1 text-[color:var(--color-muted)]">
+                              {artifact.status}
+                              {artifact.failureMessage ? ` / ${artifact.failureMessage}` : ""}
+                            </p>
+                            {artifact.downloadUrl ? (
+                              <a
+                                href={artifact.downloadUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-2 inline-flex text-sm font-semibold underline"
+                              >
+                                Descargar
+                              </a>
+                            ) : null}
+                          </div>
+                        ))}
+                    </div>
+                  ) : null}
 
                   {run.tracedDocuments.length > 0 ? (
                     <div className="mt-4 space-y-3">

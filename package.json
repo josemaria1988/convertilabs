@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "node ./tests/run-tests.cjs",
     "typecheck": "tsc --noEmit",
     "db:generate:migration": "node scripts/supabase/generate-canonical-migration.mjs",
     "db:verify:parity": "node scripts/supabase/verify-schema-parity.mjs",

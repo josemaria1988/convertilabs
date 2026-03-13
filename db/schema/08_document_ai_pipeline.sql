@@ -165,6 +165,58 @@ create table if not exists public.document_draft_autosaves (
 create index if not exists idx_document_draft_autosaves_draft_saved
   on public.document_draft_autosaves (draft_id, saved_at desc);
 
+create table if not exists public.document_line_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  draft_id uuid not null references public.document_drafts(id) on delete cascade,
+  line_number integer not null,
+  raw_concept_code text,
+  raw_concept_description text,
+  normalized_concept_code text,
+  normalized_concept_description text,
+  net_amount numeric(18,2),
+  tax_rate numeric(10,4),
+  tax_amount numeric(18,2),
+  total_amount numeric(18,2),
+  matched_concept_id uuid references public.organization_concepts(id) on delete set null,
+  match_strategy text not null default 'unmatched',
+  match_confidence numeric(5,4) not null default 0,
+  requires_user_context boolean not null default false,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (draft_id, line_number)
+);
+
+create index if not exists idx_document_line_items_doc_draft
+  on public.document_line_items (document_id, draft_id);
+
+create table if not exists public.document_accounting_contexts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  draft_id uuid not null references public.document_drafts(id) on delete cascade,
+  status text not null default 'not_required',
+  reason_codes text[] not null default '{}',
+  user_free_text text,
+  structured_context_json jsonb not null default '{}'::jsonb,
+  ai_request_payload_json jsonb not null default '{}'::jsonb,
+  ai_response_json jsonb not null default '{}'::jsonb,
+  provider_code text,
+  model_code text,
+  prompt_hash text,
+  request_latency_ms integer,
+  created_by uuid references public.profiles(id),
+  updated_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (draft_id)
+);
+
+create index if not exists idx_document_accounting_contexts_doc_status
+  on public.document_accounting_contexts (document_id, status);
+
 create table if not exists public.document_confirmations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

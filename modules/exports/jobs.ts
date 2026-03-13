@@ -1,0 +1,220 @@
+import { createHash } from "crypto";
+import "server-only";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { buildVatRunExcelWorkbook } from "@/modules/exports/excel-workbook";
+import { loadVatRunExportDataset } from "@/modules/exports/repository";
+import type { ExportJobResult } from "@/modules/exports/types";
+
+function buildStoragePath(input: {
+  organizationId: string;
+  exportId: string;
+  periodLabel: string;
+}) {
+  return `orgs/${input.organizationId}/vat-runs/${input.periodLabel}/export-${input.exportId}.xml`;
+}
+
+async function recordExportAuditEvent(input: {
+  organizationId: string;
+  actorId: string | null;
+  exportId: string;
+  action: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .from("audit_log")
+    .insert({
+      organization_id: input.organizationId,
+      actor_user_id: input.actorId,
+      entity_type: "export",
+      entity_id: input.exportId,
+      action: input.action,
+      metadata: input.metadata ?? {},
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function createVatRunExport(input: {
+  organizationId: string;
+  vatRunId: string;
+  actorId: string | null;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: exportRow, error: createError } = await supabase
+    .from("exports")
+    .insert({
+      organization_id: input.organizationId,
+      export_type: "vat_period_excel",
+      export_scope: "vat_period",
+      target_system: "excel_xml",
+      target_id: input.vatRunId,
+      status: "queued",
+      created_by: input.actorId,
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (createError || !exportRow?.id) {
+    throw new Error(createError?.message ?? "No se pudo crear el job de export.");
+  }
+
+  const exportId = exportRow.id as string;
+
+  try {
+    await supabase
+      .from("exports")
+      .update({
+        status: "generating",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", exportId);
+
+    const dataset = await loadVatRunExportDataset(
+      supabase,
+      input.organizationId,
+      input.vatRunId,
+    );
+
+    if (dataset.traceability.length === 0 || dataset.journalEntries.length === 0) {
+      throw new Error("El modelo canónico aprobado esta incompleto para generar el export.");
+    }
+
+    const workbook = buildVatRunExcelWorkbook(dataset);
+    const checksum = createHash("sha256").update(workbook).digest("hex");
+    const storagePath = buildStoragePath({
+      organizationId: input.organizationId,
+      exportId,
+      periodLabel: dataset.periodLabel,
+    });
+    const filename = `convertilabs-${dataset.periodLabel}.xml`;
+    const uploadResult = await supabase.storage
+      .from("exports-private")
+      .upload(storagePath, Buffer.from(workbook, "utf8"), {
+        contentType: "application/xml",
+        upsert: true,
+      });
+
+    if (uploadResult.error) {
+      throw new Error(uploadResult.error.message);
+    }
+
+    await supabase
+      .from("exports")
+      .update({
+        status: "generated",
+        storage_path: storagePath,
+        artifact_filename: filename,
+        artifact_mime_type: "application/xml",
+        payload_json: {
+          vat_run_id: input.vatRunId,
+          period_label: dataset.periodLabel,
+        },
+        checksum,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", exportId);
+
+    await recordExportAuditEvent({
+      organizationId: input.organizationId,
+      actorId: input.actorId,
+      exportId,
+      action: "export:generated",
+      metadata: {
+        vat_run_id: input.vatRunId,
+      },
+    });
+
+    const { data: signedUrlData } = await supabase.storage
+      .from("exports-private")
+      .createSignedUrl(storagePath, 60 * 10);
+
+    return {
+      exportId,
+      status: "generated",
+      storagePath,
+      downloadUrl: signedUrlData?.signedUrl ?? null,
+    } satisfies ExportJobResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo generar el export.";
+
+    await supabase
+      .from("exports")
+      .update({
+        status: "failed",
+        failure_message: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", exportId);
+
+    await recordExportAuditEvent({
+      organizationId: input.organizationId,
+      actorId: input.actorId,
+      exportId,
+      action: "export:failed",
+      metadata: {
+        error: message,
+      },
+    });
+
+    throw new Error(message);
+  }
+}
+
+export async function loadRecentExports(
+  organizationId: string,
+  targetId?: string,
+) {
+  const supabase = getSupabaseServiceRoleClient();
+  let query = supabase
+    .from("exports")
+    .select(
+      "id, target_id, status, storage_path, artifact_filename, artifact_mime_type, failure_message, created_at, updated_at",
+    )
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+
+  if (targetId) {
+    query = query.eq("target_id", targetId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Promise.all((((data as Array<{
+    id: string;
+    target_id: string | null;
+    status: string;
+    storage_path: string | null;
+    artifact_filename: string | null;
+    artifact_mime_type: string | null;
+    failure_message: string | null;
+    created_at: string;
+    updated_at: string;
+  }> | null) ?? [])).map(async (row) => {
+    const signedUrl = row.storage_path
+      ? (await supabase.storage
+          .from("exports-private")
+          .createSignedUrl(row.storage_path, 60 * 10)).data?.signedUrl ?? null
+      : null;
+
+    return {
+      id: row.id,
+      targetId: row.target_id,
+      status: row.status,
+      filename: row.artifact_filename,
+      mimeType: row.artifact_mime_type,
+      failureMessage: row.failure_message,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      downloadUrl: signedUrl,
+    };
+  }));
+}

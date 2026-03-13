@@ -18,17 +18,20 @@ export type DraftStepCode =
   | "fields"
   | "amounts"
   | "operation_context"
+  | "accounting_context"
   | "journal"
   | "tax"
   | "confirmation";
 
 export type ReviewJournalLine = {
   lineNumber: number;
+  accountId: string | null;
   accountCode: string;
   accountName: string;
   debit: number;
   credit: number;
   provenance: string;
+  taxTag: string | null;
 };
 
 export type ReviewJournalSuggestion = {
@@ -42,15 +45,14 @@ export type ReviewJournalSuggestion = {
 };
 
 export type VendorResolutionStatus = "matched" | "unresolved" | "ambiguous";
+export type VendorMatchStrategy = "tax_id" | "alias" | "name" | "none" | "ambiguous";
 
-export type VendorResolutionResult = {
-  status: VendorResolutionStatus;
-  matchStrategy: "tax_id" | "name" | "none" | "ambiguous";
-  vendorId: string | null;
-  vendorName: string | null;
-  normalizedTaxId: string | null;
-  normalizedName: string | null;
-  blockingReasons: string[];
+export type VendorAliasRecord = {
+  id: string;
+  vendor_id: string;
+  alias_display: string | null;
+  alias_normalized: string;
+  source: string;
 };
 
 export type AccountingVendorRecord = {
@@ -63,7 +65,30 @@ export type AccountingVendorRecord = {
   default_account_id: string | null;
   default_payment_account_id: string | null;
   default_tax_profile: JsonRecord | null;
+  default_operation_category: string | null;
   metadata: JsonRecord | null;
+  aliases: VendorAliasRecord[];
+};
+
+export type VendorResolutionCandidate = {
+  vendorId: string;
+  vendorName: string;
+  matchStrategy: VendorMatchStrategy;
+};
+
+export type VendorResolutionResult = {
+  status: VendorResolutionStatus;
+  matchStrategy: VendorMatchStrategy;
+  vendorId: string | null;
+  vendorName: string | null;
+  normalizedTaxId: string | null;
+  normalizedName: string | null;
+  defaultAccountId: string | null;
+  defaultPaymentAccountId: string | null;
+  defaultTaxProfile: JsonRecord | null;
+  defaultOperationCategory: string | null;
+  candidates: VendorResolutionCandidate[];
+  blockingReasons: string[];
 };
 
 export type InvoiceIdentityStrategy =
@@ -118,6 +143,40 @@ export type PersistedInvoiceIdentityRow = {
   updated_at: string;
 };
 
+export type OrganizationConceptRecord = {
+  id: string;
+  organization_id: string;
+  code: string;
+  canonical_name: string;
+  description: string | null;
+  document_role: DocumentRoleCandidate;
+  default_account_id: string | null;
+  default_vat_profile_json: JsonRecord | null;
+  default_operation_category: string | null;
+  is_active: boolean;
+  metadata: JsonRecord | null;
+};
+
+export type OrganizationConceptAliasRecord = {
+  id: string;
+  organization_id: string;
+  concept_id: string;
+  vendor_id: string | null;
+  alias_code_normalized: string | null;
+  alias_description_normalized: string;
+  match_scope: string;
+  source: string;
+};
+
+export type ConceptMatchStrategy =
+  | "vendor_alias_code"
+  | "vendor_alias_description"
+  | "organization_alias_code"
+  | "organization_alias_description"
+  | "semantic_similarity"
+  | "fallback_amount_breakdown"
+  | "unmatched";
+
 export type ConceptResolutionLine = {
   lineNumber: number;
   rawCode: string | null;
@@ -125,12 +184,46 @@ export type ConceptResolutionLine = {
   normalizedCode: string | null;
   normalizedDescription: string | null;
   source: "line_item" | "amount_breakdown";
+  matchedConceptId: string | null;
+  matchedConceptCode: string | null;
+  matchedConceptName: string | null;
+  matchStrategy: ConceptMatchStrategy;
+  matchConfidence: number;
+  requiresUserContext: boolean;
+  candidateConceptIds: string[];
 };
 
 export type ConceptResolutionResult = {
   lines: ConceptResolutionLine[];
   fallbackUsed: boolean;
   primaryConceptLabels: string[];
+  matchedConceptIds: string[];
+  blockingReasons: string[];
+  needsUserContext: boolean;
+  unresolvedLineCount: number;
+};
+
+export type PersistedDocumentLineItemRecord = {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  draft_id: string;
+  line_number: number;
+  raw_concept_code: string | null;
+  raw_concept_description: string | null;
+  normalized_concept_code: string | null;
+  normalized_concept_description: string | null;
+  net_amount: number | null;
+  tax_rate: number | null;
+  tax_amount: number | null;
+  total_amount: number | null;
+  matched_concept_id: string | null;
+  match_strategy: string;
+  match_confidence: number;
+  requires_user_context: boolean;
+  metadata: JsonRecord | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type AccountingDraftFields = {
@@ -139,7 +232,194 @@ export type AccountingDraftFields = {
   lineItems: DocumentIntakeLineItem[];
 };
 
+export type PostableAccountRecord = {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  account_type: string;
+  normal_side: "debit" | "credit";
+  is_postable: boolean;
+  metadata: JsonRecord | null;
+};
+
+export type AccountingRuleScope =
+  | "document_override"
+  | "vendor_concept"
+  | "concept_global"
+  | "vendor_default";
+
+export type AccountingRuleRecord = {
+  id: string;
+  organization_id: string;
+  scope: AccountingRuleScope;
+  document_id: string | null;
+  vendor_id: string | null;
+  concept_id: string | null;
+  document_role: DocumentRoleCandidate;
+  account_id: string;
+  vat_profile_json: JsonRecord | null;
+  operation_category: string | null;
+  linked_operation_type: string | null;
+  priority: number;
+  source: string;
+  is_active: boolean;
+  metadata: JsonRecord | null;
+};
+
+export type ResolvedAccountingRule = {
+  ruleId: string | null;
+  scope: AccountingRuleScope | "assistant" | "manual_review";
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  vatProfileJson: JsonRecord | null;
+  operationCategory: string | null;
+  linkedOperationType: string | null;
+  provenance: string;
+  priority: number | null;
+  source: string | null;
+};
+
+export type AccountingContextReasonCode =
+  | "unmatched_concept"
+  | "ambiguous_vendor"
+  | "new_concept_without_rule"
+  | "vat_operation_dependency"
+  | "multiple_candidate_accounts"
+  | "low_confidence";
+
+export type AccountingContextStatus =
+  | "not_required"
+  | "required"
+  | "provided"
+  | "assistant_completed"
+  | "manual_override";
+
+export type DocumentAccountingContextRecord = {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  draft_id: string;
+  status: AccountingContextStatus;
+  reason_codes: string[];
+  user_free_text: string | null;
+  structured_context_json: JsonRecord | null;
+  ai_request_payload_json: JsonRecord | null;
+  ai_response_json: JsonRecord | null;
+  provider_code: string | null;
+  model_code: string | null;
+  prompt_hash: string | null;
+  request_latency_ms: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccountingContextSaveInput = {
+  userFreeText: string | null;
+  manualOverrideAccountId: string | null;
+  manualOverrideConceptId: string | null;
+  manualOverrideOperationCategory: string | null;
+  learnedConceptName: string | null;
+};
+
+export type AccountingContextResolution = {
+  status: AccountingContextStatus;
+  reasonCodes: AccountingContextReasonCode[];
+  userFreeText: string | null;
+  structuredContext: JsonRecord;
+  aiRequestPayload: JsonRecord;
+  aiResponse: JsonRecord;
+  providerCode: string | null;
+  modelCode: string | null;
+  promptHash: string | null;
+  requestLatencyMs: number | null;
+  manualOverrideAccountId: string | null;
+  manualOverrideConceptId: string | null;
+  manualOverrideOperationCategory: string | null;
+  learnedConceptName: string | null;
+  shouldBlockConfirmation: boolean;
+  canRunAssistant: boolean;
+  blockingReasons: string[];
+};
+
+export type AccountingAssistantAllowedConcept = {
+  id: string;
+  code: string;
+  canonicalName: string;
+  documentRole: DocumentRoleCandidate;
+  defaultAccountId: string | null;
+  defaultOperationCategory: string | null;
+};
+
+export type PriorApprovalExample = {
+  ruleId: string;
+  scope: AccountingRuleScope;
+  vendorId: string | null;
+  conceptId: string | null;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  rationale: string | null;
+};
+
+export type FiscalProfileSummary = {
+  organizationSummary: string;
+  ruleSnapshotSummary: string;
+};
+
+export type AccountingAssistantInput = {
+  organizationId: string;
+  documentId: string;
+  draftId: string;
+  vendor: VendorResolutionResult | null;
+  invoiceIdentity: InvoiceIdentityResult | null;
+  extractedFacts: DocumentIntakeFactMap;
+  lineItems: ConceptResolutionLine[];
+  candidateConcepts: AccountingAssistantAllowedConcept[];
+  userContextText: string;
+  allowedAccounts: PostableAccountRecord[];
+  allowedConcepts: OrganizationConceptRecord[];
+  priorApprovedExamples: PriorApprovalExample[];
+  fiscalProfileSummary: FiscalProfileSummary;
+};
+
+export type AccountingAssistantOutput = {
+  suggestedConceptId: string | null;
+  suggestedAccountId: string | null;
+  suggestedOperationCategory: string | null;
+  linkedOperationType: string | null;
+  vatContextHint: string | null;
+  confidence: number;
+  rationale: string;
+  reviewFlags: string[];
+  shouldBlockConfirmation: boolean;
+};
+
+export type AccountingAssistantStatus =
+  | "not_requested"
+  | "completed"
+  | "failed";
+
+export type AccountingAssistantResult = {
+  status: AccountingAssistantStatus;
+  shouldBlockConfirmation: boolean;
+  confidence: number | null;
+  rationale: string | null;
+  output: AccountingAssistantOutput | null;
+  providerCode: string | null;
+  modelCode: string | null;
+  promptHash: string | null;
+  latencyMs: number | null;
+  requestPayload: JsonRecord;
+  responsePayload: JsonRecord;
+  reviewFlags: string[];
+};
+
 export type AccountingSuggestionContext = {
+  organizationId: string;
+  documentId: string;
+  draftId: string;
   documentRole: DocumentRoleCandidate;
   documentType: string | null;
   facts: DocumentIntakeFactMap;
@@ -151,6 +431,10 @@ export type AccountingSuggestionContext = {
   vendorResolution: VendorResolutionResult;
   invoiceIdentity: InvoiceIdentityResult | null;
   conceptResolution: ConceptResolutionResult;
+  accountingContext: AccountingContextResolution;
+  assistantSuggestion: AccountingAssistantResult;
+  accounts: PostableAccountRecord[];
+  activeRules: AccountingRuleRecord[];
 };
 
 export type DraftValidation = {
@@ -164,6 +448,9 @@ export type DerivedDraftArtifacts = {
   vendorResolution: VendorResolutionResult;
   invoiceIdentity: InvoiceIdentityResult | null;
   conceptResolution: ConceptResolutionResult;
+  accountingContext: AccountingContextResolution;
+  assistantSuggestion: AccountingAssistantResult;
+  appliedRule: ResolvedAccountingRule;
   validation: DraftValidation;
 };
 
@@ -211,6 +498,26 @@ export type DuplicateResolutionResult = {
   ok: boolean;
   duplicateStatus: InvoiceDuplicateStatus;
   message: string;
+};
+
+export type LearnApprovalScope =
+  | "none"
+  | "document_override"
+  | "vendor_concept"
+  | "concept_global"
+  | "vendor_default";
+
+export type ApprovalLearningInput = {
+  scope: LearnApprovalScope;
+  learnedConceptName: string | null;
+};
+
+export type AccountingRuntimeContext = {
+  vendors: AccountingVendorRecord[];
+  concepts: OrganizationConceptRecord[];
+  conceptAliases: OrganizationConceptAliasRecord[];
+  accounts: PostableAccountRecord[];
+  activeRules: AccountingRuleRecord[];
 };
 
 export type {

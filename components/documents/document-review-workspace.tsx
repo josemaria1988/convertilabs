@@ -16,7 +16,12 @@ import {
 } from "@/components/ui/button-styles";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
-type StepCode = "identity" | "fields" | "amounts" | "operation_context";
+type StepCode =
+  | "identity"
+  | "fields"
+  | "amounts"
+  | "operation_context"
+  | "accounting_context";
 
 type SaveDraftReviewAction = (input: {
   stepCode: StepCode;
@@ -25,11 +30,28 @@ type SaveDraftReviewAction = (input: {
     documentType?: string;
     operationCategory?: string | null;
     facts?: Partial<Record<keyof DocumentIntakeFactMap, string | number | null>>;
+    accountingContext?: {
+      userFreeText?: string | null;
+      manualOverrideAccountId?: string | null;
+      manualOverrideConceptId?: string | null;
+      manualOverrideOperationCategory?: string | null;
+      learnedConceptName?: string | null;
+    };
   };
 }) => Promise<{
   ok: boolean;
   status: string;
   blockers: string[];
+}>;
+
+type ConfirmDocumentAction = (input: {
+  learning: {
+    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    learnedConceptName: string | null;
+  };
+}) => Promise<{
+  ok: boolean;
+  message: string;
 }>;
 
 type ReviewSimpleAction = () => Promise<{
@@ -148,9 +170,37 @@ type DocumentReviewWorkspaceProps = {
           normalizedCode: string | null;
           normalizedDescription: string | null;
           source: string;
+          matchedConceptId: string | null;
+          matchedConceptName: string | null;
+          matchStrategy: string;
+          matchConfidence: number;
+          requiresUserContext: boolean;
         }>;
         fallbackUsed: boolean;
         primaryConceptLabels: string[];
+      };
+      accountingContext: {
+        status: string;
+        reasonCodes: string[];
+        userFreeText: string | null;
+        manualOverrideAccountId: string | null;
+        manualOverrideConceptId: string | null;
+        manualOverrideOperationCategory: string | null;
+        learnedConceptName: string | null;
+        shouldBlockConfirmation: boolean;
+        blockingReasons: string[];
+      };
+      assistantSuggestion: {
+        status: string;
+        confidence: number | null;
+        rationale: string | null;
+        reviewFlags: string[];
+      };
+      appliedRule: {
+        scope: string;
+        accountCode: string | null;
+        accountName: string | null;
+        provenance: string;
       };
       validation: {
         canConfirm: boolean;
@@ -213,11 +263,23 @@ type DocumentReviewWorkspaceProps = {
       code: string;
       label: string;
     }>;
+    accountingOptions: {
+      accounts: Array<{
+        id: string;
+        code: string;
+        name: string;
+      }>;
+      concepts: Array<{
+        id: string;
+        code: string;
+        canonicalName: string;
+      }>;
+    };
     canConfirm: boolean;
     canReopen: boolean;
   };
   saveDraftReviewAction: SaveDraftReviewAction;
-  confirmDocumentAction: ReviewSimpleAction;
+  confirmDocumentAction: ConfirmDocumentAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   reopenDocumentAction: ReviewSimpleAction;
 };
@@ -290,11 +352,20 @@ export function DocumentReviewWorkspace({
   const [operationCategory, setOperationCategory] = useState(
     pageData.draft.operationCategory ?? "",
   );
+  const [accountingContext, setAccountingContext] = useState({
+    userFreeText: pageData.derived.accountingContext.userFreeText ?? "",
+    manualOverrideAccountId: pageData.derived.accountingContext.manualOverrideAccountId ?? "",
+    manualOverrideConceptId: pageData.derived.accountingContext.manualOverrideConceptId ?? "",
+    manualOverrideOperationCategory:
+      pageData.derived.accountingContext.manualOverrideOperationCategory ?? "",
+    learnedConceptName: pageData.derived.accountingContext.learnedConceptName ?? "",
+  });
   const [sectionStatus, setSectionStatus] = useState<SectionStatusMap>({
     identity: "",
     fields: "",
     amounts: "",
     operation_context: "",
+    accounting_context: "",
   });
   const [actionMessage, setActionMessage] = useState("");
   const [pendingAction, setPendingAction] = useState<"confirm" | "reopen" | null>(null);
@@ -302,6 +373,10 @@ export function DocumentReviewWorkspace({
     "confirmed_duplicate" | "false_positive" | "justified_non_duplicate" | null
   >(null);
   const [duplicateNote, setDuplicateNote] = useState("");
+  const [learningScope, setLearningScope] = useState<
+    "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default"
+  >("none");
+  const [learnedConceptName, setLearnedConceptName] = useState("");
 
   useEffect(() => {
     setIdentity({
@@ -310,6 +385,15 @@ export function DocumentReviewWorkspace({
     });
     setFacts(toEditableFacts(pageData.draft.facts));
     setOperationCategory(pageData.draft.operationCategory ?? "");
+    setAccountingContext({
+      userFreeText: pageData.derived.accountingContext.userFreeText ?? "",
+      manualOverrideAccountId: pageData.derived.accountingContext.manualOverrideAccountId ?? "",
+      manualOverrideConceptId: pageData.derived.accountingContext.manualOverrideConceptId ?? "",
+      manualOverrideOperationCategory:
+        pageData.derived.accountingContext.manualOverrideOperationCategory ?? "",
+      learnedConceptName: pageData.derived.accountingContext.learnedConceptName ?? "",
+    });
+    setLearnedConceptName(pageData.derived.accountingContext.learnedConceptName ?? "");
   }, [pageData]);
 
   function runSave(
@@ -349,7 +433,7 @@ export function DocumentReviewWorkspace({
   }
 
   function runSimpleAction(
-    actionKey: "confirm" | "reopen",
+    actionKey: "reopen",
     action: ReviewSimpleAction,
   ) {
     setPendingAction(actionKey);
@@ -357,6 +441,30 @@ export function DocumentReviewWorkspace({
     startTransition(async () => {
       try {
         const result = await action();
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
+  function runConfirmAction() {
+    setPendingAction("confirm");
+    setActionMessage("Procesando...");
+    startTransition(async () => {
+      try {
+        const result = await confirmDocumentAction({
+          learning: {
+            scope: learningScope,
+            learnedConceptName: learnedConceptName.trim() || null,
+          },
+        });
         setActionMessage(result.message);
 
         if (result.ok) {
@@ -425,7 +533,7 @@ export function DocumentReviewWorkspace({
                 type="button"
                 disabled={!pageData.canConfirm || isPending}
                 onClick={() => {
-                  runSimpleAction("confirm", confirmDocumentAction);
+                  runConfirmAction();
                 }}
                 className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
               >
@@ -664,6 +772,157 @@ export function DocumentReviewWorkspace({
 
         <article className="panel p-6">
           <div className="mb-4">
+            <h3 className="text-2xl font-semibold tracking-[-0.05em]">Accounting Context</h3>
+            <p className="text-sm leading-7 text-[color:var(--color-muted)]">
+              Se pide solo cuando el matching no alcanza. El texto queda auditado y puede disparar una segunda pasada de IA.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm md:col-span-2">
+              <span className="font-medium">Contexto del gasto</span>
+              <textarea
+                value={accountingContext.userFreeText}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    userFreeText: event.target.value,
+                  }));
+                }}
+                placeholder="Explica que tipo de gasto es, con que finalidad se incurrio, a que operacion/proyecto/actividad esta vinculado y cualquier otro dato util."
+                className="min-h-32 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Override de cuenta</span>
+              <select
+                value={accountingContext.manualOverrideAccountId}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    manualOverrideAccountId: event.target.value,
+                  }));
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              >
+                <option value="">Sin override</option>
+                {pageData.accountingOptions.accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.code} - {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Override de concepto</span>
+              <select
+                value={accountingContext.manualOverrideConceptId}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    manualOverrideConceptId: event.target.value,
+                  }));
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              >
+                <option value="">Sin override</option>
+                {pageData.accountingOptions.concepts.map((concept) => (
+                  <option key={concept.id} value={concept.id}>
+                    {concept.code} - {concept.canonicalName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Categoria para override</span>
+              <select
+                value={accountingContext.manualOverrideOperationCategory}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    manualOverrideOperationCategory: event.target.value,
+                  }));
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              >
+                <option value="">Sin override</option>
+                {pageData.operationCategoryOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Nombre canonico sugerido</span>
+              <input
+                value={accountingContext.learnedConceptName}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    learnedConceptName: event.target.value,
+                  }));
+                  setLearnedConceptName(event.target.value);
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                runSave("accounting_context", {
+                  accountingContext: {
+                    userFreeText: accountingContext.userFreeText,
+                    manualOverrideAccountId: accountingContext.manualOverrideAccountId || null,
+                    manualOverrideConceptId: accountingContext.manualOverrideConceptId || null,
+                    manualOverrideOperationCategory:
+                      accountingContext.manualOverrideOperationCategory || null,
+                    learnedConceptName: accountingContext.learnedConceptName || null,
+                  },
+                });
+              }}
+              className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
+            >
+              Guardar contexto y recalcular
+            </button>
+          </div>
+
+          {pageData.derived.accountingContext.reasonCodes.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              Motivos: {pageData.derived.accountingContext.reasonCodes.join(", ")}
+            </div>
+          ) : null}
+
+          {pageData.derived.assistantSuggestion.rationale ? (
+            <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Segunda IA</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.assistantSuggestion.rationale}
+              </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Estado: {pageData.derived.assistantSuggestion.status}
+                {pageData.derived.assistantSuggestion.confidence !== null
+                  ? ` / ${Math.round(pageData.derived.assistantSuggestion.confidence * 100)}%`
+                  : ""}
+              </p>
+            </div>
+          ) : null}
+
+          <p className="mt-3 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+            {sectionStatus.accounting_context}
+          </p>
+        </article>
+
+        <article className="panel p-6">
+          <div className="mb-4">
             <h3 className="text-2xl font-semibold tracking-[-0.05em]">Lineas y conceptos</h3>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
               El intake intenta extraer articulos o servicios. Si no puede, el draft cae a `amount_breakdown` como degradacion controlada.
@@ -677,6 +936,7 @@ export function DocumentReviewWorkspace({
                   <tr className="text-left uppercase tracking-[0.18em] text-[11px] text-[color:var(--color-muted)]">
                     <th className="pr-4">Linea</th>
                     <th className="pr-4">Descripcion</th>
+                    <th className="pr-4">Concepto</th>
                     <th className="pr-4">Neto</th>
                     <th className="pr-4">IVA</th>
                     <th>Total</th>
@@ -695,6 +955,15 @@ export function DocumentReviewWorkspace({
                         <div className="text-[color:var(--color-muted)]">
                           {line.concept_code ?? "Sin codigo"}
                         </div>
+                      </td>
+                      <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-[color:var(--color-muted)]">
+                        {pageData.derived.conceptResolution.lines.find(
+                          (candidate) => candidate.lineNumber === (line.line_number ?? index + 1),
+                        )?.matchedConceptName
+                          ?? pageData.derived.conceptResolution.lines.find(
+                            (candidate) => candidate.lineNumber === (line.line_number ?? index + 1),
+                          )?.matchStrategy
+                          ?? "Sin match"}
                       </td>
                       <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3">
                         {line.net_amount !== null ? formatMoney(line.net_amount) : "-"}
@@ -885,6 +1154,9 @@ export function DocumentReviewWorkspace({
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
             {pageData.derived.journalSuggestion.explanation}
           </p>
+          <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+            Precedencia aplicada: {pageData.derived.appliedRule.scope} / {pageData.derived.appliedRule.provenance}
+          </p>
 
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-y-2 text-sm">
@@ -922,6 +1194,35 @@ export function DocumentReviewWorkspace({
             <p className="font-semibold">
               Balance: {formatMoney(pageData.derived.journalSuggestion.totalDebit)} / {formatMoney(pageData.derived.journalSuggestion.totalCredit)}
             </p>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Aprender al confirmar</span>
+              <select
+                value={learningScope}
+                onChange={(event) => {
+                  setLearningScope(event.target.value as typeof learningScope);
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              >
+                <option value="none">No aprender</option>
+                <option value="document_override">Solo este documento</option>
+                <option value="vendor_concept">Proveedor + concepto</option>
+                <option value="concept_global">Concepto global</option>
+                <option value="vendor_default">Default del proveedor</option>
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Nombre canonico para aprendizaje</span>
+              <input
+                value={learnedConceptName}
+                onChange={(event) => {
+                  setLearnedConceptName(event.target.value);
+                }}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              />
+            </label>
           </div>
         </article>
 

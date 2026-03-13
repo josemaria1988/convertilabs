@@ -24,7 +24,12 @@ function buildPaths(slug: string, documentId: string) {
 export async function saveDocumentDraftReviewAction(input: {
   slug: string;
   documentId: string;
-  stepCode: "identity" | "fields" | "amounts" | "operation_context";
+  stepCode:
+    | "identity"
+    | "fields"
+    | "amounts"
+    | "operation_context"
+    | "accounting_context";
   payload: SaveDraftPayload;
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
@@ -56,6 +61,10 @@ export async function saveDocumentDraftReviewAction(input: {
 export async function confirmDocumentReviewAction(input: {
   slug: string;
   documentId: string;
+  learning?: {
+    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    learnedConceptName: string | null;
+  };
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
@@ -71,6 +80,7 @@ export async function confirmDocumentReviewAction(input: {
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,
+    learning: input.learning,
   });
   const paths = buildPaths(input.slug, input.documentId);
 

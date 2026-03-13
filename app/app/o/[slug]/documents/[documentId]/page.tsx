@@ -157,11 +157,12 @@ export default async function DocumentReviewPage({
             ...input,
           });
         }}
-        confirmDocumentAction={async () => {
+        confirmDocumentAction={async (payload) => {
           "use server";
           return confirmDocumentReviewAction({
             slug,
             documentId,
+            ...payload,
           });
         }}
         resolveDuplicateAction={async (payload) => {

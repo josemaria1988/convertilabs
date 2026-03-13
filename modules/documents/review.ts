@@ -13,20 +13,24 @@ import {
   asRecord,
   asString,
   asStringArray,
-  buildAccountingDraftArtifacts,
+  buildPersistableConceptLines,
   buildDraftFieldsPayload,
   buildDraftStepSnapshots,
   buildInvoiceIdentityResult,
+  createRuleFromApproval,
+  deriveDocumentAccountingState,
   getOperationCategoryValue,
+  loadDocumentAccountingContext,
   loadDocumentInvoiceIdentity,
   parseAmountBreakdown,
   parseDraftFacts,
   parseLineItems,
   persistApprovedAccountingArtifacts,
-  resolveDocumentConcepts,
   resolveDocumentDuplicateStatus,
-  resolveVendorFromFacts,
+  upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
+  upsertDocumentLineItems,
+  type ApprovalLearningInput,
   type DerivedDraftArtifacts,
   type JsonRecord,
 } from "@/modules/accounting";
@@ -36,7 +40,10 @@ import {
   type OrganizationFiscalProfile,
   type OrganizationRuleSnapshotContext,
 } from "@/modules/tax/uy-vat-engine";
-import { rebuildMonthlyVatRunFromConfirmations } from "@/modules/tax/vat-runs";
+import {
+  assertVatPeriodMutableForDocument,
+  rebuildMonthlyVatRunFromConfirmations,
+} from "@/modules/tax/vat-runs";
 
 type OrganizationMemberRole =
   | "owner"
@@ -261,6 +268,18 @@ export type DocumentReviewPageData = {
     code: string;
     label: string;
   }>;
+  accountingOptions: {
+    accounts: Array<{
+      id: string;
+      code: string;
+      name: string;
+    }>;
+    concepts: Array<{
+      id: string;
+      code: string;
+      canonicalName: string;
+    }>;
+  };
   canConfirm: boolean;
   canReopen: boolean;
 };
@@ -276,12 +295,24 @@ export type SaveDraftReviewInput = {
   organizationId: string;
   documentId: string;
   actorId: string | null;
-  stepCode: "identity" | "fields" | "amounts" | "operation_context";
+  stepCode:
+    | "identity"
+    | "fields"
+    | "amounts"
+    | "operation_context"
+    | "accounting_context";
   payload: {
     documentRole?: DocumentRoleCandidate;
     documentType?: string;
     operationCategory?: string | null;
     facts?: Partial<Record<keyof DocumentIntakeFactMap, string | number | null>>;
+    accountingContext?: {
+      userFreeText?: string | null;
+      manualOverrideAccountId?: string | null;
+      manualOverrideConceptId?: string | null;
+      manualOverrideOperationCategory?: string | null;
+      learnedConceptName?: string | null;
+    };
   };
 };
 
@@ -723,6 +754,81 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
         ? input.operationCategory.trim() || null
         : input.operationCategory,
     facts: nextFacts as Partial<DocumentIntakeFactMap> | undefined,
+    accountingContext: input.accountingContext
+      ? {
+          userFreeText:
+            typeof input.accountingContext.userFreeText === "string"
+              ? input.accountingContext.userFreeText.trim() || null
+              : input.accountingContext.userFreeText ?? null,
+          manualOverrideAccountId:
+            typeof input.accountingContext.manualOverrideAccountId === "string"
+              ? input.accountingContext.manualOverrideAccountId.trim() || null
+              : input.accountingContext.manualOverrideAccountId ?? null,
+          manualOverrideConceptId:
+            typeof input.accountingContext.manualOverrideConceptId === "string"
+              ? input.accountingContext.manualOverrideConceptId.trim() || null
+              : input.accountingContext.manualOverrideConceptId ?? null,
+          manualOverrideOperationCategory:
+            typeof input.accountingContext.manualOverrideOperationCategory === "string"
+              ? input.accountingContext.manualOverrideOperationCategory.trim() || null
+              : input.accountingContext.manualOverrideOperationCategory ?? null,
+          learnedConceptName:
+            typeof input.accountingContext.learnedConceptName === "string"
+              ? input.accountingContext.learnedConceptName.trim() || null
+              : input.accountingContext.learnedConceptName ?? null,
+        }
+      : undefined,
+  };
+}
+
+function mergeStoredAccountingContext(
+  current: Awaited<ReturnType<typeof loadDocumentAccountingContext>>,
+  patch: NonNullable<ReturnType<typeof normalizeDraftPatch>["accountingContext"]> | undefined,
+  input: {
+    organizationId: string;
+    documentId: string;
+    draftId: string;
+  },
+) {
+  if (!current && !patch) {
+    return null;
+  }
+
+  const currentStructured = asRecord(current?.structured_context_json);
+  const structuredContext = {
+    ...currentStructured,
+    ...(patch
+      ? {
+          manual_override_account_id:
+            patch.manualOverrideAccountId ?? asString(currentStructured.manual_override_account_id),
+          manual_override_concept_id:
+            patch.manualOverrideConceptId ?? asString(currentStructured.manual_override_concept_id),
+          manual_override_operation_category:
+            patch.manualOverrideOperationCategory
+            ?? asString(currentStructured.manual_override_operation_category),
+          learned_concept_name:
+            patch.learnedConceptName ?? asString(currentStructured.learned_concept_name),
+        }
+      : {}),
+  };
+
+  return {
+    id: current?.id ?? `draft-${input.draftId}`,
+    organization_id: current?.organization_id ?? input.organizationId,
+    document_id: current?.document_id ?? input.documentId,
+    draft_id: current?.draft_id ?? input.draftId,
+    status: current?.status ?? "required",
+    reason_codes: current?.reason_codes ?? [],
+    user_free_text: patch?.userFreeText ?? current?.user_free_text ?? null,
+    structured_context_json: structuredContext,
+    ai_request_payload_json: current?.ai_request_payload_json ?? {},
+    ai_response_json: current?.ai_response_json ?? {},
+    provider_code: current?.provider_code ?? null,
+    model_code: current?.model_code ?? null,
+    prompt_hash: current?.prompt_hash ?? null,
+    request_latency_ms: current?.request_latency_ms ?? null,
+    created_at: current?.created_at ?? new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -779,6 +885,23 @@ async function persistDraftArtifacts(
       resolution_notes: existingInvoiceIdentity?.resolution_notes ?? null,
     });
   }
+  await upsertDocumentLineItems(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    draftId: draft.id,
+    lines: buildPersistableConceptLines({
+      lineItems,
+      amountBreakdown,
+      conceptLines: derived.conceptResolution.lines,
+    }),
+  });
+  await upsertDocumentAccountingContext(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId,
+    context: derived.accountingContext,
+  });
 
   await upsertDraftStepSnapshots(
     supabase,
@@ -802,6 +925,8 @@ async function persistDraftArtifacts(
         ...(document.metadata ?? {}),
         duplicate_status: derived.invoiceIdentity?.duplicateStatus ?? null,
         duplicate_reason: derived.invoiceIdentity?.duplicateReason ?? null,
+        accounting_context_required: derived.accountingContext.status !== "not_required",
+        matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
       },
       updated_at: new Date().toISOString(),
     })
@@ -908,21 +1033,18 @@ export async function loadDocumentReviewPageData(input: {
       documentViewPromise,
       loadDocumentInvoiceIdentity(supabase, document.id),
     ]);
-  const conceptResolution = resolveDocumentConcepts({
-    lineItems,
-    amountBreakdown,
-  });
-  const vendorResolution = resolveVendorFromFacts({
-    facts,
-    vendors: [],
-  });
   const invoiceIdentity = buildInvoiceIdentityResult({
     facts,
     persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
     persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
   });
-  const derived = buildAccountingDraftArtifacts({
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
     documentRole: draft.document_role,
     documentType: draft.document_type,
     facts,
@@ -931,10 +1053,10 @@ export async function loadDocumentReviewPageData(input: {
     operationCategory,
     profile: buildOrganizationFiscalProfile(profileVersion),
     ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
-    vendorResolution,
     invoiceIdentity,
-    conceptResolution,
+    runAssistant: false,
   });
+  const derived = accountingState.derived;
 
   return {
     organizationId: input.organizationId,
@@ -993,6 +1115,18 @@ export async function loadDocumentReviewPageData(input: {
     revision,
     confirmations,
     operationCategoryOptions: getOperationCategoryOptions(draft.document_role),
+    accountingOptions: {
+      accounts: accountingState.runtimeContext.accounts.map((account) => ({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+      })),
+      concepts: accountingState.runtimeContext.concepts.map((concept) => ({
+        id: concept.id,
+        code: concept.code,
+        canonicalName: concept.canonical_name,
+      })),
+    },
     canConfirm:
       ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
       && derived.validation.canConfirm
@@ -1031,6 +1165,19 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
       }),
     },
   };
+  const existingAccountingContext = await loadDocumentAccountingContext(
+    supabase,
+    draft.id,
+  );
+  const mergedAccountingContext = mergeStoredAccountingContext(
+    existingAccountingContext,
+    normalized.accountingContext,
+    {
+      organizationId: input.organizationId,
+      documentId: input.documentId,
+      draftId: draft.id,
+    },
+  );
   const { profileVersion, ruleSnapshot } = await loadRuleSnapshot(
     supabase,
     document,
@@ -1038,14 +1185,6 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     input.actorId,
   );
   const operationCategory = getOperationCategoryValue(nextDraft, facts);
-  const conceptResolution = resolveDocumentConcepts({
-    lineItems,
-    amountBreakdown,
-  });
-  const vendorResolution = resolveVendorFromFacts({
-    facts,
-    vendors: [],
-  });
   const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
     supabase,
     document.id,
@@ -1056,7 +1195,12 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
   });
-  const derived = buildAccountingDraftArtifacts({
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
     documentRole: nextDraft.document_role,
     documentType: nextDraft.document_type,
     facts,
@@ -1065,10 +1209,11 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     operationCategory,
     profile: buildOrganizationFiscalProfile(profileVersion),
     ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
-    vendorResolution,
     invoiceIdentity,
-    conceptResolution,
+    storedContext: mergedAccountingContext,
+    runAssistant: input.stepCode === "accounting_context",
   });
+  const derived = accountingState.derived;
 
   const { error: updateError } = await supabase
     .from("document_drafts")
@@ -1112,6 +1257,7 @@ export async function confirmDocumentReview(input: {
   organizationId: string;
   documentId: string;
   actorId: string | null;
+  learning?: ApprovalLearningInput;
 }) {
   const supabase = getSupabaseServiceRoleClient();
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
@@ -1126,14 +1272,6 @@ export async function confirmDocumentReview(input: {
     input.actorId,
   );
   const operationCategory = getOperationCategoryValue(draft, facts);
-  const conceptResolution = resolveDocumentConcepts({
-    lineItems,
-    amountBreakdown,
-  });
-  const vendorResolution = resolveVendorFromFacts({
-    facts,
-    vendors: [],
-  });
   const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
     supabase,
     document.id,
@@ -1144,7 +1282,12 @@ export async function confirmDocumentReview(input: {
     persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
   });
-  const derived = buildAccountingDraftArtifacts({
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
     documentRole: draft.document_role,
     documentType: draft.document_type,
     facts,
@@ -1153,16 +1296,24 @@ export async function confirmDocumentReview(input: {
     operationCategory,
     profile: buildOrganizationFiscalProfile(profileVersion),
     ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
-    vendorResolution,
     invoiceIdentity,
-    conceptResolution,
+    runAssistant: true,
   });
+  const derived = accountingState.derived;
 
   if (!derived.validation.canConfirm) {
     return {
       ok: false,
       message: derived.validation.blockers.join(" "),
     };
+  }
+
+  if (facts.document_date) {
+    await assertVatPeriodMutableForDocument(
+      supabase,
+      document.organization_id,
+      facts.document_date,
+    );
   }
 
   await persistDraftArtifacts(supabase, document, draft, input.actorId, derived);
@@ -1187,6 +1338,37 @@ export async function confirmDocumentReview(input: {
       derived,
     },
   );
+  if ((input.learning?.scope ?? "none") !== "none") {
+    await createRuleFromApproval(supabase, {
+      organizationId: document.organization_id,
+      documentId: document.id,
+      actorId: input.actorId,
+      documentRole: draft.document_role,
+      learning: input.learning ?? { scope: "none", learnedConceptName: null },
+      vendorId: derived.vendorResolution.vendorId,
+      conceptId:
+        derived.accountingContext.manualOverrideConceptId
+        ?? derived.conceptResolution.matchedConceptIds[0]
+        ?? derived.assistantSuggestion.output?.suggestedConceptId
+        ?? null,
+      conceptName:
+        input.learning?.learnedConceptName
+        ?? derived.accountingContext.learnedConceptName
+        ?? derived.conceptResolution.primaryConceptLabels[0]
+        ?? null,
+      accountId: derived.appliedRule.accountId,
+      operationCategory: derived.appliedRule.operationCategory ?? operationCategory,
+      linkedOperationType: derived.appliedRule.linkedOperationType,
+      vatProfileJson: {
+        treatment_code: derived.taxTreatment.treatmentCode,
+        vat_bucket: derived.taxTreatment.vatBucket,
+      },
+      conceptLines: derived.conceptResolution.lines,
+      rationale:
+        derived.assistantSuggestion.rationale
+        ?? derived.journalSuggestion.explanation,
+    });
+  }
   const existingConfirmations = await loadConfirmations(supabase, document.id);
   const confirmationType = existingConfirmations.length > 0 ? "reconfirmation" : "final";
   const confirmedAt = new Date().toISOString();
@@ -1216,6 +1398,7 @@ export async function confirmDocumentReview(input: {
         "fields",
         "amounts",
         "operation_context",
+        "accounting_context",
         "journal",
         "tax",
         "confirmation",
@@ -1334,6 +1517,7 @@ export async function reopenDocumentReview(input: {
   const supabase = getSupabaseServiceRoleClient();
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
   const currentDraft = await loadCurrentDraft(supabase, document);
+  const currentFacts = parseDraftFacts(currentDraft.fields_json);
 
   if (document.status === "classified_with_open_revision" && currentDraft.status !== "confirmed") {
     return {
@@ -1344,6 +1528,14 @@ export async function reopenDocumentReview(input: {
 
   if (currentDraft.status !== "confirmed") {
     throw new Error("Solo se puede reabrir desde una revision confirmada.");
+  }
+
+  if (currentFacts.document_date) {
+    await assertVatPeriodMutableForDocument(
+      supabase,
+      document.organization_id,
+      currentFacts.document_date,
+    );
   }
 
   const { data: latestDraftRow, error: latestDraftError } = await supabase
@@ -1405,14 +1597,6 @@ export async function reopenDocumentReview(input: {
     newDraft,
     input.actorId,
   );
-  const conceptResolution = resolveDocumentConcepts({
-    lineItems,
-    amountBreakdown,
-  });
-  const vendorResolution = resolveVendorFromFacts({
-    facts,
-    vendors: [],
-  });
   const persistedInvoiceIdentity = await loadDocumentInvoiceIdentity(
     supabase,
     document.id,
@@ -1423,7 +1607,23 @@ export async function reopenDocumentReview(input: {
     persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
   });
-  const derived = buildAccountingDraftArtifacts({
+  const existingAccountingContext = await loadDocumentAccountingContext(
+    supabase,
+    currentDraft.id,
+  );
+  const clonedAccountingContext = existingAccountingContext
+    ? {
+        ...existingAccountingContext,
+        id: `draft-${newDraft.id}`,
+        draft_id: newDraft.id,
+      }
+    : null;
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: document.organization_id,
+    documentId: document.id,
+    draftId: newDraft.id,
+    actorId: input.actorId,
     documentRole: newDraft.document_role,
     documentType: newDraft.document_type,
     facts,
@@ -1432,9 +1632,27 @@ export async function reopenDocumentReview(input: {
     operationCategory,
     profile: buildOrganizationFiscalProfile(profileVersion),
     ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
-    vendorResolution,
     invoiceIdentity,
-    conceptResolution,
+    storedContext: clonedAccountingContext,
+    runAssistant: false,
+  });
+  const derived = accountingState.derived;
+  await upsertDocumentLineItems(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    draftId: newDraft.id,
+    lines: buildPersistableConceptLines({
+      lineItems,
+      amountBreakdown,
+      conceptLines: derived.conceptResolution.lines,
+    }),
+  });
+  await upsertDocumentAccountingContext(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    draftId: newDraft.id,
+    actorId: input.actorId,
+    context: derived.accountingContext,
   });
   const stepRows = buildDraftStepSnapshots({
     documentRole: newDraft.document_role,

@@ -1,3 +1,31 @@
+create table if not exists public.accounting_rules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  scope text not null,
+  document_id uuid references public.documents(id) on delete cascade,
+  vendor_id uuid references public.vendors(id) on delete cascade,
+  concept_id uuid references public.organization_concepts(id) on delete cascade,
+  document_role public.document_direction not null default 'purchase',
+  account_id uuid not null references public.chart_of_accounts(id),
+  vat_profile_json jsonb not null default '{}'::jsonb,
+  operation_category text,
+  linked_operation_type text,
+  priority integer not null default 0,
+  source text not null default 'manual',
+  created_by uuid references public.profiles(id),
+  approved_by uuid references public.profiles(id),
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_accounting_rules_org_scope_active
+  on public.accounting_rules (organization_id, scope, is_active, priority desc);
+
+create index if not exists idx_accounting_rules_org_vendor_concept
+  on public.accounting_rules (organization_id, vendor_id, concept_id, document_role);
+
 create table if not exists public.accounting_suggestions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

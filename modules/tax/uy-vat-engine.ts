@@ -39,10 +39,8 @@ type VatBucket =
   | null;
 
 type VatJournalSeed = {
-  accountCode: string;
-  accountName: string;
-  counterpartyAccountCode: string;
-  counterpartyAccountName: string;
+  counterpartyRole: "accounts_payable" | "accounts_receivable";
+  vatRole: "vat_input_creditable" | "vat_output_payable" | null;
   amountExcludingVat: number;
   totalAmount: number;
   vatAmount: number;
@@ -67,11 +65,15 @@ export type VatEngineResult = {
 
 type VatEngineInput = {
   documentRole: DocumentRoleCandidate;
+  documentType?: string | null;
   facts: DocumentIntakeFactMap;
   amountBreakdown: DocumentIntakeAmountBreakdown[];
   operationCategory: string | null;
   profile: OrganizationFiscalProfile | null;
   ruleSnapshot: OrganizationRuleSnapshotContext | null;
+  linkedOperationType?: string | null;
+  userContextText?: string | null;
+  vatProfile?: Record<string, unknown> | null;
 };
 
 type PurchaseCategory = {
@@ -204,6 +206,29 @@ function normalizeToken(value: string | null | undefined) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function resolveVatProfileBucket(vatProfile: Record<string, unknown> | null | undefined) {
+  const bucket = typeof vatProfile?.vat_bucket === "string"
+    ? vatProfile.vat_bucket
+    : typeof vatProfile?.vatBucket === "string"
+      ? vatProfile.vatBucket
+      : null;
+
+  if (
+    bucket === "input_creditable"
+    || bucket === "input_non_deductible"
+    || bucket === "input_exempt"
+    || bucket === "output_vat"
+  ) {
+    return bucket;
+  }
+
+  if (vatProfile?.deductible === false) {
+    return "input_non_deductible";
+  }
+
+  return null;
 }
 
 function inferTaxRate(
@@ -389,7 +414,12 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
   const profileGate = collectProfileGateBlockers(input.profile);
   const blockers = [...profileGate.blockers];
   const warnings = [...profileGate.warnings];
-  const normalizedCategory = normalizeToken(input.operationCategory);
+  const normalizedCategory = [
+    input.operationCategory,
+    input.userContextText,
+    input.linkedOperationType,
+  ].map((value) => normalizeToken(value)).join(" ");
+  const vatProfileBucket = resolveVatProfileBucket(input.vatProfile);
   const indicatesMixedUse = hasAnyKeyword(normalizedCategory, ["mixt", "parcial"]);
   const indicatesExportOrExempt = hasAnyKeyword(normalizedCategory, [
     "export",
@@ -432,7 +462,13 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
   }
 
   let vatBucket: Exclude<VatBucket, "output_vat" | null> =
-    taxAmount > 0 ? (category?.vatBucket ?? "input_creditable") : "input_exempt";
+    vatProfileBucket === "input_creditable"
+      || vatProfileBucket === "input_non_deductible"
+      || vatProfileBucket === "input_exempt"
+      ? vatProfileBucket
+      : taxAmount > 0
+        ? (category?.vatBucket ?? "input_creditable")
+        : "input_exempt";
 
   if (flags.simplifiedRegimeAutoDisabled && indicatesSimplifiedSupplier) {
     vatBucket = "input_non_deductible";
@@ -471,10 +507,8 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
       requiresManualReview: true,
       journalSeed: category
         ? {
-            accountCode: category.accountCode,
-            accountName: category.accountName,
-            counterpartyAccountCode: "2110",
-            counterpartyAccountName: "Proveedores",
+            counterpartyRole: "accounts_payable",
+            vatRole: vatBucket === "input_creditable" ? "vat_input_creditable" : null,
             amountExcludingVat: subtotal,
             totalAmount,
             vatAmount: vatBucket === "input_creditable" ? taxAmount : 0,
@@ -504,10 +538,8 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     requiresManualReview: false,
     journalSeed: category
       ? {
-          accountCode: category.accountCode,
-          accountName: category.accountName,
-          counterpartyAccountCode: "2110",
-          counterpartyAccountName: "Proveedores",
+          counterpartyRole: "accounts_payable",
+          vatRole: vatBucket === "input_creditable" ? "vat_input_creditable" : null,
           amountExcludingVat: subtotal,
           totalAmount,
           vatAmount: vatBucket === "input_creditable" ? taxAmount : 0,
@@ -532,7 +564,11 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
   const profileGate = collectProfileGateBlockers(input.profile);
   const blockers = [...profileGate.blockers];
   const warnings = [...profileGate.warnings];
-  const normalizedCategory = normalizeToken(input.operationCategory);
+  const normalizedCategory = [
+    input.operationCategory,
+    input.userContextText,
+    input.linkedOperationType,
+  ].map((value) => normalizeToken(value)).join(" ");
 
   if (!category) {
     blockers.push("La venta no encuadra en una categoria fiscal aprobada del MVP.");
@@ -605,10 +641,8 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
       requiresManualReview: true,
       journalSeed: category
         ? {
-            accountCode: category.accountCode,
-            accountName: category.accountName,
-            counterpartyAccountCode: "1130",
-            counterpartyAccountName: "Clientes",
+            counterpartyRole: "accounts_receivable",
+            vatRole: resolvedTaxAmount > 0 ? "vat_output_payable" : null,
             amountExcludingVat: subtotal,
             totalAmount,
             vatAmount: resolvedTaxAmount,
@@ -638,10 +672,8 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
     requiresManualReview: false,
     journalSeed: category
       ? {
-          accountCode: category.accountCode,
-          accountName: category.accountName,
-          counterpartyAccountCode: "1130",
-          counterpartyAccountName: "Clientes",
+          counterpartyRole: "accounts_receivable",
+          vatRole: resolvedTaxAmount > 0 ? "vat_output_payable" : null,
           amountExcludingVat: subtotal,
           totalAmount,
           vatAmount: resolvedTaxAmount,

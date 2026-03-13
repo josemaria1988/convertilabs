@@ -16,18 +16,34 @@ type ConfirmedDraftRow = {
   document_role: "purchase" | "sale" | "other";
   fields_json: JsonRecord | null;
   tax_treatment_json: JsonRecord | null;
+  journal_suggestion_json: JsonRecord | null;
 };
 
 type TaxPeriodRow = {
   id: string;
+  period_year: number;
+  period_month: number | null;
+  start_date: string;
+  end_date: string;
+  status: string;
 };
 
 type VatRunRow = {
   id: string;
+  period_id: string;
   version_no: number;
+  status: string;
+  result_json: JsonRecord | null;
 };
 
-type VatDocumentSnapshot = {
+export type VatRunStatus =
+  | "draft"
+  | "needs_review"
+  | "reviewed"
+  | "finalized"
+  | "locked";
+
+export type VatDocumentSnapshot = {
   documentId: string;
   draftId: string;
   role: "purchase" | "sale" | "other";
@@ -35,6 +51,21 @@ type VatDocumentSnapshot = {
   vatBucket: string | null;
   taxableAmount: number;
   taxAmount: number;
+  reviewFlags: string[];
+};
+
+export type OrganizationVatRun = {
+  id: string;
+  periodId: string;
+  periodLabel: string;
+  status: VatRunStatus;
+  outputVat: number;
+  inputVatCreditable: number;
+  inputVatNonDeductible: number;
+  netVatPayable: number;
+  createdAt: string;
+  reviewFlagsCount: number;
+  tracedDocuments: VatDocumentSnapshot[];
 };
 
 function asRecord(value: unknown): JsonRecord {
@@ -49,6 +80,12 @@ function asString(value: unknown) {
 
 function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 function roundCurrency(value: number) {
@@ -86,6 +123,8 @@ function getTaxSnapshot(draft: ConfirmedDraftRow) {
       ?? asNumber(asRecord(taxJson.determination).tax_amount)
       ?? asNumber(getDraftFacts(draft.fields_json).tax_amount)
       ?? 0,
+    warnings: asStringArray(taxJson.warnings),
+    blockingReasons: asStringArray(taxJson.blockingReasons),
   };
 }
 
@@ -110,7 +149,48 @@ function buildVatDocumentSnapshot(draft: ConfirmedDraftRow): VatDocumentSnapshot
     vatBucket: taxSnapshot.vatBucket,
     taxableAmount: roundCurrency(taxSnapshot.taxableAmount),
     taxAmount: roundCurrency(taxSnapshot.taxAmount),
+    reviewFlags: [...taxSnapshot.warnings, ...taxSnapshot.blockingReasons],
   };
+}
+
+function mapVatRunStatusToTaxPeriodStatus(status: VatRunStatus) {
+  switch (status) {
+    case "draft":
+      return "open";
+    case "needs_review":
+    case "reviewed":
+      return "review";
+    case "finalized":
+      return "closed";
+    case "locked":
+      return "locked";
+  }
+}
+
+async function recordAuditEvent(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    actorId: string | null;
+    entityId: string;
+    action: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const { error } = await supabase
+    .from("audit_log")
+    .insert({
+      organization_id: input.organizationId,
+      actor_user_id: input.actorId,
+      entity_type: "vat_run",
+      entity_id: input.entityId,
+      action: input.action,
+      metadata: input.metadata ?? {},
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 async function ensureVatPeriod(
@@ -138,7 +218,7 @@ async function ensureVatPeriod(
         onConflict: "organization_id,tax_type,period_year,period_month",
       },
     )
-    .select("id")
+    .select("id, period_year, period_month, start_date, end_date, status")
     .limit(1)
     .single();
 
@@ -179,7 +259,7 @@ async function loadLatestConfirmedDrafts(
 
   const { data: drafts, error: draftsError } = await supabase
     .from("document_drafts")
-    .select("id, document_id, document_role, fields_json, tax_treatment_json")
+    .select("id, document_id, document_role, fields_json, tax_treatment_json, journal_suggestion_json")
     .in("id", draftIds);
 
   if (draftsError) {
@@ -196,7 +276,7 @@ async function loadLatestVatRun(
 ) {
   const { data, error } = await supabase
     .from("vat_runs")
-    .select("id, version_no")
+    .select("id, period_id, version_no, status, result_json")
     .eq("organization_id", organizationId)
     .eq("period_id", periodId)
     .order("version_no", { ascending: false })
@@ -208,6 +288,46 @@ async function loadLatestVatRun(
   }
 
   return (data as VatRunRow | null) ?? null;
+}
+
+async function updateTaxPeriodStatus(
+  supabase: SupabaseClient,
+  periodId: string,
+  status: VatRunStatus,
+) {
+  const { error } = await supabase
+    .from("tax_periods")
+    .update({
+      status: mapVatRunStatusToTaxPeriodStatus(status),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", periodId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function assertVatPeriodMutableForDocument(
+  supabase: SupabaseClient,
+  organizationId: string,
+  documentDate: string,
+) {
+  const year = Number.parseInt(documentDate.slice(0, 4), 10);
+  const month = Number.parseInt(documentDate.slice(5, 7), 10);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return;
+  }
+
+  const period = await ensureVatPeriod(supabase, organizationId, year, month);
+  const existingRun = await loadLatestVatRun(supabase, organizationId, period.id);
+
+  if (existingRun?.status === "finalized" || existingRun?.status === "locked") {
+    throw new Error(
+      `El periodo IVA ${year}-${String(month).padStart(2, "0")} esta ${existingRun.status} y debe reabrirse antes de mutar documentos.`,
+    );
+  }
 }
 
 export async function rebuildMonthlyVatRunFromConfirmations(
@@ -224,6 +344,12 @@ export async function rebuildMonthlyVatRunFromConfirmations(
   }
 
   const period = await ensureVatPeriod(supabase, organizationId, year, month);
+  const existingRun = await loadLatestVatRun(supabase, organizationId, period.id);
+
+  if (existingRun?.status === "finalized" || existingRun?.status === "locked") {
+    throw new Error("No se puede recalcular un periodo IVA finalizado o locked sin reapertura.");
+  }
+
   const drafts = await loadLatestConfirmedDrafts(supabase, organizationId);
   const relevantSnapshots = drafts
     .map((draft) => buildVatDocumentSnapshot(draft))
@@ -244,12 +370,14 @@ export async function rebuildMonthlyVatRunFromConfirmations(
         }
       }
 
+      accumulator.reviewFlagsCount += snapshot.reviewFlags.length;
       return accumulator;
     },
     {
       outputVat: 0,
       inputVatCreditable: 0,
       inputVatNonDeductible: 0,
+      reviewFlagsCount: 0,
     },
   );
 
@@ -259,11 +387,16 @@ export async function rebuildMonthlyVatRunFromConfirmations(
   const netVatPayable = roundCurrency(
     outputVat - inputVatCreditable + inputVatNonDeductible,
   );
-  const existingRun = await loadLatestVatRun(supabase, organizationId, period.id);
+  const nextStatus: VatRunStatus =
+    totals.reviewFlagsCount > 0
+      ? "needs_review"
+      : existingRun?.status === "reviewed"
+        ? "reviewed"
+        : "draft";
   const payload = {
     organization_id: organizationId,
     period_id: period.id,
-    status: "draft",
+    status: nextStatus,
     input_snapshot_json: {
       documents: relevantSnapshots,
       generated_at: new Date().toISOString(),
@@ -277,6 +410,8 @@ export async function rebuildMonthlyVatRunFromConfirmations(
         input_vat_non_deductible: inputVatNonDeductible,
         net_vat_payable: netVatPayable,
       },
+      documents_included_count: relevantSnapshots.length,
+      review_flags_count: totals.reviewFlagsCount,
     },
     output_vat: outputVat,
     input_vat_creditable: inputVatCreditable,
@@ -284,7 +419,10 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     adjustments: 0,
     net_vat_payable: netVatPayable,
     created_by: requestedBy,
+    updated_at: new Date().toISOString(),
   };
+
+  let runId: string;
 
   if (existingRun) {
     const { error } = await supabase
@@ -296,29 +434,114 @@ export async function rebuildMonthlyVatRunFromConfirmations(
       throw new Error(error.message);
     }
 
-    return existingRun.id;
+    runId = existingRun.id;
+  } else {
+    const { data, error } = await supabase
+      .from("vat_runs")
+      .insert({
+        ...payload,
+        version_no: 1,
+      })
+      .select("id")
+      .limit(1)
+      .single();
+
+    if (error || !data?.id) {
+      throw new Error(error?.message ?? "No se pudo crear el VAT run mensual.");
+    }
+
+    runId = data.id as string;
   }
 
-  const { data, error } = await supabase
+  await updateTaxPeriodStatus(supabase, period.id, nextStatus);
+  return runId;
+}
+
+export async function updateVatRunLifecycle(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  runId: string;
+  actorId: string | null;
+  action: "review" | "finalize" | "lock" | "reopen";
+  reason?: string | null;
+}) {
+  const { data, error } = await input.supabase
     .from("vat_runs")
-    .insert({
-      ...payload,
-      version_no: 1,
-    })
-    .select("id")
+    .select("id, period_id, status, result_json")
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.runId)
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (error || !data?.id) {
-    throw new Error(error?.message ?? "No se pudo crear el VAT run mensual.");
+    throw new Error(error?.message ?? "VAT run no encontrado.");
   }
 
-  return data.id as string;
+  const current = data as VatRunRow;
+  let nextStatus: VatRunStatus;
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  switch (input.action) {
+    case "review":
+      nextStatus = "reviewed";
+      patch.reviewed_by = input.actorId;
+      patch.reviewed_at = new Date().toISOString();
+      break;
+    case "finalize":
+      nextStatus = "finalized";
+      patch.finalized_by = input.actorId;
+      patch.finalized_at = new Date().toISOString();
+      break;
+    case "lock":
+      nextStatus = "locked";
+      patch.locked_by = input.actorId;
+      patch.locked_at = new Date().toISOString();
+      break;
+    case "reopen":
+      if (!input.reason?.trim()) {
+        throw new Error("Reabrir un periodo IVA requiere motivo.");
+      }
+
+      nextStatus = "draft";
+      patch.reopened_by = input.actorId;
+      patch.reopened_at = new Date().toISOString();
+      break;
+  }
+
+  const { error: updateError } = await input.supabase
+    .from("vat_runs")
+    .update({
+      ...patch,
+      status: nextStatus,
+    })
+    .eq("id", input.runId);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  await updateTaxPeriodStatus(input.supabase, current.period_id, nextStatus);
+  await recordAuditEvent(input.supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    entityId: input.runId,
+    action: `vat_run:${input.action}`,
+    metadata: input.reason?.trim()
+      ? {
+          reason: input.reason.trim(),
+        }
+      : {},
+  });
+
+  return nextStatus;
 }
 
 type VatRunListRow = {
   id: string;
-  status: string;
+  period_id: string;
+  status: VatRunStatus;
   output_vat: number;
   input_vat_creditable: number;
   input_vat_non_deductible: number;
@@ -339,18 +562,6 @@ type VatRunListRow = {
   }[] | null;
 };
 
-export type OrganizationVatRun = {
-  id: string;
-  periodLabel: string;
-  status: string;
-  outputVat: number;
-  inputVatCreditable: number;
-  inputVatNonDeductible: number;
-  netVatPayable: number;
-  createdAt: string;
-  tracedDocuments: VatDocumentSnapshot[];
-};
-
 export async function loadOrganizationVatRuns(
   supabase: SupabaseClient,
   organizationId: string,
@@ -358,7 +569,7 @@ export async function loadOrganizationVatRuns(
   const { data, error } = await supabase
     .from("vat_runs")
     .select(
-      "id, status, output_vat, input_vat_creditable, input_vat_non_deductible, net_vat_payable, result_json, input_snapshot_json, created_at, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
+      "id, period_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, net_vat_payable, result_json, input_snapshot_json, created_at, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
     )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
@@ -371,6 +582,7 @@ export async function loadOrganizationVatRuns(
   return (((data as VatRunListRow[] | null) ?? [])).map((row) => {
     const period = Array.isArray(row.period) ? row.period[0] : row.period;
     const snapshot = asRecord(row.input_snapshot_json);
+    const resultJson = asRecord(row.result_json);
     const tracedDocuments = Array.isArray(snapshot.documents)
       ? snapshot.documents.filter((item): item is VatDocumentSnapshot => {
           const candidate = asRecord(item);
@@ -380,6 +592,7 @@ export async function loadOrganizationVatRuns(
 
     return {
       id: row.id,
+      periodId: row.period_id,
       periodLabel: period
         ? `${period.period_year}-${String(period.period_month ?? 0).padStart(2, "0")}`
         : "Sin periodo",
@@ -389,6 +602,10 @@ export async function loadOrganizationVatRuns(
       inputVatNonDeductible: row.input_vat_non_deductible,
       netVatPayable: row.net_vat_payable,
       createdAt: row.created_at,
+      reviewFlagsCount:
+        typeof resultJson.review_flags_count === "number"
+          ? resultJson.review_flags_count
+          : tracedDocuments.reduce((sum, document) => sum + document.reviewFlags.length, 0),
       tracedDocuments,
     } satisfies OrganizationVatRun;
   });

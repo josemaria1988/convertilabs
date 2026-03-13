@@ -75,7 +75,17 @@ create table if not exists public.vat_runs (
   net_vat_payable numeric(18,2) not null default 0,
   version_no integer not null default 1,
   created_by uuid references public.profiles(id),
+  reviewed_by uuid references public.profiles(id),
+  reviewed_at timestamptz,
   finalized_by uuid references public.profiles(id),
   finalized_at timestamptz,
-  created_at timestamptz not null default now()
+  locked_by uuid references public.profiles(id),
+  locked_at timestamptz,
+  reopened_by uuid references public.profiles(id),
+  reopened_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+create unique index if not exists idx_vat_runs_org_period_version
+  on public.vat_runs (organization_id, period_id, version_no);

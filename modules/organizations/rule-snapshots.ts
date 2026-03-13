@@ -63,6 +63,7 @@ type OrganizationRuleSnapshotRow = {
   rules_json: unknown;
   deterministic_rule_refs_json: unknown;
   snapshot_json: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
 };
 
 export type MaterializedOrganizationRuleSnapshot = {
@@ -275,6 +276,26 @@ async function loadRelevantVatRules(
   return (data as TaxRuleRow[] | null) ?? [];
 }
 
+async function loadRelevantAccountingRules(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("accounting_rules")
+    .select(
+      "id, scope, vendor_id, concept_id, document_role, account_id, priority, source, operation_category, linked_operation_type",
+    )
+    .eq("organization_id", organizationId)
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as Array<Record<string, unknown>> | null) ?? [];
+}
+
 async function getActiveRuleSnapshot(
   supabase: SupabaseClient,
   organizationId: string,
@@ -283,7 +304,7 @@ async function getActiveRuleSnapshot(
   const { data, error } = await supabase
     .from("organization_rule_snapshots")
     .select(
-      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json",
+      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json, metadata",
     )
     .eq("organization_id", organizationId)
     .eq("profile_version_id", profileVersionId)
@@ -299,13 +320,32 @@ async function getActiveRuleSnapshot(
   return (data as OrganizationRuleSnapshotRow | null) ?? null;
 }
 
+function shouldRematerializeSnapshot(
+  snapshot: OrganizationRuleSnapshotRow | null,
+  accountingRulesCount: number,
+) {
+  if (!snapshot) {
+    return true;
+  }
+
+  const snapshotAccountingRuleCount =
+    typeof snapshot.metadata?.accounting_rule_count === "number"
+      ? snapshot.metadata.accounting_rule_count
+      : null;
+
+  return snapshotAccountingRuleCount !== accountingRulesCount;
+}
+
 async function createRuleSnapshot(
   supabase: SupabaseClient,
   organization: OrganizationRow,
   profileVersion: OrganizationProfileVersionRow,
   requestedBy: string | null,
 ) {
-  const rules = await loadRelevantVatRules(supabase, organization.id);
+  const [rules, accountingRules] = await Promise.all([
+    loadRelevantVatRules(supabase, organization.id),
+    loadRelevantAccountingRules(supabase, organization.id),
+  ]);
   const versionNumber = await getNextVersionNumber(
     supabase,
     "organization_rule_snapshots",
@@ -323,6 +363,15 @@ async function createRuleSnapshot(
     source_reference: rule.source_reference,
   }));
   const flags = getUyVatFeatureFlags();
+
+  await supabase
+    .from("organization_rule_snapshots")
+    .update({
+      status: "superseded",
+      effective_to: new Date().toISOString().slice(0, 10),
+    })
+    .eq("organization_id", organization.id)
+    .eq("status", "active");
 
   const { data, error } = await supabase
     .from("organization_rule_snapshots")
@@ -355,17 +404,19 @@ async function createRuleSnapshot(
         feature_flags: flags,
         rule_refs: deterministicRuleRefs,
         rule_names: rules.map((rule) => rule.name),
+        accounting_rules: accountingRules,
       },
       metadata: {
         materialized_from_profile_version_id: profileVersion.id,
         rule_count: rules.length,
+        accounting_rule_count: accountingRules.length,
       },
       created_by: requestedBy,
       approved_by: requestedBy,
       approved_at: new Date().toISOString(),
     })
     .select(
-      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json",
+      "id, organization_id, profile_version_id, version_number, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, prompt_summary, rules_json, deterministic_rule_refs_json, snapshot_json, metadata",
     )
     .limit(1)
     .single();
@@ -386,14 +437,16 @@ export async function materializeOrganizationRuleSnapshot(
   const profileVersion =
     (await getCurrentProfileVersion(supabase, organizationId))
     ?? (await createBootstrapProfileVersion(supabase, organization, requestedBy));
+  const accountingRules = await loadRelevantAccountingRules(supabase, organizationId);
   const existingSnapshot = await getActiveRuleSnapshot(
     supabase,
     organizationId,
     profileVersion.id,
   );
   const ruleSnapshot =
-    existingSnapshot
-    ?? (await createRuleSnapshot(supabase, organization, profileVersion, requestedBy));
+    shouldRematerializeSnapshot(existingSnapshot, accountingRules.length)
+      ? await createRuleSnapshot(supabase, organization, profileVersion, requestedBy)
+      : existingSnapshot!;
 
   return {
     profileVersion,

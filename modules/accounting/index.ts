@@ -4,6 +4,7 @@ export * from "@/modules/accounting/invoice-identity";
 export * from "@/modules/accounting/normalization";
 export * from "@/modules/accounting/repository";
 export * from "@/modules/accounting/rule-engine";
+export * from "@/modules/accounting/runtime";
 export * from "@/modules/accounting/suggestion-engine";
 export * from "@/modules/accounting/types";
 export * from "@/modules/accounting/vendor-resolution";

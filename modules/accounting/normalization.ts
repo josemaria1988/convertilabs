@@ -70,6 +70,14 @@ export function normalizeDocumentNumber(value: string | null | undefined) {
   return compact || null;
 }
 
+export function normalizeConceptCode(value: string | null | undefined) {
+  return normalizeDocumentNumber(value);
+}
+
+export function normalizeConceptDescription(value: string | null | undefined) {
+  return normalizeTextToken(value);
+}
+
 export function normalizeCurrencyCode(value: string | null | undefined) {
   const normalized = normalizeTextToken(value);
 
@@ -78,4 +86,47 @@ export function normalizeCurrencyCode(value: string | null | undefined) {
   }
 
   return normalized.toUpperCase();
+}
+
+export function slugifyConceptCode(value: string | null | undefined) {
+  const normalized = normalizeTextToken(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const slug = normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug || null;
+}
+
+export function tokenizeNormalizedText(value: string | null | undefined) {
+  const normalized = normalizeTextToken(value);
+
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized
+    .split(/[^a-z0-9]+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+export function computeTokenOverlapScore(a: string | null | undefined, b: string | null | undefined) {
+  const aTokens = new Set(tokenizeNormalizedText(a));
+  const bTokens = new Set(tokenizeNormalizedText(b));
+
+  if (aTokens.size === 0 || bTokens.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+
+  for (const token of aTokens) {
+    if (bTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.max(aTokens.size, bTokens.size);
 }

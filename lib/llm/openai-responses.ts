@@ -193,24 +193,26 @@ export async function createStructuredOpenAIResponse<T>(input: {
   schema: JsonSchemaDefinition;
   systemPrompt: string;
   userPrompt: string;
-  fileInput: OpenAIFileInput;
+  fileInput?: OpenAIFileInput;
 }) {
   const { openAiDocumentModel } = getOpenAIEnv();
 
   const userContent: Array<Record<string, unknown>> = [];
 
-  if (input.fileInput.kind === "pdf") {
-    userContent.push({
-      type: "input_file",
-      file_id: input.fileInput.fileId,
-      filename: input.fileInput.filename,
-    });
-  } else {
-    userContent.push({
-      type: "input_image",
-      file_id: input.fileInput.fileId,
-      detail: input.fileInput.detail ?? "high",
-    });
+  if (input.fileInput) {
+    if (input.fileInput.kind === "pdf") {
+      userContent.push({
+        type: "input_file",
+        file_id: input.fileInput.fileId,
+        filename: input.fileInput.filename,
+      });
+    } else {
+      userContent.push({
+        type: "input_image",
+        file_id: input.fileInput.fileId,
+        detail: input.fileInput.detail ?? "high",
+      });
+    }
   }
 
   userContent.push({
