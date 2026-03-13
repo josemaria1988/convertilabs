@@ -1,11 +1,18 @@
 import "server-only";
 
 import { createHash } from "crypto";
-import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { getInngestConfigStatus } from "@/lib/env";
+import { inngest } from "@/lib/inngest/client";
 import {
-  createStructuredOpenAIResponse,
+  createBackgroundStructuredOpenAIResponse,
+  deleteOpenAIFile,
+  extractStructuredOutputFromOpenAIResponse,
+  getOpenAIBackgroundResponseError,
+  isOpenAIBackgroundResponsePending,
+  retrieveOpenAIResponse,
   uploadOpenAIUserDataFile,
 } from "@/lib/llm/openai-responses";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import {
   assertDocumentIntakeOutput,
   documentIntakeJsonSchema,
@@ -28,16 +35,33 @@ import {
 } from "@/modules/accounting";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
-type ProcessUploadedDocumentInput = {
+type DocumentProcessingTrigger =
+  | "upload"
+  | "manual_retry"
+  | "reprocess_after_profile_change";
+
+type EnqueueDocumentProcessingInput = {
   documentId: string;
   requestedBy: string | null;
-  triggeredBy:
-    | "upload"
-    | "manual_retry"
-    | "reprocess_after_profile_change";
+  triggeredBy: DocumentProcessingTrigger;
 };
 
-type ProcessUploadedDocumentResult =
+type EnqueueDocumentProcessingResult =
+  | {
+      ok: true;
+      documentId: string;
+      runId: string;
+      status: "queued";
+    }
+  | {
+      ok: false;
+      documentId: string;
+      runId: string | null;
+      status: "error" | "skipped";
+      message: string;
+    };
+
+type DocumentProcessingResult =
   | {
       ok: true;
       documentId: string;
@@ -62,7 +86,95 @@ type ProcessibleDocumentRow = {
   mime_type: string | null;
   status: string;
   metadata: Record<string, unknown> | null;
+  current_draft_id: string | null;
+  current_processing_run_id: string | null;
+  last_rule_snapshot_id: string | null;
+  last_processed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
 };
+
+type ProcessingRunRow = {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  run_number: number;
+  status: string;
+  provider_code: string;
+  model_code: string | null;
+  triggered_by: string;
+  requested_by: string | null;
+  organization_rule_snapshot_id: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  openai_file_id: string | null;
+  provider_response_id: string | null;
+  provider_status: string | null;
+  transport_mode: string | null;
+  store_remote: boolean | null;
+  prompt_version: string | null;
+  schema_version: string | null;
+  attempt_count: number | null;
+  last_polled_at: string | null;
+  failure_stage: string | null;
+  failure_message: string | null;
+  metadata: Record<string, unknown> | null;
+  provider_response_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+// Inngest step.run serializes outputs, so we keep this adapter loose here.
+type InngestStepLike = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  run(id: string, fn: () => unknown): Promise<any>;
+  sleep(id: string, duration: string): Promise<void>;
+};
+
+type InngestLoggerLike = {
+  info(message: string, data?: Record<string, unknown>): void;
+  warn?(message: string, data?: Record<string, unknown>): void;
+  error?(message: string, data?: Record<string, unknown>): void;
+};
+
+type ProcessDocumentRunFromInngestInput = {
+  runId: string;
+  step: InngestStepLike;
+  logger?: InngestLoggerLike;
+};
+
+type DocumentProcessingStatusResult = {
+  documentId: string;
+  runId: string | null;
+  documentStatus: string;
+  runStatus: string | null;
+  providerStatus: string | null;
+  draftId: string | null;
+  reviewUrl: string | null;
+  failureMessage: string | null;
+  updatedAt: string;
+  isTerminal: boolean;
+};
+
+const OPENAI_DOCUMENT_PROMPT_VERSION = "2026-03-13";
+const OPENAI_DOCUMENT_SCHEMA_VERSION = "2026-03-13";
+const OPENAI_DOCUMENT_TRANSPORT_MODE = "file_id";
+const OPENAI_DOCUMENT_STORE_REMOTE = true;
+const OPENAI_POLL_INTERVAL = "10s";
+const OPENAI_MAX_POLL_ATTEMPTS = 60;
+const TERMINAL_DOCUMENT_STATUSES = new Set([
+  "draft_ready",
+  "needs_review",
+  "approved",
+  "rejected",
+  "duplicate",
+  "archived",
+  "error",
+]);
+const TERMINAL_RUN_STATUSES = new Set(["completed", "error", "skipped"]);
 
 function buildSystemPrompt(ruleSnapshot: {
   prompt_summary: string;
@@ -103,6 +215,26 @@ function normalizeCurrencyAmount(value: number | null) {
   }
 
   return Math.round(value * 100) / 100;
+}
+
+function mergeRecords(
+  ...values: Array<Record<string, unknown> | null | undefined>
+) {
+  return values.reduce<Record<string, unknown>>((merged, value) => {
+    if (value) {
+      Object.assign(merged, value);
+    }
+
+    return merged;
+  }, {});
+}
+
+function toStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string");
 }
 
 function collectValidationWarnings(
@@ -220,7 +352,7 @@ async function loadDocument(documentId: string) {
   const { data, error } = await supabase
     .from("documents")
     .select(
-      "id, organization_id, storage_bucket, storage_path, original_filename, mime_type, status, metadata",
+      "id, organization_id, storage_bucket, storage_path, original_filename, mime_type, status, metadata, current_draft_id, current_processing_run_id, last_rule_snapshot_id, last_processed_at, created_at, updated_at",
     )
     .eq("id", documentId)
     .limit(1)
@@ -231,6 +363,87 @@ async function loadDocument(documentId: string) {
   }
 
   return data as ProcessibleDocumentRow;
+}
+
+async function loadProcessingRun(runId: string) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("document_processing_runs")
+    .select(
+      "id, organization_id, document_id, run_number, status, provider_code, model_code, triggered_by, requested_by, organization_rule_snapshot_id, started_at, finished_at, latency_ms, input_tokens, output_tokens, total_tokens, openai_file_id, provider_response_id, provider_status, transport_mode, store_remote, prompt_version, schema_version, attempt_count, last_polled_at, failure_stage, failure_message, metadata, provider_response_json, created_at",
+    )
+    .eq("id", runId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Document processing run not found.");
+  }
+
+  return data as ProcessingRunRow;
+}
+
+async function loadRunRuleSnapshotContext(input: {
+  organizationId: string;
+  snapshotId: string | null;
+  actorId: string | null;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  if (input.snapshotId) {
+    const [{ data: snapshot }, { data: profileVersion }] = await Promise.all([
+      supabase
+        .from("organization_rule_snapshots")
+        .select(
+          "id, version_number, effective_from, prompt_summary, deterministic_rule_refs_json, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
+        )
+        .eq("id", input.snapshotId)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("organization_profile_versions")
+        .select(
+          "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id",
+        )
+        .eq("organization_id", input.organizationId)
+        .eq("status", "active")
+        .order("effective_from", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (snapshot && profileVersion) {
+      return {
+        profileVersion: profileVersion as {
+          country_code: string;
+          legal_entity_type: string;
+          tax_regime_code: string;
+          vat_regime: string;
+          dgi_group: string;
+          cfe_status: string;
+          tax_id: string;
+        },
+        ruleSnapshot: snapshot as {
+          id: string;
+          version_number: number;
+          effective_from: string;
+          prompt_summary: string;
+          deterministic_rule_refs_json: unknown;
+        },
+      };
+    }
+  }
+
+  const { profileVersion, ruleSnapshot } = await materializeOrganizationRuleSnapshot(
+    supabase,
+    input.organizationId,
+    input.actorId,
+  );
+
+  return {
+    profileVersion,
+    ruleSnapshot,
+  };
 }
 
 async function getNextDocumentRunNumber(
@@ -256,7 +469,7 @@ async function createProcessingRun(input: {
   document: ProcessibleDocumentRow;
   runNumber: number;
   requestedBy: string | null;
-  triggeredBy: ProcessUploadedDocumentInput["triggeredBy"];
+  triggeredBy: DocumentProcessingTrigger;
   ruleSnapshotId: string;
 }) {
   const supabase = getSupabaseServiceRoleClient();
@@ -272,6 +485,10 @@ async function createProcessingRun(input: {
       triggered_by: input.triggeredBy,
       requested_by: input.requestedBy,
       organization_rule_snapshot_id: input.ruleSnapshotId,
+      transport_mode: OPENAI_DOCUMENT_TRANSPORT_MODE,
+      store_remote: OPENAI_DOCUMENT_STORE_REMOTE,
+      prompt_version: OPENAI_DOCUMENT_PROMPT_VERSION,
+      schema_version: OPENAI_DOCUMENT_SCHEMA_VERSION,
       metadata: {
         source_document_status: input.document.status,
       },
@@ -290,33 +507,93 @@ async function createProcessingRun(input: {
       status: "queued",
       current_processing_run_id: data.id,
       last_rule_snapshot_id: input.ruleSnapshotId,
-      metadata: {
-        ...(input.document.metadata ?? {}),
+      metadata: mergeRecords(input.document.metadata, {
         processing_requested_at: new Date().toISOString(),
-      },
+      }),
     })
     .eq("id", input.document.id);
 
   return data.id as string;
 }
 
-async function markRunProcessing(runId: string, documentId: string) {
+async function markRunProcessing(input: {
+  runId: string;
+  documentId: string;
+  startedAt: string | null;
+}) {
   const supabase = getSupabaseServiceRoleClient();
+  const startedAt = input.startedAt ?? new Date().toISOString();
 
   await supabase
     .from("document_processing_runs")
     .update({
       status: "processing",
-      started_at: new Date().toISOString(),
+      started_at: startedAt,
+      failure_stage: null,
+      failure_message: null,
     })
-    .eq("id", runId);
+    .eq("id", input.runId);
 
   await supabase
     .from("documents")
     .update({
       status: "extracting",
+      current_processing_run_id: input.runId,
     })
-    .eq("id", documentId);
+    .eq("id", input.documentId);
+}
+
+async function updateRunAfterProviderSubmission(input: {
+  runId: string;
+  runMetadata: Record<string, unknown> | null;
+  openAiFileId: string;
+  providerResponseId: string;
+  providerStatus: string | null;
+  providerResponse: Record<string, unknown>;
+  fileHash: string;
+  duplicateDocumentIds: string[];
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  await supabase
+    .from("document_processing_runs")
+    .update({
+      openai_file_id: input.openAiFileId,
+      provider_response_id: input.providerResponseId,
+      provider_status: input.providerStatus,
+      transport_mode: OPENAI_DOCUMENT_TRANSPORT_MODE,
+      store_remote: OPENAI_DOCUMENT_STORE_REMOTE,
+      prompt_version: OPENAI_DOCUMENT_PROMPT_VERSION,
+      schema_version: OPENAI_DOCUMENT_SCHEMA_VERSION,
+      attempt_count: 1,
+      provider_response_json: input.providerResponse,
+      metadata: mergeRecords(input.runMetadata, {
+        file_hash: input.fileHash,
+        duplicate_document_ids: input.duplicateDocumentIds,
+        provider_submitted_at: new Date().toISOString(),
+      }),
+    })
+    .eq("id", input.runId);
+}
+
+async function updateRunAfterProviderPoll(input: {
+  runId: string;
+  attemptCount: number;
+  providerStatus: string | null;
+  providerResponse: Record<string, unknown>;
+  lastPolledAt: string;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  await supabase
+    .from("document_processing_runs")
+    .update({
+      provider_status: input.providerStatus,
+      provider_response_json: input.providerResponse,
+      attempt_count: input.attemptCount,
+      last_polled_at: input.lastPolledAt,
+    })
+    .eq("id", input.runId);
 }
 
 async function findDuplicateDocumentIds(
@@ -372,6 +649,7 @@ async function persistDocumentArtifacts(input: {
   document: ProcessibleDocumentRow;
   runId: string;
   runNumber: number;
+  runMetadata: Record<string, unknown> | null;
   ruleSnapshotId: string;
   profileVersion: {
     country_code: string;
@@ -391,12 +669,16 @@ async function persistDocumentArtifacts(input: {
   };
   requestedBy: string | null;
   openAiFileId: string;
+  providerResponseId: string | null;
+  providerStatus: string | null;
   structuredOutput: DocumentIntakeOutput;
   providerResponse: Record<string, unknown>;
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
   latencyMs: number;
+  lastPolledAt: string | null;
+  attemptCount: number | null;
   fileHash: string;
   duplicateDocumentIds: string[];
 }) {
@@ -433,7 +715,7 @@ async function persistDocumentArtifacts(input: {
     .insert({
       document_id: input.document.id,
       version_no: input.runNumber,
-      provider: "openai:gpt-4o-mini",
+      provider: `openai:${process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini"}`,
       raw_text: input.structuredOutput.extracted_text,
       extracted_json: input.structuredOutput,
       confidence: input.structuredOutput.confidence_score,
@@ -690,8 +972,7 @@ async function persistDocumentArtifacts(input: {
       last_rule_snapshot_id: input.ruleSnapshotId,
       last_processed_at: new Date().toISOString(),
       file_hash: input.fileHash,
-      metadata: {
-        ...(input.document.metadata ?? {}),
+      metadata: mergeRecords(input.document.metadata, {
         duplicate_document_ids: input.duplicateDocumentIds,
         duplicate_status: invoiceIdentity.duplicateStatus,
         duplicate_reason: invoiceIdentity.duplicateReason,
@@ -701,7 +982,7 @@ async function persistDocumentArtifacts(input: {
         line_item_count: input.structuredOutput.line_items.length,
         matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
         accounting_context_required: derived.accountingContext.status !== "not_required",
-      },
+      }),
     })
     .eq("id", input.document.id);
 
@@ -719,13 +1000,23 @@ async function persistDocumentArtifacts(input: {
       output_tokens: input.outputTokens,
       total_tokens: input.totalTokens,
       openai_file_id: input.openAiFileId,
+      provider_response_id: input.providerResponseId,
+      provider_status: input.providerStatus,
+      transport_mode: OPENAI_DOCUMENT_TRANSPORT_MODE,
+      store_remote: OPENAI_DOCUMENT_STORE_REMOTE,
+      prompt_version: OPENAI_DOCUMENT_PROMPT_VERSION,
+      schema_version: OPENAI_DOCUMENT_SCHEMA_VERSION,
+      attempt_count: input.attemptCount,
+      last_polled_at: input.lastPolledAt,
       provider_response_json: input.providerResponse,
-      metadata: {
+      metadata: mergeRecords(input.runMetadata, {
         extraction_id: extraction.id,
         draft_id: draft.id,
         accounting_context_required: derived.accountingContext.status !== "not_required",
         assistant_status: derived.assistantSuggestion.status,
-      },
+        file_hash: input.fileHash,
+        duplicate_document_ids: input.duplicateDocumentIds,
+      }),
     })
     .eq("id", input.runId);
 
@@ -744,53 +1035,144 @@ async function markRunFailed(input: {
   runId: string | null;
   message: string;
   failureStage: string;
+  providerStatus?: string | null;
+  providerResponse?: Record<string, unknown> | null;
+  lastPolledAt?: string | null;
+  documentMetadata?: Record<string, unknown> | null;
+  runMetadata?: Record<string, unknown> | null;
 }) {
   const supabase = getSupabaseServiceRoleClient();
+  const finishedAt = new Date().toISOString();
+  let documentMetadata = input.documentMetadata ?? null;
+
+  if (!documentMetadata) {
+    try {
+      const document = await loadDocument(input.documentId);
+      documentMetadata = document.metadata;
+    } catch {
+      documentMetadata = null;
+    }
+  }
 
   if (input.runId) {
     await supabase
       .from("document_processing_runs")
       .update({
         status: "error",
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         failure_stage: input.failureStage,
         failure_message: input.message,
+        provider_status: input.providerStatus ?? null,
+        last_polled_at: input.lastPolledAt ?? null,
+        provider_response_json: input.providerResponse ?? {},
+        metadata: mergeRecords(input.runMetadata, {
+          failed_at: finishedAt,
+        }),
       })
       .eq("id", input.runId);
   }
 
+  const documentUpdatePayload = {
+    status: "error",
+    last_processed_at: finishedAt,
+    metadata: mergeRecords(documentMetadata, {
+      processing_error: input.message,
+      processing_error_stage: input.failureStage,
+    }),
+  } as Record<string, unknown>;
+
+  if (input.runId) {
+    documentUpdatePayload.current_processing_run_id = input.runId;
+  }
+
   await supabase
     .from("documents")
-    .update({
-      status: "error",
-      last_processed_at: new Date().toISOString(),
-      metadata: {
-        processing_error: input.message,
-        processing_error_stage: input.failureStage,
-      },
-    })
+    .update(documentUpdatePayload)
     .eq("id", input.documentId);
 }
 
-export async function processUploadedDocument(
-  input: ProcessUploadedDocumentInput,
-): Promise<ProcessUploadedDocumentResult> {
-  if (!process.env.OPENAI_API_KEY) {
-    return {
-      ok: false,
-      documentId: input.documentId,
-      runId: null,
-      status: "skipped",
-      message: "OPENAI_API_KEY is not configured on the server.",
-    };
+async function downloadDocumentBytes(document: ProcessibleDocumentRow) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: fileBlob, error: downloadError } = await supabase.storage
+    .from(document.storage_bucket)
+    .download(document.storage_path);
+
+  if (downloadError || !fileBlob) {
+    throw new Error(downloadError?.message ?? "Could not download the private file.");
   }
 
-  let runId: string | null = null;
+  return fileBlob.arrayBuffer();
+}
+
+async function cleanupOpenAIFileBestEffort(
+  fileId: string | null,
+  logger?: InngestLoggerLike,
+) {
+  if (!fileId) {
+    return;
+  }
 
   try {
-    const document = await loadDocument(input.documentId);
+    await deleteOpenAIFile(fileId);
+  } catch (error) {
+    logger?.warn?.("Failed to delete OpenAI file after document processing.", {
+      fileId,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+}
+
+export async function enqueueDocumentProcessing(
+  input: EnqueueDocumentProcessingInput,
+): Promise<EnqueueDocumentProcessingResult> {
+  let runId: string | null = null;
+  let document!: ProcessibleDocumentRow;
+
+  try {
+    document = await loadDocument(input.documentId);
+
+    if (!process.env.OPENAI_API_KEY) {
+      const message = "OPENAI_API_KEY is not configured on the server.";
+
+      await markRunFailed({
+        documentId: input.documentId,
+        runId: null,
+        message,
+        failureStage: "enqueue_validation",
+        documentMetadata: document.metadata,
+      });
+
+      return {
+        ok: false,
+        documentId: input.documentId,
+        runId: null,
+        status: "error",
+        message,
+      };
+    }
+
+    if (!getInngestConfigStatus().configured) {
+      const message = "Inngest is not configured for this environment.";
+
+      await markRunFailed({
+        documentId: input.documentId,
+        runId: null,
+        message,
+        failureStage: "enqueue_validation",
+        documentMetadata: document.metadata,
+      });
+
+      return {
+        ok: false,
+        documentId: input.documentId,
+        runId: null,
+        status: "error",
+        message,
+      };
+    }
+
     const supabase = getSupabaseServiceRoleClient();
-    const { profileVersion, ruleSnapshot } = await materializeOrganizationRuleSnapshot(
+    const { ruleSnapshot } = await materializeOrganizationRuleSnapshot(
       supabase,
       document.organization_id,
       input.requestedBy,
@@ -805,89 +1187,32 @@ export async function processUploadedDocument(
       ruleSnapshotId: ruleSnapshot.id,
     });
 
-    await markRunProcessing(runId, document.id);
-
-    const downloadStart = Date.now();
-    const { data: fileBlob, error: downloadError } = await supabase.storage
-      .from(document.storage_bucket)
-      .download(document.storage_path);
-
-    if (downloadError || !fileBlob) {
-      throw new Error(downloadError?.message ?? "Could not download the private file.");
-    }
-
-    const bytes = await fileBlob.arrayBuffer();
-    const fileHash = computeFileHash(bytes);
-    const duplicateDocumentIds = await findDuplicateDocumentIds(
-      document.organization_id,
-      fileHash,
-      document.id,
-    );
-    const uploadedFile = await uploadOpenAIUserDataFile({
-      filename: document.original_filename,
-      mimeType: document.mime_type ?? "application/octet-stream",
-      bytes,
-    });
-    const fileKind = document.mime_type === "application/pdf" ? "pdf" : "image";
-    const structuredResponse = await createStructuredOpenAIResponse<DocumentIntakeOutput>({
-      schemaName: "convertilabs_document_intake",
-      schema: documentIntakeJsonSchema,
-      systemPrompt: buildSystemPrompt(ruleSnapshot),
-      userPrompt: buildUserPrompt({
-        originalFilename: document.original_filename,
-        mimeType: document.mime_type,
-      }),
-      fileInput:
-        fileKind === "pdf"
-          ? {
-              kind: "pdf",
-              fileId: uploadedFile.fileId,
-              filename: document.original_filename,
-            }
-          : {
-              kind: "image",
-              fileId: uploadedFile.fileId,
-              detail: "high",
-            },
-    });
-
-    assertDocumentIntakeOutput(structuredResponse.output);
-
-    const latencyMs = Date.now() - downloadStart;
-    const persisted = await persistDocumentArtifacts({
-      document,
-      runId,
-      runNumber,
-      ruleSnapshotId: ruleSnapshot.id,
-      profileVersion,
-      ruleSnapshot,
-      requestedBy: input.requestedBy,
-      openAiFileId: uploadedFile.fileId,
-      structuredOutput: structuredResponse.output,
-      providerResponse: structuredResponse.rawResponse,
-      inputTokens: structuredResponse.usage.inputTokens,
-      outputTokens: structuredResponse.usage.outputTokens,
-      totalTokens: structuredResponse.usage.totalTokens,
-      latencyMs,
-      fileHash,
-      duplicateDocumentIds,
+    await inngest.send({
+      name: "documents/process.requested",
+      data: {
+        documentId: document.id,
+        organizationId: document.organization_id,
+        runId,
+        requestedBy: input.requestedBy,
+        triggeredBy: input.triggeredBy,
+      },
     });
 
     return {
       ok: true,
       documentId: document.id,
       runId,
-      draftId: persisted.draftId,
-      status: persisted.documentStatus,
+      status: "queued",
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown processing error.";
+    const message = error instanceof Error ? error.message : "Unknown enqueue error.";
 
     await markRunFailed({
       documentId: input.documentId,
       runId,
       message,
-      failureStage: "document_processing",
+      failureStage: runId ? "inngest_enqueue" : "enqueue_initialization",
+      documentMetadata: document?.metadata ?? null,
     });
 
     return {
@@ -899,3 +1224,450 @@ export async function processUploadedDocument(
     };
   }
 }
+
+export async function processDocumentRunFromInngest(
+  input: ProcessDocumentRunFromInngestInput,
+): Promise<DocumentProcessingResult> {
+  let run!: ProcessingRunRow;
+  let document!: ProcessibleDocumentRow;
+  let openAiFileId: string | null = null;
+  let providerStatus: string | null = null;
+  let providerResponse: Record<string, unknown> | null = null;
+  let lastPolledAt: string | null = null;
+
+  try {
+    run = await input.step.run("load-document-processing-run", async () => {
+      return loadProcessingRun(input.runId);
+    });
+    document = await input.step.run("load-document-for-processing-run", async () => {
+      return loadDocument(run!.document_id);
+    });
+
+    if (run!.status === "completed" && document!.current_draft_id) {
+      return {
+        ok: true,
+        documentId: document.id,
+        runId: run.id,
+        draftId: document.current_draft_id,
+        status:
+          document.status === "draft_ready" || document.status === "needs_review"
+            ? document.status
+            : "needs_review",
+      };
+    }
+
+    if (run!.status === "error" || run!.status === "skipped") {
+      return {
+        ok: false,
+        documentId: run.document_id,
+        runId: run.id,
+        status: run.status === "skipped" ? "skipped" : "error",
+        message: run.failure_message ?? "This processing run is already terminal.",
+      };
+    }
+
+    const { profileVersion, ruleSnapshot } = await input.step.run(
+      "load-rule-snapshot-context",
+      async () => {
+        return loadRunRuleSnapshotContext({
+          organizationId: run.organization_id,
+          snapshotId: run.organization_rule_snapshot_id,
+          actorId: run.requested_by,
+        });
+      },
+    );
+
+    await input.step.run("mark-run-processing", async () => {
+      await markRunProcessing({
+        runId: run!.id,
+        documentId: document!.id,
+        startedAt: run!.started_at,
+      });
+    });
+
+    let fileHash = asString(asRecord(run.metadata).file_hash) ?? null;
+    let duplicateDocumentIds = toStringArray(asRecord(run.metadata).duplicate_document_ids);
+    let providerResponseId = run.provider_response_id;
+    openAiFileId = run.openai_file_id;
+    providerStatus = run.provider_status;
+    const existingProviderResponse = asRecord(run.provider_response_json);
+    providerResponse = Object.keys(existingProviderResponse).length > 0
+      ? existingProviderResponse
+      : null;
+
+    if (!providerResponseId) {
+      const submission = await input.step.run(
+        "submit-openai-background-response",
+        async () => {
+          const bytes = await downloadDocumentBytes(document!);
+          const computedFileHash = computeFileHash(bytes);
+          const duplicates = await findDuplicateDocumentIds(
+            document!.organization_id,
+            computedFileHash,
+            document!.id,
+          );
+          const uploadedFile = await uploadOpenAIUserDataFile({
+            filename: document!.original_filename,
+            mimeType: document!.mime_type ?? "application/octet-stream",
+            bytes,
+          });
+          const fileKind = document!.mime_type === "application/pdf" ? "pdf" : "image";
+          const backgroundResponse = await createBackgroundStructuredOpenAIResponse({
+            schemaName: "convertilabs_document_intake",
+            schema: documentIntakeJsonSchema,
+            systemPrompt: buildSystemPrompt(ruleSnapshot),
+            userPrompt: buildUserPrompt({
+              originalFilename: document!.original_filename,
+              mimeType: document!.mime_type,
+            }),
+            fileInput:
+              fileKind === "pdf"
+                ? {
+                    kind: "pdf",
+                    fileId: uploadedFile.fileId,
+                    filename: document!.original_filename,
+                  }
+                : {
+                    kind: "image",
+                    fileId: uploadedFile.fileId,
+                    detail: "high",
+                  },
+          });
+
+          await updateRunAfterProviderSubmission({
+            runId: run!.id,
+            runMetadata: run!.metadata,
+            openAiFileId: uploadedFile.fileId,
+            providerResponseId: backgroundResponse.responseId,
+            providerStatus: backgroundResponse.status,
+            providerResponse: backgroundResponse.rawResponse,
+            fileHash: computedFileHash,
+            duplicateDocumentIds: duplicates,
+          });
+
+          return {
+            fileHash: computedFileHash,
+            duplicateDocumentIds: duplicates,
+            openAiFileId: uploadedFile.fileId,
+            providerResponseId: backgroundResponse.responseId,
+            providerStatus: backgroundResponse.status,
+            providerResponse: backgroundResponse.rawResponse,
+          };
+        },
+      );
+
+      fileHash = submission.fileHash;
+      duplicateDocumentIds = submission.duplicateDocumentIds;
+      openAiFileId = submission.openAiFileId;
+      providerResponseId = submission.providerResponseId;
+      providerStatus = submission.providerStatus;
+      providerResponse = submission.providerResponse;
+      run = {
+        ...run,
+        openai_file_id: submission.openAiFileId,
+        provider_response_id: submission.providerResponseId,
+        provider_status: submission.providerStatus,
+        attempt_count: 1,
+        metadata: mergeRecords(run.metadata, {
+          file_hash: submission.fileHash,
+          duplicate_document_ids: submission.duplicateDocumentIds,
+        }),
+      };
+    }
+
+    if (!fileHash) {
+      const rebuiltFileFacts = await input.step.run("rebuild-file-hash-metadata", async () => {
+        const bytes = await downloadDocumentBytes(document!);
+        const computedFileHash = computeFileHash(bytes);
+        const duplicates = await findDuplicateDocumentIds(
+          document!.organization_id,
+          computedFileHash,
+          document!.id,
+        );
+
+        return {
+          fileHash: computedFileHash,
+          duplicateDocumentIds: duplicates,
+        };
+      });
+
+      fileHash = rebuiltFileFacts.fileHash;
+      if (duplicateDocumentIds.length === 0) {
+        duplicateDocumentIds = rebuiltFileFacts.duplicateDocumentIds;
+      }
+    }
+
+    let attemptCount = Math.max(run.attempt_count ?? 0, providerResponseId ? 1 : 0);
+
+    for (let pollIndex = 0; pollIndex < OPENAI_MAX_POLL_ATTEMPTS; pollIndex += 1) {
+      if (providerStatus && !isOpenAIBackgroundResponsePending(providerStatus)) {
+        break;
+      }
+
+      await input.step.sleep(`wait-for-openai-response-${pollIndex + 1}`, OPENAI_POLL_INTERVAL);
+
+      const pollResult = await input.step.run(
+        `poll-openai-response-${pollIndex + 1}`,
+        async () => {
+          const retrieved = await retrieveOpenAIResponse(providerResponseId!);
+          const polledAt = new Date().toISOString();
+          const nextAttemptCount = attemptCount + 1;
+
+          await updateRunAfterProviderPoll({
+            runId: run!.id,
+            attemptCount: nextAttemptCount,
+            providerStatus: retrieved.status,
+            providerResponse: retrieved.rawResponse,
+            lastPolledAt: polledAt,
+          });
+
+          return {
+            ...retrieved,
+            lastPolledAt: polledAt,
+            attemptCount: nextAttemptCount,
+          };
+        },
+      );
+
+      attemptCount = pollResult.attemptCount;
+      providerStatus = pollResult.status;
+      providerResponse = pollResult.rawResponse;
+      lastPolledAt = pollResult.lastPolledAt;
+    }
+
+    if (!providerResponse && providerResponseId) {
+      const finalPayload = await input.step.run("load-final-openai-response", async () => {
+        const retrieved = await retrieveOpenAIResponse(providerResponseId!);
+        const polledAt = new Date().toISOString();
+        const nextAttemptCount = attemptCount + 1;
+
+        await updateRunAfterProviderPoll({
+          runId: run!.id,
+          attemptCount: nextAttemptCount,
+          providerStatus: retrieved.status,
+          providerResponse: retrieved.rawResponse,
+          lastPolledAt: polledAt,
+        });
+
+        return {
+          ...retrieved,
+          lastPolledAt: polledAt,
+          attemptCount: nextAttemptCount,
+        };
+      });
+
+      attemptCount = finalPayload.attemptCount;
+      providerStatus = finalPayload.status;
+      providerResponse = finalPayload.rawResponse;
+      lastPolledAt = finalPayload.lastPolledAt;
+    }
+
+    if (!providerStatus || isOpenAIBackgroundResponsePending(providerStatus)) {
+      throw new Error("OpenAI background processing timed out before reaching a terminal state.");
+    }
+
+    if (providerStatus !== "completed" || !providerResponse) {
+      const message = providerResponse
+        ? getOpenAIBackgroundResponseError(providerResponse)
+        : "OpenAI background response did not produce a terminal payload.";
+
+      await input.step.run("mark-run-failed-after-openai", async () => {
+        await markRunFailed({
+          documentId: document!.id,
+          runId: run!.id,
+          message,
+          failureStage: "openai_background_response",
+          providerStatus,
+          providerResponse: providerResponse!,
+          lastPolledAt,
+          documentMetadata: document!.metadata,
+          runMetadata: run!.metadata,
+        });
+      });
+      await input.step.run("cleanup-openai-file-after-error", async () => {
+        await cleanupOpenAIFileBestEffort(openAiFileId, input.logger);
+      });
+
+      return {
+        ok: false,
+        documentId: document.id,
+        runId: run.id,
+        status: "error",
+        message,
+      };
+    }
+
+    const structuredResponse = extractStructuredOutputFromOpenAIResponse<DocumentIntakeOutput>(
+      providerResponse,
+    );
+
+    assertDocumentIntakeOutput(structuredResponse.output);
+
+    const startedAt = run.started_at ?? run.created_at;
+    const latencyMs = Math.max(0, Date.now() - new Date(startedAt).getTime());
+    const persisted = await input.step.run("persist-document-artifacts", async () => {
+      return persistDocumentArtifacts({
+        document: document!,
+        runId: run!.id,
+        runNumber: run!.run_number,
+        runMetadata: run!.metadata,
+        ruleSnapshotId: run!.organization_rule_snapshot_id ?? ruleSnapshot.id,
+        profileVersion,
+        ruleSnapshot,
+        requestedBy: run!.requested_by,
+        openAiFileId: openAiFileId!,
+        providerResponseId,
+        providerStatus,
+        structuredOutput: structuredResponse.output,
+        providerResponse: providerResponse!,
+        inputTokens: structuredResponse.usage.inputTokens,
+        outputTokens: structuredResponse.usage.outputTokens,
+        totalTokens: structuredResponse.usage.totalTokens,
+        latencyMs,
+        lastPolledAt,
+        attemptCount,
+        fileHash: fileHash!,
+        duplicateDocumentIds,
+      });
+    });
+
+    await input.step.run("cleanup-openai-file-after-success", async () => {
+      await cleanupOpenAIFileBestEffort(openAiFileId, input.logger);
+    });
+
+    return {
+      ok: true,
+      documentId: document.id,
+      runId: run.id,
+      draftId: persisted.draftId,
+      status: persisted.documentStatus,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown processing error.";
+
+    if (document) {
+      await input.step.run("mark-run-failed-after-exception", async () => {
+        await markRunFailed({
+          documentId: document!.id,
+          runId: run?.id ?? null,
+          message,
+          failureStage: "document_processing",
+          providerStatus,
+          providerResponse: providerResponse!,
+          lastPolledAt,
+          documentMetadata: document!.metadata,
+          runMetadata: run?.metadata ?? null,
+        });
+      });
+      await input.step.run("cleanup-openai-file-after-exception", async () => {
+        await cleanupOpenAIFileBestEffort(openAiFileId, input.logger);
+      });
+    }
+
+    return {
+      ok: false,
+      documentId: document?.id ?? run?.document_id ?? input.runId,
+      runId: run?.id ?? null,
+      status: "error",
+      message,
+    };
+  }
+}
+
+export async function loadDocumentProcessingStatus(input: {
+  documentId: string;
+  organizationSlug?: string | null;
+}): Promise<DocumentProcessingStatusResult | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: documentData, error: documentError } = await supabase
+    .from("documents")
+    .select(
+      "id, organization_id, status, metadata, current_draft_id, current_processing_run_id, last_processed_at, created_at, updated_at",
+    )
+    .eq("id", input.documentId)
+    .limit(1)
+    .maybeSingle();
+
+  if (documentError) {
+    throw new Error(documentError.message);
+  }
+
+  if (!documentData) {
+    return null;
+  }
+
+  let organizationSlug = input.organizationSlug ?? null;
+
+  if (!organizationSlug) {
+    const { data: organization, error: organizationError } = await supabase
+      .from("organizations")
+      .select("slug")
+      .eq("id", documentData.organization_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (organizationError) {
+      throw new Error(organizationError.message);
+    }
+
+    organizationSlug = organization?.slug ?? null;
+  }
+
+  let runData: {
+    id: string;
+    status: string;
+    provider_status: string | null;
+    failure_message: string | null;
+    finished_at: string | null;
+    last_polled_at: string | null;
+    created_at: string;
+  } | null = null;
+
+  if (documentData.current_processing_run_id) {
+    const { data, error } = await supabase
+      .from("document_processing_runs")
+      .select(
+        "id, status, provider_status, failure_message, finished_at, last_polled_at, created_at",
+      )
+      .eq("id", documentData.current_processing_run_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    runData = data;
+  }
+
+  const documentMetadata = asRecord(documentData.metadata);
+  const failureMessage = runData?.failure_message ?? asString(documentMetadata.processing_error);
+  const updatedAt =
+    runData?.finished_at
+    ?? runData?.last_polled_at
+    ?? documentData.last_processed_at
+    ?? documentData.updated_at
+    ?? documentData.created_at;
+
+  return {
+    documentId: documentData.id,
+    runId: documentData.current_processing_run_id,
+    documentStatus: documentData.status,
+    runStatus: runData?.status ?? null,
+    providerStatus: runData?.provider_status ?? null,
+    draftId: documentData.current_draft_id,
+    reviewUrl:
+      documentData.current_draft_id && organizationSlug
+        ? `/app/o/${organizationSlug}/documents/${documentData.id}`
+        : null,
+    failureMessage,
+    updatedAt,
+    isTerminal:
+      TERMINAL_DOCUMENT_STATUSES.has(documentData.status)
+      || (runData?.status ? TERMINAL_RUN_STATUSES.has(runData.status) : false),
+  };
+}
+
+
+
+

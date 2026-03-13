@@ -10,6 +10,10 @@ function firstDefined(...values: Array<string | undefined>) {
   return values.find((value) => typeof value === "string" && value.length > 0);
 }
 
+function parseBooleanFlag(value: string | undefined) {
+  return value === "1" || value === "true";
+}
+
 const canonicalProductionAppUrl = "https://convertilabs.com";
 
 function isLocalhostUrl(value: string) {
@@ -149,6 +153,23 @@ export function getOpenAIEnv() {
   };
 }
 
+export function getInngestEnv() {
+  if (typeof window !== "undefined") {
+    throw new Error("getInngestEnv can only be used on the server.");
+  }
+
+  return {
+    eventKey: process.env.INNGEST_EVENT_KEY ?? "",
+    signingKey: process.env.INNGEST_SIGNING_KEY ?? "",
+    baseUrl: process.env.INNGEST_BASE_URL ?? "",
+    isDev: parseBooleanFlag(process.env.INNGEST_DEV),
+    appVersion: firstDefined(
+      process.env.VERCEL_GIT_COMMIT_SHA,
+      process.env.GITHUB_SHA,
+    ),
+  };
+}
+
 export function getSupabaseConfigStatus() {
   const publicSupabaseUrl = firstDefined(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -179,9 +200,6 @@ export function getSupabaseConfigStatus() {
     process.env.SUPABASE_JWT_SECRET,
     process.env.SUPABASE_CONVERTILABS_SUPABASE_JWT_SECRET,
   );
-  const openAiApiKey = process.env.OPENAI_API_KEY;
-  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL;
-  const openAiRulesModel = process.env.OPENAI_RULES_MODEL;
 
   return {
     publicClientConfigured: Boolean(publicSupabaseUrl && publicSupabaseAnonKey),
@@ -190,8 +208,32 @@ export function getSupabaseConfigStatus() {
     directDatabaseConfigured: Boolean(directUrl),
     serviceRoleConfigured: Boolean(serviceRoleKey),
     jwtSecretConfigured: Boolean(jwtSecret),
-    openAiConfigured: Boolean(openAiApiKey),
-    openAiDocumentModelConfigured: Boolean(openAiDocumentModel),
-    openAiRulesModelConfigured: Boolean(openAiRulesModel),
+  };
+}
+
+export function getOpenAIConfigStatus() {
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL;
+  const openAiRulesModel = process.env.OPENAI_RULES_MODEL;
+
+  return {
+    configured: Boolean(openAiApiKey),
+    documentModelConfigured: Boolean(openAiDocumentModel),
+    rulesModelConfigured: Boolean(openAiRulesModel),
+  };
+}
+
+export function getInngestConfigStatus() {
+  const isDev = parseBooleanFlag(process.env.INNGEST_DEV);
+  const eventKey = process.env.INNGEST_EVENT_KEY;
+  const signingKey = process.env.INNGEST_SIGNING_KEY;
+  const baseUrl = process.env.INNGEST_BASE_URL;
+
+  return {
+    configured: isDev || Boolean(eventKey && signingKey),
+    isDev,
+    eventKeyConfigured: Boolean(eventKey),
+    signingKeyConfigured: Boolean(signingKey),
+    baseUrlConfigured: Boolean(baseUrl),
   };
 }

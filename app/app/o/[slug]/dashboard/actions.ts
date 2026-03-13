@@ -6,7 +6,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
-import { processUploadedDocument } from "@/modules/documents/processing";
+import { enqueueDocumentProcessing } from "@/modules/documents/processing";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 
 type PrepareDocumentUploadInput = {
@@ -31,6 +31,13 @@ type PrepareDocumentUploadSuccess = {
   storageBucket: string;
   storagePath: string;
   uploadToken: string;
+};
+
+type FinalizeDocumentUploadSuccess = {
+  ok: true;
+  documentId: string;
+  runId: string;
+  processingStatus: "queued";
 };
 
 type UploadActionError = {
@@ -115,7 +122,7 @@ export async function prepareDashboardDocumentUpload(
 
 export async function finalizeDashboardDocumentUpload(
   input: FinalizeDocumentUploadInput,
-): Promise<{ ok: true } | UploadActionError> {
+): Promise<FinalizeDocumentUploadSuccess | UploadActionError> {
   const { authState } = await requireOrganizationDashboardPage(input.slug);
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("complete_document_upload", {
@@ -131,23 +138,26 @@ export async function finalizeDashboardDocumentUpload(
     };
   }
 
-  const processingResult = await processUploadedDocument({
+  const enqueueResult = await enqueueDocumentProcessing({
     documentId: input.documentId,
     requestedBy: authState.user?.id ?? null,
     triggeredBy: "upload",
   });
 
-  if (!processingResult.ok) {
-    console.error(
-      "Document processing did not complete after upload finalization.",
-      processingResult,
-    );
-  }
-
   revalidatePath(buildDashboardPath(input.slug));
+
+  if (!enqueueResult.ok) {
+    return {
+      ok: false,
+      message: enqueueResult.message,
+    };
+  }
 
   return {
     ok: true,
+    documentId: input.documentId,
+    runId: enqueueResult.runId,
+    processingStatus: enqueueResult.status,
   };
 }
 

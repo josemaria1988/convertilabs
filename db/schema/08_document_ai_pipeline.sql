@@ -66,6 +66,14 @@ create table if not exists public.document_processing_runs (
   output_tokens integer,
   total_tokens integer,
   openai_file_id text,
+  provider_response_id text,
+  provider_status text,
+  transport_mode text,
+  store_remote boolean not null default false,
+  prompt_version text,
+  schema_version text,
+  attempt_count integer not null default 0,
+  last_polled_at timestamptz,
   failure_stage text,
   failure_message text,
   metadata jsonb not null default '{}'::jsonb,
@@ -329,3 +337,4 @@ alter table public.documents
 
 create index if not exists idx_documents_current_processing_run
   on public.documents (current_processing_run_id);
+

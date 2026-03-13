@@ -13,7 +13,7 @@ Convenciones base para esta etapa
 |---|---|---|---|
 | Onboarding fiscal minimo | Si | Si | validaciones y guiado asistido |
 | Upload privado | Si | Si | nada bloqueante |
-| Intake OpenAI | Si | Parcial | worker/cola real |
+| Intake OpenAI | Si | Si | smoke real y comparativa de modelos |
 | Draft persistente | Si | Si | autosave mas fino |
 | Sugerencia IVA | Si | Si | exportacion, mixtos y excepciones por rubro |
 | Sugerencia contable | Si | Si | mapping completo a plan de cuentas |
@@ -47,7 +47,8 @@ Convenciones base para esta etapa
 
 ## Follow-up tecnico
 
-- mover el procesamiento documental a una cola/worker real
+- consolidar smoke real con Inngest + OpenAI background y monitoreo operativo
 - mejorar autosave y experiencia de edicion concurrente
 - enriquecer plan de cuentas y lineas de journal con mapping completo
 - agregar backoffice de normativa y reglas derivadas
+

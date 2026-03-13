@@ -35,6 +35,19 @@ export type OpenAIStructuredResponseResult<T> = {
   rawResponse: Record<string, unknown>;
 };
 
+export type OpenAIBackgroundStructuredResponseResult = {
+  responseId: string;
+  status: string | null;
+  rawResponse: Record<string, unknown>;
+};
+
+export type OpenAIRetrievedResponseResult = {
+  responseId: string | null;
+  status: string | null;
+  usage: OpenAIStructuredResponseUsage;
+  rawResponse: Record<string, unknown>;
+};
+
 function buildOpenAIHeaders() {
   const { openAiApiKey } = getOpenAIEnv();
 
@@ -139,6 +152,80 @@ function extractUsage(payload: Record<string, unknown>): OpenAIStructuredRespons
   };
 }
 
+function buildStructuredResponseBody(input: {
+  model?: string;
+  schemaName: string;
+  schema: JsonSchemaDefinition;
+  systemPrompt: string;
+  userPrompt: string;
+  fileInput?: OpenAIFileInput;
+  background?: boolean;
+  store?: boolean;
+}) {
+  const { openAiDocumentModel } = getOpenAIEnv();
+  const userContent: Array<Record<string, unknown>> = [];
+
+  if (input.fileInput) {
+    if (input.fileInput.kind === "pdf") {
+      userContent.push({
+        type: "input_file",
+        file_id: input.fileInput.fileId,
+        filename: input.fileInput.filename,
+      });
+    } else {
+      userContent.push({
+        type: "input_image",
+        file_id: input.fileInput.fileId,
+        detail: input.fileInput.detail ?? "high",
+      });
+    }
+  }
+
+  userContent.push({
+    type: "input_text",
+    text: input.userPrompt,
+  });
+
+  return {
+    model: input.model ?? openAiDocumentModel,
+    background: input.background ?? false,
+    store: input.store ?? true,
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: input.systemPrompt,
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: userContent,
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: input.schemaName,
+        schema: input.schema,
+        strict: true,
+      },
+    },
+  };
+}
+
+function ensureResponseId(payload: Record<string, unknown>) {
+  const responseId = payload.id;
+
+  if (typeof responseId !== "string" || !responseId) {
+    throw new Error("OpenAI response did not return a valid response id.");
+  }
+
+  return responseId;
+}
+
 export async function uploadOpenAIUserDataFile(input: {
   filename: string;
   mimeType: string;
@@ -187,75 +274,9 @@ export async function deleteOpenAIFile(fileId: string) {
   }
 }
 
-export async function createStructuredOpenAIResponse<T>(input: {
-  model?: string;
-  schemaName: string;
-  schema: JsonSchemaDefinition;
-  systemPrompt: string;
-  userPrompt: string;
-  fileInput?: OpenAIFileInput;
-}) {
-  const { openAiDocumentModel } = getOpenAIEnv();
-
-  const userContent: Array<Record<string, unknown>> = [];
-
-  if (input.fileInput) {
-    if (input.fileInput.kind === "pdf") {
-      userContent.push({
-        type: "input_file",
-        file_id: input.fileInput.fileId,
-        filename: input.fileInput.filename,
-      });
-    } else {
-      userContent.push({
-        type: "input_image",
-        file_id: input.fileInput.fileId,
-        detail: input.fileInput.detail ?? "high",
-      });
-    }
-  }
-
-  userContent.push({
-    type: "input_text",
-    text: input.userPrompt,
-  });
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      ...buildOpenAIHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: input.model ?? openAiDocumentModel,
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: input.systemPrompt,
-            },
-          ],
-        },
-        {
-          role: "user",
-          content: userContent,
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: input.schemaName,
-          schema: input.schema,
-          strict: true,
-        },
-      },
-    }),
-    cache: "no-store",
-  });
-
-  const payload = await parseJsonResponse(response);
+export function extractStructuredOutputFromOpenAIResponse<T>(
+  payload: Record<string, unknown>,
+): OpenAIStructuredResponseResult<T> {
   const rawText = extractResponseText(payload);
 
   if (!rawText) {
@@ -280,5 +301,103 @@ export async function createStructuredOpenAIResponse<T>(input: {
     rawText,
     usage: extractUsage(payload),
     rawResponse: payload,
-  } satisfies OpenAIStructuredResponseResult<T>;
+  };
+}
+
+export async function createStructuredOpenAIResponse<T>(input: {
+  model?: string;
+  schemaName: string;
+  schema: JsonSchemaDefinition;
+  systemPrompt: string;
+  userPrompt: string;
+  fileInput?: OpenAIFileInput;
+}) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      ...buildOpenAIHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(buildStructuredResponseBody(input)),
+    cache: "no-store",
+  });
+
+  const payload = await parseJsonResponse(response);
+
+  return extractStructuredOutputFromOpenAIResponse<T>(payload);
+}
+
+export async function createBackgroundStructuredOpenAIResponse(input: {
+  model?: string;
+  schemaName: string;
+  schema: JsonSchemaDefinition;
+  systemPrompt: string;
+  userPrompt: string;
+  fileInput?: OpenAIFileInput;
+}) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      ...buildOpenAIHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(buildStructuredResponseBody({
+      ...input,
+      background: true,
+      store: true,
+    })),
+    cache: "no-store",
+  });
+
+  const payload = await parseJsonResponse(response);
+
+  return {
+    responseId: ensureResponseId(payload),
+    status: typeof payload.status === "string" ? payload.status : null,
+    rawResponse: payload,
+  } satisfies OpenAIBackgroundStructuredResponseResult;
+}
+
+export async function retrieveOpenAIResponse(responseId: string) {
+  const response = await fetch(`https://api.openai.com/v1/responses/${responseId}`, {
+    method: "GET",
+    headers: buildOpenAIHeaders(),
+    cache: "no-store",
+  });
+  const payload = await parseJsonResponse(response);
+
+  return {
+    responseId: typeof payload.id === "string" ? payload.id : null,
+    status: typeof payload.status === "string" ? payload.status : null,
+    usage: extractUsage(payload),
+    rawResponse: payload,
+  } satisfies OpenAIRetrievedResponseResult;
+}
+
+export function isOpenAIBackgroundResponsePending(status: string | null) {
+  return status === "queued" || status === "in_progress";
+}
+
+export function getOpenAIBackgroundResponseError(payload: Record<string, unknown>) {
+  const error =
+    payload.error && typeof payload.error === "object"
+      ? (payload.error as Record<string, unknown>)
+      : null;
+
+  if (typeof error?.message === "string" && error.message) {
+    return error.message;
+  }
+
+  const incompleteDetails =
+    payload.incomplete_details && typeof payload.incomplete_details === "object"
+      ? (payload.incomplete_details as Record<string, unknown>)
+      : null;
+
+  if (typeof incompleteDetails?.reason === "string" && incompleteDetails.reason) {
+    return incompleteDetails.reason;
+  }
+
+  const status = typeof payload.status === "string" ? payload.status : "unknown";
+
+  return `OpenAI background response finished with status ${status}.`;
 }

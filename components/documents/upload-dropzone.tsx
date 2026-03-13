@@ -17,14 +17,81 @@ import {
   validateDocumentUploadCandidate,
 } from "@/modules/documents/upload";
 
-type UploadStatus = "idle" | "validating" | "uploading" | "success" | "error";
+type UploadStatus =
+  | "idle"
+  | "validating"
+  | "uploading"
+  | "queued"
+  | "success"
+  | "error";
 
 type DocumentUploadDropzoneProps = {
   slug: string;
   panelId?: string;
 };
 
+type ProcessingStatusResponse = {
+  documentId: string;
+  runId: string | null;
+  documentStatus: string;
+  runStatus: string | null;
+  providerStatus: string | null;
+  draftId: string | null;
+  reviewUrl: string | null;
+  failureMessage: string | null;
+  updatedAt: string;
+  isTerminal: boolean;
+};
+
 const acceptedMimeLabel = allowedDocumentUploadMimeTypes.join(", ");
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function buildLiveProcessingMessage(status: ProcessingStatusResponse) {
+  switch (status.documentStatus) {
+    case "queued":
+      return "Documento subido. Encolado para procesamiento...";
+    case "extracting":
+      return "Procesando el documento en segundo plano...";
+    case "draft_ready":
+      return "El draft ya esta listo. Refrescando el dashboard...";
+    case "needs_review":
+      return "El documento quedo listo para revision. Refrescando el dashboard...";
+    case "error":
+      return status.failureMessage ?? "El procesamiento del documento termino con error.";
+    default:
+      if (status.runStatus === "processing") {
+        return "Procesando el documento en segundo plano...";
+      }
+
+      return "El documento sigue procesandose en segundo plano...";
+  }
+}
+
+async function fetchProcessingStatus(documentId: string) {
+  const response = await fetch(`/api/v1/documents/${documentId}/processing-status`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const payload = await response.json() as {
+    data?: ProcessingStatusResponse;
+    error?: {
+      message?: string;
+    };
+  };
+
+  if (!response.ok || !payload.data) {
+    throw new Error(
+      payload.error?.message ?? "No pudimos consultar el estado del documento en este momento.",
+    );
+  }
+
+  return payload.data;
+}
 
 export function DocumentUploadDropzone({
   slug,
@@ -76,8 +143,8 @@ export function DocumentUploadDropzone({
         preparedUpload.uploadToken,
         file,
         {
-        contentType: file.type,
-        upsert: false,
+          contentType: file.type,
+          upsert: false,
         },
       );
 
@@ -103,11 +170,6 @@ export function DocumentUploadDropzone({
     });
 
     if (!finalizedUpload.ok) {
-      await failDashboardDocumentUpload({
-        slug,
-        documentId: preparedUpload.documentId,
-        errorMessage: finalizedUpload.message,
-      });
       setStatus("error");
       setMessage(finalizedUpload.message);
       startTransition(() => {
@@ -116,12 +178,65 @@ export function DocumentUploadDropzone({
       return;
     }
 
-    setStatus("success");
-    setMessage("Documento subido. Refrescando el dashboard...");
-    startTransition(() => {
-      router.refresh();
-    });
+    setStatus("queued");
+    setMessage("Documento subido. Encolado para procesamiento...");
+
+    const pollStartedAt = Date.now();
+
+    try {
+      while (Date.now() - pollStartedAt < 120_000) {
+        const processingStatus = await fetchProcessingStatus(finalizedUpload.documentId);
+
+        if (processingStatus.isTerminal) {
+          if (
+            processingStatus.documentStatus === "error"
+            || processingStatus.runStatus === "error"
+          ) {
+            setStatus("error");
+            setMessage(
+              processingStatus.failureMessage
+              ?? "El procesamiento del documento termino con error.",
+            );
+            startTransition(() => {
+              router.refresh();
+            });
+            return;
+          }
+
+          setStatus("success");
+          setMessage(buildLiveProcessingMessage(processingStatus));
+          startTransition(() => {
+            router.refresh();
+          });
+          return;
+        }
+
+        setStatus("queued");
+        setMessage(buildLiveProcessingMessage(processingStatus));
+
+        const elapsedMs = Date.now() - pollStartedAt;
+        await wait(elapsedMs < 30_000 ? 2_000 : 5_000);
+      }
+
+      setStatus("idle");
+      setMessage(
+        "Documento subido y encolado. El procesamiento sigue en segundo plano; actualiza el dashboard en unos segundos si todavia no ves el draft.",
+      );
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch {
+      setStatus("idle");
+      setMessage(
+        "Documento subido y encolado. No pudimos consultar el estado en vivo; actualiza el dashboard en unos segundos.",
+      );
+      startTransition(() => {
+        router.refresh();
+      });
+    }
   }
+
+  const isBusy = status === "uploading" || status === "queued" || isRefreshing;
 
   return (
     <div
@@ -154,15 +269,16 @@ export function DocumentUploadDropzone({
           <p className="text-sm font-semibold">Subir documento</p>
           <p className="max-w-2xl text-sm leading-7 text-[color:var(--color-muted)]">
             Arrastra un PDF, JPG o PNG o usa el boton para cargarlo directo al
-            bucket privado. La metadata se crea primero y el dashboard se
-            refresca al terminar.
+            bucket privado. La metadata se crea primero, el procesamiento se
+            encola en background y el dashboard se refresca al llegar a un
+            estado terminal.
           </p>
         </div>
         <DocumentUploadButton
-          label={status === "uploading" ? "Subiendo..." : "Seleccionar archivo"}
+          label={isBusy ? "Procesando..." : "Seleccionar archivo"}
           accept={acceptedMimeLabel}
-          disabled={status === "uploading" || isRefreshing}
-          isLoading={status === "uploading" || isRefreshing}
+          disabled={isBusy}
+          isLoading={isBusy}
           onFileSelected={(file) => {
             void handleFile(file);
           }}
@@ -185,14 +301,16 @@ export function DocumentUploadDropzone({
         <div
           className={`h-full rounded-full transition-all ${
             status === "uploading"
-              ? "w-3/4 bg-[color:var(--color-accent)]"
-              : status === "success"
-                ? "w-full bg-emerald-500"
-                : status === "error"
-                  ? "w-full bg-rose-500"
-                  : status === "validating"
-                    ? "w-1/3 bg-[color:var(--color-warm)]"
-                    : "w-0"
+              ? "w-2/3 bg-[color:var(--color-accent)]"
+              : status === "queued"
+                ? "w-5/6 bg-sky-500"
+                : status === "success"
+                  ? "w-full bg-emerald-500"
+                  : status === "error"
+                    ? "w-full bg-rose-500"
+                    : status === "validating"
+                      ? "w-1/3 bg-[color:var(--color-warm)]"
+                      : "w-0"
           }`}
         />
       </div>
@@ -215,3 +333,4 @@ export function DocumentUploadDropzone({
     </div>
   );
 }
+

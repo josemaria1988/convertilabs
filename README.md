@@ -20,7 +20,7 @@ La referencia principal de ejecucion esta en [docs/specs3/convertilabs_mvp_spec_
 - TypeScript
 - React 19
 - Supabase Auth, Postgres y Storage
-- OpenAI Responses API para intake documental
+- OpenAI Responses API para intake documental`r`n- Inngest para orquestacion durable del pipeline documental
 
 ## Modulos clave
 
@@ -52,7 +52,7 @@ scripts/
 
 1. Usuario autenticado crea su organizacion y perfil fiscal base.
 2. La organizacion sube un PDF, JPG o PNG a storage privado.
-3. El pipeline documental extrae facts estructurados y genera un draft persistido.
+3. Inngest encola el pipeline documental, OpenAI procesa en background y se genera un draft persistido.
 4. El reviewer corrige, confirma o reabre sobre ese draft.
 5. El sistema genera sugerencia contable, tratamiento IVA y trazabilidad para el periodo.
 
@@ -84,3 +84,4 @@ Fuera de alcance en esta fase:
 - conciliacion bancaria
 - multi-country
 - emision CFE en runtime
+

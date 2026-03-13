@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { getSupabaseConfigStatus } from "@/lib/env";
+import {
+  getInngestConfigStatus,
+  getOpenAIConfigStatus,
+  getSupabaseConfigStatus,
+} from "@/lib/env";
 
 export function GET() {
   const supabase = getSupabaseConfigStatus();
+  const openai = getOpenAIConfigStatus();
+  const inngest = getInngestConfigStatus();
 
   return NextResponse.json({
     name: "convertilabs",
@@ -10,6 +16,8 @@ export function GET() {
     timestamp: new Date().toISOString(),
     services: {
       supabase,
+      openai,
+      inngest,
     },
   });
 }
