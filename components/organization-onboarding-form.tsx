@@ -229,7 +229,7 @@ export function OrganizationOnboardingForm({
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-medium text-white transition hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isPending ? "Creando organizacion..." : "Crear organizacion"}
       </button>

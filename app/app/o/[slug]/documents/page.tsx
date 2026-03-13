@@ -1,13 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
-import { SectionCard } from "@/components/section-card";
-import {
-  buttonBaseClassName,
-  buttonPrimaryChromeClassName,
-  buttonSecondaryChromeClassName,
-} from "@/components/ui/button-styles";
-import { LoadingLink } from "@/components/ui/loading-link";
+import { DocumentUploadDropzone } from "@/components/documents/upload-dropzone";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationWorkspaceDocuments } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
@@ -19,11 +14,63 @@ type OrganizationDocumentsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Documents",
+  title: "Documentos",
 };
 
 function formatStatus(status: string) {
-  return status.replace(/_/g, " ");
+  const normalized = status.replace(/_/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function getStatusVariant(status: string) {
+  if (["classified", "approved"].includes(status)) {
+    return "status-pill status-pill--success";
+  }
+
+  if (["needs_review", "draft_ready", "classified_with_open_revision"].includes(status)) {
+    return "status-pill status-pill--warning";
+  }
+
+  if (["error", "rejected"].includes(status)) {
+    return "status-pill status-pill--danger";
+  }
+
+  return "status-pill status-pill--info";
+}
+
+function getRoleVariant(role: string) {
+  if (role === "purchase") {
+    return "status-pill status-pill--success";
+  }
+
+  if (role === "sale") {
+    return "status-pill status-pill--info";
+  }
+
+  return "status-pill status-pill--warning";
+}
+
+function getRoleLabel(role: string) {
+  if (role === "purchase") {
+    return "Compra";
+  }
+
+  if (role === "sale") {
+    return "Venta";
+  }
+
+  return "Otro";
+}
+
+function formatAmount(value: number | null) {
+  if (typeof value !== "number") {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("es-UY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export default async function OrganizationDocumentsPage({
@@ -42,82 +89,127 @@ export default async function OrganizationDocumentsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Documents"
-      description="Vista operativa de todos los documentos del tenant actual, con acceso separado al original subido y al draft procesado cuando ya existe."
+      title="Documentos"
+      toolbarLabel="Documentos"
+      description="Bandeja documental del tenant actual, con filtros visuales compactos y acceso al original y al draft cuando exista."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
-      <SectionCard
-        title="Bandeja documental"
-        description="Cada fila separa el acceso al draft procesado del acceso al archivo original que se subio al bucket privado."
-      >
-        {documents.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
-            Aun no hay documentos en esta organizacion.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-y-3">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                  <th className="pb-1 pr-4">Archivo</th>
-                  <th className="pb-1 pr-4">Estado</th>
-                  <th className="pb-1 pr-4">Rol</th>
-                  <th className="pb-1 pr-4">Fecha doc</th>
-                  <th className="pb-1">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((document) => (
-                  <tr key={document.id}>
-                    <td className="rounded-l-2xl border border-r-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm font-medium">
-                      {document.originalFilename}
-                    </td>
-                    <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm text-[color:var(--color-muted)]">
-                      {formatStatus(document.status)}
-                    </td>
-                    <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm text-[color:var(--color-muted)]">
-                      {document.role}
-                    </td>
-                    <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm text-[color:var(--color-muted)]">
-                      {document.documentDate ?? "-"}
-                    </td>
-                    <td className="rounded-r-2xl border border-l-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm">
-                      <div className="flex flex-wrap gap-2">
-                        {document.processedHref ? (
-                          <LoadingLink
-                            href={document.processedHref}
-                            pendingLabel="Abriendo..."
-                            className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-2 text-sm`}
-                          >
-                            Ver documento procesado
-                          </LoadingLink>
-                        ) : (
-                          <span
-                            className="rounded-full border border-dashed border-[color:var(--color-border)] px-4 py-2 font-semibold text-[color:var(--color-muted)]"
-                            aria-disabled="true"
-                            title="Disponible cuando exista draft persistido."
-                          >
-                            Ver documento procesado
-                          </span>
-                        )}
-                        <DocumentOriginalModalTrigger
-                          previewUrl={document.previewUrl}
-                          mimeType={document.mimeType}
-                          originalFilename={document.originalFilename}
-                          triggerLabel="Ver documento original"
-                          triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
-                          modalTitle={document.originalFilename}
-                          modalDescription="Archivo original subido por el usuario. Se abre en grande para contrastar la informacion real del comprobante."
-                        />
-                      </div>
-                    </td>
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
+            Documentos
+          </h1>
+          <Link
+            href="#document-upload-panel"
+            className="ui-button ui-button--secondary"
+          >
+            Cargar Documentos
+          </Link>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="ui-filter">Tipo</span>
+          <span className="ui-filter">Estado</span>
+          <span className="ui-filter">Buscar</span>
+          <span className="ui-filter min-w-[138px] justify-between">Escritorio</span>
+        </div>
+
+        <div className="ui-panel overflow-hidden p-0">
+          {documents.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
+              Aun no hay documentos en esta organizacion.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table min-w-[860px]">
+                <thead>
+                  <tr>
+                    <th className="w-8"> </th>
+                    <th>Archivo</th>
+                    <th>Contraparte</th>
+                    <th>Estado</th>
+                    <th>Tipo</th>
+                    <th className="text-right">Monto</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {documents.map((document) => (
+                    <tr key={document.id}>
+                      <td>
+                        <span className="block h-2.5 w-2.5 rounded-[2px] bg-[#79b6d7]" />
+                      </td>
+                      <td>
+                        <div className="font-semibold text-white">
+                          {document.originalFilename}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
+                          {document.processedHref ? (
+                            <Link href={document.processedHref} className="text-white/80">
+                              Abrir revision
+                            </Link>
+                          ) : (
+                            <span>Draft pendiente</span>
+                          )}
+                          <DocumentOriginalModalTrigger
+                            previewUrl={document.previewUrl}
+                            mimeType={document.mimeType}
+                            originalFilename={document.originalFilename}
+                            triggerLabel="Ver original"
+                            triggerClassName="text-[13px] text-[color:var(--color-accent-strong)]"
+                            modalTitle={document.originalFilename}
+                            modalDescription="Archivo original cargado al bucket privado."
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="text-white">
+                          {document.counterpartyName ?? "Contraparte pendiente"}
+                        </div>
+                        <div className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                          {document.documentType ?? "Documento fiscal"}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={getStatusVariant(document.status)}>
+                          {formatStatus(document.status)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={getRoleVariant(document.role)}>
+                          {getRoleLabel(document.role)}
+                        </span>
+                      </td>
+                      <td className="text-right">
+                        <div className="font-semibold text-white">
+                          {formatAmount(document.totalAmount)}
+                        </div>
+                        <div className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                          IVA {formatAmount(document.taxAmount)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="ui-panel" id="document-upload-panel">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[17px] font-semibold text-white">
+                Ingreso documental
+              </h2>
+              <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                Carga real al bucket privado con procesamiento en segundo plano.
+              </p>
+            </div>
+            <span className="status-pill status-pill--info">Pipeline activo</span>
           </div>
-        )}
-      </SectionCard>
+          <DocumentUploadDropzone slug={organization.slug} />
+        </div>
+      </section>
     </PrivateDashboardShell>
   );
 }

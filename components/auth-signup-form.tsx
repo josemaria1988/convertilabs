@@ -221,14 +221,14 @@ export function AuthSignupForm() {
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-medium text-white transition hover:bg-[color:var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isPending ? "Creando cuenta..." : "Crear cuenta"}
       </button>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--color-muted)]">
         <p>La cuenta se crea en Supabase Auth y puede requerir confirmacion por email.</p>
-        <Link href="/login" className="font-medium text-[color:var(--color-accent)]">
+        <Link href="/login" className="font-medium text-[color:var(--color-accent-strong)]">
           Ya tengo cuenta
         </Link>
       </div>

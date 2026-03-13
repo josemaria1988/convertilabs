@@ -13,13 +13,13 @@ export const marketingNav: NavItem[] = [
 ];
 
 export const workspaceNav: NavItem[] = [
-  { href: "/app", label: "Dashboard", description: "Resumen operativo" },
-  { href: "/documents", label: "Documents", description: "Captura y validacion" },
+  { href: "/app", label: "Inicio", description: "Resumen operativo" },
+  { href: "/documents", label: "Documentos", description: "Captura y validacion" },
   {
     href: "/journal-entries",
-    label: "Journal entries",
+    label: "Asientos",
     description: "Motor contable",
   },
-  { href: "/tax", label: "Tax", description: "Calendario y cierres" },
-  { href: "/settings", label: "Settings", description: "Configuracion" },
+  { href: "/tax", label: "Impuestos", description: "Calendario y cierres" },
+  { href: "/settings", label: "Configuracion", description: "Configuracion" },
 ];

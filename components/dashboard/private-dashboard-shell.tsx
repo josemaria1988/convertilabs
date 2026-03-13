@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { AccountMenu } from "@/components/dashboard/account-menu";
 import { LoadingLink } from "@/components/ui/loading-link";
 
@@ -18,8 +19,194 @@ type PrivateDashboardShellProps = {
   title: string;
   description: string;
   navItems: PrivateDashboardNavItem[];
+  toolbarLabel?: string;
   children: ReactNode;
 };
+
+type IconProps = {
+  className?: string;
+};
+
+function HomeIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5.5 10.5V20h13V10.5" />
+      <path d="M9.5 20v-5h5v5" />
+    </svg>
+  );
+}
+
+function DocumentIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 3.5h7.5L19 8v12.5H7z" />
+      <path d="M14 3.5V8h5" />
+      <path d="M10 12h6" />
+      <path d="M10 16h6" />
+    </svg>
+  );
+}
+
+function JournalIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 5h14v14H5z" />
+      <path d="M9 9h6" />
+      <path d="M9 13h6" />
+      <path d="M9 17h3" />
+    </svg>
+  );
+}
+
+function TaxIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 18V6h16v12" />
+      <path d="M7.5 15.5 10 12l2 2 4.5-5" />
+    </svg>
+  );
+}
+
+function SettingsIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="m19.4 15-.9 1.55 1 1.85-1.8 1.6-1.8-1-1.55.9L12 22l-2.35-1.1-1.55-.9-1.8 1-1.8-1.6 1-1.85L4.6 15 2 12l2.6-3 .9-1.55-1-1.85 1.8-1.6 1.8 1 1.55-.9L12 2l2.35 1.1 1.55.9 1.8-1 1.8 1.6-1 1.85.9 1.55L22 12Z" />
+    </svg>
+  );
+}
+
+function ExportIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 4v11" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 19h14" />
+    </svg>
+  );
+}
+
+function SearchIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </svg>
+  );
+}
+
+function CaretIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      className={className}
+      fill="currentColor"
+    >
+      <path d="M5.2 7.3 10 12.1l4.8-4.8.9.9-5.7 5.6-5.7-5.6.9-.9Z" />
+    </svg>
+  );
+}
+
+function UtilityIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 7h12" />
+      <path d="M6 12h12" />
+      <path d="M6 17h8" />
+    </svg>
+  );
+}
+
+function getNavIcon(label: string) {
+  switch (label) {
+    case "Inicio":
+      return HomeIcon;
+    case "Documentos":
+      return DocumentIcon;
+    case "Asientos":
+      return JournalIcon;
+    case "Impuestos":
+      return TaxIcon;
+    case "Configuracion":
+      return SettingsIcon;
+    default:
+      return DocumentIcon;
+  }
+}
 
 export function PrivateDashboardShell({
   organizationName,
@@ -29,93 +216,127 @@ export function PrivateDashboardShell({
   title,
   description,
   navItems,
+  toolbarLabel,
   children,
 }: PrivateDashboardShellProps) {
+  const primaryItems = navItems.filter((item) => item.label !== "Configuracion");
+  const settingsItem = navItems.find((item) => item.label === "Configuracion");
+  const sectionLabel = toolbarLabel ?? title;
+
   return (
-    <div className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[300px_minmax(0,1fr)]">
-      <aside className="panel h-fit p-5 lg:sticky lg:top-6">
-        <Link href="/app" className="mb-6 flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--color-accent)] text-sm font-semibold text-white">
-            CL
-          </span>
-          <div>
-            <p className="font-semibold tracking-[-0.04em]">Convertilabs</p>
-            <p className="text-sm text-[color:var(--color-muted)]">Private app</p>
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        <div className="app-sidebar-panel">
+          <div className="app-sidebar-brand">
+            <Link href="/app" className="block">
+              <ConvertilabsLogo />
+            </Link>
           </div>
-        </Link>
 
-        <div className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-white/70 p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-            Organizacion actual
-          </p>
-          <p className="mt-3 text-xl font-semibold tracking-[-0.04em]">
-            {organizationName}
-          </p>
-          <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-            /app/o/{organizationSlug}
-          </p>
-          <p className="mt-3 text-sm text-[color:var(--color-muted)]">
-            Rol: {userRole}
-          </p>
-          <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-            {userEmail ?? "Cuenta autenticada"}
-          </p>
-        </div>
+          <nav className="app-sidebar-nav">
+            {primaryItems.map((item) => {
+              const Icon = getNavIcon(item.label);
 
-        <div className="mt-6 space-y-2">
-          {navItems.map((item) => (
-            item.current ? (
-              <div
-                key={item.href}
-                className="block rounded-2xl border border-transparent bg-[color:var(--color-accent)] px-4 py-3 text-white"
-              >
-                <p className="text-sm font-semibold">{item.label}</p>
-                <p className="mt-1 text-xs text-white/80">
-                  {item.description}
-                </p>
-              </div>
-            ) : (
-              <LoadingLink
-                key={item.href}
-                href={item.href}
-                pendingLabel="Abriendo..."
-                className="block rounded-2xl border border-[color:var(--color-border)] bg-white/55 px-4 py-3 transition hover:bg-white/90 hover:shadow-[0_10px_24px_rgba(31,29,26,0.06)]"
-              >
-                <span className="block">
-                  <span className="text-sm font-semibold">{item.label}</span>
-                  <span className="mt-1 block text-xs text-[color:var(--color-muted)]">
-                    {item.description}
+              if (item.current) {
+                return (
+                  <div
+                    key={item.href}
+                    className="app-nav-item"
+                    data-current="true"
+                  >
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                      <Icon className="h-[14px] w-[14px]" />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                );
+              }
+
+              return (
+                <LoadingLink
+                  key={item.href}
+                  href={item.href}
+                  pendingLabel="Abriendo..."
+                  className="app-nav-item"
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    <Icon className="h-[14px] w-[14px]" />
                   </span>
-                </span>
-              </LoadingLink>
-            )
-          ))}
-        </div>
+                  <span className="truncate">{item.label}</span>
+                </LoadingLink>
+              );
+            })}
+            <div className="app-sidebar-divider" />
+            <div className="app-nav-item opacity-95" data-current="false">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                <ExportIcon className="h-[14px] w-[14px]" />
+              </span>
+              <span className="truncate text-white">Exportar</span>
+            </div>
+          </nav>
 
-        <div className="mt-6 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm leading-7 text-[color:var(--color-muted)]">
-          Todo el contenido privado se resuelve desde SSR con contexto de organizacion
-          real. La UI puede crecer despues sin aflojar tenant isolation.
+          <div className="app-sidebar-footer">
+            <span className="app-sidebar-footer-link">
+              <UtilityIcon className="h-[12px] w-[12px]" />
+              Tablero de ventas
+            </span>
+            <span className="app-sidebar-footer-link">
+              <UtilityIcon className="h-[12px] w-[12px]" />
+              Pendientes visibles
+            </span>
+            <span className="app-sidebar-footer-link">
+              <UtilityIcon className="h-[12px] w-[12px]" />
+              Procesamiento impositivo
+            </span>
+            {settingsItem ? (
+              settingsItem.current ? (
+                <span className="app-sidebar-footer-link pt-2 text-white">
+                  <SettingsIcon className="h-[12px] w-[12px]" />
+                  Configuracion
+                </span>
+              ) : (
+                <LoadingLink
+                  href={settingsItem.href}
+                  pendingLabel="Abriendo..."
+                  className="app-sidebar-footer-link pt-2"
+                >
+                  <SettingsIcon className="h-[12px] w-[12px]" />
+                  Configuracion
+                </LoadingLink>
+              )
+            ) : null}
+          </div>
         </div>
       </aside>
 
-      <main className="space-y-6 pt-1">
-        <div className="flex justify-end">
-          <AccountMenu
-            organizationName={organizationName}
-            userEmail={userEmail}
-          />
+      <main className="app-main" title={description}>
+        <div className="app-topbar">
+          <div className="app-topbar__section">
+            <span className="flex h-4 w-4 items-center justify-center text-[color:var(--color-muted)]">
+              <DocumentIcon className="h-[12px] w-[12px]" />
+            </span>
+            <span className="truncate">{sectionLabel}</span>
+            <CaretIcon className="h-[11px] w-[11px] text-[color:var(--color-muted)]" />
+          </div>
+
+          <div className="app-topbar__actions">
+            <span
+              className="app-topbar__badge"
+              title={`/app/o/${organizationSlug} | Rol ${userRole}`}
+            >
+              {organizationName}
+            </span>
+            <button type="button" className="app-topbar__icon" aria-label="Buscar">
+              <SearchIcon className="h-[12px] w-[12px]" />
+            </button>
+            <AccountMenu
+              organizationName={organizationName}
+              userEmail={userEmail}
+            />
+          </div>
         </div>
 
-        <header className="px-1">
-          <h1 className="text-4xl font-semibold tracking-[-0.06em]">
-            {title}
-          </h1>
-          <p className="mt-3 max-w-3xl text-base leading-8 text-[color:var(--color-muted)]">
-            {description}
-          </p>
-        </header>
-
-        {children}
+        <div className="app-content">{children}</div>
       </main>
     </div>
   );

@@ -241,10 +241,10 @@ export function DocumentUploadDropzone({
   return (
     <div
       id={panelId}
-      className={`rounded-[1.5rem] border p-6 transition ${
+      className={`rounded-[1.25rem] border p-5 transition ${
         isDragging
-          ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]/70"
-          : "border-dashed border-[color:var(--color-border)] bg-white/58"
+          ? "border-[color:var(--color-accent-strong)] bg-[rgba(86,134,255,0.14)]"
+          : "border-dashed border-[color:var(--color-border)] bg-[rgba(16,27,55,0.48)]"
       }`}
       onDragOver={(event) => {
         event.preventDefault();
@@ -266,8 +266,8 @@ export function DocumentUploadDropzone({
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-3">
-          <p className="text-sm font-semibold">Subir documento</p>
-          <p className="max-w-2xl text-sm leading-7 text-[color:var(--color-muted)]">
+          <p className="text-[16px] font-semibold text-white">Cargar documento</p>
+          <p className="max-w-2xl text-[16px] leading-8 text-[color:var(--color-muted)]">
             Arrastra un PDF, JPG o PNG o usa el boton para cargarlo directo al
             bucket privado. La metadata se crea primero, el procesamiento se
             encola en background y el dashboard se refresca al llegar a un
@@ -286,13 +286,13 @@ export function DocumentUploadDropzone({
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
           MIME: PDF, JPG, PNG
         </div>
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
           Limite: {formatUploadSize(maxDocumentUploadBytes)}
         </div>
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
           Bucket: {documentsStorageBucket}
         </div>
       </div>
@@ -318,12 +318,12 @@ export function DocumentUploadDropzone({
       <div aria-live="polite" className="mt-4 min-h-6">
         {message ? (
           <div
-            className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${
+            className={`rounded-[1rem] border px-4 py-3 text-[16px] leading-7 ${
               status === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                 : status === "error"
                   ? "border-amber-200 bg-amber-50 text-amber-950"
-                  : "border-[color:var(--color-border)] bg-white/80 text-[color:var(--color-muted)]"
+                  : "border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] text-[color:var(--color-muted)]"
             }`}
           >
             {message}

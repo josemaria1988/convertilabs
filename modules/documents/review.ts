@@ -194,6 +194,9 @@ export type DocumentWorkspaceListItem = {
   documentType: string | null;
   createdAt: string;
   documentDate: string | null;
+  counterpartyName: string | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
   hasProcessedDraft: boolean;
 };
 
@@ -956,8 +959,46 @@ export async function listOrganizationWorkspaceDocuments(input: {
   }
 
   const rows = ((data as DocumentListRow[] | null) ?? []);
+  const draftIds = rows
+    .map((row) => row.current_draft_id)
+    .filter((value): value is string => typeof value === "string");
+  const draftFactsById = new Map<string, DocumentIntakeFactMap>();
+
+  if (draftIds.length > 0) {
+    const { data: draftRows, error: draftError } = await supabase
+      .from("document_drafts")
+      .select("id, fields_json")
+      .in("id", draftIds);
+
+    if (draftError) {
+      throw new Error(draftError.message);
+    }
+
+    for (const row of ((draftRows as Array<{
+      id: string;
+      fields_json: JsonRecord | null;
+    }> | null) ?? [])) {
+      draftFactsById.set(row.id, parseDraftFacts(row.fields_json));
+    }
+  }
 
   return Promise.all(rows.map(async (row) => ({
+    ...(() => {
+      const facts = row.current_draft_id
+        ? draftFactsById.get(row.current_draft_id) ?? null
+        : null;
+      const counterpartyName = row.direction === "purchase"
+        ? facts?.issuer_name ?? null
+        : row.direction === "sale"
+          ? facts?.receiver_name ?? null
+          : facts?.issuer_name ?? facts?.receiver_name ?? null;
+
+      return {
+        counterpartyName,
+        taxAmount: facts?.tax_amount ?? null,
+        totalAmount: facts?.total_amount ?? null,
+      };
+    })(),
     id: row.id,
     processedHref: row.current_draft_id
       ? `/app/o/${input.organizationSlug}/documents/${row.id}`

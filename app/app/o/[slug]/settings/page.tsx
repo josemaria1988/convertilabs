@@ -24,7 +24,7 @@ type OrganizationSettingsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Settings",
+  title: "Configuracion",
 };
 
 export default async function OrganizationSettingsPage({
@@ -41,10 +41,45 @@ export default async function OrganizationSettingsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Settings"
+      title="Configuracion"
       description="Perfil versionado del tenant, snapshots de reglas por organizacion y advertencia explicita de que los drafts viejos quedan congelados con la configuracion previa."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article className="metric-card">
+          <span className="metric-card__label">Perfil activo</span>
+          <span className="metric-card__value">
+            v{settings.activeProfile?.version_number ?? 0}
+          </span>
+          <p className="metric-card__hint">
+            {settings.activeProfile?.status ?? "Sin version activa"}
+          </p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Snapshot</span>
+          <span className="metric-card__value">
+            v{settings.activeRuleSnapshot?.version_number ?? 0}
+          </span>
+          <p className="metric-card__hint">
+            {settings.activeRuleSnapshot?.status ?? "Pendiente de materializacion"}
+          </p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Regimen IVA</span>
+          <span className="metric-card__value text-2xl">
+            {settings.organization.vatRegime ?? "N/D"}
+          </span>
+          <p className="metric-card__hint">Se usa para gating fiscal del MVP.</p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Historial</span>
+          <span className="metric-card__value">
+            {settings.profileHistory.length}
+          </span>
+          <p className="metric-card__hint">Versiones persistidas del perfil fiscal.</p>
+        </article>
+      </section>
+
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <SectionCard
           title="Perfil activo"
@@ -168,7 +203,7 @@ export default async function OrganizationSettingsPage({
               <textarea
                 name="changeReason"
                 rows={3}
-                defaultValue="Actualizacion de perfil fiscal desde settings."
+                defaultValue="Actualizacion de perfil fiscal desde configuracion."
                 className="w-full rounded-3xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
               />
             </label>

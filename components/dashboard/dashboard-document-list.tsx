@@ -1,7 +1,9 @@
+import Link from "next/link";
 import type { DashboardDocument } from "@/modules/documents/dashboard";
 
 type DashboardDocumentListProps = {
   documents: DashboardDocument[];
+  organizationSlug?: string;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("es-UY", {
@@ -14,60 +16,70 @@ function formatStatusLabel(status: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function getStatusClasses(status: string) {
+function getStatusVariant(status: string) {
   switch (status) {
-    case "uploading":
-    case "queued":
-    case "extracting":
-      return "bg-sky-100 text-sky-900";
-    case "draft_ready":
-      return "bg-indigo-100 text-indigo-900";
     case "approved":
-      return "bg-emerald-100 text-emerald-900";
-    case "needs_review":
     case "classified":
+      return "status-pill status-pill--success";
+    case "needs_review":
     case "classified_with_open_revision":
-      return "bg-amber-100 text-amber-900";
-    case "rejected":
+    case "draft_ready":
+      return "status-pill status-pill--warning";
     case "error":
-      return "bg-rose-100 text-rose-900";
+    case "rejected":
+      return "status-pill status-pill--danger";
     default:
-      return "bg-slate-100 text-slate-900";
+      return "status-pill status-pill--info";
   }
 }
 
 export function DashboardDocumentList({
   documents,
+  organizationSlug,
 }: DashboardDocumentListProps) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full border-separate border-spacing-y-3">
+      <table className="data-table min-w-[760px]">
         <thead>
-          <tr className="text-left text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-            <th className="pb-1 pr-4 font-medium">Archivo</th>
-            <th className="pb-1 pr-4 font-medium">Estado</th>
-            <th className="pb-1 pr-4 font-medium">Subido</th>
-            <th className="pb-1 font-medium">Usuario</th>
+          <tr>
+            <th>Documento</th>
+            <th>Estado</th>
+            <th>Subido</th>
+            <th>Usuario</th>
+            <th>Accion</th>
           </tr>
         </thead>
         <tbody>
           {documents.map((document) => (
-            <tr key={document.id} className="align-top">
-              <td className="rounded-l-2xl border border-r-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm font-medium">
-                {document.originalFilename}
+            <tr key={document.id}>
+              <td>
+                <div className="font-semibold text-white">{document.originalFilename}</div>
+                <div className="mt-1 text-xs text-[color:var(--color-muted)]">
+                  Pipeline documental privado
+                </div>
               </td>
-              <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm">
-                <span
-                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusClasses(document.status)}`}
-                >
+              <td>
+                <span className={getStatusVariant(document.status)}>
                   {formatStatusLabel(document.status)}
                 </span>
               </td>
-              <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm text-[color:var(--color-muted)]">
+              <td className="text-[color:var(--color-muted)]">
                 {dateFormatter.format(new Date(document.createdAt))}
               </td>
-              <td className="rounded-r-2xl border border-l-0 border-[color:var(--color-border)] bg-white/70 px-4 py-4 text-sm text-[color:var(--color-muted)]">
+              <td className="text-[color:var(--color-muted)]">
                 {document.uploadedByDisplay}
+              </td>
+              <td>
+                {organizationSlug ? (
+                  <Link
+                    href={`/app/o/${organizationSlug}/documents/${document.id}`}
+                    className="inline-flex rounded-[0.85rem] border border-[color:var(--color-border)] bg-[rgba(24,39,77,0.92)] px-3 py-2 text-xs font-semibold text-white transition hover:border-[rgba(124,157,255,0.22)] hover:bg-[rgba(30,47,91,0.96)]"
+                  >
+                    Abrir
+                  </Link>
+                ) : (
+                  <span className="text-xs text-[color:var(--color-muted)]">Solo lectura</span>
+                )}
               </td>
             </tr>
           ))}

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { IBM_Plex_Mono, Outfit } from "next/font/google";
 import "../styles/globals.css";
 import { siteConfig } from "@/lib/site";
 
-const display = Space_Grotesk({
+const display = Outfit({
   variable: "--font-display",
   subsets: ["latin"],
 });
@@ -31,7 +31,6 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${display.variable} ${mono.variable} antialiased`}>
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(15,118,110,0.18),transparent_30%),radial-gradient(circle_at_top_right,rgba(217,119,6,0.12),transparent_25%)]" />
         {children}
       </body>
     </html>

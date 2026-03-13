@@ -34,7 +34,7 @@ export function DocumentPreview({
       <iframe
         src={pdfSrc ?? undefined}
         className={`w-full rounded-3xl border border-[color:var(--color-border)] bg-white ${
-          isModal ? "h-full" : "h-[620px]"
+          isModal ? "h-full" : "h-[420px]"
         }`}
         title="Preview del documento"
       />
@@ -52,7 +52,7 @@ export function DocumentPreview({
         src={previewUrl}
         alt={originalFilename}
         className={`w-full object-contain ${
-          isModal ? "h-full" : "max-h-[620px] rounded-3xl"
+          isModal ? "h-full" : "max-h-[420px] rounded-3xl"
         }`}
       />
     </div>

@@ -53,7 +53,7 @@ export function DocumentUploadButton({
         }}
         className={
           className
-          ?? `${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`
+          ?? `${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-[14px]`
         }
       >
         {isLoading ? <InlineSpinner /> : null}

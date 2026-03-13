@@ -1,15 +1,21 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { MarketingFooter } from "@/components/marketing-footer";
 import { MarketingHeader } from "@/components/marketing-header";
 
 export default function MarketingLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
+  const pathname = usePathname();
+  const hideChrome = pathname === "/signup";
+
   return (
     <div className="min-h-screen">
-      <MarketingHeader />
+      {!hideChrome ? <MarketingHeader /> : null}
       <main>{children}</main>
-      <MarketingFooter />
+      {!hideChrome ? <MarketingFooter /> : null}
     </div>
   );
 }
