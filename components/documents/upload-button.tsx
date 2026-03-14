@@ -12,8 +12,9 @@ type DocumentUploadButtonProps = {
   accept: string;
   disabled?: boolean;
   isLoading?: boolean;
+  multiple?: boolean;
   className?: string;
-  onFileSelected: (file: File) => void;
+  onFilesSelected: (files: File[]) => void;
 };
 
 export function DocumentUploadButton({
@@ -21,8 +22,9 @@ export function DocumentUploadButton({
   accept,
   disabled,
   isLoading,
+  multiple = true,
   className,
-  onFileSelected,
+  onFilesSelected,
 }: DocumentUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputId = useId();
@@ -34,12 +36,13 @@ export function DocumentUploadButton({
         ref={inputRef}
         type="file"
         accept={accept}
+        multiple={multiple}
         className="hidden"
         onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
+          const files = Array.from(event.currentTarget.files ?? []);
 
-          if (file) {
-            onFileSelected(file);
+          if (files.length > 0) {
+            onFilesSelected(files);
           }
 
           event.currentTarget.value = "";

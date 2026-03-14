@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { getOpenAIModelConfig } from "@/lib/env";
 import {
   createStructuredOpenAIResponse,
 } from "@/lib/llm/openai-responses";
@@ -174,6 +175,8 @@ function validateAssistantOutput(
 }
 
 function toFailedResult(message: string) {
+  const { openAiAccountingModel } = getOpenAIModelConfig();
+
   return {
     status: "failed",
     shouldBlockConfirmation: true,
@@ -181,7 +184,7 @@ function toFailedResult(message: string) {
     rationale: message,
     output: null,
     providerCode: "openai",
-    modelCode: process.env.OPENAI_ACCOUNTING_MODEL ?? process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
+    modelCode: openAiAccountingModel,
     promptHash: null,
     latencyMs: null,
     requestPayload: {},
@@ -220,7 +223,8 @@ export async function resolveAccountingAssistantSuggestion(
 
   const systemPrompt = buildSystemPrompt(input);
   const userPrompt = buildUserPrompt(input);
-  const modelCode = process.env.OPENAI_ACCOUNTING_MODEL ?? process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini";
+  const { openAiAccountingModel } = getOpenAIModelConfig();
+  const modelCode = openAiAccountingModel;
   const promptHash = buildPromptHash({
     systemPrompt,
     userPrompt,

@@ -138,6 +138,7 @@ create table if not exists public.document_drafts (
   document_role public.document_direction not null default 'other',
   document_type text,
   operation_context_json jsonb not null default '{}'::jsonb,
+  intake_context_json jsonb not null default '{}'::jsonb,
   fields_json jsonb not null default '{}'::jsonb,
   extracted_text text,
   warnings_json jsonb not null default '[]'::jsonb,

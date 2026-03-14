@@ -5,6 +5,12 @@ import { DocumentOriginalModalTrigger } from "@/components/documents/document-or
 import { DocumentUploadDropzone } from "@/components/documents/upload-dropzone";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationWorkspaceDocuments } from "@/modules/documents/review";
+import {
+  formatDocumentStatusLabel,
+  getDocumentRoleLabel,
+  getDocumentRoleVariant,
+  getDocumentStatusVariant,
+} from "@/modules/documents/status";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 
 type OrganizationDocumentsPageProps = {
@@ -16,51 +22,6 @@ type OrganizationDocumentsPageProps = {
 export const metadata: Metadata = {
   title: "Documentos",
 };
-
-function formatStatus(status: string) {
-  const normalized = status.replace(/_/g, " ");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function getStatusVariant(status: string) {
-  if (["classified", "approved"].includes(status)) {
-    return "status-pill status-pill--success";
-  }
-
-  if (["needs_review", "draft_ready", "classified_with_open_revision"].includes(status)) {
-    return "status-pill status-pill--warning";
-  }
-
-  if (["error", "rejected"].includes(status)) {
-    return "status-pill status-pill--danger";
-  }
-
-  return "status-pill status-pill--info";
-}
-
-function getRoleVariant(role: string) {
-  if (role === "purchase") {
-    return "status-pill status-pill--success";
-  }
-
-  if (role === "sale") {
-    return "status-pill status-pill--info";
-  }
-
-  return "status-pill status-pill--warning";
-}
-
-function getRoleLabel(role: string) {
-  if (role === "purchase") {
-    return "Compra";
-  }
-
-  if (role === "sale") {
-    return "Venta";
-  }
-
-  return "Otro";
-}
 
 function formatAmount(value: number | null) {
   if (typeof value !== "number") {
@@ -170,13 +131,13 @@ export default async function OrganizationDocumentsPage({
                         </div>
                       </td>
                       <td>
-                        <span className={getStatusVariant(document.status)}>
-                          {formatStatus(document.status)}
+                        <span className={getDocumentStatusVariant(document.status)}>
+                          {formatDocumentStatusLabel(document.status)}
                         </span>
                       </td>
                       <td>
-                        <span className={getRoleVariant(document.role)}>
-                          {getRoleLabel(document.role)}
+                        <span className={getDocumentRoleVariant(document.role)}>
+                          {getDocumentRoleLabel(document.role)}
                         </span>
                       </td>
                       <td className="text-right">

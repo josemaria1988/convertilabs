@@ -1,7 +1,7 @@
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
-  direction public.document_direction not null default 'purchase',
+  direction public.document_direction not null default 'unknown',
   document_type text,
   status public.document_status not null default 'uploaded',
   storage_bucket text not null default 'documents-private',
@@ -194,7 +194,7 @@ create or replace function public.prepare_document_upload(
   p_original_filename text,
   p_mime_type text,
   p_file_size bigint,
-  p_direction public.document_direction default 'purchase'
+  p_direction public.document_direction default 'unknown'
 )
 returns table (
   document_id uuid,
@@ -258,7 +258,7 @@ begin
   values (
     v_document_id,
     p_org_id,
-    p_direction,
+    coalesce(p_direction, 'unknown'::public.document_direction),
     'uploading'::public.document_status,
     'documents-private',
     v_storage_path,

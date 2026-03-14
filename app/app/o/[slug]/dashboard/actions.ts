@@ -80,7 +80,7 @@ export async function prepareDashboardDocumentUpload(
       p_original_filename: input.originalFilename,
       p_mime_type: input.mimeType,
       p_file_size: input.fileSize,
-      p_direction: "purchase",
+      p_direction: "unknown",
     })
     .single();
 

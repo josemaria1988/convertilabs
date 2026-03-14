@@ -2,6 +2,7 @@ export * from "@/modules/accounting/assistant";
 export * from "@/modules/accounting/concept-resolution";
 export * from "@/modules/accounting/invoice-identity";
 export * from "@/modules/accounting/normalization";
+export * from "@/modules/accounting/organization-identity";
 export * from "@/modules/accounting/repository";
 export * from "@/modules/accounting/rule-engine";
 export * from "@/modules/accounting/runtime";

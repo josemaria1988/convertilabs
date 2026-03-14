@@ -1,5 +1,9 @@
 import Link from "next/link";
 import type { DashboardDocument } from "@/modules/documents/dashboard";
+import {
+  formatDocumentStatusLabel,
+  getDocumentStatusVariant,
+} from "@/modules/documents/status";
 
 type DashboardDocumentListProps = {
   documents: DashboardDocument[];
@@ -10,28 +14,6 @@ const dateFormatter = new Intl.DateTimeFormat("es-UY", {
   dateStyle: "medium",
   timeStyle: "short",
 });
-
-function formatStatusLabel(status: string) {
-  const normalized = status.replace(/_/g, " ");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function getStatusVariant(status: string) {
-  switch (status) {
-    case "approved":
-    case "classified":
-      return "status-pill status-pill--success";
-    case "needs_review":
-    case "classified_with_open_revision":
-    case "draft_ready":
-      return "status-pill status-pill--warning";
-    case "error":
-    case "rejected":
-      return "status-pill status-pill--danger";
-    default:
-      return "status-pill status-pill--info";
-  }
-}
 
 export function DashboardDocumentList({
   documents,
@@ -59,8 +41,8 @@ export function DashboardDocumentList({
                 </div>
               </td>
               <td>
-                <span className={getStatusVariant(document.status)}>
-                  {formatStatusLabel(document.status)}
+                <span className={getDocumentStatusVariant(document.status)}>
+                  {formatDocumentStatusLabel(document.status)}
                 </span>
               </td>
               <td className="text-[color:var(--color-muted)]">

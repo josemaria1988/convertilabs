@@ -1,7 +1,10 @@
 import "server-only";
 
 import { createHash } from "crypto";
-import { getInngestConfigStatus } from "@/lib/env";
+import {
+  getInngestConfigStatus,
+  getOpenAIModelConfig,
+} from "@/lib/env";
 import { inngest } from "@/lib/inngest/client";
 import {
   createBackgroundStructuredOpenAIResponse,
@@ -23,16 +26,23 @@ import {
   asRecord,
   asString,
   buildPersistableConceptLines,
+  buildOrganizationIdentityPromptContext,
   buildDraftStepSnapshots,
   buildDraftFieldsPayload,
   buildInvoiceIdentityResult,
   deriveDocumentAccountingState,
   findDuplicateInvoiceIdentityDocumentId,
+  loadOrganizationIdentityProfile,
   loadDocumentInvoiceIdentity,
+  matchOrganizationIdentity,
+  normalizeCurrencyCode,
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
   upsertDocumentLineItems,
+  normalizeTaxId,
+  normalizeTextToken,
 } from "@/modules/accounting";
+import { documentTerminalStatuses } from "@/modules/documents/status";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type DocumentProcessingTrigger =
@@ -165,16 +175,11 @@ const OPENAI_DOCUMENT_TRANSPORT_MODE = "file_id";
 const OPENAI_DOCUMENT_STORE_REMOTE = true;
 const OPENAI_POLL_INTERVAL = "10s";
 const OPENAI_MAX_POLL_ATTEMPTS = 60;
-const TERMINAL_DOCUMENT_STATUSES = new Set([
-  "draft_ready",
-  "needs_review",
-  "approved",
-  "rejected",
-  "duplicate",
-  "archived",
-  "error",
-]);
 const TERMINAL_RUN_STATUSES = new Set(["completed", "error", "skipped"]);
+
+function getDocumentModelCode() {
+  return getOpenAIModelConfig().openAiDocumentModel;
+}
 
 function buildSystemPrompt(ruleSnapshot: {
   prompt_summary: string;
@@ -183,6 +188,7 @@ function buildSystemPrompt(ruleSnapshot: {
     "You are the Convertilabs document intake model for Uruguay.",
     "Extract structured facts from a single business document.",
     "Use only the organization profile and summarized rules provided below.",
+    "Treat organization identity as first-class evidence before suggesting the transaction family.",
     "Do not invent legal certainty or missing amounts.",
     "If a material fact is missing or ambiguous, include a warning.",
     "Never return prose outside the JSON schema.",
@@ -195,12 +201,17 @@ function buildSystemPrompt(ruleSnapshot: {
 function buildUserPrompt(input: {
   originalFilename: string;
   mimeType: string | null;
+  organizationIdentityContext: string;
 }) {
   return [
     `Analyze the attached file: ${input.originalFilename}.`,
     `MIME type: ${input.mimeType ?? "unknown"}.`,
     "Classify it as purchase, sale, or other.",
+    "Return both transaction_family_candidate/document_subtype_candidate and their legacy aliases document_role_candidate/document_type_candidate with the same value.",
+    "Use line_items as the preferred structured signal when the document supports it.",
     "Extract core fields, totals, tax hints, line items, and the closest V1 category candidate.",
+    "Organization identity context:",
+    input.organizationIdentityContext,
     "If the document is not clear enough, lower confidence and add warnings.",
   ].join(" ");
 }
@@ -215,6 +226,18 @@ function normalizeCurrencyAmount(value: number | null) {
   }
 
   return Math.round(value * 100) / 100;
+}
+
+function clampConfidence(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, value));
+}
+
+function dedupeWarnings(warnings: string[]) {
+  return Array.from(new Set(warnings.filter((warning) => warning.trim())));
 }
 
 function mergeRecords(
@@ -277,7 +300,105 @@ function collectValidationWarnings(
     );
   }
 
-  return warnings;
+  return dedupeWarnings(warnings);
+}
+
+function buildNormalizedFactCandidateValue(fieldName: string, fieldValue: unknown) {
+  if (fieldName === "issuer_tax_id" || fieldName === "receiver_tax_id") {
+    return {
+      value: normalizeTaxId(typeof fieldValue === "string" ? fieldValue : null),
+    };
+  }
+
+  if (fieldName === "issuer_name" || fieldName === "receiver_name") {
+    return {
+      value: normalizeTextToken(typeof fieldValue === "string" ? fieldValue : null),
+    };
+  }
+
+  if (fieldName === "currency_code") {
+    return {
+      value: normalizeCurrencyCode(typeof fieldValue === "string" ? fieldValue : null),
+    };
+  }
+
+  return {
+    value: fieldValue,
+  };
+}
+
+function harmonizeDocumentIntakeOutput(
+  output: DocumentIntakeOutput,
+  organizationIdentity: Awaited<ReturnType<typeof loadOrganizationIdentityProfile>>,
+) {
+  const issuerMatch = matchOrganizationIdentity({
+    identity: organizationIdentity,
+    partyName: output.facts.issuer_name,
+    partyTaxId: output.facts.issuer_tax_id,
+  });
+  const receiverMatch = matchOrganizationIdentity({
+    identity: organizationIdentity,
+    partyName: output.facts.receiver_name,
+    partyTaxId: output.facts.receiver_tax_id,
+  });
+  const transactionFamilyCandidate = output.transaction_family_candidate;
+  const documentSubtypeCandidate = output.document_subtype_candidate;
+  const mergedWarnings = dedupeWarnings([
+    ...output.warnings,
+    ...output.certainty_breakdown_json.warning_flags,
+  ]);
+  const certaintyBreakdown = {
+    extraction_confidence: clampConfidence(
+      output.certainty_breakdown_json.extraction_confidence ?? output.confidence_score,
+    ),
+    organization_identity_confidence: clampConfidence(
+      Math.max(
+        output.certainty_breakdown_json.organization_identity_confidence ?? 0,
+        issuerMatch.confidence,
+        receiverMatch.confidence,
+      ),
+    ),
+    line_items_confidence: clampConfidence(
+      output.certainty_breakdown_json.line_items_confidence
+      ?? (output.line_items.length > 0
+        ? 0.9
+        : output.amount_breakdown.length > 0
+          ? 0.45
+          : 0.1),
+    ),
+    warning_count: mergedWarnings.length,
+    warning_flags: mergedWarnings,
+  };
+
+  return {
+    ...output,
+    transaction_family_candidate: transactionFamilyCandidate,
+    document_subtype_candidate: documentSubtypeCandidate,
+    issuer_matches_organization: {
+      ...output.issuer_matches_organization,
+      status: issuerMatch.status,
+      strategy: issuerMatch.strategy,
+      matched_alias: issuerMatch.matchedAlias,
+      normalized_tax_id: issuerMatch.normalizedTaxId,
+      normalized_name: issuerMatch.normalizedName,
+      confidence: issuerMatch.confidence,
+      evidence: issuerMatch.evidence,
+    },
+    receiver_matches_organization: {
+      ...output.receiver_matches_organization,
+      status: receiverMatch.status,
+      strategy: receiverMatch.strategy,
+      matched_alias: receiverMatch.matchedAlias,
+      normalized_tax_id: receiverMatch.normalizedTaxId,
+      normalized_name: receiverMatch.normalizedName,
+      confidence: receiverMatch.confidence,
+      evidence: receiverMatch.evidence,
+    },
+    certainty_breakdown_json: certaintyBreakdown,
+    document_role_candidate: transactionFamilyCandidate,
+    document_type_candidate: documentSubtypeCandidate,
+    warnings: mergedWarnings,
+  } satisfies DocumentIntakeOutput;
 }
 
 function getDeterministicRuleRefs(ruleSnapshot: {
@@ -481,7 +602,7 @@ async function createProcessingRun(input: {
       run_number: input.runNumber,
       status: "queued",
       provider_code: "openai",
-      model_code: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
+      model_code: getDocumentModelCode(),
       triggered_by: input.triggeredBy,
       requested_by: input.requestedBy,
       organization_rule_snapshot_id: input.ruleSnapshotId,
@@ -668,6 +789,7 @@ async function persistDocumentArtifacts(input: {
     deterministic_rule_refs_json: unknown;
   };
   requestedBy: string | null;
+  organizationIdentity: Awaited<ReturnType<typeof loadOrganizationIdentityProfile>>;
   openAiFileId: string;
   providerResponseId: string | null;
   providerStatus: string | null;
@@ -676,6 +798,7 @@ async function persistDocumentArtifacts(input: {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  estimatedCostUsd: number | null;
   latencyMs: number;
   lastPolledAt: string | null;
   attemptCount: number | null;
@@ -715,7 +838,7 @@ async function persistDocumentArtifacts(input: {
     .insert({
       document_id: input.document.id,
       version_no: input.runNumber,
-      provider: `openai:${process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini"}`,
+      provider: `openai:${getDocumentModelCode()}`,
       raw_text: input.structuredOutput.extracted_text,
       extracted_json: input.structuredOutput,
       confidence: input.structuredOutput.confidence_score,
@@ -739,9 +862,7 @@ async function persistDocumentArtifacts(input: {
       field_value_json: {
         value: fieldValue,
       },
-      normalized_value_json: {
-        value: fieldValue,
-      },
+      normalized_value_json: buildNormalizedFactCandidateValue(fieldName, fieldValue),
       extraction_method: "openai_structured_response",
       confidence: input.structuredOutput.confidence_score,
     }),
@@ -763,8 +884,8 @@ async function persistDocumentArtifacts(input: {
       document_id: input.document.id,
       processing_run_id: input.runId,
       candidate_type: "document_role",
-      candidate_role: input.structuredOutput.document_role_candidate,
-      candidate_code: input.structuredOutput.document_role_candidate,
+      candidate_role: input.structuredOutput.transaction_family_candidate,
+      candidate_code: input.structuredOutput.transaction_family_candidate,
       explanation: input.structuredOutput.explanations.classification,
       confidence: input.structuredOutput.confidence_score,
       rank_order: 1,
@@ -774,8 +895,8 @@ async function persistDocumentArtifacts(input: {
       document_id: input.document.id,
       processing_run_id: input.runId,
       candidate_type: "document_type",
-      candidate_role: input.structuredOutput.document_role_candidate,
-      candidate_code: input.structuredOutput.document_type_candidate,
+      candidate_role: input.structuredOutput.transaction_family_candidate,
+      candidate_code: input.structuredOutput.document_subtype_candidate,
       explanation: input.structuredOutput.explanations.classification,
       confidence: input.structuredOutput.confidence_score,
       rank_order: 1,
@@ -788,7 +909,7 @@ async function persistDocumentArtifacts(input: {
       document_id: input.document.id,
       processing_run_id: input.runId,
       candidate_type: "operation_category",
-      candidate_role: input.structuredOutput.document_role_candidate,
+      candidate_role: input.structuredOutput.transaction_family_candidate,
       candidate_code: input.structuredOutput.operation_category_candidate,
       explanation: input.structuredOutput.explanations.facts,
       confidence: input.structuredOutput.confidence_score,
@@ -815,10 +936,28 @@ async function persistDocumentArtifacts(input: {
       organization_rule_snapshot_id: input.ruleSnapshotId,
       revision_number: draftRevisionNumber,
       status: "open",
-      document_role: input.structuredOutput.document_role_candidate,
-      document_type: input.structuredOutput.document_type_candidate,
+      document_role: input.structuredOutput.transaction_family_candidate,
+      document_type: input.structuredOutput.document_subtype_candidate,
       operation_context_json: {
         operation_category_candidate: input.structuredOutput.operation_category_candidate,
+      },
+      intake_context_json: {
+        organization_identity: {
+          legal_name: input.organizationIdentity.legalName,
+          tax_id: input.organizationIdentity.taxId,
+          tax_id_normalized: input.organizationIdentity.taxIdNormalized,
+          aliases: input.organizationIdentity.aliases.map((alias) => ({
+            alias_type: alias.aliasType,
+            alias_value: alias.value,
+            normalized_value: alias.normalizedValue,
+            source: alias.source,
+          })),
+        },
+        transaction_family_candidate: input.structuredOutput.transaction_family_candidate,
+        document_subtype_candidate: input.structuredOutput.document_subtype_candidate,
+        issuer_matches_organization: input.structuredOutput.issuer_matches_organization,
+        receiver_matches_organization: input.structuredOutput.receiver_matches_organization,
+        certainty_breakdown: input.structuredOutput.certainty_breakdown_json,
       },
       fields_json: {
         ...buildDraftFieldsPayload({
@@ -850,8 +989,8 @@ async function persistDocumentArtifacts(input: {
     documentId: input.document.id,
     draftId: draft.id,
     actorId: input.requestedBy,
-    documentRole: input.structuredOutput.document_role_candidate,
-    documentType: input.structuredOutput.document_type_candidate,
+    documentRole: input.structuredOutput.transaction_family_candidate,
+    documentType: input.structuredOutput.document_subtype_candidate,
     facts: input.structuredOutput.facts,
     amountBreakdown: input.structuredOutput.amount_breakdown,
     lineItems: input.structuredOutput.line_items,
@@ -914,8 +1053,8 @@ async function persistDocumentArtifacts(input: {
   }
   const savedAt = new Date().toISOString();
   const stepRows = buildDraftStepSnapshots({
-    documentRole: input.structuredOutput.document_role_candidate,
-    documentType: input.structuredOutput.document_type_candidate,
+    documentRole: input.structuredOutput.transaction_family_candidate,
+    documentType: input.structuredOutput.document_subtype_candidate,
     operationCategory: input.structuredOutput.operation_category_candidate,
     facts: input.structuredOutput.facts,
     amountBreakdown: input.structuredOutput.amount_breakdown,
@@ -964,8 +1103,8 @@ async function persistDocumentArtifacts(input: {
   const { error: documentUpdateError } = await supabase
     .from("documents")
     .update({
-      direction: input.structuredOutput.document_role_candidate,
-      document_type: input.structuredOutput.document_type_candidate,
+      direction: input.structuredOutput.transaction_family_candidate,
+      document_type: input.structuredOutput.document_subtype_candidate,
       status: documentStatus,
       current_draft_id: draft.id,
       current_processing_run_id: input.runId,
@@ -976,12 +1115,18 @@ async function persistDocumentArtifacts(input: {
         duplicate_document_ids: input.duplicateDocumentIds,
         duplicate_status: invoiceIdentity.duplicateStatus,
         duplicate_reason: invoiceIdentity.duplicateReason,
-        processing_model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
+        processing_model: getDocumentModelCode(),
         processing_provider: "openai",
         warning_count: warnings.length,
         line_item_count: input.structuredOutput.line_items.length,
         matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
         accounting_context_required: derived.accountingContext.status !== "not_required",
+        organization_identity_confidence:
+          input.structuredOutput.certainty_breakdown_json.organization_identity_confidence,
+        issuer_matches_organization_status:
+          input.structuredOutput.issuer_matches_organization.status,
+        receiver_matches_organization_status:
+          input.structuredOutput.receiver_matches_organization.status,
       }),
     })
     .eq("id", input.document.id);
@@ -1016,6 +1161,7 @@ async function persistDocumentArtifacts(input: {
         assistant_status: derived.assistantSuggestion.status,
         file_hash: input.fileHash,
         duplicate_document_ids: input.duplicateDocumentIds,
+        estimated_cost_usd: input.estimatedCostUsd,
       }),
     })
     .eq("id", input.runId);
@@ -1276,6 +1422,15 @@ export async function processDocumentRunFromInngest(
         });
       },
     );
+    const organizationIdentity = await input.step.run(
+      "load-organization-identity",
+      async () => {
+        return loadOrganizationIdentityProfile(
+          getSupabaseServiceRoleClient(),
+          run.organization_id,
+        );
+      },
+    );
 
     await input.step.run("mark-run-processing", async () => {
       await markRunProcessing({
@@ -1319,6 +1474,9 @@ export async function processDocumentRunFromInngest(
             userPrompt: buildUserPrompt({
               originalFilename: document!.original_filename,
               mimeType: document!.mime_type,
+              organizationIdentityContext: buildOrganizationIdentityPromptContext(
+                organizationIdentity,
+              ),
             }),
             fileInput:
               fileKind === "pdf"
@@ -1502,6 +1660,10 @@ export async function processDocumentRunFromInngest(
     );
 
     assertDocumentIntakeOutput(structuredResponse.output);
+    const organizationAwareOutput = harmonizeDocumentIntakeOutput(
+      structuredResponse.output,
+      organizationIdentity,
+    );
 
     const startedAt = run.started_at ?? run.created_at;
     const latencyMs = Math.max(0, Date.now() - new Date(startedAt).getTime());
@@ -1515,14 +1677,16 @@ export async function processDocumentRunFromInngest(
         profileVersion,
         ruleSnapshot,
         requestedBy: run!.requested_by,
+        organizationIdentity,
         openAiFileId: openAiFileId!,
         providerResponseId,
         providerStatus,
-        structuredOutput: structuredResponse.output,
+        structuredOutput: organizationAwareOutput,
         providerResponse: providerResponse!,
         inputTokens: structuredResponse.usage.inputTokens,
         outputTokens: structuredResponse.usage.outputTokens,
         totalTokens: structuredResponse.usage.totalTokens,
+        estimatedCostUsd: structuredResponse.usage.estimatedCostUsd,
         latencyMs,
         lastPolledAt,
         attemptCount,
@@ -1663,7 +1827,7 @@ export async function loadDocumentProcessingStatus(input: {
     failureMessage,
     updatedAt,
     isTerminal:
-      TERMINAL_DOCUMENT_STATUSES.has(documentData.status)
+      documentTerminalStatuses.has(documentData.status)
       || (runData?.status ? TERMINAL_RUN_STATUSES.has(runData.status) : false),
   };
 }

@@ -15,6 +15,13 @@ export type DocumentUploadCandidate = {
   size: number;
 };
 
+export type DocumentUploadBatchValidationResult = {
+  accepted: DocumentUploadCandidate[];
+  rejected: Array<DocumentUploadCandidate & {
+    message: string;
+  }>;
+};
+
 export type DocumentUploadValidationResult =
   | {
       success: true;
@@ -58,6 +65,28 @@ export function validateDocumentUploadCandidate(
   return {
     success: true,
   };
+}
+
+export function validateDocumentUploadCandidates(
+  candidates: DocumentUploadCandidate[],
+): DocumentUploadBatchValidationResult {
+  return candidates.reduce<DocumentUploadBatchValidationResult>((result, candidate) => {
+    const validation = validateDocumentUploadCandidate(candidate);
+
+    if (validation.success) {
+      result.accepted.push(candidate);
+    } else {
+      result.rejected.push({
+        ...candidate,
+        message: validation.message,
+      });
+    }
+
+    return result;
+  }, {
+    accepted: [],
+    rejected: [],
+  });
 }
 
 export function formatUploadSize(bytes: number) {

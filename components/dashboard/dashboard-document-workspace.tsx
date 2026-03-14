@@ -4,6 +4,12 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { InvoiceSheetPreview } from "@/components/dashboard/invoice-sheet-preview";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import {
+  formatDocumentStatusLabel,
+  getDocumentRoleLabel,
+  getDocumentRoleVariant,
+  getDocumentStatusVariant,
+} from "@/modules/documents/status";
 
 type DashboardDocumentWorkspaceItem = {
   id: string;
@@ -50,51 +56,6 @@ function formatAmount(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatStatusLabel(status: string) {
-  const normalized = status.replace(/_/g, " ");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function getStatusVariant(status: string) {
-  if (["classified", "approved"].includes(status)) {
-    return "status-pill status-pill--success";
-  }
-
-  if (["needs_review", "draft_ready", "classified_with_open_revision"].includes(status)) {
-    return "status-pill status-pill--warning";
-  }
-
-  if (["error", "rejected"].includes(status)) {
-    return "status-pill status-pill--danger";
-  }
-
-  return "status-pill status-pill--info";
-}
-
-function getRoleVariant(role: string) {
-  if (role === "purchase") {
-    return "status-pill status-pill--success";
-  }
-
-  if (role === "sale") {
-    return "status-pill status-pill--info";
-  }
-
-  return "status-pill status-pill--warning";
-}
-
-function getRoleLabel(role: string) {
-  if (role === "purchase") {
-    return "Compra";
-  }
-
-  if (role === "sale") {
-    return "Venta";
-  }
-
-  return "Otro";
 }
 
 export function DashboardDocumentWorkspace({
@@ -193,13 +154,13 @@ export function DashboardDocumentWorkspace({
                     <td>{document.documentType ?? "Documento fiscal"}</td>
                     <td>{document.documentDate ?? "Pendiente"}</td>
                     <td>
-                      <span className={getRoleVariant(document.role)}>
-                        {getRoleLabel(document.role)}
+                      <span className={getDocumentRoleVariant(document.role)}>
+                        {getDocumentRoleLabel(document.role)}
                       </span>
                     </td>
                     <td>
-                      <span className={getStatusVariant(document.status)}>
-                        {formatStatusLabel(document.status)}
+                      <span className={getDocumentStatusVariant(document.status)}>
+                        {formatDocumentStatusLabel(document.status)}
                       </span>
                     </td>
                     <td className="text-right">{formatAmount(document.taxAmount)}</td>
@@ -266,7 +227,9 @@ export function DashboardDocumentWorkspace({
             <div className="ui-stat-row">
               <span>Estado actual</span>
               <span className="text-white">
-                {documents.length > 0 ? formatStatusLabel(selectedDocument.status) : "Sin archivo"}
+                {documents.length > 0
+                  ? formatDocumentStatusLabel(selectedDocument.status)
+                  : "Sin archivo"}
               </span>
             </div>
             <div className="ui-stat-row">

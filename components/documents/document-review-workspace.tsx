@@ -9,6 +9,7 @@ import type {
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import type { DocumentDirection } from "@/modules/documents/status";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
@@ -72,7 +73,7 @@ type DocumentReviewWorkspaceProps = {
     document: {
       id: string;
       status: string;
-      direction: DocumentRoleCandidate;
+      direction: DocumentDirection;
       documentType: string | null;
       originalFilename: string;
       mimeType: string | null;

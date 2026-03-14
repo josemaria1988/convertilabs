@@ -8,7 +8,7 @@ create type public.member_role as enum (
   'viewer'
 );
 
-create type public.document_direction as enum ('purchase', 'sale', 'other');
+create type public.document_direction as enum ('purchase', 'sale', 'other', 'unknown');
 
 create type public.document_status as enum (
   'uploaded',

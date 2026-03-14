@@ -1,5 +1,36 @@
 export type DocumentRoleCandidate = "purchase" | "sale" | "other";
 
+export type DocumentIntakeOrganizationMatchStatus =
+  | "matched"
+  | "tentative"
+  | "not_matched"
+  | "ambiguous";
+
+export type DocumentIntakeOrganizationMatchStrategy =
+  | "tax_id"
+  | "exact_alias"
+  | "token_overlap"
+  | "none"
+  | "ambiguous";
+
+export type DocumentIntakeOrganizationMatch = {
+  status: DocumentIntakeOrganizationMatchStatus;
+  strategy: DocumentIntakeOrganizationMatchStrategy;
+  matched_alias: string | null;
+  normalized_tax_id: string | null;
+  normalized_name: string | null;
+  confidence: number;
+  evidence: string[];
+};
+
+export type DocumentIntakeCertaintyBreakdown = {
+  extraction_confidence: number;
+  organization_identity_confidence: number;
+  line_items_confidence: number;
+  warning_count: number;
+  warning_flags: string[];
+};
+
 export type DocumentIntakeFactMap = {
   issuer_name: string | null;
   issuer_tax_id: string | null;
@@ -40,6 +71,11 @@ export type DocumentIntakeOutput = {
   extracted_text: string;
   confidence_score: number;
   warnings: string[];
+  transaction_family_candidate: DocumentRoleCandidate;
+  document_subtype_candidate: string;
+  issuer_matches_organization: DocumentIntakeOrganizationMatch;
+  receiver_matches_organization: DocumentIntakeOrganizationMatch;
+  certainty_breakdown_json: DocumentIntakeCertaintyBreakdown;
   document_role_candidate: DocumentRoleCandidate;
   document_type_candidate: string;
   operation_category_candidate: string | null;
@@ -66,6 +102,83 @@ function nullableNumberSchema(description: string) {
   };
 }
 
+const organizationMatchSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "status",
+    "strategy",
+    "matched_alias",
+    "normalized_tax_id",
+    "normalized_name",
+    "confidence",
+    "evidence",
+  ],
+  properties: {
+    status: {
+      type: "string",
+      enum: ["matched", "tentative", "not_matched", "ambiguous"],
+    },
+    strategy: {
+      type: "string",
+      enum: ["tax_id", "exact_alias", "token_overlap", "none", "ambiguous"],
+    },
+    matched_alias: nullableStringSchema("Alias used when the organization identity matched."),
+    normalized_tax_id: nullableStringSchema("Normalized tax id compared against the organization."),
+    normalized_name: nullableStringSchema("Normalized party name compared against the organization."),
+    confidence: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
+    evidence: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+  },
+} as const;
+
+const certaintyBreakdownSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "extraction_confidence",
+    "organization_identity_confidence",
+    "line_items_confidence",
+    "warning_count",
+    "warning_flags",
+  ],
+  properties: {
+    extraction_confidence: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
+    organization_identity_confidence: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
+    line_items_confidence: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
+    warning_count: {
+      type: "number",
+      minimum: 0,
+    },
+    warning_flags: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+  },
+} as const;
+
 export const documentIntakeJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -73,6 +186,11 @@ export const documentIntakeJsonSchema = {
     "extracted_text",
     "confidence_score",
     "warnings",
+    "transaction_family_candidate",
+    "document_subtype_candidate",
+    "issuer_matches_organization",
+    "receiver_matches_organization",
+    "certainty_breakdown_json",
     "document_role_candidate",
     "document_type_candidate",
     "operation_category_candidate",
@@ -97,12 +215,24 @@ export const documentIntakeJsonSchema = {
         type: "string",
       },
     },
-    document_role_candidate: {
+    transaction_family_candidate: {
       type: "string",
       enum: ["purchase", "sale", "other"],
     },
+    document_subtype_candidate: {
+      type: "string",
+    },
+    issuer_matches_organization: organizationMatchSchema,
+    receiver_matches_organization: organizationMatchSchema,
+    certainty_breakdown_json: certaintyBreakdownSchema,
+    document_role_candidate: {
+      type: "string",
+      enum: ["purchase", "sale", "other"],
+      description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
+    },
     document_type_candidate: {
       type: "string",
+      description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
     },
     operation_category_candidate: nullableStringSchema(
       "Suggested purchase or sale category supported by V1.",
@@ -216,6 +346,53 @@ function isNullableNumber(value: unknown): value is number | null {
   return typeof value === "number" || value === null;
 }
 
+function isOrganizationMatch(value: unknown): value is DocumentIntakeOrganizationMatch {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const match = value as Record<string, unknown>;
+
+  return (
+    (
+      match.status === "matched"
+      || match.status === "tentative"
+      || match.status === "not_matched"
+      || match.status === "ambiguous"
+    )
+    && (
+      match.strategy === "tax_id"
+      || match.strategy === "exact_alias"
+      || match.strategy === "token_overlap"
+      || match.strategy === "none"
+      || match.strategy === "ambiguous"
+    )
+    && isNullableString(match.matched_alias)
+    && isNullableString(match.normalized_tax_id)
+    && isNullableString(match.normalized_name)
+    && typeof match.confidence === "number"
+    && Array.isArray(match.evidence)
+    && match.evidence.every((entry) => typeof entry === "string")
+  );
+}
+
+function isCertaintyBreakdown(value: unknown): value is DocumentIntakeCertaintyBreakdown {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const breakdown = value as Record<string, unknown>;
+
+  return (
+    typeof breakdown.extraction_confidence === "number"
+    && typeof breakdown.organization_identity_confidence === "number"
+    && typeof breakdown.line_items_confidence === "number"
+    && typeof breakdown.warning_count === "number"
+    && Array.isArray(breakdown.warning_flags)
+    && breakdown.warning_flags.every((entry) => typeof entry === "string")
+  );
+}
+
 function isDocumentIntakeFactMap(value: unknown): value is DocumentIntakeFactMap {
   if (!value || typeof value !== "object") {
     return false;
@@ -292,6 +469,15 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
     && typeof output.confidence_score === "number"
     && Array.isArray(output.warnings)
     && output.warnings.every((warning) => typeof warning === "string")
+    && (
+      output.transaction_family_candidate === "purchase"
+      || output.transaction_family_candidate === "sale"
+      || output.transaction_family_candidate === "other"
+    )
+    && typeof output.document_subtype_candidate === "string"
+    && isOrganizationMatch(output.issuer_matches_organization)
+    && isOrganizationMatch(output.receiver_matches_organization)
+    && isCertaintyBreakdown(output.certainty_breakdown_json)
     && (
       output.document_role_candidate === "purchase"
       || output.document_role_candidate === "sale"

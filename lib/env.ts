@@ -14,6 +14,56 @@ function parseBooleanFlag(value: string | undefined) {
   return value === "1" || value === "true";
 }
 
+function parseIntegerFlag(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseOptionalNumber(value: string | undefined) {
+  const parsed = Number.parseFloat(value ?? "");
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveOpenAIModelConfig() {
+  const openAiPrimaryModel = firstDefined(process.env.OPENAI_PRIMARY_MODEL) ?? "gpt-4o";
+  const openAiMiniModel = firstDefined(process.env.OPENAI_MINI_MODEL) ?? "gpt-4o-mini";
+  const openAiUseMiniByDefault = parseBooleanFlag(process.env.OPENAI_USE_MINI_BY_DEFAULT);
+  const openAiDefaultModel =
+    openAiUseMiniByDefault
+      ? openAiMiniModel
+      : openAiPrimaryModel;
+  const openAiDocumentModel =
+    firstDefined(process.env.OPENAI_DOCUMENT_MODEL) ?? openAiDefaultModel;
+  const openAiRulesModel =
+    firstDefined(process.env.OPENAI_RULES_MODEL) ?? openAiDocumentModel;
+  const openAiAccountingModel =
+    firstDefined(process.env.OPENAI_ACCOUNTING_MODEL) ?? openAiDocumentModel;
+  const openAiHttpMaxRetries = parseIntegerFlag(process.env.OPENAI_HTTP_MAX_RETRIES, 2);
+  const openAiHttpRetryDelayMs = parseIntegerFlag(process.env.OPENAI_HTTP_RETRY_DELAY_MS, 250);
+  const openAiUsageCostInputUsdPer1M = parseOptionalNumber(
+    process.env.OPENAI_USAGE_COST_INPUT_USD_PER_1M,
+  );
+  const openAiUsageCostOutputUsdPer1M = parseOptionalNumber(
+    process.env.OPENAI_USAGE_COST_OUTPUT_USD_PER_1M,
+  );
+
+  return {
+    openAiPrimaryModel,
+    openAiMiniModel,
+    openAiUseMiniByDefault,
+    openAiDefaultModel,
+    openAiDocumentModel,
+    openAiRulesModel,
+    openAiAccountingModel,
+    openAiHttpMaxRetries,
+    openAiHttpRetryDelayMs,
+    openAiUsageCostInputUsdPer1M,
+    openAiUsageCostOutputUsdPer1M,
+  };
+}
+
 const canonicalProductionAppUrl = "https://convertilabs.com";
 
 function isLocalhostUrl(value: string) {
@@ -118,8 +168,6 @@ export function getServerEnv() {
       process.env.SUPABASE_CONVERTILABS_SUPABASE_JWT_SECRET,
     ) ?? "";
   const openAiApiKey = process.env.OPENAI_API_KEY ?? "";
-  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini";
-  const openAiRulesModel = process.env.OPENAI_RULES_MODEL ?? openAiDocumentModel;
 
   return {
     databaseUrl: requireEnv(
@@ -133,9 +181,16 @@ export function getServerEnv() {
     ),
     supabaseJwtSecret,
     openAiApiKey,
-    openAiDocumentModel,
-    openAiRulesModel,
+    ...resolveOpenAIModelConfig(),
   };
+}
+
+export function getOpenAIModelConfig() {
+  if (typeof window !== "undefined") {
+    throw new Error("getOpenAIModelConfig can only be used on the server.");
+  }
+
+  return resolveOpenAIModelConfig();
 }
 
 export function getOpenAIEnv() {
@@ -145,11 +200,7 @@ export function getOpenAIEnv() {
 
   return {
     openAiApiKey: requireEnv("OPENAI_API_KEY", process.env.OPENAI_API_KEY),
-    openAiDocumentModel: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-4o-mini",
-    openAiRulesModel:
-      process.env.OPENAI_RULES_MODEL
-      ?? process.env.OPENAI_DOCUMENT_MODEL
-      ?? "gpt-4o-mini",
+    ...resolveOpenAIModelConfig(),
   };
 }
 
@@ -213,13 +264,24 @@ export function getSupabaseConfigStatus() {
 
 export function getOpenAIConfigStatus() {
   const openAiApiKey = process.env.OPENAI_API_KEY;
-  const openAiDocumentModel = process.env.OPENAI_DOCUMENT_MODEL;
-  const openAiRulesModel = process.env.OPENAI_RULES_MODEL;
+  const {
+    openAiDefaultModel,
+    openAiDocumentModel,
+    openAiRulesModel,
+    openAiAccountingModel,
+    openAiUseMiniByDefault,
+  } = resolveOpenAIModelConfig();
 
   return {
     configured: Boolean(openAiApiKey),
-    documentModelConfigured: Boolean(openAiDocumentModel),
-    rulesModelConfigured: Boolean(openAiRulesModel),
+    defaultModel: openAiDefaultModel,
+    documentModel: openAiDocumentModel,
+    rulesModel: openAiRulesModel,
+    accountingModel: openAiAccountingModel,
+    documentModelConfigured: Boolean(firstDefined(process.env.OPENAI_DOCUMENT_MODEL)),
+    rulesModelConfigured: Boolean(firstDefined(process.env.OPENAI_RULES_MODEL)),
+    accountingModelConfigured: Boolean(firstDefined(process.env.OPENAI_ACCOUNTING_MODEL)),
+    useMiniByDefault: openAiUseMiniByDefault,
   };
 }
 

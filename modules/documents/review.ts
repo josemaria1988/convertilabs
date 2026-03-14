@@ -40,6 +40,7 @@ import {
   type OrganizationFiscalProfile,
   type OrganizationRuleSnapshotContext,
 } from "@/modules/tax/uy-vat-engine";
+import type { DocumentDirection } from "@/modules/documents/status";
 import {
   assertVatPeriodMutableForDocument,
   rebuildMonthlyVatRunFromConfirmations,
@@ -57,7 +58,7 @@ type OrganizationMemberRole =
 type DocumentRow = {
   id: string;
   organization_id: string;
-  direction: DocumentRoleCandidate;
+  direction: DocumentDirection;
   document_type: string | null;
   status: string;
   storage_bucket: string;
@@ -169,7 +170,7 @@ type ProfileDisplayRow = {
 
 type DocumentListRow = {
   id: string;
-  direction: DocumentRoleCandidate;
+  direction: DocumentDirection;
   document_type: string | null;
   status: string;
   storage_bucket: string;
@@ -190,7 +191,7 @@ export type DocumentWorkspaceListItem = {
   mimeType: string | null;
   previewUrl: string | null;
   status: string;
-  role: DocumentRoleCandidate;
+  role: DocumentDirection;
   documentType: string | null;
   createdAt: string;
   documentDate: string | null;
@@ -203,7 +204,7 @@ export type DocumentWorkspaceListItem = {
 type DocumentViewModel = {
   id: string;
   status: string;
-  direction: DocumentRoleCandidate;
+  direction: DocumentDirection;
   documentType: string | null;
   originalFilename: string;
   mimeType: string | null;

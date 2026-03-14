@@ -21,10 +21,29 @@ type OpenAIFileInput =
       detail?: "low" | "high" | "auto";
     };
 
+type OpenAIFileUploadPurpose = "user_data" | "batch";
+
 export type OpenAIStructuredResponseUsage = {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  estimatedCostUsd: number | null;
+};
+
+export type AIPipelineRunMode = "sync" | "background" | "batch";
+
+export type AIPipelineRun<T> = {
+  providerCode: "openai";
+  modelCode: string | null;
+  mode: AIPipelineRunMode;
+  responseId: string | null;
+  batchId: string | null;
+  status: string | null;
+  output: T | null;
+  rawText: string;
+  usage: OpenAIStructuredResponseUsage;
+  requestPayload: Record<string, unknown>;
+  responsePayload: Record<string, unknown>;
 };
 
 export type OpenAIStructuredResponseResult<T> = {
@@ -48,11 +67,22 @@ export type OpenAIRetrievedResponseResult = {
   rawResponse: Record<string, unknown>;
 };
 
-function buildOpenAIHeaders() {
+export type OpenAIBatchPipelineRun = AIPipelineRun<null> & {
+  batchId: string;
+};
+
+export type OpenAIFileUploadResult = {
+  fileId: string;
+  purpose: OpenAIFileUploadPurpose;
+  rawResponse: Record<string, unknown>;
+};
+
+function buildOpenAIHeaders(extraHeaders?: Record<string, string>) {
   const { openAiApiKey } = getOpenAIEnv();
 
   return {
     Authorization: `Bearer ${openAiApiKey}`,
+    ...extraHeaders,
   };
 }
 
@@ -70,8 +100,61 @@ function toBlobPart(
   });
 }
 
+function buildMetadataRecord(
+  metadata: Record<string, unknown> | undefined,
+) {
+  if (!metadata) {
+    return undefined;
+  }
+
+  const normalizedEntries = Object.entries(metadata)
+    .flatMap(([key, value]) => {
+      if (value === null || value === undefined) {
+        return [];
+      }
+
+      if (typeof value === "string") {
+        const trimmedValue = value.trim();
+        return trimmedValue ? [[key, trimmedValue] as const] : [];
+      }
+
+      if (typeof value === "number" || typeof value === "boolean") {
+        return [[key, String(value)] as const];
+      }
+
+      return [[key, JSON.stringify(value)] as const];
+    });
+
+  if (normalizedEntries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function parseJsonResponse(response: Response) {
-  const payload = (await response.json()) as Record<string, unknown>;
+  let payload: Record<string, unknown>;
+
+  try {
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    const fallbackText =
+      typeof response.text === "function"
+        ? await response.text()
+        : "";
+
+    payload = fallbackText
+      ? {
+          message: fallbackText,
+        }
+      : {};
+  }
 
   if (!response.ok) {
     const maybeError =
@@ -89,6 +172,64 @@ async function parseJsonResponse(response: Response) {
   return payload;
 }
 
+function shouldRetryOpenAIResponse(response: Response | null, error: unknown) {
+  if (response) {
+    return response.status === 429 || response.status >= 500;
+  }
+
+  return error instanceof Error;
+}
+
+async function runOpenAIJsonRequest(input: {
+  url: string;
+  method: "GET" | "POST";
+  body?: BodyInit;
+  contentType?: string;
+}) {
+  const {
+    openAiHttpMaxRetries,
+    openAiHttpRetryDelayMs,
+  } = getOpenAIEnv();
+  const maxAttempts = Math.max(1, openAiHttpMaxRetries);
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    let response: Response | null = null;
+
+    try {
+      response = await fetch(input.url, {
+        method: input.method,
+        headers: buildOpenAIHeaders(
+          input.contentType
+            ? {
+                "Content-Type": input.contentType,
+              }
+            : undefined,
+        ),
+        body: input.body,
+        cache: "no-store",
+      });
+
+      if (!response.ok && shouldRetryOpenAIResponse(response, null) && attempt < maxAttempts - 1) {
+        await sleep(openAiHttpRetryDelayMs * (attempt + 1));
+        attempt += 1;
+        continue;
+      }
+
+      return parseJsonResponse(response);
+    } catch (error) {
+      if (!shouldRetryOpenAIResponse(response, error) || attempt >= maxAttempts - 1) {
+        throw error;
+      }
+
+      await sleep(openAiHttpRetryDelayMs * (attempt + 1));
+      attempt += 1;
+    }
+  }
+
+  throw new Error("OpenAI request exhausted all retry attempts.");
+}
+
 function extractResponseText(payload: Record<string, unknown>) {
   const directOutputText = payload.output_text;
 
@@ -104,20 +245,49 @@ function extractResponseText(payload: Record<string, unknown>) {
       continue;
     }
 
-    const content = Array.isArray(item.content) ? item.content : [];
+    const content = Array.isArray((item as Record<string, unknown>).content)
+      ? (item as Record<string, unknown>).content as unknown[]
+      : [];
 
     for (const entry of content) {
       if (!entry || typeof entry !== "object") {
         continue;
       }
 
-      if (typeof entry.text === "string" && entry.text.trim()) {
-        fragments.push(entry.text.trim());
+      if (typeof (entry as Record<string, unknown>).text === "string") {
+        const text = ((entry as Record<string, unknown>).text as string).trim();
+
+        if (text) {
+          fragments.push(text);
+        }
       }
     }
   }
 
   return fragments.join("\n").trim();
+}
+
+function estimateCostUsd(
+  usage: Omit<OpenAIStructuredResponseUsage, "estimatedCostUsd">,
+) {
+  const {
+    openAiUsageCostInputUsdPer1M,
+    openAiUsageCostOutputUsdPer1M,
+  } = getOpenAIEnv();
+
+  if (
+    usage.inputTokens === null
+    || usage.outputTokens === null
+    || openAiUsageCostInputUsdPer1M === null
+    || openAiUsageCostOutputUsdPer1M === null
+  ) {
+    return null;
+  }
+
+  const inputCost = (usage.inputTokens / 1_000_000) * openAiUsageCostInputUsdPer1M;
+  const outputCost = (usage.outputTokens / 1_000_000) * openAiUsageCostOutputUsdPer1M;
+
+  return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000;
 }
 
 function extractUsage(payload: Record<string, unknown>): OpenAIStructuredResponseUsage {
@@ -149,6 +319,11 @@ function extractUsage(payload: Record<string, unknown>): OpenAIStructuredRespons
     inputTokens,
     outputTokens,
     totalTokens,
+    estimatedCostUsd: estimateCostUsd({
+      inputTokens,
+      outputTokens,
+      totalTokens,
+    }),
   };
 }
 
@@ -161,6 +336,7 @@ function buildStructuredResponseBody(input: {
   fileInput?: OpenAIFileInput;
   background?: boolean;
   store?: boolean;
+  metadata?: Record<string, unknown>;
 }) {
   const { openAiDocumentModel } = getOpenAIEnv();
   const userContent: Array<Record<string, unknown>> = [];
@@ -186,10 +362,13 @@ function buildStructuredResponseBody(input: {
     text: input.userPrompt,
   });
 
+  const metadata = buildMetadataRecord(input.metadata);
+
   return {
     model: input.model ?? openAiDocumentModel,
     background: input.background ?? false,
     store: input.store ?? true,
+    metadata,
     input: [
       {
         role: "system",
@@ -226,13 +405,14 @@ function ensureResponseId(payload: Record<string, unknown>) {
   return responseId;
 }
 
-export async function uploadOpenAIUserDataFile(input: {
+export async function uploadOpenAIFile(input: {
   filename: string;
   mimeType: string;
   bytes: ArrayBuffer | Uint8Array;
+  purpose: OpenAIFileUploadPurpose;
 }) {
   const formData = new FormData();
-  formData.set("purpose", "user_data");
+  formData.set("purpose", input.purpose);
   formData.set(
     "file",
     new File([toBlobPart(input.bytes, input.mimeType)], input.filename, {
@@ -240,13 +420,11 @@ export async function uploadOpenAIUserDataFile(input: {
     }),
   );
 
-  const response = await fetch("https://api.openai.com/v1/files", {
+  const payload = await runOpenAIJsonRequest({
+    url: "https://api.openai.com/v1/files",
     method: "POST",
-    headers: buildOpenAIHeaders(),
     body: formData,
-    cache: "no-store",
   });
-  const payload = await parseJsonResponse(response);
   const fileId = payload.id;
 
   if (typeof fileId !== "string" || !fileId) {
@@ -255,8 +433,31 @@ export async function uploadOpenAIUserDataFile(input: {
 
   return {
     fileId,
+    purpose: input.purpose,
     rawResponse: payload,
-  };
+  } satisfies OpenAIFileUploadResult;
+}
+
+export async function uploadOpenAIUserDataFile(input: {
+  filename: string;
+  mimeType: string;
+  bytes: ArrayBuffer | Uint8Array;
+}) {
+  return uploadOpenAIFile({
+    ...input,
+    purpose: "user_data",
+  });
+}
+
+export async function uploadOpenAIBatchFile(input: {
+  filename: string;
+  mimeType: string;
+  bytes: ArrayBuffer | Uint8Array;
+}) {
+  return uploadOpenAIFile({
+    ...input,
+    purpose: "batch",
+  });
 }
 
 export async function deleteOpenAIFile(fileId: string) {
@@ -267,7 +468,9 @@ export async function deleteOpenAIFile(fileId: string) {
   });
 
   if (!response.ok) {
-    const text = await response.text();
+    const text = typeof response.text === "function"
+      ? await response.text()
+      : "";
     throw new Error(
       `OpenAI file delete failed (${response.status}): ${text || "Unknown error"}`,
     );
@@ -304,6 +507,151 @@ export function extractStructuredOutputFromOpenAIResponse<T>(
   };
 }
 
+export async function createStructuredOpenAIPipelineRun<T>(input: {
+  mode?: "sync" | "background";
+  model?: string;
+  schemaName: string;
+  schema: JsonSchemaDefinition;
+  systemPrompt: string;
+  userPrompt: string;
+  fileInput?: OpenAIFileInput;
+  store?: boolean;
+  metadata?: Record<string, unknown>;
+}) {
+  const requestPayload = buildStructuredResponseBody({
+    ...input,
+    background: input.mode === "background",
+    store: input.store ?? true,
+  });
+  const payload = await runOpenAIJsonRequest({
+    url: "https://api.openai.com/v1/responses",
+    method: "POST",
+    body: JSON.stringify(requestPayload),
+    contentType: "application/json",
+  });
+  const modelCode =
+    typeof requestPayload.model === "string"
+      ? requestPayload.model
+      : null;
+  const baseRun: AIPipelineRun<T> = {
+    providerCode: "openai",
+    modelCode,
+    mode: input.mode ?? "sync",
+    responseId: typeof payload.id === "string" ? payload.id : null,
+    batchId: null,
+    status: typeof payload.status === "string" ? payload.status : null,
+    output: null,
+    rawText: "",
+    usage: extractUsage(payload),
+    requestPayload: requestPayload as Record<string, unknown>,
+    responsePayload: payload,
+  };
+
+  if (input.mode === "background") {
+    return baseRun;
+  }
+
+  const extracted = extractStructuredOutputFromOpenAIResponse<T>(payload);
+
+  return {
+    ...baseRun,
+    output: extracted.output,
+    rawText: extracted.rawText,
+    usage: extracted.usage,
+  } satisfies AIPipelineRun<T>;
+}
+
+export async function retrieveOpenAIPipelineRun(responseId: string) {
+  const payload = await runOpenAIJsonRequest({
+    url: `https://api.openai.com/v1/responses/${responseId}`,
+    method: "GET",
+  });
+
+  return {
+    providerCode: "openai",
+    modelCode: typeof payload.model === "string" ? payload.model : null,
+    mode: "background",
+    responseId: typeof payload.id === "string" ? payload.id : null,
+    batchId: null,
+    status: typeof payload.status === "string" ? payload.status : null,
+    output: null,
+    rawText: extractResponseText(payload),
+    usage: extractUsage(payload),
+    requestPayload: {},
+    responsePayload: payload,
+  } satisfies AIPipelineRun<null>;
+}
+
+export async function createOpenAIBatchPipelineRun(input: {
+  inputFileId: string;
+  endpoint?: string;
+  completionWindow?: "24h";
+  metadata?: Record<string, unknown>;
+}) {
+  const requestPayload = {
+    input_file_id: input.inputFileId,
+    endpoint: input.endpoint ?? "/v1/responses",
+    completion_window: input.completionWindow ?? "24h",
+    metadata: buildMetadataRecord(input.metadata),
+  };
+  const payload = await runOpenAIJsonRequest({
+    url: "https://api.openai.com/v1/batches",
+    method: "POST",
+    body: JSON.stringify(requestPayload),
+    contentType: "application/json",
+  });
+  const batchId = payload.id;
+
+  if (typeof batchId !== "string" || !batchId) {
+    throw new Error("OpenAI batch creation did not return a valid batch id.");
+  }
+
+  return {
+    providerCode: "openai",
+    modelCode: null,
+    mode: "batch",
+    responseId: null,
+    batchId,
+    status: typeof payload.status === "string" ? payload.status : null,
+    output: null,
+    rawText: "",
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      estimatedCostUsd: null,
+    },
+    requestPayload,
+    responsePayload: payload,
+  } satisfies OpenAIBatchPipelineRun;
+}
+
+export async function retrieveOpenAIBatchPipelineRun(batchId: string) {
+  const payload = await runOpenAIJsonRequest({
+    url: `https://api.openai.com/v1/batches/${batchId}`,
+    method: "GET",
+  });
+
+  return {
+    providerCode: "openai",
+    modelCode: null,
+    mode: "batch",
+    responseId: null,
+    batchId,
+    status: typeof payload.status === "string" ? payload.status : null,
+    output: null,
+    rawText: "",
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      estimatedCostUsd: null,
+    },
+    requestPayload: {},
+    responsePayload: payload,
+  } satisfies OpenAIBatchPipelineRun;
+}
+
 export async function createStructuredOpenAIResponse<T>(input: {
   model?: string;
   schemaName: string;
@@ -311,20 +659,24 @@ export async function createStructuredOpenAIResponse<T>(input: {
   systemPrompt: string;
   userPrompt: string;
   fileInput?: OpenAIFileInput;
+  metadata?: Record<string, unknown>;
 }) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      ...buildOpenAIHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(buildStructuredResponseBody(input)),
-    cache: "no-store",
+  const run = await createStructuredOpenAIPipelineRun<T>({
+    ...input,
+    mode: "sync",
   });
 
-  const payload = await parseJsonResponse(response);
+  if (run.output === null) {
+    throw new Error("OpenAI sync pipeline run did not return parsed output.");
+  }
 
-  return extractStructuredOutputFromOpenAIResponse<T>(payload);
+  return {
+    responseId: run.responseId,
+    output: run.output,
+    rawText: run.rawText,
+    usage: run.usage,
+    rawResponse: run.responsePayload,
+  } satisfies OpenAIStructuredResponseResult<T>;
 }
 
 export async function createBackgroundStructuredOpenAIResponse(input: {
@@ -334,43 +686,29 @@ export async function createBackgroundStructuredOpenAIResponse(input: {
   systemPrompt: string;
   userPrompt: string;
   fileInput?: OpenAIFileInput;
+  metadata?: Record<string, unknown>;
 }) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      ...buildOpenAIHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(buildStructuredResponseBody({
-      ...input,
-      background: true,
-      store: true,
-    })),
-    cache: "no-store",
+  const run = await createStructuredOpenAIPipelineRun<null>({
+    ...input,
+    mode: "background",
+    store: true,
   });
 
-  const payload = await parseJsonResponse(response);
-
   return {
-    responseId: ensureResponseId(payload),
-    status: typeof payload.status === "string" ? payload.status : null,
-    rawResponse: payload,
+    responseId: ensureResponseId(run.responsePayload),
+    status: run.status,
+    rawResponse: run.responsePayload,
   } satisfies OpenAIBackgroundStructuredResponseResult;
 }
 
 export async function retrieveOpenAIResponse(responseId: string) {
-  const response = await fetch(`https://api.openai.com/v1/responses/${responseId}`, {
-    method: "GET",
-    headers: buildOpenAIHeaders(),
-    cache: "no-store",
-  });
-  const payload = await parseJsonResponse(response);
+  const run = await retrieveOpenAIPipelineRun(responseId);
 
   return {
-    responseId: typeof payload.id === "string" ? payload.id : null,
-    status: typeof payload.status === "string" ? payload.status : null,
-    usage: extractUsage(payload),
-    rawResponse: payload,
+    responseId: run.responseId,
+    status: run.status,
+    usage: run.usage,
+    rawResponse: run.responsePayload,
   } satisfies OpenAIRetrievedResponseResult;
 }
 

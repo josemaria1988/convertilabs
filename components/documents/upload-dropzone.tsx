@@ -43,6 +43,18 @@ type ProcessingStatusResponse = {
   isTerminal: boolean;
 };
 
+type SelectedUploadFile = {
+  file: File;
+  validation: ReturnType<typeof validateDocumentUploadCandidate>;
+};
+
+type BatchPollSummary = {
+  timedOut: boolean;
+  terminalCount: number;
+  errorCount: number;
+  lastKnownStatuses: ProcessingStatusResponse[];
+};
+
 const acceptedMimeLabel = allowedDocumentUploadMimeTypes.join(", ");
 
 function wait(ms: number) {
@@ -51,25 +63,77 @@ function wait(ms: number) {
   });
 }
 
-function buildLiveProcessingMessage(status: ProcessingStatusResponse) {
-  switch (status.documentStatus) {
-    case "queued":
-      return "Documento subido. Encolado para procesamiento...";
-    case "extracting":
-      return "Procesando el documento en segundo plano...";
-    case "draft_ready":
-      return "El draft ya esta listo. Refrescando el dashboard...";
-    case "needs_review":
-      return "El documento quedo listo para revision. Refrescando el dashboard...";
-    case "error":
-      return status.failureMessage ?? "El procesamiento del documento termino con error.";
-    default:
-      if (status.runStatus === "processing") {
-        return "Procesando el documento en segundo plano...";
-      }
-
-      return "El documento sigue procesandose en segundo plano...";
+function buildRejectedFilesMessage(rejectedFiles: Array<{
+  name: string;
+  message: string;
+}>) {
+  if (rejectedFiles.length === 0) {
+    return "";
   }
+
+  const preview = rejectedFiles
+    .slice(0, 3)
+    .map((entry) => `${entry.name}: ${entry.message}`)
+    .join(" ");
+  const remainingCount = rejectedFiles.length - 3;
+
+  if (remainingCount <= 0) {
+    return preview;
+  }
+
+  return `${preview} ${remainingCount} archivo(s) mas fueron rechazados.`;
+}
+
+function buildBatchQueuedMessage(input: {
+  totalAccepted: number;
+  terminalCount: number;
+  errorCount: number;
+  rejectedCount: number;
+}) {
+  const readyCount = Math.max(0, input.terminalCount - input.errorCount);
+  const summary = [
+    `Lote en proceso: ${input.terminalCount}/${input.totalAccepted} terminado(s).`,
+    `${readyCount} listo(s) y ${input.errorCount} con error.`,
+  ];
+
+  if (input.rejectedCount > 0) {
+    summary.push(`${input.rejectedCount} archivo(s) rechazado(s) en validacion.`);
+  }
+
+  return summary.join(" ");
+}
+
+function buildBatchCompletionMessage(input: {
+  totalAccepted: number;
+  queuedCount: number;
+  rejectedCount: number;
+  uploadErrorCount: number;
+  processingErrorCount: number;
+  timedOut: boolean;
+}) {
+  const parts = [
+    `${input.queuedCount}/${input.totalAccepted} archivo(s) aceptado(s) quedaron encolado(s).`,
+  ];
+
+  if (input.rejectedCount > 0) {
+    parts.push(`${input.rejectedCount} rechazado(s) en validacion.`);
+  }
+
+  if (input.uploadErrorCount > 0) {
+    parts.push(`${input.uploadErrorCount} fallaron durante la subida.`);
+  }
+
+  if (input.processingErrorCount > 0) {
+    parts.push(`${input.processingErrorCount} terminaron con error en procesamiento.`);
+  }
+
+  if (input.timedOut) {
+    parts.push("El resto sigue en background; refresca el dashboard en unos segundos.");
+  } else {
+    parts.push("Refrescando el dashboard...");
+  }
+
+  return parts.join(" ");
 }
 
 async function fetchProcessingStatus(documentId: string) {
@@ -103,75 +167,158 @@ export function DocumentUploadDropzone({
   const [message, setMessage] = useState("");
   const [isRefreshing, startTransition] = useTransition();
 
-  async function handleFile(file: File) {
+  async function pollBatchProcessing(
+    documentIds: string[],
+    totalAccepted: number,
+    rejectedCount: number,
+  ): Promise<BatchPollSummary> {
+    const pollStartedAt = Date.now();
+    let lastKnownStatuses: ProcessingStatusResponse[] = [];
+
+    while (Date.now() - pollStartedAt < 120_000) {
+      const results = await Promise.all(documentIds.map((documentId) => fetchProcessingStatus(documentId)));
+
+      lastKnownStatuses = results;
+
+      const terminalCount = results.filter((entry) => entry.isTerminal).length;
+      const errorCount = results.filter((entry) =>
+        entry.documentStatus === "error"
+        || entry.runStatus === "error")
+        .length;
+
+      if (terminalCount === results.length) {
+        return {
+          timedOut: false,
+          terminalCount,
+          errorCount,
+          lastKnownStatuses,
+        };
+      }
+
+      setStatus("queued");
+      setMessage(buildBatchQueuedMessage({
+        totalAccepted,
+        terminalCount,
+        errorCount,
+        rejectedCount,
+      }));
+
+      const elapsedMs = Date.now() - pollStartedAt;
+      await wait(elapsedMs < 30_000 ? 2_000 : 5_000);
+    }
+
+    return {
+      timedOut: true,
+      terminalCount: lastKnownStatuses.filter((entry) => entry.isTerminal).length,
+      errorCount: lastKnownStatuses.filter((entry) =>
+        entry.documentStatus === "error"
+        || entry.runStatus === "error")
+        .length,
+      lastKnownStatuses,
+    };
+  }
+
+  async function handleFiles(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
     setStatus("validating");
     setMessage("");
 
-    const validation = validateDocumentUploadCandidate({
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    });
+    const selectedFiles: SelectedUploadFile[] = files.map((file) => ({
+      file,
+      validation: validateDocumentUploadCandidate({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      }),
+    }));
+    const acceptedFiles: File[] = [];
+    const rejectedFiles: Array<{ name: string; message: string }> = [];
 
-    if (!validation.success) {
-      setStatus("error");
-      setMessage(validation.message);
-      return;
+    for (const entry of selectedFiles) {
+      if (entry.validation.success) {
+        acceptedFiles.push(entry.file);
+      } else {
+        rejectedFiles.push({
+          name: entry.file.name,
+          message: entry.validation.message,
+        });
+      }
     }
 
-    const preparedUpload = await prepareDashboardDocumentUpload({
-      slug,
-      originalFilename: file.name,
-      mimeType: file.type,
-      fileSize: file.size,
-    });
-
-    if (!preparedUpload.ok) {
+    if (acceptedFiles.length === 0) {
       setStatus("error");
-      setMessage(preparedUpload.message);
+      setMessage(buildRejectedFilesMessage(rejectedFiles));
       return;
     }
-
-    setStatus("uploading");
-    setMessage(`Subiendo ${file.name}...`);
 
     const supabase = getSupabaseBrowserClient();
-    const { error: uploadError } = await supabase.storage
-      .from(preparedUpload.storageBucket)
-      .uploadToSignedUrl(
-        preparedUpload.storagePath,
-        preparedUpload.uploadToken,
-        file,
-        {
-          contentType: file.type,
-          upsert: false,
-        },
+    const queuedDocumentIds: string[] = [];
+    let uploadErrorCount = 0;
+
+    for (const [index, file] of acceptedFiles.entries()) {
+      setStatus("uploading");
+      setMessage(
+        `Subiendo ${index + 1}/${acceptedFiles.length}: ${file.name}${
+          rejectedFiles.length > 0 ? ` | ${rejectedFiles.length} rechazado(s)` : ""
+        }`,
       );
 
-    if (uploadError) {
-      await failDashboardDocumentUpload({
+      const preparedUpload = await prepareDashboardDocumentUpload({
+        slug,
+        originalFilename: file.name,
+        mimeType: file.type,
+        fileSize: file.size,
+      });
+
+      if (!preparedUpload.ok) {
+        uploadErrorCount += 1;
+        continue;
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from(preparedUpload.storageBucket)
+        .uploadToSignedUrl(
+          preparedUpload.storagePath,
+          preparedUpload.uploadToken,
+          file,
+          {
+            contentType: file.type,
+            upsert: false,
+          },
+        );
+
+      if (uploadError) {
+        uploadErrorCount += 1;
+        await failDashboardDocumentUpload({
+          slug,
+          documentId: preparedUpload.documentId,
+          errorMessage: uploadError.message,
+        });
+        continue;
+      }
+
+      const finalizedUpload = await finalizeDashboardDocumentUpload({
         slug,
         documentId: preparedUpload.documentId,
-        errorMessage: uploadError.message,
       });
-      setStatus("error");
-      setMessage(
-        "La metadata se creo, pero la subida al bucket privado fallo. Revisa la fila en el dashboard.",
-      );
-      startTransition(() => {
-        router.refresh();
-      });
-      return;
+
+      if (!finalizedUpload.ok) {
+        uploadErrorCount += 1;
+        continue;
+      }
+
+      queuedDocumentIds.push(finalizedUpload.documentId);
     }
 
-    const finalizedUpload = await finalizeDashboardDocumentUpload({
-      slug,
-      documentId: preparedUpload.documentId,
-    });
-
-    if (!finalizedUpload.ok) {
+    if (queuedDocumentIds.length === 0) {
       setStatus("error");
-      setMessage(finalizedUpload.message);
+      setMessage([
+        "No pudimos dejar documentos encolados en este lote.",
+        buildRejectedFilesMessage(rejectedFiles),
+      ].filter(Boolean).join(" "));
       startTransition(() => {
         router.refresh();
       });
@@ -179,57 +326,48 @@ export function DocumentUploadDropzone({
     }
 
     setStatus("queued");
-    setMessage("Documento subido. Encolado para procesamiento...");
-
-    const pollStartedAt = Date.now();
+    setMessage(buildBatchQueuedMessage({
+      totalAccepted: acceptedFiles.length,
+      terminalCount: 0,
+      errorCount: 0,
+      rejectedCount: rejectedFiles.length,
+    }));
 
     try {
-      while (Date.now() - pollStartedAt < 120_000) {
-        const processingStatus = await fetchProcessingStatus(finalizedUpload.documentId);
-
-        if (processingStatus.isTerminal) {
-          if (
-            processingStatus.documentStatus === "error"
-            || processingStatus.runStatus === "error"
-          ) {
-            setStatus("error");
-            setMessage(
-              processingStatus.failureMessage
-              ?? "El procesamiento del documento termino con error.",
-            );
-            startTransition(() => {
-              router.refresh();
-            });
-            return;
-          }
-
-          setStatus("success");
-          setMessage(buildLiveProcessingMessage(processingStatus));
-          startTransition(() => {
-            router.refresh();
-          });
-          return;
-        }
-
-        setStatus("queued");
-        setMessage(buildLiveProcessingMessage(processingStatus));
-
-        const elapsedMs = Date.now() - pollStartedAt;
-        await wait(elapsedMs < 30_000 ? 2_000 : 5_000);
-      }
-
-      setStatus("idle");
-      setMessage(
-        "Documento subido y encolado. El procesamiento sigue en segundo plano; actualiza el dashboard en unos segundos si todavia no ves el draft.",
+      const summary = await pollBatchProcessing(
+        queuedDocumentIds,
+        acceptedFiles.length,
+        rejectedFiles.length,
       );
+      const nextStatus =
+        rejectedFiles.length > 0
+        || uploadErrorCount > 0
+        || summary.errorCount > 0
+          ? "error"
+          : "success";
+
+      setStatus(nextStatus);
+      setMessage(buildBatchCompletionMessage({
+        totalAccepted: acceptedFiles.length,
+        queuedCount: queuedDocumentIds.length,
+        rejectedCount: rejectedFiles.length,
+        uploadErrorCount,
+        processingErrorCount: summary.errorCount,
+        timedOut: summary.timedOut,
+      }));
       startTransition(() => {
         router.refresh();
       });
     } catch {
       setStatus("idle");
-      setMessage(
-        "Documento subido y encolado. No pudimos consultar el estado en vivo; actualiza el dashboard en unos segundos.",
-      );
+      setMessage(buildBatchCompletionMessage({
+        totalAccepted: acceptedFiles.length,
+        queuedCount: queuedDocumentIds.length,
+        rejectedCount: rejectedFiles.length,
+        uploadErrorCount,
+        processingErrorCount: 0,
+        timedOut: true,
+      }));
       startTransition(() => {
         router.refresh();
       });
@@ -257,30 +395,25 @@ export function DocumentUploadDropzone({
       onDrop={(event) => {
         event.preventDefault();
         setIsDragging(false);
-        const file = event.dataTransfer.files?.[0];
-
-        if (file) {
-          void handleFile(file);
-        }
+        void handleFiles(Array.from(event.dataTransfer.files ?? []));
       }}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-3">
-          <p className="text-[16px] font-semibold text-white">Cargar documento</p>
+          <p className="text-[16px] font-semibold text-white">Cargar documentos</p>
           <p className="max-w-2xl text-[16px] leading-8 text-[color:var(--color-muted)]">
-            Arrastra un PDF, JPG o PNG o usa el boton para cargarlo directo al
-            bucket privado. La metadata se crea primero, el procesamiento se
-            encola en background y el dashboard se refresca al llegar a un
-            estado terminal.
+            Arrastra uno o varios PDF, JPG o PNG o usa el boton para cargarlos al
+            bucket privado. Cada archivo valida MIME y tamano, se guarda por
+            separado y se encola de forma individual dentro del lote.
           </p>
         </div>
         <DocumentUploadButton
-          label={isBusy ? "Procesando..." : "Seleccionar archivo"}
+          label={isBusy ? "Procesando..." : "Seleccionar archivos"}
           accept={acceptedMimeLabel}
           disabled={isBusy}
           isLoading={isBusy}
-          onFileSelected={(file) => {
-            void handleFile(file);
+          onFilesSelected={(selectedFiles) => {
+            void handleFiles(selectedFiles);
           }}
         />
       </div>
@@ -290,7 +423,7 @@ export function DocumentUploadDropzone({
           MIME: PDF, JPG, PNG
         </div>
         <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-          Limite: {formatUploadSize(maxDocumentUploadBytes)}
+          Limite por archivo: {formatUploadSize(maxDocumentUploadBytes)}
         </div>
         <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
           Bucket: {documentsStorageBucket}
@@ -333,4 +466,3 @@ export function DocumentUploadDropzone({
     </div>
   );
 }
-
