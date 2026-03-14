@@ -12,6 +12,10 @@ import {
   getDocumentStatusVariant,
 } from "@/modules/documents/status";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import {
+  formatDecisionSourceLabel,
+  formatDuplicateStatusLabel,
+} from "@/modules/presentation/labels";
 
 type OrganizationDocumentsPageProps = {
   params: Promise<{
@@ -50,8 +54,32 @@ function getCertaintyClasses(level: "green" | "yellow" | "red" | null) {
   return "status-pill status-pill--info";
 }
 
-function formatDecisionSource(value: string | null) {
-  return value ? value.replace(/_/g, " ") : "Sin decision";
+function formatCertaintyLabel(level: "green" | "yellow" | "red" | null) {
+  if (level === "green") {
+    return "Alta";
+  }
+
+  if (level === "yellow") {
+    return "Media";
+  }
+
+  if (level === "red") {
+    return "Baja";
+  }
+
+  return "s/d";
+}
+
+function getReviewButtonClasses(status: string) {
+  if (["classified", "approved"].includes(status)) {
+    return "ui-button ui-button--success";
+  }
+
+  if (["error", "rejected", "duplicate"].includes(status)) {
+    return "ui-button ui-button--danger";
+  }
+
+  return "ui-button ui-button--warning";
 }
 
 export default async function OrganizationDocumentsPage({
@@ -72,7 +100,7 @@ export default async function OrganizationDocumentsPage({
       userRole={organization.role}
       title="Documentos"
       toolbarLabel="Documentos"
-      description="Bandeja documental del tenant actual, con filtros visuales compactos y acceso al original y al draft cuando exista."
+      description="Bandeja documental de la organizacion actual, con filtros visuales compactos y acceso al original y al borrador cuando exista."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
       <section className="space-y-3">
@@ -126,7 +154,10 @@ export default async function OrganizationDocumentsPage({
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
                           {document.processedHref ? (
-                            <Link href={document.processedHref} className="text-white/80">
+                            <Link
+                              href={document.processedHref}
+                              className={getReviewButtonClasses(document.status)}
+                            >
                               Abrir revision
                             </Link>
                           ) : (
@@ -161,17 +192,17 @@ export default async function OrganizationDocumentsPage({
                           {getDocumentRoleLabel(document.role)}
                         </span>
                         <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
-                          {formatDecisionSource(document.decisionSource)}
+                          {formatDecisionSourceLabel(document.decisionSource)}
                         </div>
                         {document.duplicateStatus && document.duplicateStatus !== "clear" ? (
                           <div className="mt-1 text-[13px] text-amber-900">
-                            {document.duplicateStatus}
+                            {formatDuplicateStatusLabel(document.duplicateStatus)}
                           </div>
                         ) : null}
                       </td>
                       <td>
                         <span className={getCertaintyClasses(document.certaintyLevel)}>
-                          {document.certaintyLevel ?? "n/a"}
+                          {formatCertaintyLabel(document.certaintyLevel)}
                         </span>
                         <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
                           {document.certaintyConfidence !== null

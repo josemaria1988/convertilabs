@@ -131,7 +131,7 @@ export default async function OrganizationDashboardPage({
             En cola
           </span>
           <span className="metric-card__value">{processingCount}</span>
-          <p className="metric-card__hint">Subidos y en proceso dentro del tenant actual.</p>
+          <p className="metric-card__hint">Subidos y en proceso dentro de la organizacion actual.</p>
         </article>
         <article className="metric-card">
           <span className="metric-card__label">Asientos en Revision</span>

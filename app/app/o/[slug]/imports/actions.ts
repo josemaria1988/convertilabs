@@ -19,6 +19,11 @@ import {
   runSpreadsheetImport,
   updateSpreadsheetImportRun,
 } from "@/modules/spreadsheets";
+import {
+  formatImportOperationStatusLabel,
+  formatLifecycleStatusLabel,
+  formatSpreadsheetImportTypeLabel,
+} from "@/modules/presentation/labels";
 
 function buildPaths(slug: string) {
   return {
@@ -69,7 +74,7 @@ export async function uploadSpreadsheetImportAction(input: {
 
   return {
     ok: true,
-    message: `Import ${run.status} para ${run.fileName}.`,
+    message: `Importacion ${formatLifecycleStatusLabel(run.status).toLowerCase()} para ${run.fileName}.`,
   };
 }
 
@@ -110,7 +115,7 @@ export async function cancelSpreadsheetImportAction(input: {
 
   return {
     ok: true,
-    message: `Import cancelado para ${run.fileName}.`,
+    message: `Importacion cancelada para ${run.fileName}.`,
   };
 }
 
@@ -173,8 +178,8 @@ export async function confirmSpreadsheetImportAction(input: {
   return {
     ok: true,
     message: materialized.sections.length > 0
-      ? `Preview confirmado para ${confirmed.fileName}. Se materializaron: ${materialized.sections.join(", ")}.`
-      : `Preview confirmado para ${confirmed.fileName}.`,
+      ? `Vista previa confirmada para ${confirmed.fileName}. Se materializaron: ${materialized.sections.map((section) => formatSpreadsheetImportTypeLabel(section)).join(", ")}.`
+      : `Vista previa confirmada para ${confirmed.fileName}.`,
   };
 }
 
@@ -281,6 +286,6 @@ export async function updateImportOperationStatusAction(input: {
 
   return {
     ok: true,
-    message: `Operacion actualizada a ${input.status}.`,
+    message: `Operacion actualizada a ${formatImportOperationStatusLabel(input.status).toLowerCase()}.`,
   };
 }

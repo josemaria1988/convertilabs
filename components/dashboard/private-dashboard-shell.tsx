@@ -160,6 +160,26 @@ function ImportIcon({ className }: IconProps) {
   );
 }
 
+function OpenItemsIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 7h14" />
+      <path d="M5 12h14" />
+      <path d="M5 17h9" />
+      <path d="M17 16.5 19.5 19 22 16.5" />
+    </svg>
+  );
+}
+
 function SearchIcon({ className }: IconProps) {
   return (
     <svg
@@ -216,10 +236,12 @@ function getNavIcon(label: string) {
       return HomeIcon;
     case "Documentos":
       return DocumentIcon;
-    case "Imports":
+    case "Importaciones":
       return ImportIcon;
     case "Asientos":
       return JournalIcon;
+    case "Saldos abiertos":
+      return OpenItemsIcon;
     case "Impuestos":
       return TaxIcon;
     case "Configuracion":
@@ -264,9 +286,9 @@ export function PrivateDashboardShell({
                     key={item.href}
                     className="app-nav-item"
                     data-current="true"
-                  >
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                      <Icon className="h-[14px] w-[14px]" />
+                >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                      <Icon className="h-[18px] w-[18px]" />
                     </span>
                     <span className="truncate">{item.label}</span>
                   </div>
@@ -280,8 +302,8 @@ export function PrivateDashboardShell({
                   pendingLabel="Abriendo..."
                   className="app-nav-item"
                 >
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                    <Icon className="h-[14px] w-[14px]" />
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                    <Icon className="h-[18px] w-[18px]" />
                   </span>
                   <span className="truncate">{item.label}</span>
                 </LoadingLink>
@@ -289,8 +311,8 @@ export function PrivateDashboardShell({
             })}
             <div className="app-sidebar-divider" />
             <div className="app-nav-item opacity-95" data-current="false">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                <ExportIcon className="h-[14px] w-[14px]" />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                <ExportIcon className="h-[18px] w-[18px]" />
               </span>
               <span className="truncate text-white">Exportar</span>
             </div>
@@ -298,21 +320,21 @@ export function PrivateDashboardShell({
 
           <div className="app-sidebar-footer">
             <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[12px] w-[12px]" />
+              <UtilityIcon className="h-[14px] w-[14px]" />
               Tablero de ventas
             </span>
             <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[12px] w-[12px]" />
+              <UtilityIcon className="h-[14px] w-[14px]" />
               Pendientes visibles
             </span>
             <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[12px] w-[12px]" />
+              <UtilityIcon className="h-[14px] w-[14px]" />
               Procesamiento impositivo
             </span>
             {settingsItem ? (
               settingsItem.current ? (
                 <span className="app-sidebar-footer-link pt-2 text-white">
-                  <SettingsIcon className="h-[12px] w-[12px]" />
+                  <SettingsIcon className="h-[14px] w-[14px]" />
                   Configuracion
                 </span>
               ) : (
@@ -321,7 +343,7 @@ export function PrivateDashboardShell({
                   pendingLabel="Abriendo..."
                   className="app-sidebar-footer-link pt-2"
                 >
-                  <SettingsIcon className="h-[12px] w-[12px]" />
+                  <SettingsIcon className="h-[14px] w-[14px]" />
                   Configuracion
                 </LoadingLink>
               )
@@ -352,6 +374,7 @@ export function PrivateDashboardShell({
             </button>
             <AccountMenu
               organizationName={organizationName}
+              organizationSlug={organizationSlug}
               userEmail={userEmail}
             />
           </div>

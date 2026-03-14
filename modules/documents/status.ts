@@ -11,8 +11,38 @@ export const documentTerminalStatuses = new Set([
 ]);
 
 export function formatDocumentStatusLabel(status: string) {
-  const normalized = status.replace(/_/g, " ");
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  switch (status) {
+    case "uploaded":
+      return "Cargado";
+    case "queued":
+      return "En cola";
+    case "extracting":
+      return "Extrayendo";
+    case "processing":
+      return "Procesando";
+    case "draft_ready":
+      return "Borrador listo";
+    case "classified":
+      return "Clasificado";
+    case "classified_with_open_revision":
+      return "Revision abierta";
+    case "needs_review":
+      return "Requiere revision";
+    case "approved":
+      return "Aprobado";
+    case "rejected":
+      return "Rechazado";
+    case "duplicate":
+      return "Duplicado";
+    case "archived":
+      return "Archivado";
+    case "error":
+      return "Error";
+    default: {
+      const normalized = status.replace(/_/g, " ");
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+  }
 }
 
 export function getDocumentStatusVariant(status: string) {
@@ -20,11 +50,19 @@ export function getDocumentStatusVariant(status: string) {
     return "status-pill status-pill--success";
   }
 
-  if (["needs_review", "draft_ready", "classified_with_open_revision"].includes(status)) {
+  if ([
+    "uploaded",
+    "queued",
+    "extracting",
+    "processing",
+    "needs_review",
+    "draft_ready",
+    "classified_with_open_revision",
+  ].includes(status)) {
     return "status-pill status-pill--warning";
   }
 
-  if (["error", "rejected"].includes(status)) {
+  if (["error", "rejected", "duplicate"].includes(status)) {
     return "status-pill status-pill--danger";
   }
 

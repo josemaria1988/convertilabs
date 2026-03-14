@@ -8,9 +8,9 @@ export const metadata: Metadata = {
 };
 
 const onboardingChecks = [
-  "Crear tenant con slug unico y membership owner.",
+  "Crear organizacion con slug unico y membresia owner.",
   "Capturar forma juridica, RUT y perfil fiscal base.",
-  "Materializar snapshot inicial para intake y IVA.",
+  "Materializar instantanea inicial para intake e IVA.",
   "Entrar directo al cockpit privado de la organizacion.",
 ];
 
@@ -26,7 +26,7 @@ export default async function OnboardingPage() {
 
             <div className="mt-12 max-w-md">
               <p className="text-sm uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
-                Tenant inicial
+                Organizacion inicial
               </p>
               <h1 className="mt-4 text-4xl font-semibold tracking-[-0.07em] text-white md:text-5xl">
                 Crea la primera organizacion del workspace.
@@ -35,7 +35,7 @@ export default async function OnboardingPage() {
                 {user?.email
                   ? `Tu sesion ya esta lista como ${user.email}.`
                   : "Tu sesion ya esta lista."}{" "}
-                El siguiente paso es abrir el contexto multi-tenant real que usara documentos, asientos, IVA y snapshots.
+                El siguiente paso es abrir el contexto multi-organizacion real que usara documentos, asientos, IVA e instantaneas.
               </p>
             </div>
 
@@ -51,7 +51,7 @@ export default async function OnboardingPage() {
             </div>
 
             <div className="mt-auto rounded-[1.15rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6">
-              Los documentos ya existentes no se recalculan al cambiar el perfil despues. Cada version futura queda congelada con su snapshot correspondiente.
+              Los documentos ya existentes no se recalculan al cambiar el perfil despues. Cada version futura queda congelada con su instantanea correspondiente.
             </div>
           </div>
         </section>
@@ -62,10 +62,10 @@ export default async function OnboardingPage() {
               Configuracion inicial
             </p>
             <h2 className="text-3xl font-semibold tracking-[-0.06em] text-white">
-              Alta del tenant y perfil fiscal base
+              Alta de la organizacion y perfil fiscal base
             </h2>
             <p className="max-w-xl text-sm leading-7 text-[color:var(--color-muted)]">
-              La operacion corre en servidor mediante una transaccion controlada: crea la organizacion, asigna ownership y deja listo el perfil inicial para Uruguay.
+              La operacion corre en servidor mediante una transaccion controlada: crea la organizacion, asigna la titularidad y deja listo el perfil inicial para Uruguay.
             </p>
           </div>
 

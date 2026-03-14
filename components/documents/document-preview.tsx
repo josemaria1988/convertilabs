@@ -45,7 +45,7 @@ export function DocumentPreview({
               ? "h-full border-0"
               : "h-[420px] rounded-3xl border border-[color:var(--color-border)]"
         }`}
-        title="Preview del documento"
+        title="Vista previa del documento"
       />
     );
   }

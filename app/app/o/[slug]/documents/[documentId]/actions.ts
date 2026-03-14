@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
   confirmDocumentReview,
+  createDocumentReviewOverrideAccount,
   reopenDocumentReview,
   resolveDocumentDuplicate,
   saveDraftReview,
@@ -89,6 +90,38 @@ export async function confirmDocumentReviewAction(input: {
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
   revalidatePath(paths.journalEntries);
+
+  return result;
+}
+
+export async function createDocumentReviewOverrideAccountAction(input: {
+  slug: string;
+  documentId: string;
+  code: string;
+  name: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+
+  if (organization.role === "viewer") {
+    return {
+      ok: false,
+      message: "Tu rol solo puede ver este draft.",
+      account: null,
+    };
+  }
+
+  const result = await createDocumentReviewOverrideAccount({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    code: input.code,
+    name: input.name,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
 
   return result;
 }

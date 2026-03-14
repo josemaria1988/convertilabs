@@ -215,7 +215,7 @@ export function OrganizationOnboardingForm({
       </label>
 
       <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/72 p-4">
-        <p className="text-sm font-semibold">Preview de slug</p>
+        <p className="text-sm font-semibold">Vista previa del slug</p>
         <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
           {slugPreview
             ? `/app/o/${slugPreview}/dashboard`

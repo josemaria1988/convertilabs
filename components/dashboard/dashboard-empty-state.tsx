@@ -13,7 +13,7 @@ export function DashboardEmptyState({
         Todavia no hay documentos cargados
       </p>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-[color:var(--color-muted)]">
-        La bandeja ya esta enlazada al tenant real. Sube el primer PDF, JPG o PNG
+        La bandeja ya esta enlazada a la organizacion real. Sube el primer PDF, JPG o PNG
         para habilitar intake, draft persistido, sugerencia contable y trazabilidad de IVA.
       </p>
       <div className="mt-5 flex flex-wrap gap-3">

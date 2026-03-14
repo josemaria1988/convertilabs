@@ -20,6 +20,7 @@ import {
   buildDraftFieldsPayload,
   buildDraftStepSnapshots,
   buildInvoiceIdentityResult,
+  createReviewOverrideAccount,
   createRuleFromApproval,
   deriveDocumentAccountingState,
   getOperationCategoryValue,
@@ -1365,6 +1366,37 @@ export async function loadDocumentReviewPageData(input: {
       ["owner", "admin"].includes(input.userRole)
       && (document.status === "classified" || draft.status === "confirmed"),
   } satisfies DocumentReviewPageData;
+}
+
+export async function createDocumentReviewOverrideAccount(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  code: string;
+  name: string;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+  const draft = await loadCurrentDraft(supabase, document);
+  const account = await createReviewOverrideAccount(supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    documentId: document.id,
+    draftId: draft.id,
+    documentRole: draft.document_role,
+    code: input.code,
+    name: input.name,
+  });
+
+  return {
+    ok: true,
+    message: `Cuenta ${account.code} creada y lista para usarse en este draft.`,
+    account: {
+      id: account.id,
+      code: account.code,
+      name: account.name,
+    },
+  };
 }
 
 export async function saveDraftReview(input: SaveDraftReviewInput) {

@@ -220,6 +220,118 @@ export async function loadOrganizationPostableAccounts(
   return asArray(data as PostableAccountRecord[] | null);
 }
 
+export function buildReviewOverrideAccountPayload(input: {
+  organizationId: string;
+  actorId: string | null;
+  documentId: string;
+  draftId: string;
+  documentRole: AccountingRuleRecord["document_role"];
+  code: string;
+  name: string;
+}) {
+  const code = input.code.trim();
+  const name = input.name.trim();
+
+  if (!code) {
+    throw new Error("El codigo de cuenta es obligatorio.");
+  }
+
+  if (!name) {
+    throw new Error("El nombre de cuenta es obligatorio.");
+  }
+
+  const accountType =
+    input.documentRole === "sale"
+      ? "revenue"
+      : input.documentRole === "purchase"
+        ? "expense"
+        : "expense";
+  const normalSide = accountType === "revenue" ? "credit" : "debit";
+
+  return {
+    organization_id: input.organizationId,
+    code,
+    name,
+    account_type: accountType,
+    normal_side: normalSide,
+    is_postable: true,
+    metadata: {
+      source: "document_review_inline_create",
+      created_by: input.actorId,
+      created_from_document_id: input.documentId,
+      created_from_draft_id: input.draftId,
+      review_document_role: input.documentRole,
+      review_account_kind: accountType,
+      review_account_slug: slugifyConceptCode(name),
+    },
+  };
+}
+
+export async function createReviewOverrideAccount(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    actorId: string | null;
+    documentId: string;
+    draftId: string;
+    documentRole: AccountingRuleRecord["document_role"];
+    code: string;
+    name: string;
+  },
+) {
+  const payload = buildReviewOverrideAccountPayload(input);
+  const { data: existing, error: existingError } = await supabase
+    .from("chart_of_accounts")
+    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .eq("organization_id", input.organizationId)
+    .eq("code", payload.code)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existing) {
+    throw new Error("Ya existe una cuenta activa con ese codigo en la organizacion.");
+  }
+
+  const { data, error } = await supabase
+    .from("chart_of_accounts")
+    .insert(payload)
+    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .limit(1)
+    .single();
+
+  if (error || !data?.id) {
+    throw new Error(error?.message ?? "No se pudo crear la cuenta contable.");
+  }
+
+  await recordAuditEvent(supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    entityType: "chart_account",
+    entityId: data.id as string,
+    action: "created_from_document_review",
+    afterJson: {
+      code: data.code,
+      name: data.name,
+      account_type: data.account_type,
+      normal_side: data.normal_side,
+      is_postable: data.is_postable,
+      metadata: data.metadata,
+    },
+    metadata: {
+      document_id: input.documentId,
+      draft_id: input.draftId,
+      document_role: input.documentRole,
+    },
+  });
+
+  return data as PostableAccountRecord;
+}
+
 export async function loadActiveAccountingRules(
   supabase: SupabaseClient,
   organizationId: string,

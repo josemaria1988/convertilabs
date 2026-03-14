@@ -4,6 +4,7 @@ import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
 
 type OrganizationJournalEntriesPageProps = {
   params: Promise<{
@@ -24,6 +25,18 @@ function formatAmount(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function getEntryStatusVariant(status: string) {
+  if (status === "finalized" || status === "locked") {
+    return "status-pill status-pill--success";
+  }
+
+  if (status === "draft" || status === "reviewed" || status === "suggested") {
+    return "status-pill status-pill--warning";
+  }
+
+  return "status-pill status-pill--info";
 }
 
 export default async function OrganizationJournalEntriesPage({
@@ -99,7 +112,7 @@ export default async function OrganizationJournalEntriesPage({
       id: suggestion.id,
       sourceDocumentId: suggestion.document_id,
       code: `31${String(index).padStart(2, "0")}0000`,
-      description: suggestion.explanation ?? `Suggestion v${suggestion.version_no}`,
+      description: suggestion.explanation ?? `Sugerencia v${suggestion.version_no}`,
       status: "suggested",
       currencyCode: "UYU",
       fxRate: 1,
@@ -133,7 +146,7 @@ export default async function OrganizationJournalEntriesPage({
       <section className="space-y-3">
         <div className="grid gap-3 md:grid-cols-3">
           <div className="ui-panel p-4">
-            <p className="text-sm font-semibold text-white">Open items activos</p>
+            <p className="text-sm font-semibold text-white">Saldos abiertos activos</p>
             <p className="mt-2 text-2xl font-semibold text-white">{openCount}</p>
           </div>
           <div className="ui-panel p-4">
@@ -187,8 +200,10 @@ export default async function OrganizationJournalEntriesPage({
                       </td>
                       <td>
                         <div className="font-semibold text-white">{row.code}</div>
-                        <div className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {row.status}
+                        <div className="mt-1">
+                          <span className={getEntryStatusVariant(row.status)}>
+                            {formatLifecycleStatusLabel(row.status)}
+                          </span>
                         </div>
                       </td>
                       <td className="text-[color:var(--color-foreground)]">

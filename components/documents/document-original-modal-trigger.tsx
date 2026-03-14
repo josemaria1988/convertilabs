@@ -122,7 +122,7 @@ export function DocumentOriginalModalTrigger({
                   id={descriptionId}
                   className="mt-1 truncate text-xs text-[color:var(--color-muted)] md:text-sm"
                 >
-                  {modalDescription ?? "Archivo original firmado desde Storage privado del tenant actual."}
+                  {modalDescription ?? "Archivo original firmado desde el storage privado de la organizacion actual."}
                 </p>
               </div>
 

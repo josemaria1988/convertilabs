@@ -5,6 +5,7 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadRecentExports, loadVatRunExportDataset } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
 import { listOrganizationSpreadsheetImportRuns } from "@/modules/spreadsheets";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 import {
@@ -98,7 +99,7 @@ export default async function OrganizationTaxPage({
       userRole={organization.role}
       title="Impuestos"
       toolbarLabel={latestRun ? `Declaracion de IVA - ${periodTitle}` : "Impuestos"}
-      description="Declaracion mensual de IVA con resumen del periodo, alertas, historial y acciones reales de lifecycle."
+      description="Declaracion mensual de IVA con resumen del periodo, alertas, historial y acciones reales del ciclo de vida."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "tax")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
@@ -171,7 +172,7 @@ export default async function OrganizationTaxPage({
                 <div className="flex items-center gap-3">
                   <span>{formatAmount(latestRun?.outputVat ?? null)}</span>
                   <span className="status-pill status-pill--success">
-                    {latestSales.length} docs
+                    {latestSales.length} documentos
                   </span>
                 </div>
               </div>
@@ -185,7 +186,7 @@ export default async function OrganizationTaxPage({
                 <div className="flex items-center gap-3">
                   <span>{formatAmount(latestRun?.inputVatCreditable ?? null)}</span>
                   <span className="status-pill status-pill--success">
-                    {latestPurchases.length} docs
+                    {latestPurchases.length} documentos
                   </span>
                 </div>
               </div>
@@ -419,7 +420,7 @@ export default async function OrganizationTaxPage({
                       </span>
                       <span className="text-white">{run.periodLabel}</span>
                     </div>
-                    <span>{run.status}</span>
+                    <span>{formatLifecycleStatusLabel(run.status)}</span>
                   </Link>
                 ))
               )}
@@ -448,7 +449,7 @@ export default async function OrganizationTaxPage({
                       </span>
                       <span className="text-white">{run.fileName}</span>
                     </div>
-                    <span>{run.confirmedAt ? "confirmado" : "preview"}</span>
+                    <span>{run.confirmedAt ? "Confirmado" : "Vista previa"}</span>
                   </div>
                 ))
               )}

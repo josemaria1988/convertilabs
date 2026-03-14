@@ -3,7 +3,12 @@ import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { getDocumentRoleLabel } from "@/modules/documents/status";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import {
+  formatCounterpartyTypeLabel,
+  formatLifecycleStatusLabel,
+} from "@/modules/presentation/labels";
 
 type OrganizationOpenItemsPageProps = {
   params: Promise<{
@@ -12,7 +17,7 @@ type OrganizationOpenItemsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Open items",
+  title: "Saldos abiertos",
 };
 
 function formatAmount(value: number | null | undefined) {
@@ -24,6 +29,18 @@ function formatAmount(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function getOpenItemStatusVariant(status: string) {
+  if (status === "settled") {
+    return "status-pill status-pill--success";
+  }
+
+  if (status === "partially_settled" || status === "open") {
+    return "status-pill status-pill--warning";
+  }
+
+  return "status-pill status-pill--info";
 }
 
 export default async function OrganizationOpenItemsPage({
@@ -66,8 +83,8 @@ export default async function OrganizationOpenItemsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Open items"
-      toolbarLabel="Open items"
+      title="Saldos abiertos"
+      toolbarLabel="Saldos abiertos"
       description="Vista compacta de saldos abiertos a cobrar y pagar, con enlace al documento origen."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "open_items")}
     >
@@ -78,11 +95,11 @@ export default async function OrganizationOpenItemsPage({
             <p className="mt-2 text-2xl font-semibold text-white">{openCount}</p>
           </div>
           <div className="ui-panel p-4">
-            <p className="text-sm font-semibold text-white">AR</p>
+            <p className="text-sm font-semibold text-white">Clientes</p>
             <p className="mt-2 text-2xl font-semibold text-white">{receivableCount}</p>
           </div>
           <div className="ui-panel p-4">
-            <p className="text-sm font-semibold text-white">AP</p>
+            <p className="text-sm font-semibold text-white">Proveedores</p>
             <p className="mt-2 text-2xl font-semibold text-white">{payableCount}</p>
           </div>
         </div>
@@ -106,18 +123,22 @@ export default async function OrganizationOpenItemsPage({
                 {openItems.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
-                      Todavia no hay open items para mostrar.
+                      Todavia no hay saldos abiertos para mostrar.
                     </td>
                   </tr>
                 ) : (
                   openItems.map((item) => (
                     <tr key={item.id}>
-                      <td className="text-white">{item.document_role}</td>
-                      <td>{item.document_type ?? item.counterparty_type}</td>
+                      <td className="text-white">{getDocumentRoleLabel(item.document_role)}</td>
+                      <td>{item.document_type ?? formatCounterpartyTypeLabel(item.counterparty_type)}</td>
                       <td>{item.currency_code}</td>
                       <td className="text-right text-white">{formatAmount(item.original_amount)}</td>
                       <td className="text-right text-white">{formatAmount(item.outstanding_amount)}</td>
-                      <td>{item.status}</td>
+                      <td>
+                        <span className={getOpenItemStatusVariant(item.status)}>
+                          {formatLifecycleStatusLabel(item.status)}
+                        </span>
+                      </td>
                       <td className="text-[13px] text-[color:var(--color-muted)]">
                         {item.issue_date ?? "sin emision"}
                         {item.due_date ? ` / vto ${item.due_date}` : ""}
@@ -131,7 +152,7 @@ export default async function OrganizationOpenItemsPage({
                             abrir
                           </Link>
                         ) : (
-                          <span className="text-[color:var(--color-muted)]">n/a</span>
+                          <span className="text-[color:var(--color-muted)]">s/d</span>
                         )}
                       </td>
                     </tr>

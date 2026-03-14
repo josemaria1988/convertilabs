@@ -4,6 +4,14 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationImportOperations } from "@/modules/imports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { getDocumentRoleLabel } from "@/modules/documents/status";
+import {
+  formatImportOperationStatusLabel,
+  formatLifecycleStatusLabel,
+  formatSourceTypeLabel,
+  formatSpreadsheetImportTypeLabel,
+  formatSpreadsheetRunModeLabel,
+} from "@/modules/presentation/labels";
 import {
   canCancelSpreadsheetImportRun,
   canRetrySpreadsheetImportRun,
@@ -26,7 +34,7 @@ type OrganizationImportsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Imports",
+  title: "Importaciones",
 };
 
 function formatUsd(value: number | null) {
@@ -76,7 +84,7 @@ function renderCanonicalSummary(run: Awaited<ReturnType<typeof listOrganizationS
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
           <p className="font-semibold">Origen</p>
-          <p className="mt-2 text-[color:var(--color-muted)]">{canonical.sourceType}</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">{formatSourceTypeLabel(canonical.sourceType)}</p>
         </div>
       </div>
     );
@@ -101,8 +109,8 @@ function renderCanonicalSummary(run: Awaited<ReturnType<typeof listOrganizationS
   return (
     <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
       {canonical.importType === "mixed"
-        ? `Import mixto con ${canonical.sheets.length} sheet(s) interpretadas.`
-        : canonical.warnings.join(" ") || "Import no soportado."}
+        ? `Importacion mixta con ${canonical.sheets.length} hoja(s) interpretadas.`
+        : canonical.warnings.join(" ") || "Importacion no soportada."}
     </div>
   );
 }
@@ -181,9 +189,9 @@ export default async function OrganizationImportsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Imports"
-      toolbarLabel="Imports e historicos"
-      description="Wizard minimo para planillas historicas, preview canonico, retries y carril batch cuando el volumen crece."
+      title="Importaciones"
+      toolbarLabel="Importaciones e historicos"
+      description="Asistente minimo para planillas historicas, vista previa canonica, reintentos y carril por lote cuando el volumen crece."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "imports")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -196,7 +204,7 @@ export default async function OrganizationImportsPage({
                   Soporta `.csv`, `.tsv`, `.xlsx` y `.xls` en variantes compatibles.
                 </p>
               </div>
-              <span className="status-pill status-pill--info">Wizard MVP</span>
+              <span className="status-pill status-pill--info">Asistente MVP</span>
             </div>
 
             <form
@@ -222,7 +230,7 @@ export default async function OrganizationImportsPage({
               >
                 <option value="auto">Modo auto</option>
                 <option value="interactive">Interactivo</option>
-                <option value="batch">Batch</option>
+                <option value="batch">Lote</option>
               </select>
               <button className="ui-button ui-button--primary">
                 Analizar planilla
@@ -232,14 +240,14 @@ export default async function OrganizationImportsPage({
 
           <section className="ui-panel">
             <div className="ui-panel-header">
-              <h2 className="text-[16px] font-semibold text-white">Runs recientes</h2>
-              <span className="ui-filter">{runs.length} run(s)</span>
+              <h2 className="text-[16px] font-semibold text-white">Corridas recientes</h2>
+              <span className="ui-filter">{runs.length} corrida(s)</span>
             </div>
 
             <div className="mt-4 space-y-3">
               {runs.length === 0 ? (
                 <div className="text-sm text-[color:var(--color-muted)]">
-                  Todavia no hay imports historicos en esta organizacion.
+                  Todavia no hay importaciones historicas en esta organizacion.
                 </div>
               ) : (
                 runs.map((run) => (
@@ -251,7 +259,7 @@ export default async function OrganizationImportsPage({
                       <div>
                         <p className="font-semibold text-white">{run.fileName}</p>
                         <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {run.importType} / {run.runMode} / {run.status}
+                          {formatSpreadsheetImportTypeLabel(run.importType)} / {formatSpreadsheetRunModeLabel(run.runMode)} / {formatLifecycleStatusLabel(run.status)}
                         </p>
                       </div>
                       <div className="text-right text-[13px] text-[color:var(--color-muted)]">
@@ -278,7 +286,7 @@ export default async function OrganizationImportsPage({
                           }}
                         >
                           <button className="ui-button ui-button--primary">
-                            Confirmar preview
+                            Confirmar vista previa
                           </button>
                         </form>
                       ) : null}
@@ -363,7 +371,7 @@ export default async function OrganizationImportsPage({
                   Alta manual del carril compuesto para DUA y relacionados.
                 </p>
               </div>
-              <span className="status-pill status-pill--info">Import phase 1</span>
+              <span className="status-pill status-pill--info">Fase 1</span>
             </div>
 
             <form
@@ -403,7 +411,7 @@ export default async function OrganizationImportsPage({
               />
               <input
                 name="supplierTaxId"
-                placeholder="Tax ID proveedor"
+                placeholder="Identificador fiscal proveedor"
                 className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
               />
               <input
@@ -431,7 +439,7 @@ export default async function OrganizationImportsPage({
           <section className="ui-panel">
             <div className="ui-panel-header">
               <h2 className="text-[16px] font-semibold text-white">Adjuntar documentos a importacion</h2>
-              <span className="ui-filter">{recentDocuments.length} docs</span>
+              <span className="ui-filter">{recentDocuments.length} documentos</span>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -461,7 +469,7 @@ export default async function OrganizationImportsPage({
                       <div>
                         <p className="font-semibold text-white">{document.original_filename}</p>
                         <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {document.document_type ?? "Documento sin tipo"} / {document.direction}
+                          {document.document_type ?? "Documento sin tipo"} / {getDocumentRoleLabel(document.direction)}
                         </p>
                       </div>
                       <span className="text-[13px] text-[color:var(--color-muted)]">
@@ -493,7 +501,7 @@ export default async function OrganizationImportsPage({
         <div className="space-y-4">
           <section className="ui-panel">
             <div className="ui-panel-header">
-              <h2 className="text-[16px] font-semibold text-white">Ultimo preview</h2>
+              <h2 className="text-[16px] font-semibold text-white">Ultima vista previa</h2>
               <span className="ui-filter">
                 {latestRun?.confirmedAt ? "Confirmado" : "Pendiente"}
               </span>
@@ -504,7 +512,7 @@ export default async function OrganizationImportsPage({
                 {renderCanonicalSummary(latestRun)}
 
                 <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                  <p className="font-semibold">Sheets detectadas</p>
+                  <p className="font-semibold">Hojas detectadas</p>
                   <div className="mt-3 space-y-3">
                     {(latestRun.preview?.sheets ?? []).map((sheet) => (
                       <div
@@ -518,7 +526,7 @@ export default async function OrganizationImportsPage({
                           </span>
                         </div>
                         <p className="mt-2 text-[13px] text-[color:var(--color-muted)]">
-                          Headers: {sheet.headers.join(", ") || "sin headers"}
+                          Encabezados: {sheet.headers.join(", ") || "sin encabezados"}
                         </p>
                       </div>
                     ))}
@@ -541,14 +549,14 @@ export default async function OrganizationImportsPage({
                   <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
                     <p className="font-semibold">Materializacion aplicada</p>
                     <p className="mt-2 text-[color:var(--color-muted)]">
-                      {(latestRun.metadata.materialized_sections as string[]).join(", ")}
+                      {(latestRun.metadata.materialized_sections as string[]).map((section) => formatSpreadsheetImportTypeLabel(section)).join(", ")}
                     </p>
                   </div>
                 ) : null}
               </div>
             ) : (
               <div className="mt-4 text-sm text-[color:var(--color-muted)]">
-                Todavia no hay previews para mostrar.
+                Todavia no hay vistas previas para mostrar.
               </div>
             )}
           </section>
@@ -576,7 +584,7 @@ export default async function OrganizationImportsPage({
                           {operation.referenceCode ?? operation.duaNumber ?? operation.id}
                         </p>
                         <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {operation.status} / {operation.currencyCode ?? "sin moneda"}
+                          {formatImportOperationStatusLabel(operation.status)} / {operation.currencyCode ?? "sin moneda"}
                         </p>
                       </div>
                       <div className="text-right text-[13px] text-[color:var(--color-muted)]">

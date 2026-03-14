@@ -286,12 +286,12 @@ input[type="checkbox"] {
 
 .app-nav-item {
   display: flex;
-  min-height: 34px;
+  min-height: 38px;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: 1px solid transparent;
   border-radius: 5px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   color: var(--muted);
   font-size: 14px;
   font-weight: 500;
@@ -504,6 +504,24 @@ input[type="checkbox"] {
 .ui-button--secondary {
   background: rgba(72, 82, 102, 0.4);
   color: white;
+}
+
+.ui-button--success {
+  border-color: rgba(95, 157, 115, 0.28);
+  background: rgba(95, 157, 115, 0.24);
+  color: #daf0e0;
+}
+
+.ui-button--warning {
+  border-color: rgba(195, 154, 82, 0.28);
+  background: rgba(195, 154, 82, 0.24);
+  color: #f5e3bd;
+}
+
+.ui-button--danger {
+  border-color: rgba(192, 98, 90, 0.28);
+  background: rgba(192, 98, 90, 0.24);
+  color: #f2d4d1;
 }
 
 .ui-button--ghost {

@@ -55,6 +55,19 @@ type ConfirmDocumentAction = (input: {
   message: string;
 }>;
 
+type CreateReviewAccountAction = (input: {
+  code: string;
+  name: string;
+}) => Promise<{
+  ok: boolean;
+  message: string;
+  account: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+}>;
+
 type ReviewSimpleAction = () => Promise<{
   ok: boolean;
   message: string;
@@ -327,6 +340,7 @@ type DocumentReviewWorkspaceProps = {
   };
   saveDraftReviewAction: SaveDraftReviewAction;
   confirmDocumentAction: ConfirmDocumentAction;
+  createReviewAccountAction: CreateReviewAccountAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   reopenDocumentAction: ReviewSimpleAction;
 };
@@ -402,11 +416,17 @@ export function DocumentReviewWorkspace({
   pageData,
   saveDraftReviewAction,
   confirmDocumentAction,
+  createReviewAccountAction,
   resolveDuplicateAction,
   reopenDocumentAction,
 }: DocumentReviewWorkspaceProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const reviewAccountKindLabel = pageData.draft.documentRole === "sale"
+    ? "ingreso"
+    : pageData.draft.documentRole === "purchase"
+      ? "gasto"
+      : "uso manual";
   const [identity, setIdentity] = useState({
     documentRole: pageData.draft.documentRole,
     documentType: pageData.draft.documentType,
@@ -423,6 +443,11 @@ export function DocumentReviewWorkspace({
       pageData.derived.accountingContext.manualOverrideOperationCategory ?? "",
     learnedConceptName: pageData.derived.accountingContext.learnedConceptName ?? "",
   });
+  const [availableAccounts, setAvailableAccounts] = useState(pageData.accountingOptions.accounts);
+  const [newReviewAccount, setNewReviewAccount] = useState({
+    code: "",
+    name: "",
+  });
   const [sectionStatus, setSectionStatus] = useState<SectionStatusMap>({
     identity: "",
     fields: "",
@@ -432,6 +457,7 @@ export function DocumentReviewWorkspace({
   });
   const [actionMessage, setActionMessage] = useState("");
   const [pendingAction, setPendingAction] = useState<"confirm" | "reopen" | null>(null);
+  const [pendingInlineAction, setPendingInlineAction] = useState<"create_account" | null>(null);
   const [pendingDuplicateAction, setPendingDuplicateAction] = useState<
     "confirmed_duplicate" | "false_positive" | "justified_non_duplicate" | null
   >(null);
@@ -460,6 +486,11 @@ export function DocumentReviewWorkspace({
         pageData.derived.accountingContext.manualOverrideOperationCategory ?? "",
       learnedConceptName: pageData.derived.accountingContext.learnedConceptName ?? "",
     });
+    setAvailableAccounts(pageData.accountingOptions.accounts);
+    setNewReviewAccount({
+      code: "",
+      name: "",
+    });
     setLearningScope(pageData.learningSuggestions.recommendedScope);
     setLearnedConceptName(
       pageData.derived.accountingContext.learnedConceptName
@@ -467,6 +498,19 @@ export function DocumentReviewWorkspace({
       ?? "",
     );
   }, [pageData]);
+
+  function buildAccountingContextPayload(nextAccountingContext = accountingContext) {
+    return {
+      accountingContext: {
+        userFreeText: nextAccountingContext.userFreeText,
+        manualOverrideAccountId: nextAccountingContext.manualOverrideAccountId || null,
+        manualOverrideConceptId: nextAccountingContext.manualOverrideConceptId || null,
+        manualOverrideOperationCategory:
+          nextAccountingContext.manualOverrideOperationCategory || null,
+        learnedConceptName: nextAccountingContext.learnedConceptName || null,
+      },
+    };
+  }
 
   function runSave(
     stepCode: StepCode,
@@ -546,6 +590,87 @@ export function DocumentReviewWorkspace({
         setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
       } finally {
         setPendingAction(null);
+      }
+    });
+  }
+
+  function runCreateReviewAccount() {
+    const code = newReviewAccount.code.trim();
+    const name = newReviewAccount.name.trim();
+
+    if (!code || !name) {
+      setSectionStatus((current) => ({
+        ...current,
+        accounting_context: "Completa codigo y nombre para crear la cuenta.",
+      }));
+      return;
+    }
+
+    setPendingInlineAction("create_account");
+    setSectionStatus((current) => ({
+      ...current,
+      accounting_context: "Creando cuenta y recalculando...",
+    }));
+    setActionMessage("");
+
+    startTransition(async () => {
+      try {
+        const created = await createReviewAccountAction({
+          code,
+          name,
+        });
+
+        if (!created.ok || !created.account) {
+          setSectionStatus((current) => ({
+            ...current,
+            accounting_context: created.message || "No se pudo crear la cuenta.",
+          }));
+          setActionMessage(created.message || "No se pudo crear la cuenta.");
+          return;
+        }
+
+        const nextAccounts = [...availableAccounts.filter((account) => account.id !== created.account?.id), created.account]
+          .sort((left, right) => left.code.localeCompare(right.code, "es", {
+            numeric: true,
+            sensitivity: "base",
+          }));
+        const nextAccountingContext = {
+          ...accountingContext,
+          manualOverrideAccountId: created.account.id,
+        };
+
+        setAvailableAccounts(nextAccounts);
+        setAccountingContext(nextAccountingContext);
+        setNewReviewAccount({
+          code: "",
+          name: "",
+        });
+        setActionMessage(created.message);
+
+        const saved = await saveDraftReviewAction({
+          stepCode: "accounting_context",
+          payload: buildAccountingContextPayload(nextAccountingContext),
+        });
+
+        setSectionStatus((current) => ({
+          ...current,
+          accounting_context: saved.ok
+            ? "Cuenta creada, override aplicado y borrador recalculado."
+            : saved.blockers.join(" ") || "No se pudo recalcular el contexto contable.",
+        }));
+
+        if (saved.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error al crear la cuenta.";
+        setSectionStatus((current) => ({
+          ...current,
+          accounting_context: message,
+        }));
+        setActionMessage(message);
+      } finally {
+        setPendingInlineAction(null);
       }
     });
   }
@@ -915,13 +1040,74 @@ export function DocumentReviewWorkspace({
                 className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
               >
                 <option value="">Sin override</option>
-                {pageData.accountingOptions.accounts.map((account) => (
+                {availableAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.code} - {account.name}
                   </option>
                 ))}
               </select>
             </label>
+
+            <div className="space-y-3 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm md:col-span-2">
+              <div>
+                <p className="font-medium">Crear cuenta nueva desde esta revision</p>
+                <p className="mt-1 leading-6 text-[color:var(--color-muted)]">
+                  Si la cuenta correcta no existe todavia, puedes crearla aqui como cuenta postable de {reviewAccountKindLabel}
+                  {" "}y usarla enseguida como override para este documento.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="font-medium">Codigo de cuenta</span>
+                  <input
+                    value={newReviewAccount.code}
+                    onChange={(event) => {
+                      setNewReviewAccount((current) => ({
+                        ...current,
+                        code: event.target.value,
+                      }));
+                    }}
+                    placeholder={pageData.draft.documentRole === "sale" ? "Ej. 4105" : "Ej. 6105"}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="font-medium">Nombre de cuenta</span>
+                  <input
+                    value={newReviewAccount.name}
+                    onChange={(event) => {
+                      setNewReviewAccount((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }));
+                    }}
+                    placeholder={
+                      pageData.derived.conceptResolution.primaryConceptLabels[0]
+                      ?? (pageData.draft.documentRole === "sale"
+                        ? "Ventas plaza gravadas"
+                        : "Gastos operativos")
+                    }
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    runCreateReviewAccount();
+                  }}
+                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
+                >
+                  {pendingInlineAction === "create_account" && isPending ? <InlineSpinner /> : null}
+                  Crear cuenta y usarla
+                </button>
+              </div>
+            </div>
 
             <label className="space-y-2 text-sm">
               <span className="font-medium">Override de concepto</span>
@@ -986,16 +1172,7 @@ export function DocumentReviewWorkspace({
               type="button"
               disabled={isPending}
               onClick={() => {
-                runSave("accounting_context", {
-                  accountingContext: {
-                    userFreeText: accountingContext.userFreeText,
-                    manualOverrideAccountId: accountingContext.manualOverrideAccountId || null,
-                    manualOverrideConceptId: accountingContext.manualOverrideConceptId || null,
-                    manualOverrideOperationCategory:
-                      accountingContext.manualOverrideOperationCategory || null,
-                    learnedConceptName: accountingContext.learnedConceptName || null,
-                  },
-                });
+                runSave("accounting_context", buildAccountingContextPayload());
               }}
               className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm disabled:opacity-60`}
             >
@@ -1232,7 +1409,7 @@ export function DocumentReviewWorkspace({
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Snapshot aplicado</p>
+              <p className="font-semibold">Instantanea aplicada</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.ruleSnapshot
                   ? `v${pageData.ruleSnapshot.versionNumber} - ${pageData.ruleSnapshot.legalEntityType} / ${pageData.ruleSnapshot.taxRegimeCode} / IVA ${pageData.ruleSnapshot.vatRegime}`
@@ -1397,7 +1574,7 @@ export function DocumentReviewWorkspace({
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Confianza y trazabilidad</h3>
           <div className="mt-4 space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
             <p>Processing run: {pageData.processingRun ? `${pageData.processingRun.provider_code}:${pageData.processingRun.model_code ?? "sin modelo"}` : "sin run"}</p>
-            <p>Snapshot: {pageData.ruleSnapshot ? pageData.ruleSnapshot.id : "sin snapshot"}</p>
+            <p>Instantanea: {pageData.ruleSnapshot ? pageData.ruleSnapshot.id : "sin instantanea"}</p>
             <p>Vendor: {pageData.derived.vendorResolution.vendorName ?? pageData.derived.vendorResolution.status}</p>
             <p>Conceptos: {pageData.derived.conceptResolution.primaryConceptLabels.join(", ") || "sin conceptos normalizados"}</p>
             <p>Confirmaciones: {pageData.confirmations.length}</p>

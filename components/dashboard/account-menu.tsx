@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buttonBaseClassName,
@@ -9,6 +10,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 
 type AccountMenuProps = {
   organizationName: string;
+  organizationSlug: string;
   userEmail?: string | null;
 };
 
@@ -47,6 +49,7 @@ function getDisplayLabel(
 
 export function AccountMenu({
   organizationName,
+  organizationSlug,
   userEmail,
 }: AccountMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -128,16 +131,22 @@ export function AccountMenu({
             <div className="rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm">
               <p className="font-medium text-white">Perfil y preferencias</p>
               <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
-                Placeholder UI para password, preferencias y MFA.
+                Proximamente: contrasena, preferencias y MFA.
               </p>
             </div>
 
-            <div className="rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm">
-              <p className="font-medium text-white">Organizaciones</p>
+            <Link
+              href={`/app/o/${organizationSlug}/settings`}
+              className="block rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm transition hover:border-[rgba(255,255,255,0.12)] hover:bg-[rgba(255,255,255,0.05)]"
+              onClick={() => {
+                setIsOpen(false);
+              }}
+            >
+              <p className="font-medium text-white">Organizacion</p>
               <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
-                Placeholder UI para switcher multi-org e invitaciones.
+                Perfil de la organizacion, datos fiscales y plan de cuentas.
               </p>
-            </div>
+            </Link>
 
             <form action="/logout" method="post">
               <SubmitButton

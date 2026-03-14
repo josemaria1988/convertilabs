@@ -45,6 +45,8 @@ export type OrganizationSettingsData = {
     slug: string;
     name: string;
     countryCode: string;
+    baseCurrency: string;
+    defaultLocale: string;
     taxId: string | null;
     legalEntityType: string | null;
     taxRegimeCode: string | null;
@@ -70,6 +72,31 @@ function previousDay(dateString: string) {
   return date.toISOString().slice(0, 10);
 }
 
+async function recordAuditEvent(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    actorId: string | null;
+    action: string;
+    beforeJson?: Record<string, unknown>;
+    afterJson?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await supabase
+    .from("audit_log")
+    .insert({
+      organization_id: input.organizationId,
+      actor_user_id: input.actorId,
+      entity_type: "organization",
+      entity_id: input.organizationId,
+      action: input.action,
+      before_json: input.beforeJson ?? null,
+      after_json: input.afterJson ?? null,
+      metadata: input.metadata ?? {},
+    });
+}
+
 async function loadOrganizationRow(
   supabase: SupabaseClient,
   organizationId: string,
@@ -77,7 +104,7 @@ async function loadOrganizationRow(
   const { data, error } = await supabase
     .from("organizations")
     .select(
-      "id, slug, name, country_code, tax_id, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
+      "id, slug, name, country_code, base_currency, default_locale, tax_id, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
     )
     .eq("id", organizationId)
     .limit(1)
@@ -92,6 +119,8 @@ async function loadOrganizationRow(
     slug: data.slug as string,
     name: data.name as string,
     countryCode: data.country_code as string,
+    baseCurrency: data.base_currency as string,
+    defaultLocale: data.default_locale as string,
     taxId: (data.tax_id as string | null) ?? null,
     legalEntityType: (data.legal_entity_type as string | null) ?? null,
     taxRegimeCode: (data.tax_regime_code as string | null) ?? null,
@@ -148,6 +177,72 @@ export async function loadOrganizationSettingsData(organizationId: string) {
       ruleSnapshotHistory.find((snapshot) => snapshot.status === "active") ?? null,
     ruleSnapshotHistory,
   } satisfies OrganizationSettingsData;
+}
+
+export async function updateOrganizationBasics(input: {
+  organizationId: string;
+  actorId: string | null;
+  name: string;
+  countryCode: string;
+  baseCurrency: string;
+  defaultLocale: string;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const current = await loadOrganizationRow(supabase, input.organizationId);
+  const name = input.name.trim();
+  const countryCode = input.countryCode.trim().toUpperCase();
+  const baseCurrency = input.baseCurrency.trim().toUpperCase();
+  const defaultLocale = input.defaultLocale.trim();
+
+  if (name.length < 2) {
+    throw new Error("El nombre de la organizacion debe tener al menos 2 caracteres.");
+  }
+
+  if (countryCode.length !== 2) {
+    throw new Error("El codigo de pais debe tener 2 letras.");
+  }
+
+  if (baseCurrency.length !== 3) {
+    throw new Error("La moneda base debe tener 3 letras.");
+  }
+
+  if (!defaultLocale) {
+    throw new Error("La locale por defecto es obligatoria.");
+  }
+
+  const patch = {
+    name,
+    country_code: countryCode,
+    base_currency: baseCurrency,
+    default_locale: defaultLocale,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("organizations")
+    .update(patch)
+    .eq("id", input.organizationId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent(supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    action: "organization:update_basics",
+    beforeJson: {
+      name: current.name,
+      country_code: current.countryCode,
+      base_currency: current.baseCurrency,
+      default_locale: current.defaultLocale,
+    },
+    afterJson: {
+      name,
+      country_code: countryCode,
+      base_currency: baseCurrency,
+      default_locale: defaultLocale,
+    },
+  });
 }
 
 export async function activateOrganizationProfileVersion(input: {

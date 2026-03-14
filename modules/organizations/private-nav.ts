@@ -26,8 +26,8 @@ export function buildOrganizationPrivateNavItems(
     },
     {
       href: `/app/o/${organizationSlug}/imports`,
-      label: "Imports",
-      description: "Planillas, historicos y preview canonico",
+      label: "Importaciones",
+      description: "Planillas, historicos y vista previa canonica",
       current: currentSection === "imports",
     },
     {
@@ -38,7 +38,7 @@ export function buildOrganizationPrivateNavItems(
     },
     {
       href: `/app/o/${organizationSlug}/open-items`,
-      label: "Open items",
+      label: "Saldos abiertos",
       description: "Saldos abiertos a cobrar y pagar",
       current: currentSection === "open_items",
     },
@@ -51,7 +51,7 @@ export function buildOrganizationPrivateNavItems(
     {
       href: `/app/o/${organizationSlug}/settings`,
       label: "Configuracion",
-      description: "Perfil fiscal y snapshots",
+      description: "Organizacion, perfil fiscal y plan de cuentas",
       current: currentSection === "settings",
     },
   ];
