@@ -32,11 +32,11 @@ export default async function OrganizationJournalEntriesPage({
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [{ data: journalEntries }, { data: suggestions }] = await Promise.all([
+  const [{ data: journalEntries }, { data: suggestions }, { data: openItems }] = await Promise.all([
     supabase
       .from("journal_entries")
       .select(
-        "id, source_document_id, status, reference, description, total_debit, total_credit, created_at",
+        "id, source_document_id, status, reference, description, currency_code, fx_rate, functional_currency_code, total_debit, total_credit, functional_total_debit, functional_total_credit, created_at",
       )
       .eq("organization_id", organization.id)
       .order("created_at", { ascending: false })
@@ -47,6 +47,12 @@ export default async function OrganizationJournalEntriesPage({
       .eq("organization_id", organization.id)
       .order("created_at", { ascending: false })
       .limit(7),
+    supabase
+      .from("ledger_open_items")
+      .select("id, status, currency_code, outstanding_amount, counterparty_type")
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
 
   const entryRows = ((journalEntries as Array<{
@@ -55,8 +61,13 @@ export default async function OrganizationJournalEntriesPage({
     status: string;
     reference: string | null;
     description: string | null;
+    currency_code: string | null;
+    fx_rate: number | null;
+    functional_currency_code: string | null;
     total_debit: number;
     total_credit: number;
+    functional_total_debit: number | null;
+    functional_total_credit: number | null;
   }> | null) ?? []);
 
   const suggestionRows = ((suggestions as Array<{
@@ -73,12 +84,16 @@ export default async function OrganizationJournalEntriesPage({
       code: entry.reference ?? String(318000000 + index * 1000),
       description: entry.description ?? "Asiento sugerido por confirmacion",
       status: entry.status,
+      currencyCode: entry.currency_code ?? "UYU",
+      fxRate: entry.fx_rate ?? 1,
+      functionalCurrencyCode: entry.functional_currency_code ?? "UYU",
       exemptAmount:
         entry.total_credit > entry.total_debit
           ? entry.total_credit - entry.total_debit
           : 0,
       balanceAmount: entry.total_debit,
       totalAmount: entry.total_credit,
+      functionalAmount: entry.functional_total_credit ?? entry.total_credit,
     }))
     : suggestionRows.map((suggestion, index) => ({
       id: suggestion.id,
@@ -86,10 +101,23 @@ export default async function OrganizationJournalEntriesPage({
       code: `31${String(index).padStart(2, "0")}0000`,
       description: suggestion.explanation ?? `Suggestion v${suggestion.version_no}`,
       status: "suggested",
+      currencyCode: "UYU",
+      fxRate: 1,
+      functionalCurrencyCode: "UYU",
       exemptAmount: null,
       balanceAmount: null,
       totalAmount: null,
+      functionalAmount: null,
     }));
+  const recentOpenItems = ((openItems as Array<{
+    id: string;
+    status: string;
+    currency_code: string;
+    outstanding_amount: number;
+    counterparty_type: string;
+  }> | null) ?? []);
+  const openCount = recentOpenItems.filter((item) => item.status !== "settled").length;
+  const openTotal = recentOpenItems.reduce((sum, item) => sum + item.outstanding_amount, 0);
 
   return (
     <PrivateDashboardShell
@@ -103,6 +131,23 @@ export default async function OrganizationJournalEntriesPage({
       navItems={buildOrganizationPrivateNavItems(organization.slug, "journal_entries")}
     >
       <section className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="ui-panel p-4">
+            <p className="text-sm font-semibold text-white">Open items activos</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{openCount}</p>
+          </div>
+          <div className="ui-panel p-4">
+            <p className="text-sm font-semibold text-white">Saldo abierto</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{formatAmount(openTotal)}</p>
+          </div>
+          <div className="ui-panel p-4">
+            <p className="text-sm font-semibold text-white">Ultimo FX</p>
+            <p className="mt-2 text-2xl font-semibold text-white">
+              {rows[0] ? `${rows[0].currencyCode} -> ${rows[0].functionalCurrencyCode}` : "--"}
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             <span className="ui-tab" data-current="true">Sugerir</span>
@@ -123,13 +168,14 @@ export default async function OrganizationJournalEntriesPage({
                   <th className="text-right">Saldo</th>
                   <th className="text-right">Exentos</th>
                   <th className="text-right">Importe</th>
+                  <th className="text-right">Moneda</th>
                   <th className="w-10 text-right"> </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
+                    <td colSpan={8} className="px-6 py-14 text-center text-sm text-[color:var(--color-muted)]">
                       Todavia no hay asientos ni sugerencias para mostrar.
                     </td>
                   </tr>
@@ -156,6 +202,10 @@ export default async function OrganizationJournalEntriesPage({
                       </td>
                       <td className="text-right text-white">
                         {formatAmount(row.totalAmount)}
+                      </td>
+                      <td className="text-right text-[color:var(--color-muted)]">
+                        {row.currencyCode}
+                        {row.fxRate !== 1 ? ` / fx ${row.fxRate}` : ""}
                       </td>
                       <td className="text-right">
                         {row.sourceDocumentId ? (

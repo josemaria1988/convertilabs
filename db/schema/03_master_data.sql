@@ -104,7 +104,16 @@ create table if not exists public.customers (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null,
   tax_id text,
+  tax_id_normalized text,
+  name_normalized text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists idx_customers_org_tax_id_normalized
+  on public.customers (organization_id, tax_id_normalized)
+  where tax_id_normalized is not null;
+
+create index if not exists idx_customers_org_name_normalized
+  on public.customers (organization_id, name_normalized);

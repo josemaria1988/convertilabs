@@ -73,6 +73,7 @@ type AccountingRuleRow = {
   source: string;
   is_active: boolean;
   metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 function asArray<T>(value: T[] | null | undefined) {
@@ -222,7 +223,7 @@ export async function loadActiveAccountingRules(
   let query = supabase
     .from("accounting_rules")
     .select(
-      "id, organization_id, scope, document_id, vendor_id, concept_id, document_role, account_id, vat_profile_json, operation_category, linked_operation_type, priority, source, is_active, metadata",
+      "id, organization_id, scope, document_id, vendor_id, concept_id, document_role, account_id, vat_profile_json, operation_category, linked_operation_type, priority, source, is_active, metadata, created_at",
     )
     .eq("organization_id", organizationId)
     .eq("is_active", true)
@@ -683,6 +684,33 @@ export async function persistApprovedAccountingArtifacts(
     throw new Error(suggestionError?.message ?? "No se pudo persistir la sugerencia contable.");
   }
 
+  const suggestionLinePayload = input.derived.journalSuggestion.lines.map((line) => ({
+    suggestion_id: suggestion.id,
+    line_no: line.lineNumber,
+    side: line.debit > 0 ? "debit" : "credit",
+    account_id: line.accountId,
+    amount: roundCurrency(line.debit > 0 ? line.debit : line.credit),
+    tax_tag: line.taxTag,
+    memo: line.accountName,
+    metadata: {
+      provenance: line.provenance,
+      currency_code: line.currencyCode,
+      fx_rate: line.fxRate,
+      functional_debit: line.functionalDebit,
+      functional_credit: line.functionalCredit,
+    },
+  })).filter((line) => Boolean(line.account_id));
+
+  if (suggestionLinePayload.length > 0) {
+    const { error: suggestionLineError } = await supabase
+      .from("accounting_suggestion_lines")
+      .insert(suggestionLinePayload);
+
+    if (suggestionLineError) {
+      throw new Error(suggestionLineError.message);
+    }
+  }
+
   const accounts = await loadOrganizationChartAccounts(supabase, input.organizationId);
   const journalLines = input.derived.journalSuggestion.lines;
   const missingCodes = journalLines
@@ -704,10 +732,16 @@ export async function persistApprovedAccountingArtifacts(
       entry_date: input.documentDate,
       status: "draft",
       currency_code: input.currencyCode ?? "UYU",
+      fx_rate: input.derived.journalSuggestion.fxRate,
+      fx_rate_date: input.derived.journalSuggestion.fxRateDate,
+      fx_rate_source: input.derived.journalSuggestion.fxRateSource,
+      functional_currency_code: input.derived.journalSuggestion.functionalCurrencyCode,
       reference: input.reference,
       description,
       total_debit: input.derived.journalSuggestion.totalDebit,
       total_credit: input.derived.journalSuggestion.totalCredit,
+      functional_total_debit: input.derived.journalSuggestion.functionalTotalDebit,
+      functional_total_credit: input.derived.journalSuggestion.functionalTotalCredit,
       created_by: input.actorId,
     })
     .select("id")
@@ -736,6 +770,13 @@ export async function persistApprovedAccountingArtifacts(
       credit: roundCurrency(entry.line.credit),
       description: entry.line.accountName,
       tax_tag: entry.line.taxTag,
+      currency_code: entry.line.currencyCode,
+      fx_rate: entry.line.fxRate,
+      functional_debit: roundCurrency(entry.line.functionalDebit),
+      functional_credit: roundCurrency(entry.line.functionalCredit),
+      metadata: {
+        provenance: entry.line.provenance,
+      },
     }));
 
   if (linePayload.length > 0) {

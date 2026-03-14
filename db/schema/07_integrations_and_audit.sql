@@ -78,3 +78,26 @@ create table if not exists public.audit_log (
 
 create index if not exists idx_audit_log_org_created
   on public.audit_log (organization_id, created_at desc);
+
+create table if not exists public.ai_decision_logs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  run_type text not null,
+  provider_code text,
+  model_code text,
+  prompt_version text,
+  schema_version text,
+  response_id text,
+  decision_source text not null,
+  confidence_score numeric(5,4),
+  certainty_level text not null default 'yellow',
+  evidence_json jsonb not null default '{}'::jsonb,
+  rationale_text text,
+  warnings_json jsonb not null default '[]'::jsonb,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ai_decision_logs_org_doc_created
+  on public.ai_decision_logs (organization_id, document_id, created_at desc);

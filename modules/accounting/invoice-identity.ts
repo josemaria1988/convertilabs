@@ -65,6 +65,19 @@ export function buildInvoiceIdentityResult(input: {
       documentDate,
     ].join("|");
   } else if (
+    issuerTaxIdNormalized
+    && documentNumberNormalized
+    && totalAmount !== null
+    && currencyCode
+  ) {
+    identityStrategy = "tax_id_number_total_currency";
+    invoiceIdentityKey = [
+      issuerTaxIdNormalized,
+      documentNumberNormalized,
+      totalAmount.toFixed(2),
+      currencyCode,
+    ].join("|");
+  } else if (
     issuerNameNormalized
     && documentNumberNormalized
     && documentDate

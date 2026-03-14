@@ -30,6 +30,10 @@ export type ReviewJournalLine = {
   accountName: string;
   debit: number;
   credit: number;
+  functionalDebit: number;
+  functionalCredit: number;
+  currencyCode: string;
+  fxRate: number;
   provenance: string;
   taxTag: string | null;
 };
@@ -39,6 +43,13 @@ export type ReviewJournalSuggestion = {
   isBalanced: boolean;
   totalDebit: number;
   totalCredit: number;
+  functionalTotalDebit: number;
+  functionalTotalCredit: number;
+  currencyCode: string;
+  functionalCurrencyCode: string;
+  fxRate: number;
+  fxRateDate: string | null;
+  fxRateSource: string;
   explanation: string;
   lines: ReviewJournalLine[];
   blockingReasons: string[];
@@ -93,6 +104,7 @@ export type VendorResolutionResult = {
 
 export type InvoiceIdentityStrategy =
   | "tax_id_number_date"
+  | "tax_id_number_total_currency"
   | "name_number_date_total_currency"
   | "insufficient_data";
 
@@ -265,6 +277,7 @@ export type AccountingRuleRecord = {
   source: string;
   is_active: boolean;
   metadata: JsonRecord | null;
+  created_at?: string;
 };
 
 export type ResolvedAccountingRule = {
@@ -279,6 +292,7 @@ export type ResolvedAccountingRule = {
   provenance: string;
   priority: number | null;
   source: string | null;
+  createdAt: string | null;
 };
 
 export type AccountingContextReasonCode =

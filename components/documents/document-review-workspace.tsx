@@ -95,6 +95,13 @@ type DocumentReviewWorkspaceProps = {
       documentRole: DocumentRoleCandidate;
       documentType: string;
       operationCategory: string | null;
+      transactionFamilyResolution: {
+        source: string | null;
+        confidence: number | null;
+        shouldReview: boolean;
+        warnings: string[];
+        evidence: string[];
+      } | null;
     };
     steps: Array<{
       step_code: string;
@@ -128,6 +135,13 @@ type DocumentReviewWorkspaceProps = {
         isBalanced: boolean;
         totalDebit: number;
         totalCredit: number;
+        functionalTotalDebit: number;
+        functionalTotalCredit: number;
+        currencyCode: string;
+        functionalCurrencyCode: string;
+        fxRate: number;
+        fxRateDate: string | null;
+        fxRateSource: string;
         explanation: string;
         lines: Array<{
           lineNumber: number;
@@ -135,6 +149,10 @@ type DocumentReviewWorkspaceProps = {
           accountName: string;
           debit: number;
           credit: number;
+          functionalDebit: number;
+          functionalCredit: number;
+          currencyCode: string;
+          fxRate: number;
           provenance: string;
         }>;
         blockingReasons: string[];
@@ -276,6 +294,23 @@ type DocumentReviewWorkspaceProps = {
         canonicalName: string;
       }>;
     };
+    certaintySummary: {
+      level: "green" | "yellow" | "red";
+      confidence: number | null;
+      warningCount: number;
+    };
+    decisionLogs: Array<{
+      id: string;
+      runType: string;
+      decisionSource: string;
+      confidenceScore: number | null;
+      certaintyLevel: "green" | "yellow" | "red";
+      rationaleText: string | null;
+      warnings: string[];
+      evidence: Record<string, unknown> | null;
+      metadata: Record<string, unknown> | null;
+      createdAt: string;
+    }>;
     canConfirm: boolean;
     canReopen: boolean;
   };
@@ -317,6 +352,22 @@ function getStepClasses(status: string) {
     default:
       return "bg-slate-100 text-slate-900";
   }
+}
+
+function getCertaintyClasses(level: "green" | "yellow" | "red") {
+  if (level === "green") {
+    return "bg-emerald-100 text-emerald-900";
+  }
+
+  if (level === "yellow") {
+    return "bg-amber-100 text-amber-900";
+  }
+
+  return "bg-rose-100 text-rose-900";
+}
+
+function formatDecisionSource(value: string) {
+  return value.replace(/_/g, " ");
 }
 
 function toEditableFacts(facts: DocumentIntakeFactMap) {
@@ -557,11 +608,19 @@ export function DocumentReviewWorkspace({
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
-              <p className="font-semibold">Confianza AI</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold">Semaforo</p>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCertaintyClasses(pageData.certaintySummary.level)}`}>
+                  {pageData.certaintySummary.level}
+                </span>
+              </div>
               <p className="mt-2 text-[color:var(--color-muted)]">
-                {pageData.draft.sourceConfidence !== null
-                  ? `${Math.round(pageData.draft.sourceConfidence * 100)}%`
+                {pageData.certaintySummary.confidence !== null
+                  ? `${Math.round(pageData.certaintySummary.confidence * 100)}%`
                   : "Sin score"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Warnings: {pageData.certaintySummary.warningCount}
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
@@ -634,6 +693,34 @@ export function DocumentReviewWorkspace({
               />
             </label>
           </div>
+
+          {pageData.draft.transactionFamilyResolution ? (
+            <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-semibold">Resolucion automatica por identidad</p>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pageData.draft.transactionFamilyResolution.shouldReview ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>
+                  {pageData.draft.transactionFamilyResolution.source ?? "sin fuente"}
+                </span>
+              </div>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.draft.transactionFamilyResolution.confidence !== null
+                  ? `${Math.round(pageData.draft.transactionFamilyResolution.confidence * 100)}%`
+                  : "Sin score"} / {pageData.draft.transactionFamilyResolution.shouldReview ? "requiere revision" : "deterministico"}
+              </p>
+              {pageData.draft.transactionFamilyResolution.evidence.length > 0 ? (
+                <div className="mt-3 space-y-2 text-[color:var(--color-muted)]">
+                  {pageData.draft.transactionFamilyResolution.evidence.map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
+                </div>
+              ) : null}
+              {pageData.draft.transactionFamilyResolution.warnings.length > 0 ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
+                  {pageData.draft.transactionFamilyResolution.warnings.join(" ")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <p className="mt-3 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
             {sectionStatus.identity}
@@ -1166,6 +1253,7 @@ export function DocumentReviewWorkspace({
                   <th className="pr-4">Cuenta</th>
                   <th className="pr-4">Debito</th>
                   <th className="pr-4">Credito</th>
+                  <th className="pr-4">Funcional</th>
                   <th>Origen</th>
                 </tr>
               </thead>
@@ -1182,6 +1270,11 @@ export function DocumentReviewWorkspace({
                     <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3">
                       {line.credit ? formatMoney(line.credit) : "-"}
                     </td>
+                    <td className="border-y border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-[color:var(--color-muted)]">
+                      {line.functionalDebit || line.functionalCredit
+                        ? formatMoney(line.functionalDebit || line.functionalCredit)
+                        : "-"}
+                    </td>
                     <td className="rounded-r-2xl border border-l-0 border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-[color:var(--color-muted)]">
                       {line.provenance}
                     </td>
@@ -1194,6 +1287,18 @@ export function DocumentReviewWorkspace({
           <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
             <p className="font-semibold">
               Balance: {formatMoney(pageData.derived.journalSuggestion.totalDebit)} / {formatMoney(pageData.derived.journalSuggestion.totalCredit)}
+            </p>
+            <p className="mt-2 text-[color:var(--color-muted)]">
+              Moneda: {pageData.derived.journalSuggestion.currencyCode} / funcional {pageData.derived.journalSuggestion.functionalCurrencyCode}
+            </p>
+            <p className="mt-1 text-[color:var(--color-muted)]">
+              FX: {pageData.derived.journalSuggestion.fxRate} ({pageData.derived.journalSuggestion.fxRateSource})
+              {pageData.derived.journalSuggestion.fxRateDate
+                ? ` / ${pageData.derived.journalSuggestion.fxRateDate}`
+                : ""}
+            </p>
+            <p className="mt-1 text-[color:var(--color-muted)]">
+              Balance funcional: {formatMoney(pageData.derived.journalSuggestion.functionalTotalDebit)} / {formatMoney(pageData.derived.journalSuggestion.functionalTotalCredit)}
             </p>
           </div>
 
@@ -1228,7 +1333,7 @@ export function DocumentReviewWorkspace({
         </article>
 
         <article className="panel p-6">
-          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Trazabilidad</h3>
+          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Confianza y trazabilidad</h3>
           <div className="mt-4 space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
             <p>Processing run: {pageData.processingRun ? `${pageData.processingRun.provider_code}:${pageData.processingRun.model_code ?? "sin modelo"}` : "sin run"}</p>
             <p>Snapshot: {pageData.ruleSnapshot ? pageData.ruleSnapshot.id : "sin snapshot"}</p>
@@ -1237,6 +1342,53 @@ export function DocumentReviewWorkspace({
             <p>Confirmaciones: {pageData.confirmations.length}</p>
             <p>Creado: {formatDate(pageData.document.createdAt)}</p>
           </div>
+
+          {pageData.decisionLogs.length > 0 ? (
+            <div className="mt-5 space-y-3">
+              {pageData.decisionLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{log.runType}</p>
+                      <p className="text-[color:var(--color-muted)]">
+                        {formatDecisionSource(log.decisionSource)}
+                        {log.confidenceScore !== null
+                          ? ` / ${Math.round(log.confidenceScore * 100)}%`
+                          : ""}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCertaintyClasses(log.certaintyLevel)}`}>
+                      {log.certaintyLevel}
+                    </span>
+                  </div>
+                  {log.rationaleText ? (
+                    <p className="mt-3 text-[color:var(--color-muted)]">{log.rationaleText}</p>
+                  ) : null}
+                  {log.warnings.length > 0 ? (
+                    <p className="mt-2 text-amber-900">
+                      Warnings: {log.warnings.join(" ")}
+                    </p>
+                  ) : null}
+                  {log.metadata?.rule_id ? (
+                    <p className="mt-2 text-[color:var(--color-muted)]">
+                      Regla aplicada: {String(log.metadata.rule_id)}
+                    </p>
+                  ) : null}
+                  {log.metadata?.rule_created_at ? (
+                    <p className="mt-1 text-[color:var(--color-muted)]">
+                      Regla creada: {formatDate(String(log.metadata.rule_created_at))}
+                    </p>
+                  ) : null}
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    {formatDate(log.createdAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {pageData.confirmations.length > 0 ? (
             <div className="mt-4 space-y-3">

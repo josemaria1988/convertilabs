@@ -1,47 +1,30 @@
 import { resolveUyVatTreatment } from "@/modules/tax/uy-vat-engine";
+import { resolveAccountingRuleWithPrecedence } from "@/modules/accounting/rules";
 import {
-  roundCurrency,
-} from "@/modules/accounting/normalization";
-import { resolveAccountingRuleSelection } from "@/modules/accounting/rule-engine";
+  buildBlockedJournalSuggestion,
+  buildJournalLine,
+  buildJournalMonetaryContext,
+  finalizeJournalSuggestion,
+  resolveSystemAccount,
+} from "@/modules/accounting/journal-builder";
 import type {
   AccountingSuggestionContext,
   DerivedDraftArtifacts,
-  PostableAccountRecord,
-  ReviewJournalLine,
-  ReviewJournalSuggestion,
 } from "@/modules/accounting/types";
-
-function resolveSystemAccount(
-  accounts: PostableAccountRecord[],
-  role: string,
-) {
-  return accounts.find((account) => {
-    const systemRole = account.metadata?.system_role;
-    return typeof systemRole === "string" && systemRole.trim() === role;
-  }) ?? null;
-}
-
-function buildBlockedJournalSuggestion(blockingReasons: string[], explanation: string) {
-  return {
-    ready: false,
-    isBalanced: false,
-    totalDebit: 0,
-    totalCredit: 0,
-    explanation,
-    lines: [],
-    blockingReasons,
-  } satisfies ReviewJournalSuggestion;
-}
 
 function buildPurchaseJournalSuggestion(input: {
   context: AccountingSuggestionContext;
   taxTreatment: ReturnType<typeof resolveUyVatTreatment>;
 }) {
-  const appliedRule = resolveAccountingRuleSelection(input.context);
+  const appliedRule = resolveAccountingRuleWithPrecedence(input.context);
   const blockers = [
     ...input.context.accountingContext.blockingReasons,
     ...input.context.assistantSuggestion.reviewFlags,
   ];
+  const monetary = buildJournalMonetaryContext({
+    currencyCode: input.context.facts.currency_code,
+    documentDate: input.context.facts.document_date,
+  });
 
   if (!appliedRule.accountId || !appliedRule.accountCode || !appliedRule.accountName) {
     blockers.push("Falta una cuenta contable postable resuelta para el documento.");
@@ -50,10 +33,11 @@ function buildPurchaseJournalSuggestion(input: {
   if (!input.taxTreatment.ready || !input.taxTreatment.journalSeed) {
     return {
       appliedRule,
-      journalSuggestion: buildBlockedJournalSuggestion(
-        [...blockers, ...input.taxTreatment.blockingReasons],
-        "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
-      ),
+      journalSuggestion: buildBlockedJournalSuggestion({
+        blockingReasons: [...blockers, ...input.taxTreatment.blockingReasons],
+        explanation: "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
+        monetary,
+      }),
     };
   }
 
@@ -76,15 +60,16 @@ function buildPurchaseJournalSuggestion(input: {
   if (blockers.length > 0) {
     return {
       appliedRule,
-      journalSuggestion: buildBlockedJournalSuggestion(
-        blockers,
-        "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
-      ),
+      journalSuggestion: buildBlockedJournalSuggestion({
+        blockingReasons: blockers,
+        explanation: "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
+        monetary,
+      }),
     };
   }
 
-  const lines: ReviewJournalLine[] = [
-    {
+  const lines = [
+    buildJournalLine({
       lineNumber: 1,
       accountId: appliedRule.accountId,
       accountCode: appliedRule.accountCode!,
@@ -99,7 +84,8 @@ function buildPurchaseJournalSuggestion(input: {
         input.taxTreatment.vatBucket === "input_creditable"
           ? "vat_purchase_base"
           : "vat_purchase_non_deductible",
-    },
+      monetary,
+    }),
   ];
 
   if (
@@ -107,7 +93,7 @@ function buildPurchaseJournalSuggestion(input: {
     && input.taxTreatment.taxAmount > 0
     && vatAccount
   ) {
-    lines.push({
+    lines.push(buildJournalLine({
       lineNumber: 2,
       accountId: vatAccount.id,
       accountCode: vatAccount.code,
@@ -116,10 +102,11 @@ function buildPurchaseJournalSuggestion(input: {
       credit: 0,
       provenance: "system_role:vat_input_creditable",
       taxTag: "vat_input_creditable",
-    });
+      monetary,
+    }));
   }
 
-  lines.push({
+  lines.push(buildJournalLine({
     lineNumber: lines.length + 1,
     accountId: counterparty!.id,
     accountCode: counterparty!.code,
@@ -128,19 +115,17 @@ function buildPurchaseJournalSuggestion(input: {
     credit: input.taxTreatment.journalSeed.totalAmount,
     provenance: "system_role:accounts_payable",
     taxTag: null,
-  });
+    monetary,
+  }));
 
   return {
     appliedRule,
-    journalSuggestion: {
-      ready: true,
-      isBalanced: true,
-      totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
-      totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-      explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
+    journalSuggestion: finalizeJournalSuggestion({
       lines,
+      explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
       blockingReasons: [],
-    } satisfies ReviewJournalSuggestion,
+      monetary,
+    }),
   };
 }
 
@@ -148,11 +133,15 @@ function buildSaleJournalSuggestion(input: {
   context: AccountingSuggestionContext;
   taxTreatment: ReturnType<typeof resolveUyVatTreatment>;
 }) {
-  const appliedRule = resolveAccountingRuleSelection(input.context);
+  const appliedRule = resolveAccountingRuleWithPrecedence(input.context);
   const blockers = [
     ...input.context.accountingContext.blockingReasons,
     ...input.context.assistantSuggestion.reviewFlags,
   ];
+  const monetary = buildJournalMonetaryContext({
+    currencyCode: input.context.facts.currency_code,
+    documentDate: input.context.facts.document_date,
+  });
 
   if (!appliedRule.accountId || !appliedRule.accountCode || !appliedRule.accountName) {
     blockers.push("Falta una cuenta de ingreso postable resuelta para el documento.");
@@ -161,10 +150,11 @@ function buildSaleJournalSuggestion(input: {
   if (!input.taxTreatment.ready || !input.taxTreatment.journalSeed) {
     return {
       appliedRule,
-      journalSuggestion: buildBlockedJournalSuggestion(
-        [...blockers, ...input.taxTreatment.blockingReasons],
-        "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
-      ),
+      journalSuggestion: buildBlockedJournalSuggestion({
+        blockingReasons: [...blockers, ...input.taxTreatment.blockingReasons],
+        explanation: "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
+        monetary,
+      }),
     };
   }
 
@@ -187,15 +177,16 @@ function buildSaleJournalSuggestion(input: {
   if (blockers.length > 0) {
     return {
       appliedRule,
-      journalSuggestion: buildBlockedJournalSuggestion(
-        blockers,
-        "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
-      ),
+      journalSuggestion: buildBlockedJournalSuggestion({
+        blockingReasons: blockers,
+        explanation: "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
+        monetary,
+      }),
     };
   }
 
-  const lines: ReviewJournalLine[] = [
-    {
+  const lines = [
+    buildJournalLine({
       lineNumber: 1,
       accountId: counterparty!.id,
       accountCode: counterparty!.code,
@@ -204,8 +195,9 @@ function buildSaleJournalSuggestion(input: {
       credit: 0,
       provenance: "system_role:accounts_receivable",
       taxTag: null,
-    },
-    {
+      monetary,
+    }),
+    buildJournalLine({
       lineNumber: 2,
       accountId: appliedRule.accountId,
       accountCode: appliedRule.accountCode!,
@@ -214,11 +206,12 @@ function buildSaleJournalSuggestion(input: {
       credit: input.taxTreatment.taxableAmount,
       provenance: appliedRule.provenance,
       taxTag: "vat_sale_base",
-    },
+      monetary,
+    }),
   ];
 
   if (input.taxTreatment.taxAmount > 0 && vatAccount) {
-    lines.push({
+    lines.push(buildJournalLine({
       lineNumber: 3,
       accountId: vatAccount.id,
       accountCode: vatAccount.code,
@@ -227,25 +220,23 @@ function buildSaleJournalSuggestion(input: {
       credit: input.taxTreatment.taxAmount,
       provenance: "system_role:vat_output_payable",
       taxTag: "vat_output_payable",
-    });
+      monetary,
+    }));
   }
 
   return {
     appliedRule,
-    journalSuggestion: {
-      ready: true,
-      isBalanced: true,
-      totalDebit: roundCurrency(lines.reduce((sum, line) => sum + line.debit, 0)),
-      totalCredit: roundCurrency(lines.reduce((sum, line) => sum + line.credit, 0)),
-      explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
+    journalSuggestion: finalizeJournalSuggestion({
       lines,
+      explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
       blockingReasons: [],
-    } satisfies ReviewJournalSuggestion,
+      monetary,
+    }),
   };
 }
 
 export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext) {
-  const appliedRule = resolveAccountingRuleSelection(input);
+  const appliedRule = resolveAccountingRuleWithPrecedence(input);
   const conceptBlockers =
     appliedRule.scope === "manual_review"
       ? input.conceptResolution.blockingReasons
@@ -276,10 +267,14 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
           })
         : {
             appliedRule,
-            journalSuggestion: buildBlockedJournalSuggestion(
-              ["Solo compra y venta entran en el flujo contable automatizado del MVP."],
-              "No hay sugerencia contable automatica para documentos fuera de compra/venta.",
-            ),
+            journalSuggestion: buildBlockedJournalSuggestion({
+              blockingReasons: ["Solo compra y venta entran en el flujo contable automatizado del MVP."],
+              explanation: "No hay sugerencia contable automatica para documentos fuera de compra/venta.",
+              monetary: buildJournalMonetaryContext({
+                currencyCode: input.facts.currency_code,
+                documentDate: input.facts.document_date,
+              }),
+            }),
           };
   const blockers = [
     ...input.vendorResolution.blockingReasons,

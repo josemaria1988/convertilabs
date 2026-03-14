@@ -69,10 +69,16 @@ create table if not exists public.journal_entries (
   period_id uuid,
   status public.entry_status not null default 'draft',
   currency_code text not null default 'UYU',
+  fx_rate numeric(18,6) not null default 1,
+  fx_rate_date date,
+  fx_rate_source text not null default 'same_currency',
+  functional_currency_code text not null default 'UYU',
   reference text,
   description text,
   total_debit numeric(18,2) not null default 0,
   total_credit numeric(18,2) not null default 0,
+  functional_total_debit numeric(18,2) not null default 0,
+  functional_total_credit numeric(18,2) not null default 0,
   created_by uuid references public.profiles(id),
   approved_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
@@ -89,6 +95,10 @@ create table if not exists public.journal_entry_lines (
   account_id uuid not null references public.chart_of_accounts(id),
   debit numeric(18,2) not null default 0,
   credit numeric(18,2) not null default 0,
+  currency_code text not null default 'UYU',
+  fx_rate numeric(18,6) not null default 1,
+  functional_debit numeric(18,2) not null default 0,
+  functional_credit numeric(18,2) not null default 0,
   tax_tag text,
   vendor_id uuid references public.vendors(id),
   customer_id uuid references public.customers(id),
@@ -96,3 +106,54 @@ create table if not exists public.journal_entry_lines (
   metadata jsonb not null default '{}'::jsonb,
   unique (journal_entry_id, line_no)
 );
+
+create table if not exists public.ledger_open_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  counterparty_type text not null,
+  counterparty_id uuid,
+  source_document_id uuid not null references public.documents(id) on delete cascade,
+  document_role public.document_direction not null default 'other',
+  document_type text,
+  issue_date date,
+  due_date date,
+  currency_code text not null default 'UYU',
+  fx_rate numeric(18,6) not null default 1,
+  fx_rate_date date,
+  fx_rate_source text not null default 'same_currency',
+  functional_currency_code text not null default 'UYU',
+  original_amount numeric(18,2) not null default 0,
+  functional_amount numeric(18,2) not null default 0,
+  settled_amount numeric(18,2) not null default 0,
+  outstanding_amount numeric(18,2) not null default 0,
+  status text not null default 'open',
+  journal_entry_id uuid references public.journal_entries(id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_ledger_open_items_org_counterparty
+  on public.ledger_open_items (organization_id, counterparty_type, counterparty_id, status);
+
+create index if not exists idx_ledger_open_items_org_document
+  on public.ledger_open_items (organization_id, source_document_id);
+
+create table if not exists public.ledger_settlement_links (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  open_item_id uuid not null references public.ledger_open_items(id) on delete cascade,
+  settlement_document_id uuid not null references public.documents(id) on delete cascade,
+  settlement_journal_entry_id uuid references public.journal_entries(id) on delete set null,
+  currency_code text not null default 'UYU',
+  fx_rate numeric(18,6) not null default 1,
+  fx_rate_date date,
+  amount numeric(18,2) not null default 0,
+  functional_amount numeric(18,2) not null default 0,
+  metadata_json jsonb not null default '{}'::jsonb,
+  settled_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ledger_settlement_links_org_open_item
+  on public.ledger_settlement_links (organization_id, open_item_id, settled_at desc);

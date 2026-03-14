@@ -154,6 +154,7 @@ function buildResolvedRule(input: {
     provenance: input.provenance,
     priority: input.rule.priority,
     source: input.rule.source,
+    createdAt: input.rule.created_at ?? null,
   } satisfies ResolvedAccountingRule;
 }
 
@@ -181,6 +182,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       provenance: "manual_override",
       priority: 1000,
       source: "manual",
+      createdAt: null,
     } satisfies ResolvedAccountingRule;
   }
 
@@ -270,6 +272,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       provenance: "vendor_default_fields",
       priority: 650,
       source: "vendor_default",
+      createdAt: null,
     } satisfies ResolvedAccountingRule;
   }
 
@@ -293,6 +296,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       provenance: "assistant_second_pass",
       priority: 500,
       source: "assistant",
+      createdAt: null,
     } satisfies ResolvedAccountingRule;
   }
 
@@ -308,6 +312,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
     provenance: "manual_review_required",
     priority: null,
     source: null,
+    createdAt: null,
   } satisfies ResolvedAccountingRule;
 }
 

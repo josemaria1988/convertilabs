@@ -86,6 +86,30 @@ test("invoice identity builds a business key and flags duplicates explicitly", (
   assert.equal(result.shouldBlockConfirmation, true);
 });
 
+test("invoice identity falls back to tax id + number + total + currency when date is missing", () => {
+  const result = buildInvoiceIdentityResult({
+    facts: {
+      issuer_name: "Estacion del Centro",
+      issuer_tax_id: "21-433.455/019",
+      receiver_name: null,
+      receiver_tax_id: null,
+      document_number: "1234",
+      series: "A",
+      currency_code: "uyu",
+      document_date: null,
+      due_date: null,
+      subtotal: 100,
+      tax_amount: 22,
+      total_amount: 122,
+      purchase_category_candidate: null,
+      sale_category_candidate: null,
+    },
+  });
+
+  assert.equal(result.identityStrategy, "tax_id_number_total_currency");
+  assert.equal(result.invoiceIdentityKey, "21433455019|a1234|122.00|UYU");
+});
+
 test("vendor resolution prefers tax id and uses normalized aliases before name", () => {
   const aliasVendor = buildVendor({
     id: "vendor-2",

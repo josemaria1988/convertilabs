@@ -13,6 +13,7 @@ import {
   asRecord,
   asString,
   asStringArray,
+  buildAccountingDecisionLog,
   buildPersistableConceptLines,
   buildDraftFieldsPayload,
   buildDraftStepSnapshots,
@@ -20,13 +21,16 @@ import {
   createRuleFromApproval,
   deriveDocumentAccountingState,
   getOperationCategoryValue,
+  insertAIDecisionLogs,
   loadDocumentAccountingContext,
+  loadDocumentAIDecisionLogs,
   loadDocumentInvoiceIdentity,
   parseAmountBreakdown,
   parseDraftFacts,
   parseLineItems,
   persistApprovedAccountingArtifacts,
   resolveDocumentDuplicateStatus,
+  syncApprovedDocumentOpenItems,
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
   upsertDocumentLineItems,
@@ -85,6 +89,7 @@ type DraftRow = {
   document_role: DocumentRoleCandidate;
   document_type: string | null;
   operation_context_json: JsonRecord | null;
+  intake_context_json: JsonRecord | null;
   fields_json: JsonRecord | null;
   extracted_text: string | null;
   warnings_json: unknown;
@@ -234,6 +239,13 @@ export type DocumentReviewPageData = {
     documentRole: DocumentRoleCandidate;
     documentType: string;
     operationCategory: string | null;
+    transactionFamilyResolution: {
+      source: string | null;
+      confidence: number | null;
+      shouldReview: boolean;
+      warnings: string[];
+      evidence: string[];
+    } | null;
   };
   steps: DraftStepRow[];
   derived: DerivedDraftArtifacts;
@@ -284,6 +296,23 @@ export type DocumentReviewPageData = {
       canonicalName: string;
     }>;
   };
+  certaintySummary: {
+    level: "green" | "yellow" | "red";
+    confidence: number | null;
+    warningCount: number;
+  };
+  decisionLogs: Array<{
+    id: string;
+    runType: string;
+    decisionSource: string;
+    confidenceScore: number | null;
+    certaintyLevel: "green" | "yellow" | "red";
+    rationaleText: string | null;
+    warnings: string[];
+    evidence: JsonRecord | null;
+    metadata: JsonRecord | null;
+    createdAt: string;
+  }>;
   canConfirm: boolean;
   canReopen: boolean;
 };
@@ -399,6 +428,51 @@ function buildRuleSnapshotContext(
   };
 }
 
+function parseTransactionFamilyResolution(value: JsonRecord | null) {
+  const intakeContext = asRecord(value);
+  const resolution = asRecord(intakeContext.transaction_family_resolution);
+
+  if (Object.keys(resolution).length === 0) {
+    return null;
+  }
+
+  return {
+    source: asString(resolution.source),
+    confidence: asNumber(resolution.confidence),
+    shouldReview: resolution.shouldReview === true,
+    warnings: asStringArray(resolution.warnings),
+    evidence: asStringArray(resolution.evidence),
+  };
+}
+
+function buildCertaintySummary(
+  logs: Array<{
+    certainty_level: "green" | "yellow" | "red";
+    confidence_score: number | null;
+    warnings_json: string[] | null;
+  }>,
+  fallbackConfidence: number | null,
+  fallbackWarnings: string[],
+) {
+  const worstLevel = logs.some((log) => log.certainty_level === "red")
+    ? "red"
+    : logs.some((log) => log.certainty_level === "yellow")
+      ? "yellow"
+      : "green";
+  const confidence =
+    logs.find((log) => typeof log.confidence_score === "number")?.confidence_score
+    ?? fallbackConfidence;
+  const warningCount =
+    logs.reduce((sum, log) => sum + ((log.warnings_json ?? []).length), 0)
+    || fallbackWarnings.length;
+
+  return {
+    level: worstLevel,
+    confidence,
+    warningCount,
+  } as const;
+}
+
 async function loadDocumentRow(
   supabase: SupabaseClient,
   organizationId: string,
@@ -428,7 +502,7 @@ async function loadCurrentDraft(
   const baseQuery = supabase
     .from("document_drafts")
     .select(
-      "id, organization_id, document_id, processing_run_id, organization_rule_snapshot_id, revision_number, status, document_role, document_type, operation_context_json, fields_json, extracted_text, warnings_json, journal_suggestion_json, tax_treatment_json, source_confidence, created_at, updated_at, confirmed_at",
+      "id, organization_id, document_id, processing_run_id, organization_rule_snapshot_id, revision_number, status, document_role, document_type, operation_context_json, intake_context_json, fields_json, extracted_text, warnings_json, journal_suggestion_json, tax_treatment_json, source_confidence, created_at, updated_at, confirmed_at",
     )
     .eq("document_id", document.id)
     .order("revision_number", { ascending: false })
@@ -1065,7 +1139,7 @@ export async function loadDocumentReviewPageData(input: {
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
   const lineItems = parseLineItems(draft.fields_json);
   const operationCategory = getOperationCategoryValue(draft, facts);
-  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity] =
+  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity, decisionLogs] =
     await Promise.all([
       loadRuleSnapshot(supabase, document, draft, input.actorId),
       loadDraftSteps(supabase, draft.id),
@@ -1074,6 +1148,10 @@ export async function loadDocumentReviewPageData(input: {
       loadConfirmations(supabase, document.id),
       documentViewPromise,
       loadDocumentInvoiceIdentity(supabase, document.id),
+      loadDocumentAIDecisionLogs(supabase, {
+        organizationId: input.organizationId,
+        documentId: document.id,
+      }),
     ]);
   const invoiceIdentity = buildInvoiceIdentityResult({
     facts,
@@ -1099,6 +1177,12 @@ export async function loadDocumentReviewPageData(input: {
     runAssistant: false,
   });
   const derived = accountingState.derived;
+  const transactionFamilyResolution = parseTransactionFamilyResolution(draft.intake_context_json);
+  const certaintySummary = buildCertaintySummary(
+    decisionLogs,
+    draft.source_confidence,
+    asStringArray(draft.warnings_json),
+  );
 
   return {
     organizationId: input.organizationId,
@@ -1123,6 +1207,7 @@ export async function loadDocumentReviewPageData(input: {
       documentRole: draft.document_role,
       documentType: draft.document_type ?? "",
       operationCategory,
+      transactionFamilyResolution,
     },
     steps,
     derived,
@@ -1169,6 +1254,19 @@ export async function loadDocumentReviewPageData(input: {
         canonicalName: concept.canonical_name,
       })),
     },
+    certaintySummary,
+    decisionLogs: decisionLogs.map((log) => ({
+      id: log.id,
+      runType: log.run_type,
+      decisionSource: log.decision_source,
+      confidenceScore: log.confidence_score,
+      certaintyLevel: log.certainty_level,
+      rationaleText: log.rationale_text,
+      warnings: log.warnings_json ?? [],
+      evidence: log.evidence_json ?? null,
+      metadata: log.metadata_json ?? null,
+      createdAt: log.created_at,
+    })),
     canConfirm:
       ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
       && derived.validation.canConfirm
@@ -1411,6 +1509,33 @@ export async function confirmDocumentReview(input: {
         ?? derived.journalSuggestion.explanation,
     });
   }
+  await syncApprovedDocumentOpenItems({
+    supabase,
+    organizationId: document.organization_id,
+    documentId: document.id,
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
+    documentDate:
+      facts.document_date ?? document.document_date ?? new Date().toISOString().slice(0, 10),
+    dueDate: facts.due_date,
+    currencyCode: facts.currency_code,
+    totalAmount: facts.total_amount,
+    vendorId: derived.vendorResolution.vendorId,
+    issuerName: facts.issuer_name,
+    issuerTaxId: facts.issuer_tax_id,
+    receiverName: facts.receiver_name,
+    receiverTaxId: facts.receiver_tax_id,
+    journalEntryId: accountingArtifacts.journalEntryId,
+  });
+  await insertAIDecisionLogs(supabase, [
+    buildAccountingDecisionLog({
+      organizationId: document.organization_id,
+      documentId: document.id,
+      providerCode: derived.assistantSuggestion.providerCode,
+      modelCode: derived.assistantSuggestion.modelCode,
+      derived,
+    }),
+  ]);
   const existingConfirmations = await loadConfirmations(supabase, document.id);
   const confirmationType = existingConfirmations.length > 0 ? "reconfirmation" : "final";
   const confirmedAt = new Date().toISOString();
@@ -1609,6 +1734,7 @@ export async function reopenDocumentReview(input: {
       document_role: currentDraft.document_role,
       document_type: currentDraft.document_type,
       operation_context_json: asRecord(currentDraft.operation_context_json),
+      intake_context_json: asRecord(currentDraft.intake_context_json),
       fields_json: asRecord(currentDraft.fields_json),
       extracted_text: currentDraft.extracted_text,
       warnings_json: asStringArray(currentDraft.warnings_json),
@@ -1619,7 +1745,7 @@ export async function reopenDocumentReview(input: {
       updated_by: input.actorId,
     })
     .select(
-      "id, organization_id, document_id, processing_run_id, organization_rule_snapshot_id, revision_number, status, document_role, document_type, operation_context_json, fields_json, extracted_text, warnings_json, journal_suggestion_json, tax_treatment_json, source_confidence, created_at, updated_at, confirmed_at",
+      "id, organization_id, document_id, processing_run_id, organization_rule_snapshot_id, revision_number, status, document_role, document_type, operation_context_json, intake_context_json, fields_json, extracted_text, warnings_json, journal_suggestion_json, tax_treatment_json, source_confidence, created_at, updated_at, confirmed_at",
     )
     .limit(1)
     .single();

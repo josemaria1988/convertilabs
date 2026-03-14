@@ -25,6 +25,7 @@ import {
   asNumber,
   asRecord,
   asString,
+  buildDocumentIntakeDecisionLog,
   buildPersistableConceptLines,
   buildOrganizationIdentityPromptContext,
   buildDraftStepSnapshots,
@@ -32,6 +33,7 @@ import {
   buildInvoiceIdentityResult,
   deriveDocumentAccountingState,
   findDuplicateInvoiceIdentityDocumentId,
+  insertAIDecisionLogs,
   loadOrganizationIdentityProfile,
   loadDocumentInvoiceIdentity,
   matchOrganizationIdentity,
@@ -41,6 +43,7 @@ import {
   upsertDocumentLineItems,
   normalizeTaxId,
   normalizeTextToken,
+  resolveTransactionFamilyByOrganizationIdentity,
 } from "@/modules/accounting";
 import { documentTerminalStatuses } from "@/modules/documents/status";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
@@ -341,11 +344,16 @@ function harmonizeDocumentIntakeOutput(
     partyName: output.facts.receiver_name,
     partyTaxId: output.facts.receiver_tax_id,
   });
-  const transactionFamilyCandidate = output.transaction_family_candidate;
-  const documentSubtypeCandidate = output.document_subtype_candidate;
+  const transactionFamilyResolution = resolveTransactionFamilyByOrganizationIdentity({
+    issuerMatch,
+    receiverMatch,
+    modelRoleCandidate: output.transaction_family_candidate,
+    modelSubtypeCandidate: output.document_subtype_candidate,
+  });
   const mergedWarnings = dedupeWarnings([
     ...output.warnings,
     ...output.certainty_breakdown_json.warning_flags,
+    ...transactionFamilyResolution.warnings,
   ]);
   const certaintyBreakdown = {
     extraction_confidence: clampConfidence(
@@ -372,8 +380,8 @@ function harmonizeDocumentIntakeOutput(
 
   return {
     ...output,
-    transaction_family_candidate: transactionFamilyCandidate,
-    document_subtype_candidate: documentSubtypeCandidate,
+    transaction_family_candidate: transactionFamilyResolution.documentRole,
+    document_subtype_candidate: transactionFamilyResolution.documentSubtype,
     issuer_matches_organization: {
       ...output.issuer_matches_organization,
       status: issuerMatch.status,
@@ -395,9 +403,16 @@ function harmonizeDocumentIntakeOutput(
       evidence: receiverMatch.evidence,
     },
     certainty_breakdown_json: certaintyBreakdown,
-    document_role_candidate: transactionFamilyCandidate,
-    document_type_candidate: documentSubtypeCandidate,
+    document_role_candidate: transactionFamilyResolution.documentRole,
+    document_type_candidate: transactionFamilyResolution.documentSubtype,
     warnings: mergedWarnings,
+    explanations: {
+      ...output.explanations,
+      classification: [
+        output.explanations.classification,
+        ...transactionFamilyResolution.evidence,
+      ].join(" "),
+    },
   } satisfies DocumentIntakeOutput;
 }
 
@@ -830,6 +845,12 @@ async function persistDocumentArtifacts(input: {
     persistedDuplicateOfDocumentId: existingInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: existingInvoiceIdentity?.duplicate_reason ?? null,
   });
+  const transactionFamilyResolution = resolveTransactionFamilyByOrganizationIdentity({
+    issuerMatch: input.structuredOutput.issuer_matches_organization,
+    receiverMatch: input.structuredOutput.receiver_matches_organization,
+    modelRoleCandidate: input.structuredOutput.transaction_family_candidate,
+    modelSubtypeCandidate: input.structuredOutput.document_subtype_candidate,
+  });
 
   await markExtractionActive(input.document.id);
 
@@ -955,6 +976,7 @@ async function persistDocumentArtifacts(input: {
         },
         transaction_family_candidate: input.structuredOutput.transaction_family_candidate,
         document_subtype_candidate: input.structuredOutput.document_subtype_candidate,
+        transaction_family_resolution: transactionFamilyResolution,
         issuer_matches_organization: input.structuredOutput.issuer_matches_organization,
         receiver_matches_organization: input.structuredOutput.receiver_matches_organization,
         certainty_breakdown: input.structuredOutput.certainty_breakdown_json,
@@ -1037,6 +1059,19 @@ async function persistDocumentArtifacts(input: {
     actorId: input.requestedBy,
     context: derived.accountingContext,
   });
+  await insertAIDecisionLogs(supabase, [
+    buildDocumentIntakeDecisionLog({
+      organizationId: input.document.organization_id,
+      documentId: input.document.id,
+      providerCode: "openai",
+      modelCode: getDocumentModelCode(),
+      promptVersion: OPENAI_DOCUMENT_PROMPT_VERSION,
+      schemaVersion: OPENAI_DOCUMENT_SCHEMA_VERSION,
+      responseId: input.providerResponseId,
+      structuredOutput: input.structuredOutput,
+      transactionFamilyResolution,
+    }),
+  ]);
   const { error: draftUpdateError } = await supabase
     .from("document_drafts")
     .update({
