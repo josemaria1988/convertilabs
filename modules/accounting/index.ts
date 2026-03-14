@@ -13,6 +13,7 @@ export * from "@/modules/accounting/rules";
 export * from "@/modules/accounting/rule-engine";
 export * from "@/modules/accounting/runtime";
 export * from "@/modules/accounting/suggestion-engine";
+export * from "@/modules/accounting/starter-accounts";
 export * from "@/modules/accounting/template-import";
 export * from "@/modules/accounting/transaction-family-resolution";
 export * from "@/modules/accounting/types";

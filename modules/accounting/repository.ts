@@ -7,6 +7,7 @@ import {
   roundCurrency,
   slugifyConceptCode,
 } from "@/modules/accounting/normalization";
+import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 import { pickSuspiciousInvoiceDuplicateDocumentId } from "@/modules/accounting/invoice-identity";
 import type {
   AccountingArtifactsPersistenceInput,
@@ -250,7 +251,13 @@ export async function loadAccountingRuntimeContext(
   supabase: SupabaseClient,
   organizationId: string,
   documentRole?: AccountingRuleRecord["document_role"] | null,
+  actorId?: string | null,
 ) {
+  await ensureStarterAccountingSetup(supabase, {
+    organizationId,
+    actorId: actorId ?? null,
+  });
+
   const [vendors, concepts, conceptAliases, accounts, activeRules] = await Promise.all([
     loadOrganizationVendors(supabase, organizationId),
     loadOrganizationConcepts(supabase, organizationId, documentRole),

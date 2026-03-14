@@ -116,6 +116,7 @@ export async function deriveDocumentAccountingState(input: {
     input.supabase,
     input.organizationId,
     input.documentRole,
+    input.actorId,
   );
   const vendorResolution = resolveVendorFromFacts({
     facts: input.facts,

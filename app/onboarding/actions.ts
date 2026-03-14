@@ -11,6 +11,7 @@ import type { OnboardingActionState } from "@/modules/organizations/onboarding-a
 import {
   validateOrganizationOnboardingInput,
 } from "@/modules/organizations/onboarding-schema";
+import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 
 type CreateOrganizationRpcResult = {
   organization_id: string;
@@ -152,6 +153,11 @@ export async function createOrganizationAction(
       rpcResult.error?.message ?? "Unknown create organization error.",
     );
   }
+
+  await ensureStarterAccountingSetup(supabase, {
+    organizationId: data.organization_id,
+    actorId: user.id,
+  });
 
   revalidatePath("/app");
   revalidatePath("/onboarding");
