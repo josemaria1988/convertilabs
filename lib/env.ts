@@ -26,6 +26,21 @@ function parseOptionalNumber(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resolveInngestIsDev() {
+  const explicitFlag = firstDefined(process.env.INNGEST_DEV);
+
+  if (explicitFlag !== undefined) {
+    return parseBooleanFlag(explicitFlag);
+  }
+
+  const hasCloudKeys = Boolean(
+    firstDefined(process.env.INNGEST_EVENT_KEY)
+    && firstDefined(process.env.INNGEST_SIGNING_KEY),
+  );
+
+  return process.env.NODE_ENV !== "production" && !hasCloudKeys;
+}
+
 function resolveOpenAIModelConfig() {
   const openAiPrimaryModel = firstDefined(process.env.OPENAI_PRIMARY_MODEL) ?? "gpt-4o";
   const openAiMiniModel = firstDefined(process.env.OPENAI_MINI_MODEL) ?? "gpt-4o-mini";
@@ -213,7 +228,7 @@ export function getInngestEnv() {
     eventKey: process.env.INNGEST_EVENT_KEY ?? "",
     signingKey: process.env.INNGEST_SIGNING_KEY ?? "",
     baseUrl: process.env.INNGEST_BASE_URL ?? "",
-    isDev: parseBooleanFlag(process.env.INNGEST_DEV),
+    isDev: resolveInngestIsDev(),
     appVersion: firstDefined(
       process.env.VERCEL_GIT_COMMIT_SHA,
       process.env.GITHUB_SHA,
@@ -286,7 +301,7 @@ export function getOpenAIConfigStatus() {
 }
 
 export function getInngestConfigStatus() {
-  const isDev = parseBooleanFlag(process.env.INNGEST_DEV);
+  const isDev = resolveInngestIsDev();
   const eventKey = process.env.INNGEST_EVENT_KEY;
   const signingKey = process.env.INNGEST_SIGNING_KEY;
   const baseUrl = process.env.INNGEST_BASE_URL;

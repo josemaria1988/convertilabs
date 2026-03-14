@@ -84,6 +84,37 @@ function buildRejectedFilesMessage(rejectedFiles: Array<{
   return `${preview} ${remainingCount} archivo(s) mas fueron rechazados.`;
 }
 
+function buildBatchFailureMessage(input: {
+  failureMessages: string[];
+  rejectedFiles: Array<{
+    name: string;
+    message: string;
+  }>;
+}) {
+  const normalizedFailures = [...new Set(
+    input.failureMessages
+      .map((message) => message.trim())
+      .filter(Boolean),
+  )];
+  const parts = ["No pudimos dejar documentos encolados en este lote."];
+
+  if (normalizedFailures.length > 0) {
+    parts.push(normalizedFailures.slice(0, 2).join(" "));
+
+    if (normalizedFailures.length > 2) {
+      parts.push(`${normalizedFailures.length - 2} error(es) adicionales.`);
+    }
+  }
+
+  const rejectedMessage = buildRejectedFilesMessage(input.rejectedFiles);
+
+  if (rejectedMessage) {
+    parts.push(rejectedMessage);
+  }
+
+  return parts.join(" ");
+}
+
 function buildBatchQueuedMessage(input: {
   totalAccepted: number;
   terminalCount: number;
@@ -256,6 +287,7 @@ export function DocumentUploadDropzone({
 
     const supabase = getSupabaseBrowserClient();
     const queuedDocumentIds: string[] = [];
+    const failureMessages: string[] = [];
     let uploadErrorCount = 0;
 
     for (const [index, file] of acceptedFiles.entries()) {
@@ -275,6 +307,7 @@ export function DocumentUploadDropzone({
 
       if (!preparedUpload.ok) {
         uploadErrorCount += 1;
+        failureMessages.push(preparedUpload.message);
         continue;
       }
 
@@ -292,6 +325,7 @@ export function DocumentUploadDropzone({
 
       if (uploadError) {
         uploadErrorCount += 1;
+        failureMessages.push(uploadError.message);
         await failDashboardDocumentUpload({
           slug,
           documentId: preparedUpload.documentId,
@@ -307,6 +341,7 @@ export function DocumentUploadDropzone({
 
       if (!finalizedUpload.ok) {
         uploadErrorCount += 1;
+        failureMessages.push(finalizedUpload.message);
         continue;
       }
 
@@ -315,10 +350,10 @@ export function DocumentUploadDropzone({
 
     if (queuedDocumentIds.length === 0) {
       setStatus("error");
-      setMessage([
-        "No pudimos dejar documentos encolados en este lote.",
-        buildRejectedFilesMessage(rejectedFiles),
-      ].filter(Boolean).join(" "));
+      setMessage(buildBatchFailureMessage({
+        failureMessages,
+        rejectedFiles,
+      }));
       startTransition(() => {
         router.refresh();
       });

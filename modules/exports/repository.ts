@@ -7,6 +7,7 @@ import {
   type DGIFormMappingRecord,
 } from "@/modules/exports/canonical";
 import type { VatRunExportDataset } from "@/modules/exports/types";
+import { isMissingVatRunImportColumnError } from "@/modules/tax/vat-run-schema-compat";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,6 +31,34 @@ type VatRunRow = {
     period_month: number | null;
   }[] | null;
 };
+
+const VAT_RUN_EXPORT_SELECT = [
+  "id",
+  "organization_id",
+  "status",
+  "output_vat",
+  "input_vat_creditable",
+  "input_vat_non_deductible",
+  "import_vat",
+  "import_vat_advance",
+  "net_vat_payable",
+  "result_json",
+  "input_snapshot_json",
+  "period:tax_periods!vat_runs_period_id_fkey(period_year, period_month)",
+].join(", ");
+
+const VAT_RUN_EXPORT_SELECT_LEGACY = [
+  "id",
+  "organization_id",
+  "status",
+  "output_vat",
+  "input_vat_creditable",
+  "input_vat_non_deductible",
+  "net_vat_payable",
+  "result_json",
+  "input_snapshot_json",
+  "period:tax_periods!vat_runs_period_id_fkey(period_year, period_month)",
+].join(", ");
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -104,19 +133,26 @@ export async function loadVatRunExportDataset(
   organizationId: string,
   vatRunId: string,
 ) {
-  const { data: vatRun, error: vatRunError } = await supabase
-    .from("vat_runs")
-    .select(
-      "id, organization_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, import_vat, import_vat_advance, net_vat_payable, result_json, input_snapshot_json, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month)",
-    )
-    .eq("organization_id", organizationId)
-    .eq("id", vatRunId)
-    .limit(1)
-    .maybeSingle();
+  const runVatRunQuery = (selectClause: string) =>
+    supabase
+      .from("vat_runs")
+      .select(selectClause)
+      .eq("organization_id", organizationId)
+      .eq("id", vatRunId)
+      .limit(1)
+      .maybeSingle();
+
+  let { data: vatRun, error: vatRunError } = await runVatRunQuery(VAT_RUN_EXPORT_SELECT);
+
+  if (vatRunError && isMissingVatRunImportColumnError(vatRunError)) {
+    ({ data: vatRun, error: vatRunError } = await runVatRunQuery(VAT_RUN_EXPORT_SELECT_LEGACY));
+  }
 
   if (vatRunError || !vatRun) {
     throw new Error(vatRunError?.message ?? "VAT run no encontrado para export.");
   }
+
+  const vatRunRow = vatRun as unknown as VatRunRow;
 
   const { data: organization, error: organizationError } = await supabase
     .from("organizations")
@@ -129,7 +165,7 @@ export async function loadVatRunExportDataset(
     throw new Error(organizationError?.message ?? "Organizacion no encontrada para export.");
   }
 
-  const snapshot = asRecord((vatRun as VatRunRow).input_snapshot_json);
+  const snapshot = asRecord(vatRunRow.input_snapshot_json);
   const tracedDocuments = Array.isArray(snapshot.documents)
     ? snapshot.documents.map((entry) => asRecord(entry))
     : [];
@@ -429,7 +465,7 @@ export async function loadVatRunExportDataset(
     }
   }
 
-  const period = getVatRunPeriod((vatRun as VatRunRow).period);
+  const period = getVatRunPeriod(vatRunRow.period);
   const periodLabel = period
     ? `${period.period_year}-${String(period.period_month ?? 0).padStart(2, "0")}`
     : "Sin periodo";
@@ -500,25 +536,25 @@ export async function loadVatRunExportDataset(
     },
     {
       metricKey: "outputVat",
-      value: (vatRun as VatRunRow).output_vat,
+      value: vatRunRow.output_vat,
       sourceType: "system_generated",
       warnings: historicalWarnings,
     },
     {
       metricKey: "inputVatCreditable",
-      value: (vatRun as VatRunRow).input_vat_creditable,
+      value: vatRunRow.input_vat_creditable,
       sourceType: "system_generated",
       warnings: historicalWarnings,
     },
     {
       metricKey: "inputVatNonDeductible",
-      value: (vatRun as VatRunRow).input_vat_non_deductible,
+      value: vatRunRow.input_vat_non_deductible,
       sourceType: "system_generated",
       warnings: [],
     },
     {
       metricKey: "importVat",
-      value: asNumber((vatRun as Record<string, unknown>).import_vat) ?? asNumber(asRecord(asRecord((vatRun as VatRunRow).result_json).totals).import_vat) ?? 0,
+      value: asNumber(vatRunRow.import_vat) ?? asNumber(asRecord(asRecord(vatRunRow.result_json).totals).import_vat) ?? 0,
       sourceType: importRows.length > 0
         ? "imported_from_document"
         : "system_generated",
@@ -526,7 +562,7 @@ export async function loadVatRunExportDataset(
     },
     {
       metricKey: "importVatAdvance",
-      value: asNumber((vatRun as Record<string, unknown>).import_vat_advance) ?? asNumber(asRecord(asRecord((vatRun as VatRunRow).result_json).totals).import_vat_advance) ?? 0,
+      value: asNumber(vatRunRow.import_vat_advance) ?? asNumber(asRecord(asRecord(vatRunRow.result_json).totals).import_vat_advance) ?? 0,
       sourceType: importRows.length > 0
         ? "imported_from_document"
         : "system_generated",
@@ -534,7 +570,7 @@ export async function loadVatRunExportDataset(
     },
     {
       metricKey: "netVatPayable",
-      value: (vatRun as VatRunRow).net_vat_payable,
+      value: vatRunRow.net_vat_payable,
       sourceType: "system_generated",
       warnings: historicalWarnings,
     },
@@ -579,12 +615,12 @@ export async function loadVatRunExportDataset(
       documentCount: tracedDocuments.length,
       purchaseTaxableBase: purchaseRows.reduce((sum, row) => sum + row.taxableBase, 0),
       saleTaxableBase: saleRows.reduce((sum, row) => sum + row.taxableBase, 0),
-      outputVat: (vatRun as VatRunRow).output_vat,
-      inputVatCreditable: (vatRun as VatRunRow).input_vat_creditable,
-      inputVatNonDeductible: (vatRun as VatRunRow).input_vat_non_deductible,
+      outputVat: vatRunRow.output_vat,
+      inputVatCreditable: vatRunRow.input_vat_creditable,
+      inputVatNonDeductible: vatRunRow.input_vat_non_deductible,
       importVat: canonicalMetrics.find((metric) => metric.metricKey === "importVat")?.value ?? 0,
       importVatAdvance: canonicalMetrics.find((metric) => metric.metricKey === "importVatAdvance")?.value ?? 0,
-      netVatPayable: (vatRun as VatRunRow).net_vat_payable,
+      netVatPayable: vatRunRow.net_vat_payable,
       warningsCount: traceabilityRows.reduce(
         (sum, row) => sum + (row.flags ? 1 : 0),
         0,

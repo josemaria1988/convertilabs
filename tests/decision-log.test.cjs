@@ -4,8 +4,13 @@ const { test, assert } = require("./testkit.cjs");
 const {
   buildAccountingDecisionLog,
   buildDocumentIntakeDecisionLog,
+  insertAIDecisionLogs,
+  loadDocumentAIDecisionLogs,
   resolveCertaintyLevel,
 } = require("@/modules/accounting/decision-log");
+const {
+  isMissingSupabaseRelationError,
+} = require("@/lib/supabase/schema-compat");
 
 test("certainty level uses green yellow red thresholds", () => {
   assert.equal(resolveCertaintyLevel({ confidence: 0.95, warnings: [], blockers: [] }), "green");
@@ -227,4 +232,95 @@ test("accounting decision log surfaces manual overrides and rule metadata", () =
 
   assert.equal(result.decision_source, "manual_override");
   assert.equal(result.metadata_json.rule_created_at, "2026-03-14T10:00:00Z");
+});
+
+test("schema compat recognizes missing ai_decision_logs relation errors", () => {
+  assert.equal(
+    isMissingSupabaseRelationError(
+      { message: "Could not find the table 'public.ai_decision_logs' in the schema cache" },
+      "ai_decision_logs",
+    ),
+    true,
+  );
+  assert.equal(
+    isMissingSupabaseRelationError(
+      { message: "relation \"public.ai_decision_logs\" does not exist" },
+      "ai_decision_logs",
+    ),
+    true,
+  );
+  assert.equal(
+    isMissingSupabaseRelationError(
+      { message: "relation \"public.other_table\" does not exist" },
+      "ai_decision_logs",
+    ),
+    false,
+  );
+});
+
+test("decision log persistence tolerates missing ai_decision_logs table", async () => {
+  const supabase = {
+    from(table) {
+      assert.equal(table, "ai_decision_logs");
+      return {
+        insert: async () => ({
+          error: {
+            message: "Could not find the table 'public.ai_decision_logs' in the schema cache",
+          },
+        }),
+      };
+    },
+  };
+
+  await insertAIDecisionLogs(supabase, [
+    {
+      organization_id: "org-1",
+      document_id: "doc-1",
+      run_type: "document_intake",
+      provider_code: "openai",
+      model_code: "gpt-4o",
+      prompt_version: null,
+      schema_version: null,
+      response_id: "resp-1",
+      decision_source: "assistant",
+      confidence_score: 0.8,
+      certainty_level: "yellow",
+      evidence_json: {},
+      rationale_text: null,
+      warnings_json: [],
+      metadata_json: {},
+    },
+  ]);
+});
+
+test("decision log loading returns empty when ai_decision_logs table is missing", async () => {
+  const supabase = {
+    from(table) {
+      assert.equal(table, "ai_decision_logs");
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        order() {
+          return this;
+        },
+        limit: async () => ({
+          data: null,
+          error: {
+            message: "relation \"public.ai_decision_logs\" does not exist",
+          },
+        }),
+      };
+    },
+  };
+
+  const logs = await loadDocumentAIDecisionLogs(supabase, {
+    organizationId: "org-1",
+    documentId: "doc-1",
+  });
+
+  assert.deepEqual(logs, []);
 });

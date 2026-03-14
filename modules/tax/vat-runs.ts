@@ -1,6 +1,10 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  isMissingVatRunImportColumnError,
+  omitVatRunImportColumns,
+} from "@/modules/tax/vat-run-schema-compat";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -493,34 +497,34 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     organization_id: organizationId,
     period_id: period.id,
     status: nextStatus,
-      input_snapshot_json: {
-        documents: relevantSnapshots,
-        import_operations: importSummary.operationIds,
-        generated_at: new Date().toISOString(),
+    input_snapshot_json: {
+      documents: relevantSnapshots,
+      import_operations: importSummary.operationIds,
+      generated_at: new Date().toISOString(),
+    },
+    result_json: {
+      formula: "output_vat - input_vat_creditable - import_vat - import_vat_advance + input_vat_non_deductible",
+      period: `${year}-${String(month).padStart(2, "0")}`,
+      totals: {
+        output_vat: outputVat,
+        input_vat_creditable: inputVatCreditable,
+        input_vat_non_deductible: inputVatNonDeductible,
+        import_vat: importVat,
+        import_vat_advance: importVatAdvance,
+        net_vat_payable: netVatPayable,
       },
-      result_json: {
-        formula: "output_vat - input_vat_creditable - import_vat - import_vat_advance + input_vat_non_deductible",
-        period: `${year}-${String(month).padStart(2, "0")}`,
-        totals: {
-          output_vat: outputVat,
-          input_vat_creditable: inputVatCreditable,
-          input_vat_non_deductible: inputVatNonDeductible,
-          import_vat: importVat,
-          import_vat_advance: importVatAdvance,
-          net_vat_payable: netVatPayable,
-        },
-        documents_included_count: relevantSnapshots.length,
-        import_operations_included_count: importSummary.operationIds.length,
-        import_other_taxes_count: importSummary.otherTaxesCount,
-        review_flags_count: totals.reviewFlagsCount,
-      },
-      output_vat: outputVat,
-      input_vat_creditable: inputVatCreditable,
-      input_vat_non_deductible: inputVatNonDeductible,
-      import_vat: importVat,
-      import_vat_advance: importVatAdvance,
-      adjustments: 0,
-      net_vat_payable: netVatPayable,
+      documents_included_count: relevantSnapshots.length,
+      import_operations_included_count: importSummary.operationIds.length,
+      import_other_taxes_count: importSummary.otherTaxesCount,
+      review_flags_count: totals.reviewFlagsCount,
+    },
+    output_vat: outputVat,
+    input_vat_creditable: inputVatCreditable,
+    input_vat_non_deductible: inputVatNonDeductible,
+    import_vat: importVat,
+    import_vat_advance: importVatAdvance,
+    adjustments: 0,
+    net_vat_payable: netVatPayable,
     created_by: requestedBy,
     updated_at: new Date().toISOString(),
   };
@@ -528,18 +532,25 @@ export async function rebuildMonthlyVatRunFromConfirmations(
   let runId: string;
 
   if (existingRun) {
-    const { error } = await supabase
+    let updateResult = await supabase
       .from("vat_runs")
       .update(payload)
       .eq("id", existingRun.id);
 
-    if (error) {
-      throw new Error(error.message);
+    if (updateResult.error && isMissingVatRunImportColumnError(updateResult.error)) {
+      updateResult = await supabase
+        .from("vat_runs")
+        .update(omitVatRunImportColumns(payload))
+        .eq("id", existingRun.id);
+    }
+
+    if (updateResult.error) {
+      throw new Error(updateResult.error.message);
     }
 
     runId = existingRun.id;
   } else {
-    const { data, error } = await supabase
+    let insertResult = await supabase
       .from("vat_runs")
       .insert({
         ...payload,
@@ -549,11 +560,23 @@ export async function rebuildMonthlyVatRunFromConfirmations(
       .limit(1)
       .single();
 
-    if (error || !data?.id) {
-      throw new Error(error?.message ?? "No se pudo crear el VAT run mensual.");
+    if (insertResult.error && isMissingVatRunImportColumnError(insertResult.error)) {
+      insertResult = await supabase
+        .from("vat_runs")
+        .insert({
+          ...omitVatRunImportColumns(payload),
+          version_no: 1,
+        })
+        .select("id")
+        .limit(1)
+        .single();
     }
 
-    runId = data.id as string;
+    if (insertResult.error || !insertResult.data?.id) {
+      throw new Error(insertResult.error?.message ?? "No se pudo crear el VAT run mensual.");
+    }
+
+    runId = insertResult.data.id as string;
   }
 
   await updateTaxPeriodStatus(supabase, period.id, nextStatus);
@@ -667,24 +690,68 @@ type VatRunListRow = {
   }[] | null;
 };
 
+const VAT_RUN_LIST_SELECT = [
+  "id",
+  "period_id",
+  "status",
+  "output_vat",
+  "input_vat_creditable",
+  "input_vat_non_deductible",
+  "import_vat",
+  "import_vat_advance",
+  "net_vat_payable",
+  "result_json",
+  "input_snapshot_json",
+  "created_at",
+  "period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
+].join(", ");
+
+const VAT_RUN_LIST_SELECT_LEGACY = [
+  "id",
+  "period_id",
+  "status",
+  "output_vat",
+  "input_vat_creditable",
+  "input_vat_non_deductible",
+  "net_vat_payable",
+  "result_json",
+  "input_snapshot_json",
+  "created_at",
+  "period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
+].join(", ");
+
+async function loadVatRunListRows(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const runQuery = (selectClause: string) =>
+    supabase
+      .from("vat_runs")
+      .select(selectClause)
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+  let result = await runQuery(VAT_RUN_LIST_SELECT);
+
+  if (result.error && isMissingVatRunImportColumnError(result.error)) {
+    result = await runQuery(VAT_RUN_LIST_SELECT_LEGACY);
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data as unknown as VatRunListRow[] | null) ?? [];
+}
+
 export async function loadOrganizationVatRuns(
   supabase: SupabaseClient,
   organizationId: string,
 ) {
-  const { data, error } = await supabase
-    .from("vat_runs")
-    .select(
-      "id, period_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, import_vat, import_vat_advance, net_vat_payable, result_json, input_snapshot_json, created_at, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
-    )
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(12);
+  const rows = await loadVatRunListRows(supabase, organizationId);
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (((data as VatRunListRow[] | null) ?? [])).map((row) => {
+  return rows.map((row) => {
     const period = Array.isArray(row.period) ? row.period[0] : row.period;
     const snapshot = asRecord(row.input_snapshot_json);
     const resultJson = asRecord(row.result_json);

@@ -53,6 +53,27 @@ test("inngest config treats INNGEST_DEV=1 as configured without cloud keys", asy
   );
 });
 
+test("inngest config defaults to dev mode locally when cloud keys are absent", async () => {
+  await withEnv(
+    {
+      NODE_ENV: "development",
+      INNGEST_DEV: null,
+      INNGEST_EVENT_KEY: null,
+      INNGEST_SIGNING_KEY: null,
+      INNGEST_BASE_URL: null,
+    },
+    async () => {
+      const env = loadFresh("@/lib/env");
+      const clientModule = loadFresh("@/lib/inngest/client");
+      const status = env.getInngestConfigStatus();
+
+      assert.equal(status.configured, true);
+      assert.equal(status.isDev, true);
+      assert.equal(clientModule.inngest.mode?.type ?? "dev", "dev");
+    },
+  );
+});
+
 test("openai background adapter submits stored background responses and retrieves terminal payloads", async () => {
   await withEnv(
     {

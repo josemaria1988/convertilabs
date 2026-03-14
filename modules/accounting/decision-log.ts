@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DocumentIntakeOutput } from "@/modules/ai/document-intake-contract";
 import type { DerivedDraftArtifacts, ResolvedAccountingRule } from "@/modules/accounting/types";
 import type { TransactionFamilyResolution } from "@/modules/accounting/transaction-family-resolution";
+import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 
 export type AIDecisionSource =
   | "deterministic_rule"
@@ -212,6 +213,10 @@ export async function insertAIDecisionLogs(
     .from("ai_decision_logs")
     .insert(logs);
 
+  if (error && isMissingSupabaseRelationError(error, "ai_decision_logs")) {
+    return;
+  }
+
   if (error) {
     throw new Error(error.message);
   }
@@ -234,6 +239,10 @@ export async function loadDocumentAIDecisionLogs(
     .eq("document_id", input.documentId)
     .order("created_at", { ascending: false })
     .limit(input.limit ?? 12);
+
+  if (error && isMissingSupabaseRelationError(error, "ai_decision_logs")) {
+    return [];
+  }
 
   if (error) {
     throw new Error(error.message);

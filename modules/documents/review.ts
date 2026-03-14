@@ -8,6 +8,7 @@ import type {
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import {
   asNumber,
   asRecord,
@@ -1091,15 +1092,26 @@ export async function listOrganizationWorkspaceDocuments(input: {
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  if (invoiceIdentityResult.error || decisionLogsResult.error) {
-    throw new Error(invoiceIdentityResult.error?.message ?? decisionLogsResult.error?.message ?? "No se pudieron cargar indicadores de confianza.");
+  const invoiceIdentityError =
+    invoiceIdentityResult.error
+    && !isMissingSupabaseRelationError(invoiceIdentityResult.error, "document_invoice_identities")
+      ? invoiceIdentityResult.error
+      : null;
+  const decisionLogsError =
+    decisionLogsResult.error
+    && !isMissingSupabaseRelationError(decisionLogsResult.error, "ai_decision_logs")
+      ? decisionLogsResult.error
+      : null;
+
+  if (invoiceIdentityError || decisionLogsError) {
+    throw new Error(invoiceIdentityError?.message ?? decisionLogsError?.message ?? "No se pudieron cargar indicadores de confianza.");
   }
 
   const duplicateStatusByDocumentId = new Map(
-    ((invoiceIdentityResult.data as Array<{
+    (((invoiceIdentityResult.data as Array<{
       document_id: string;
       duplicate_status: string;
-    }> | null) ?? []).map((row) => [row.document_id, row.duplicate_status]),
+    }> | null) ?? [])).map((row) => [row.document_id, row.duplicate_status]),
   );
   const latestDecisionLogByDocumentId = new Map<string, {
     decision_source: string | null;
@@ -1107,12 +1119,12 @@ export async function listOrganizationWorkspaceDocuments(input: {
     certainty_level: "green" | "yellow" | "red";
   }>();
 
-  for (const row of ((decisionLogsResult.data as Array<{
+  for (const row of (((decisionLogsResult.data as Array<{
     document_id: string;
     decision_source: string | null;
     confidence_score: number | null;
     certainty_level: "green" | "yellow" | "red";
-  }> | null) ?? [])) {
+  }> | null) ?? []))) {
     if (!latestDecisionLogByDocumentId.has(row.document_id)) {
       latestDecisionLogByDocumentId.set(row.document_id, row);
     }
