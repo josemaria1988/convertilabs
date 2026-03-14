@@ -3,6 +3,7 @@ export type OrganizationPrivateSection =
   | "documents"
   | "imports"
   | "journal_entries"
+  | "open_items"
   | "tax"
   | "settings";
 
@@ -34,6 +35,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Asientos",
       description: "Sugerencias y borradores contables",
       current: currentSection === "journal_entries",
+    },
+    {
+      href: `/app/o/${organizationSlug}/open-items`,
+      label: "Open items",
+      description: "Saldos abiertos a cobrar y pagar",
+      current: currentSection === "open_items",
     },
     {
       href: `/app/o/${organizationSlug}/tax`,

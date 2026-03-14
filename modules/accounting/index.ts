@@ -1,4 +1,5 @@
 export * from "@/modules/accounting/assistant";
+export * from "@/modules/accounting/chart-import";
 export * from "@/modules/accounting/concept-resolution";
 export * from "@/modules/accounting/decision-log";
 export * from "@/modules/accounting/invoice-identity";
@@ -12,6 +13,7 @@ export * from "@/modules/accounting/rules";
 export * from "@/modules/accounting/rule-engine";
 export * from "@/modules/accounting/runtime";
 export * from "@/modules/accounting/suggestion-engine";
+export * from "@/modules/accounting/template-import";
 export * from "@/modules/accounting/transaction-family-resolution";
 export * from "@/modules/accounting/types";
 export * from "@/modules/accounting/vendor-resolution";

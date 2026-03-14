@@ -34,6 +34,26 @@ function formatAmount(value: number | null) {
   }).format(value);
 }
 
+function getCertaintyClasses(level: "green" | "yellow" | "red" | null) {
+  if (level === "green") {
+    return "status-pill status-pill--success";
+  }
+
+  if (level === "yellow") {
+    return "status-pill status-pill--warning";
+  }
+
+  if (level === "red") {
+    return "status-pill status-pill--danger";
+  }
+
+  return "status-pill status-pill--info";
+}
+
+function formatDecisionSource(value: string | null) {
+  return value ? value.replace(/_/g, " ") : "Sin decision";
+}
+
 export default async function OrganizationDocumentsPage({
   params,
 }: OrganizationDocumentsPageProps) {
@@ -90,6 +110,7 @@ export default async function OrganizationDocumentsPage({
                     <th>Contraparte</th>
                     <th>Estado</th>
                     <th>Tipo</th>
+                    <th>Confianza</th>
                     <th className="text-right">Monto</th>
                   </tr>
                 </thead>
@@ -139,6 +160,24 @@ export default async function OrganizationDocumentsPage({
                         <span className={getDocumentRoleVariant(document.role)}>
                           {getDocumentRoleLabel(document.role)}
                         </span>
+                        <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
+                          {formatDecisionSource(document.decisionSource)}
+                        </div>
+                        {document.duplicateStatus && document.duplicateStatus !== "clear" ? (
+                          <div className="mt-1 text-[13px] text-amber-900">
+                            {document.duplicateStatus}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span className={getCertaintyClasses(document.certaintyLevel)}>
+                          {document.certaintyLevel ?? "n/a"}
+                        </span>
+                        <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
+                          {document.certaintyConfidence !== null
+                            ? `${Math.round(document.certaintyConfidence * 100)}%`
+                            : "Sin score"}
+                        </div>
                       </td>
                       <td className="text-right">
                         <div className="font-semibold text-white">

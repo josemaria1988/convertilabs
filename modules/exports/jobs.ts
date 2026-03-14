@@ -37,6 +37,35 @@ async function recordExportAuditEvent(input: {
   }
 }
 
+async function persistVatFormExportSummary(input: {
+  organizationId: string;
+  vatRunId: string;
+  exportId: string;
+  actorId: string | null;
+  summary: {
+    formCode: string;
+    lines: unknown[];
+    warnings: string[];
+  };
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .from("vat_form_exports")
+    .insert({
+      organization_id: input.organizationId,
+      vat_run_id: input.vatRunId,
+      export_id: input.exportId,
+      form_code: input.summary.formCode,
+      lines_json: input.summary.lines,
+      warnings_json: input.summary.warnings,
+      created_by: input.actorId,
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function createVatRunExport(input: {
   organizationId: string;
   vatRunId: string;
@@ -79,8 +108,13 @@ export async function createVatRunExport(input: {
       input.vatRunId,
     );
 
-    if (dataset.traceability.length === 0 || dataset.journalEntries.length === 0) {
-      throw new Error("El modelo canónico aprobado esta incompleto para generar el export.");
+    if (
+      dataset.traceability.length === 0
+      && dataset.journalEntries.length === 0
+      && dataset.imports.length === 0
+      && dataset.dgiFormSummary.lines.length === 0
+    ) {
+      throw new Error("El modelo canonico aprobado esta incompleto para generar el export.");
     }
 
     const workbook = buildVatRunExcelWorkbook(dataset);
@@ -112,6 +146,8 @@ export async function createVatRunExport(input: {
         payload_json: {
           vat_run_id: input.vatRunId,
           period_label: dataset.periodLabel,
+          dgi_form_code: dataset.dgiFormSummary.formCode,
+          canonical_tax_payload: dataset.canonicalTaxPayload,
         },
         checksum,
         updated_at: new Date().toISOString(),
@@ -125,6 +161,17 @@ export async function createVatRunExport(input: {
       action: "export:generated",
       metadata: {
         vat_run_id: input.vatRunId,
+      },
+    });
+    await persistVatFormExportSummary({
+      organizationId: input.organizationId,
+      vatRunId: input.vatRunId,
+      exportId,
+      actorId: input.actorId,
+      summary: {
+        formCode: dataset.dgiFormSummary.formCode,
+        lines: dataset.dgiFormSummary.lines,
+        warnings: dataset.dgiFormSummary.warnings,
       },
     });
 

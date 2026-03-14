@@ -1,4 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildCanonicalTaxPayload,
+  buildDgiFormSummary,
+  buildFallbackDgiMappings,
+  type CanonicalTaxMetric,
+  type DGIFormMappingRecord,
+} from "@/modules/exports/canonical";
 import type { VatRunExportDataset } from "@/modules/exports/types";
 
 type JsonRecord = Record<string, unknown>;
@@ -10,6 +17,8 @@ type VatRunRow = {
   output_vat: number;
   input_vat_creditable: number;
   input_vat_non_deductible: number;
+  import_vat?: number | null;
+  import_vat_advance?: number | null;
   net_vat_payable: number;
   result_json: JsonRecord | null;
   input_snapshot_json: JsonRecord | null;
@@ -36,6 +45,10 @@ function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function asBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
 function asStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
@@ -52,6 +65,40 @@ function getVatRunPeriod(
   return period ?? null;
 }
 
+async function loadActiveDgiMappings(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("organization_dgi_form_mappings")
+    .select("form_code, line_code, metric_key, label, calculation_mode, version")
+    .eq("organization_id", organizationId)
+    .eq("is_active", true)
+    .order("version", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const mappings = ((data as Array<{
+    form_code: string;
+    line_code: string;
+    metric_key: DGIFormMappingRecord["metricKey"];
+    label: string;
+    calculation_mode: "direct_metric";
+    version: number;
+  }> | null) ?? []).map((row) => ({
+    formCode: row.form_code,
+    lineCode: row.line_code,
+    metricKey: row.metric_key,
+    label: row.label,
+    calculationMode: row.calculation_mode,
+    version: row.version,
+  }));
+
+  return mappings.length > 0 ? mappings : buildFallbackDgiMappings();
+}
+
 export async function loadVatRunExportDataset(
   supabase: SupabaseClient,
   organizationId: string,
@@ -60,7 +107,7 @@ export async function loadVatRunExportDataset(
   const { data: vatRun, error: vatRunError } = await supabase
     .from("vat_runs")
     .select(
-      "id, organization_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, net_vat_payable, result_json, input_snapshot_json, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month)",
+      "id, organization_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, import_vat, import_vat_advance, net_vat_payable, result_json, input_snapshot_json, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month)",
     )
     .eq("organization_id", organizationId)
     .eq("id", vatRunId)
@@ -93,10 +140,6 @@ export async function loadVatRunExportDataset(
     .map((entry) => asString(entry.draftId))
     .filter((value): value is string => Boolean(value));
 
-  if (documentIds.length === 0 || draftIds.length === 0) {
-    throw new Error("El VAT run no tiene documentos trazables suficientes para export.");
-  }
-
   const [
     documentsResult,
     draftsResult,
@@ -105,39 +148,73 @@ export async function loadVatRunExportDataset(
     confirmationsResult,
     suggestionsResult,
     journalEntriesResult,
+    importOperationsResult,
+    importTaxesResult,
+    dgiMappings,
+    historicalRunsResult,
   ] = await Promise.all([
+    documentIds.length > 0
+      ? supabase
+        .from("documents")
+        .select("id, original_filename")
+        .in("id", documentIds)
+      : Promise.resolve({ data: [], error: null }),
+    draftIds.length > 0
+      ? supabase
+        .from("document_drafts")
+        .select("id, document_id, fields_json, source_confidence, confirmed_at")
+        .in("id", draftIds)
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("document_invoice_identities")
+        .select("document_id, issuer_tax_id_normalized, duplicate_status")
+        .in("document_id", documentIds)
+      : Promise.resolve({ data: [], error: null }),
+    draftIds.length > 0
+      ? supabase
+        .from("document_line_items")
+        .select("draft_id, match_strategy, raw_concept_description, metadata")
+        .in("draft_id", draftIds)
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("document_confirmations")
+        .select("document_id, confirmed_at, confirmed_by")
+        .in("document_id", documentIds)
+        .order("confirmed_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("accounting_suggestions")
+        .select("document_id, explanation, rule_trace_json")
+        .in("document_id", documentIds)
+        .order("approved_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("journal_entries")
+        .select(
+          "id, source_document_id, entry_date, reference, journal_entry_lines(line_no, debit, credit, description, metadata, chart_of_accounts(code, name))",
+        )
+        .in("source_document_id", documentIds)
+      : Promise.resolve({ data: [], error: null }),
     supabase
-      .from("documents")
-      .select("id, original_filename")
-      .in("id", documentIds),
+      .from("organization_import_operations")
+      .select("id, reference_code, dua_number, supplier_name, operation_date, payment_date, status")
+      .eq("organization_id", organizationId)
+      .eq("status", "approved"),
     supabase
-      .from("document_drafts")
-      .select("id, document_id, fields_json, source_confidence, confirmed_at")
-      .in("id", draftIds),
+      .from("organization_import_operation_taxes")
+      .select("import_operation_id, tax_label, amount, is_creditable_vat, is_vat_advance, is_other_tax, metadata_json")
+      .eq("organization_id", organizationId),
+    loadActiveDgiMappings(supabase, organizationId),
     supabase
-      .from("document_invoice_identities")
-      .select("document_id, issuer_tax_id_normalized, duplicate_status")
-      .in("document_id", documentIds),
-    supabase
-      .from("document_line_items")
-      .select("draft_id, match_strategy, raw_concept_description, metadata")
-      .in("draft_id", draftIds),
-    supabase
-      .from("document_confirmations")
-      .select("document_id, confirmed_at, confirmed_by")
-      .in("document_id", documentIds)
-      .order("confirmed_at", { ascending: false }),
-    supabase
-      .from("accounting_suggestions")
-      .select("document_id, explanation, rule_trace_json")
-      .in("document_id", documentIds)
-      .order("approved_at", { ascending: false }),
-    supabase
-      .from("journal_entries")
-      .select(
-        "id, source_document_id, entry_date, reference, journal_entry_lines(line_no, debit, credit, description, metadata, chart_of_accounts(code, name))",
-      )
-      .in("source_document_id", documentIds),
+      .from("organization_spreadsheet_import_runs")
+      .select("result_json")
+      .eq("organization_id", organizationId)
+      .eq("import_type", "historical_vat_liquidation")
+      .not("confirmed_at", "is", null),
   ]);
 
   if (
@@ -148,6 +225,9 @@ export async function loadVatRunExportDataset(
     || confirmationsResult.error
     || suggestionsResult.error
     || journalEntriesResult.error
+    || importOperationsResult.error
+    || importTaxesResult.error
+    || historicalRunsResult.error
   ) {
     throw new Error(
       documentsResult.error?.message
@@ -157,6 +237,9 @@ export async function loadVatRunExportDataset(
       ?? confirmationsResult.error?.message
       ?? suggestionsResult.error?.message
       ?? journalEntriesResult.error?.message
+      ?? importOperationsResult.error?.message
+      ?? importTaxesResult.error?.message
+      ?? historicalRunsResult.error?.message
       ?? "No se pudo cargar el dataset de export.",
     );
   }
@@ -221,6 +304,7 @@ export async function loadVatRunExportDataset(
 
   const purchaseRows: VatRunExportDataset["purchases"] = [];
   const saleRows: VatRunExportDataset["sales"] = [];
+  const importRows: VatRunExportDataset["imports"] = [];
   const traceabilityRows: VatRunExportDataset["traceability"] = [];
   const journalRows: VatRunExportDataset["journalEntries"] = [];
 
@@ -349,6 +433,142 @@ export async function loadVatRunExportDataset(
   const periodLabel = period
     ? `${period.period_year}-${String(period.period_month ?? 0).padStart(2, "0")}`
     : "Sin periodo";
+  const importOperationIdsForPeriod = (((importOperationsResult.data as Array<{
+    id: string;
+    reference_code: string | null;
+    dua_number: string | null;
+    supplier_name: string | null;
+    operation_date: string | null;
+    payment_date: string | null;
+    status: string;
+  }> | null) ?? []))
+    .filter((operation) =>
+      operation.operation_date?.startsWith(periodLabel)
+      || operation.payment_date?.startsWith(periodLabel));
+  const importOperationById = new Map(importOperationIdsForPeriod.map((operation) => [operation.id, operation]));
+
+  for (const tax of ((importTaxesResult.data as Array<{
+    import_operation_id: string;
+    tax_label: string;
+    amount: number;
+    is_creditable_vat: boolean;
+    is_vat_advance: boolean;
+    is_other_tax: boolean;
+    metadata_json: JsonRecord | null;
+  }> | null) ?? [])) {
+    const operation = importOperationById.get(tax.import_operation_id);
+
+    if (!operation) {
+      continue;
+    }
+
+    importRows.push({
+      referenceCode: operation.reference_code ?? tax.import_operation_id,
+      duaNumber: operation.dua_number,
+      supplierName: operation.supplier_name,
+      taxLabel: tax.tax_label,
+      amount: tax.amount,
+      sourceType: "imported_from_document",
+      notes: asStringArray(asRecord(tax.metadata_json).warnings).join(" "),
+    });
+  }
+
+  const historicalRuns = ((historicalRunsResult.data as Array<{
+    result_json: JsonRecord | null;
+  }> | null) ?? []);
+  const historicalWarnings = historicalRuns.some((run) => {
+    const canonical = asRecord(asRecord(run.result_json).canonical);
+    const periods = Array.isArray(canonical.periods) ? canonical.periods : [];
+
+    return periods.some((periodEntry) =>
+      asString(asRecord(periodEntry).periodLabel) === periodLabel);
+  })
+    ? ["Existe historico IVA importado para este periodo; revisar diferencias antes de exportar."]
+    : [];
+  const canonicalMetrics = [
+    {
+      metricKey: "purchaseTaxableBase",
+      value: purchaseRows.reduce((sum, row) => sum + row.taxableBase, 0),
+      sourceType: "system_generated",
+      warnings: [],
+    },
+    {
+      metricKey: "saleTaxableBase",
+      value: saleRows.reduce((sum, row) => sum + row.taxableBase, 0),
+      sourceType: "system_generated",
+      warnings: [],
+    },
+    {
+      metricKey: "outputVat",
+      value: (vatRun as VatRunRow).output_vat,
+      sourceType: "system_generated",
+      warnings: historicalWarnings,
+    },
+    {
+      metricKey: "inputVatCreditable",
+      value: (vatRun as VatRunRow).input_vat_creditable,
+      sourceType: "system_generated",
+      warnings: historicalWarnings,
+    },
+    {
+      metricKey: "inputVatNonDeductible",
+      value: (vatRun as VatRunRow).input_vat_non_deductible,
+      sourceType: "system_generated",
+      warnings: [],
+    },
+    {
+      metricKey: "importVat",
+      value: asNumber((vatRun as Record<string, unknown>).import_vat) ?? asNumber(asRecord(asRecord((vatRun as VatRunRow).result_json).totals).import_vat) ?? 0,
+      sourceType: importRows.length > 0
+        ? "imported_from_document"
+        : "system_generated",
+      warnings: [],
+    },
+    {
+      metricKey: "importVatAdvance",
+      value: asNumber((vatRun as Record<string, unknown>).import_vat_advance) ?? asNumber(asRecord(asRecord((vatRun as VatRunRow).result_json).totals).import_vat_advance) ?? 0,
+      sourceType: importRows.length > 0
+        ? "imported_from_document"
+        : "system_generated",
+      warnings: [],
+    },
+    {
+      metricKey: "netVatPayable",
+      value: (vatRun as VatRunRow).net_vat_payable,
+      sourceType: "system_generated",
+      warnings: historicalWarnings,
+    },
+  ] satisfies CanonicalTaxMetric[];
+  const canonicalTaxPayload = buildCanonicalTaxPayload({
+    organizationId,
+    vatRunId,
+    periodLabel,
+    metrics: canonicalMetrics,
+    warnings: historicalWarnings,
+  });
+  const dgiFormSummary = buildDgiFormSummary({
+    organizationId,
+    vatRunId,
+    formCode: dgiMappings[0]?.formCode ?? "2176",
+    metrics: canonicalMetrics,
+    mappings: dgiMappings,
+    warnings: historicalWarnings,
+  });
+  const canonicalAccountingPayload = {
+    organizationId,
+    payloadType: "journal_entries",
+    sourceType: "system_generated",
+    entries: journalRows.map((row) => ({
+      reference: row.reference,
+      accountCode: row.account,
+      accountName: row.accountName,
+      debit: row.debit,
+      credit: row.credit,
+    })),
+    templates: [],
+    chart: [],
+    warnings: [],
+  } satisfies VatRunExportDataset["canonicalAccountingPayload"];
 
   return {
     organizationId,
@@ -362,6 +582,8 @@ export async function loadVatRunExportDataset(
       outputVat: (vatRun as VatRunRow).output_vat,
       inputVatCreditable: (vatRun as VatRunRow).input_vat_creditable,
       inputVatNonDeductible: (vatRun as VatRunRow).input_vat_non_deductible,
+      importVat: canonicalMetrics.find((metric) => metric.metricKey === "importVat")?.value ?? 0,
+      importVatAdvance: canonicalMetrics.find((metric) => metric.metricKey === "importVatAdvance")?.value ?? 0,
       netVatPayable: (vatRun as VatRunRow).net_vat_payable,
       warningsCount: traceabilityRows.reduce(
         (sum, row) => sum + (row.flags ? 1 : 0),
@@ -371,6 +593,10 @@ export async function loadVatRunExportDataset(
     purchases: purchaseRows,
     sales: saleRows,
     journalEntries: journalRows,
+    imports: importRows,
     traceability: traceabilityRows,
+    dgiFormSummary,
+    canonicalTaxPayload,
+    canonicalAccountingPayload,
   } satisfies VatRunExportDataset;
 }

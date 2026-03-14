@@ -4,6 +4,9 @@ import {
   normalizeTextToken,
 } from "@/modules/accounting/normalization";
 import type {
+  ChartOfAccountsImportCanonical,
+  HistoricalVatLiquidationCanonical,
+  JournalTemplateImportCanonical,
   SpreadsheetCanonicalPayload,
   SpreadsheetImportType,
   SpreadsheetInterpretationResult,
@@ -470,6 +473,51 @@ function buildCanonicalPayload(input: {
     sourceType: "imported_from_spreadsheet",
     warnings: input.warnings,
   } satisfies SpreadsheetCanonicalPayload;
+}
+
+export function buildSpreadsheetCanonicalSections(input: {
+  organizationId?: string | null;
+  preview: SpreadsheetParseResult;
+  sheetIntents: SpreadsheetSheetIntent[];
+  warnings: string[];
+}) {
+  const historicalVat = buildHistoricalVatCanonical({
+    organizationId: input.organizationId,
+    sheets: input.preview.sheets,
+    intents: input.sheetIntents,
+    warnings: input.warnings,
+  });
+  const journalTemplates = buildJournalTemplateCanonical({
+    organizationId: input.organizationId,
+    sheets: input.preview.sheets,
+    intents: input.sheetIntents,
+    warnings: input.warnings,
+  });
+  const chartOfAccounts = buildChartCanonical({
+    organizationId: input.organizationId,
+    sheets: input.preview.sheets,
+    intents: input.sheetIntents,
+    warnings: input.warnings,
+  });
+
+  return {
+    historicalVat:
+      historicalVat.periods.length > 0
+        ? historicalVat
+        : null,
+    journalTemplates:
+      journalTemplates.templates.length > 0
+        ? journalTemplates
+        : null,
+    chartOfAccounts:
+      chartOfAccounts.accounts.length > 0
+        ? chartOfAccounts
+        : null,
+  } satisfies {
+    historicalVat: HistoricalVatLiquidationCanonical | null;
+    journalTemplates: JournalTemplateImportCanonical | null;
+    chartOfAccounts: ChartOfAccountsImportCanonical | null;
+  };
 }
 
 function summarizePreviewForPrompt(preview: SpreadsheetParseResult) {

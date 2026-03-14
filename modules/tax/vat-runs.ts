@@ -33,6 +33,8 @@ type VatRunRow = {
   period_id: string;
   version_no: number;
   status: string;
+  import_vat?: number | null;
+  import_vat_advance?: number | null;
   result_json: JsonRecord | null;
 };
 
@@ -62,6 +64,8 @@ export type OrganizationVatRun = {
   outputVat: number;
   inputVatCreditable: number;
   inputVatNonDeductible: number;
+  importVat: number;
+  importVatAdvance: number;
   netVatPayable: number;
   createdAt: string;
   reviewFlagsCount: number;
@@ -290,6 +294,87 @@ async function loadLatestVatRun(
   return (data as VatRunRow | null) ?? null;
 }
 
+async function loadApprovedImportOperationTaxSummary(
+  supabase: SupabaseClient,
+  organizationId: string,
+  periodDate: string,
+) {
+  const periodKey = periodDate.slice(0, 7);
+  const { data: operations, error: operationsError } = await supabase
+    .from("organization_import_operations")
+    .select("id, operation_date, payment_date, status")
+    .eq("organization_id", organizationId)
+    .eq("status", "approved");
+
+  if (operationsError) {
+    throw new Error(operationsError.message);
+  }
+
+  const relevantOperationIds = (((operations as Array<{
+    id: string;
+    operation_date: string | null;
+    payment_date: string | null;
+    status: string;
+  }> | null) ?? []))
+    .filter((row) =>
+      row.operation_date?.startsWith(periodKey)
+      || row.payment_date?.startsWith(periodKey))
+    .map((row) => row.id);
+
+  if (relevantOperationIds.length === 0) {
+    return {
+      importVat: 0,
+      importVatAdvance: 0,
+      otherTaxesCount: 0,
+      operationIds: [],
+    };
+  }
+
+  const { data: taxes, error: taxesError } = await supabase
+    .from("organization_import_operation_taxes")
+    .select("import_operation_id, amount, is_creditable_vat, is_vat_advance, is_other_tax")
+    .eq("organization_id", organizationId)
+    .in("import_operation_id", relevantOperationIds);
+
+  if (taxesError) {
+    throw new Error(taxesError.message);
+  }
+
+  return (((taxes as Array<{
+    import_operation_id: string;
+    amount: number;
+    is_creditable_vat: boolean;
+    is_vat_advance: boolean;
+    is_other_tax: boolean;
+  }> | null) ?? [])).reduce(
+    (accumulator, tax) => {
+      if (tax.is_creditable_vat) {
+        accumulator.importVat += tax.amount;
+      }
+
+      if (tax.is_vat_advance) {
+        accumulator.importVatAdvance += tax.amount;
+      }
+
+      if (tax.is_other_tax) {
+        accumulator.otherTaxesCount += 1;
+      }
+
+      if (!accumulator.operationIds.includes(tax.import_operation_id)) {
+        accumulator.operationIds.push(tax.import_operation_id);
+      }
+
+      return accumulator;
+    },
+    {
+      importVat: 0,
+      importVatAdvance: 0,
+      otherTaxesCount: 0,
+      operationIds: [] as string[],
+    },
+  );
+}
+
 async function updateTaxPeriodStatus(
   supabase: SupabaseClient,
   periodId: string,
@@ -351,6 +436,11 @@ export async function rebuildMonthlyVatRunFromConfirmations(
   }
 
   const drafts = await loadLatestConfirmedDrafts(supabase, organizationId);
+  const importSummary = await loadApprovedImportOperationTaxSummary(
+    supabase,
+    organizationId,
+    periodDate,
+  );
   const relevantSnapshots = drafts
     .map((draft) => buildVatDocumentSnapshot(draft))
     .filter((snapshot): snapshot is VatDocumentSnapshot => snapshot !== null)
@@ -384,8 +474,14 @@ export async function rebuildMonthlyVatRunFromConfirmations(
   const outputVat = roundCurrency(totals.outputVat);
   const inputVatCreditable = roundCurrency(totals.inputVatCreditable);
   const inputVatNonDeductible = roundCurrency(totals.inputVatNonDeductible);
+  const importVat = roundCurrency(importSummary.importVat);
+  const importVatAdvance = roundCurrency(importSummary.importVatAdvance);
   const netVatPayable = roundCurrency(
-    outputVat - inputVatCreditable + inputVatNonDeductible,
+    outputVat
+    - inputVatCreditable
+    - importVat
+    - importVatAdvance
+    + inputVatNonDeductible,
   );
   const nextStatus: VatRunStatus =
     totals.reviewFlagsCount > 0
@@ -397,27 +493,34 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     organization_id: organizationId,
     period_id: period.id,
     status: nextStatus,
-    input_snapshot_json: {
-      documents: relevantSnapshots,
-      generated_at: new Date().toISOString(),
-    },
-    result_json: {
-      formula: "output_vat - input_vat_creditable + input_vat_non_deductible",
-      period: `${year}-${String(month).padStart(2, "0")}`,
-      totals: {
-        output_vat: outputVat,
-        input_vat_creditable: inputVatCreditable,
-        input_vat_non_deductible: inputVatNonDeductible,
-        net_vat_payable: netVatPayable,
+      input_snapshot_json: {
+        documents: relevantSnapshots,
+        import_operations: importSummary.operationIds,
+        generated_at: new Date().toISOString(),
       },
-      documents_included_count: relevantSnapshots.length,
-      review_flags_count: totals.reviewFlagsCount,
-    },
-    output_vat: outputVat,
-    input_vat_creditable: inputVatCreditable,
-    input_vat_non_deductible: inputVatNonDeductible,
-    adjustments: 0,
-    net_vat_payable: netVatPayable,
+      result_json: {
+        formula: "output_vat - input_vat_creditable - import_vat - import_vat_advance + input_vat_non_deductible",
+        period: `${year}-${String(month).padStart(2, "0")}`,
+        totals: {
+          output_vat: outputVat,
+          input_vat_creditable: inputVatCreditable,
+          input_vat_non_deductible: inputVatNonDeductible,
+          import_vat: importVat,
+          import_vat_advance: importVatAdvance,
+          net_vat_payable: netVatPayable,
+        },
+        documents_included_count: relevantSnapshots.length,
+        import_operations_included_count: importSummary.operationIds.length,
+        import_other_taxes_count: importSummary.otherTaxesCount,
+        review_flags_count: totals.reviewFlagsCount,
+      },
+      output_vat: outputVat,
+      input_vat_creditable: inputVatCreditable,
+      input_vat_non_deductible: inputVatNonDeductible,
+      import_vat: importVat,
+      import_vat_advance: importVatAdvance,
+      adjustments: 0,
+      net_vat_payable: netVatPayable,
     created_by: requestedBy,
     updated_at: new Date().toISOString(),
   };
@@ -545,6 +648,8 @@ type VatRunListRow = {
   output_vat: number;
   input_vat_creditable: number;
   input_vat_non_deductible: number;
+  import_vat?: number | null;
+  import_vat_advance?: number | null;
   net_vat_payable: number;
   result_json: JsonRecord | null;
   input_snapshot_json: JsonRecord | null;
@@ -569,7 +674,7 @@ export async function loadOrganizationVatRuns(
   const { data, error } = await supabase
     .from("vat_runs")
     .select(
-      "id, period_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, net_vat_payable, result_json, input_snapshot_json, created_at, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
+      "id, period_id, status, output_vat, input_vat_creditable, input_vat_non_deductible, import_vat, import_vat_advance, net_vat_payable, result_json, input_snapshot_json, created_at, period:tax_periods!vat_runs_period_id_fkey(period_year, period_month, start_date, end_date)",
     )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
@@ -600,6 +705,18 @@ export async function loadOrganizationVatRuns(
       outputVat: row.output_vat,
       inputVatCreditable: row.input_vat_creditable,
       inputVatNonDeductible: row.input_vat_non_deductible,
+      importVat:
+        typeof row.import_vat === "number"
+          ? row.import_vat
+          : typeof asRecord(row.result_json).totals === "object"
+            ? asNumber(asRecord(asRecord(row.result_json).totals).import_vat) ?? 0
+            : 0,
+      importVatAdvance:
+        typeof row.import_vat_advance === "number"
+          ? row.import_vat_advance
+          : typeof asRecord(row.result_json).totals === "object"
+            ? asNumber(asRecord(asRecord(row.result_json).totals).import_vat_advance) ?? 0
+            : 0,
       netVatPayable: row.net_vat_payable,
       createdAt: row.created_at,
       reviewFlagsCount:

@@ -71,6 +71,8 @@ create table if not exists public.vat_runs (
   output_vat numeric(18,2) not null default 0,
   input_vat_creditable numeric(18,2) not null default 0,
   input_vat_non_deductible numeric(18,2) not null default 0,
+  import_vat numeric(18,2) not null default 0,
+  import_vat_advance numeric(18,2) not null default 0,
   adjustments numeric(18,2) not null default 0,
   net_vat_payable numeric(18,2) not null default 0,
   version_no integer not null default 1,
@@ -89,3 +91,62 @@ create table if not exists public.vat_runs (
 
 create unique index if not exists idx_vat_runs_org_period_version
   on public.vat_runs (organization_id, period_id, version_no);
+
+create table if not exists public.organization_import_operations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  reference_code text,
+  dua_number text,
+  dua_year text,
+  customs_broker_name text,
+  supplier_name text,
+  supplier_tax_id text,
+  currency_code text,
+  operation_date date,
+  payment_date date,
+  status text not null default 'draft',
+  warnings_json jsonb not null default '[]'::jsonb,
+  raw_summary_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_import_operations_org_created
+  on public.organization_import_operations (organization_id, created_at desc);
+
+create index if not exists idx_import_operations_org_status
+  on public.organization_import_operations (organization_id, status, operation_date);
+
+create table if not exists public.organization_import_operation_documents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  import_operation_id uuid not null references public.organization_import_operations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  document_type text not null default 'unknown',
+  is_primary boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (organization_id, import_operation_id, document_id)
+);
+
+create index if not exists idx_import_operation_documents_org_operation
+  on public.organization_import_operation_documents (organization_id, import_operation_id, created_at desc);
+
+create table if not exists public.organization_import_operation_taxes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  import_operation_id uuid not null references public.organization_import_operations(id) on delete cascade,
+  tax_code text,
+  tax_label text not null,
+  external_tax_code text,
+  amount numeric(18,2) not null default 0,
+  currency_code text not null default 'USD',
+  is_creditable_vat boolean not null default false,
+  is_vat_advance boolean not null default false,
+  is_other_tax boolean not null default true,
+  source_document_id uuid references public.documents(id) on delete set null,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_import_operation_taxes_org_operation
+  on public.organization_import_operation_taxes (organization_id, import_operation_id, created_at desc);

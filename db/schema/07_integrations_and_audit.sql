@@ -20,6 +20,38 @@ create table if not exists public.exports (
   expires_at timestamptz
 );
 
+create table if not exists public.organization_dgi_form_mappings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  form_code text not null,
+  line_code text not null,
+  metric_key text not null,
+  label text not null,
+  calculation_mode text not null default 'direct_metric',
+  configuration_json jsonb not null default '{}'::jsonb,
+  version integer not null default 1,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_dgi_form_mappings_org_form
+  on public.organization_dgi_form_mappings (organization_id, form_code, is_active, version desc);
+
+create table if not exists public.vat_form_exports (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  vat_run_id uuid not null references public.vat_runs(id) on delete cascade,
+  export_id uuid references public.exports(id) on delete set null,
+  form_code text not null,
+  lines_json jsonb not null default '[]'::jsonb,
+  warnings_json jsonb not null default '[]'::jsonb,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_vat_form_exports_org_run
+  on public.vat_form_exports (organization_id, vat_run_id, created_at desc);
+
 insert into storage.buckets (
   id,
   name,

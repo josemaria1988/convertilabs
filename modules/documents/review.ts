@@ -205,6 +205,10 @@ export type DocumentWorkspaceListItem = {
   taxAmount: number | null;
   totalAmount: number | null;
   hasProcessedDraft: boolean;
+  certaintyLevel: "green" | "yellow" | "red" | null;
+  certaintyConfidence: number | null;
+  duplicateStatus: string | null;
+  decisionSource: string | null;
 };
 
 type DocumentViewModel = {
@@ -1046,6 +1050,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
   }
 
   const rows = ((data as DocumentListRow[] | null) ?? []);
+  const documentIds = rows.map((row) => row.id);
   const draftIds = rows
     .map((row) => row.current_draft_id)
     .filter((value): value is string => typeof value === "string");
@@ -1069,6 +1074,50 @@ export async function listOrganizationWorkspaceDocuments(input: {
     }
   }
 
+  const [invoiceIdentityResult, decisionLogsResult] = await Promise.all([
+    documentIds.length > 0
+      ? supabase
+        .from("document_invoice_identities")
+        .select("document_id, duplicate_status")
+        .in("document_id", documentIds)
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("ai_decision_logs")
+        .select("document_id, decision_source, confidence_score, certainty_level, created_at")
+        .eq("organization_id", input.organizationId)
+        .in("document_id", documentIds)
+        .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (invoiceIdentityResult.error || decisionLogsResult.error) {
+    throw new Error(invoiceIdentityResult.error?.message ?? decisionLogsResult.error?.message ?? "No se pudieron cargar indicadores de confianza.");
+  }
+
+  const duplicateStatusByDocumentId = new Map(
+    ((invoiceIdentityResult.data as Array<{
+      document_id: string;
+      duplicate_status: string;
+    }> | null) ?? []).map((row) => [row.document_id, row.duplicate_status]),
+  );
+  const latestDecisionLogByDocumentId = new Map<string, {
+    decision_source: string | null;
+    confidence_score: number | null;
+    certainty_level: "green" | "yellow" | "red";
+  }>();
+
+  for (const row of ((decisionLogsResult.data as Array<{
+    document_id: string;
+    decision_source: string | null;
+    confidence_score: number | null;
+    certainty_level: "green" | "yellow" | "red";
+  }> | null) ?? [])) {
+    if (!latestDecisionLogByDocumentId.has(row.document_id)) {
+      latestDecisionLogByDocumentId.set(row.document_id, row);
+    }
+  }
+
   return Promise.all(rows.map(async (row) => ({
     ...(() => {
       const facts = row.current_draft_id
@@ -1084,6 +1133,16 @@ export async function listOrganizationWorkspaceDocuments(input: {
         counterpartyName,
         taxAmount: facts?.tax_amount ?? null,
         totalAmount: facts?.total_amount ?? null,
+      };
+    })(),
+    ...(() => {
+      const decision = latestDecisionLogByDocumentId.get(row.id);
+
+      return {
+        certaintyLevel: decision?.certainty_level ?? null,
+        certaintyConfidence: decision?.confidence_score ?? null,
+        duplicateStatus: duplicateStatusByDocumentId.get(row.id) ?? null,
+        decisionSource: decision?.decision_source ?? null,
       };
     })(),
     id: row.id,

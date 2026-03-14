@@ -1,3 +1,9 @@
+import type {
+  CanonicalAccountingPayload,
+  CanonicalTaxPayload,
+  DGIFormSummary,
+} from "@/modules/exports/canonical";
+
 export type ExportWorkbookSheet = {
   name: string;
   rows: Array<Array<string | number | null>>;
@@ -15,6 +21,8 @@ export type VatRunExportDataset = {
     outputVat: number;
     inputVatCreditable: number;
     inputVatNonDeductible: number;
+    importVat: number;
+    importVatAdvance: number;
     netVatPayable: number;
     warningsCount: number;
   };
@@ -49,6 +57,15 @@ export type VatRunExportDataset = {
     credit: number;
     provenance: string;
   }>;
+  imports: Array<{
+    referenceCode: string;
+    duaNumber: string | null;
+    supplierName: string | null;
+    taxLabel: string;
+    amount: number;
+    sourceType: string;
+    notes: string;
+  }>;
   traceability: Array<{
     document: string;
     vendorResolved: string;
@@ -60,6 +77,9 @@ export type VatRunExportDataset = {
     appliedRule: string;
     flags: string;
   }>;
+  dgiFormSummary: DGIFormSummary;
+  canonicalTaxPayload: CanonicalTaxPayload;
+  canonicalAccountingPayload: CanonicalAccountingPayload;
 };
 
 export type ExportJobResult = {

@@ -30,6 +30,15 @@ function renderSheet(sheet: ExportWorkbookSheet) {
 }
 
 function buildSheets(dataset: VatRunExportDataset): ExportWorkbookSheet[] {
+  const imports = dataset.imports ?? [];
+  const dgiSummary = dataset.dgiFormSummary ?? {
+    organizationId: dataset.organizationId,
+    vatRunId: dataset.vatRunId,
+    formCode: "2176",
+    lines: [],
+    warnings: [],
+  };
+
   return [
     {
       name: "Resumen ejecutivo",
@@ -42,6 +51,8 @@ function buildSheets(dataset: VatRunExportDataset): ExportWorkbookSheet[] {
         ["IVA debito", dataset.totals.outputVat],
         ["IVA credito", dataset.totals.inputVatCreditable],
         ["IVA no deducible", dataset.totals.inputVatNonDeductible],
+        ["IVA importacion", dataset.totals.importVat ?? 0],
+        ["Anticipo IVA importacion", dataset.totals.importVatAdvance ?? 0],
         ["Neto IVA periodo", dataset.totals.netVatPayable],
         ["Warnings / exceptions", dataset.totals.warningsCount],
       ],
@@ -81,6 +92,21 @@ function buildSheets(dataset: VatRunExportDataset): ExportWorkbookSheet[] {
       ],
     },
     {
+      name: "Importaciones",
+      rows: [
+        ["Referencia", "DUA", "Proveedor", "Tributo", "Monto", "Origen", "Observaciones"],
+        ...imports.map((row) => [
+          row.referenceCode,
+          row.duaNumber,
+          row.supplierName,
+          row.taxLabel,
+          row.amount,
+          row.sourceType,
+          row.notes,
+        ]),
+      ],
+    },
+    {
       name: "Asientos contables",
       rows: [
         ["Fecha", "Referencia", "Cuenta", "Descripcion cuenta", "Debe", "Haber", "Provenance"],
@@ -109,6 +135,21 @@ function buildSheets(dataset: VatRunExportDataset): ExportWorkbookSheet[] {
           row.approvalDate,
           row.appliedRule,
           row.flags,
+        ]),
+      ],
+    },
+    {
+      name: "Resumen DGI",
+      rows: [
+        ["Formulario", dgiSummary.formCode],
+        ["Linea", "Etiqueta", "Metric", "Valor", "Origen", "Warnings"],
+        ...dgiSummary.lines.map((line) => [
+          line.lineCode,
+          line.label,
+          line.metricKey,
+          line.value,
+          line.sourceType,
+          line.warnings.join(" "),
         ]),
       ],
     },

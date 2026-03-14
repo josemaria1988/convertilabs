@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
-import { loadRecentExports } from "@/modules/exports";
+import { loadRecentExports, loadVatRunExportDataset } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { listOrganizationSpreadsheetImportRuns } from "@/modules/spreadsheets";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
@@ -80,6 +80,9 @@ export default async function OrganizationTaxPage({
   );
 
   const latestRun = vatRuns[0] ?? null;
+  const latestExportDataset = latestRun
+    ? await loadVatRunExportDataset(supabase, organization.id, latestRun.id)
+    : null;
   const periodTitle = formatVatTitle(latestRun?.periodLabel ?? null);
   const latestExports = latestRun
     ? exports.filter((artifact) => artifact.targetId === latestRun.id)
@@ -106,7 +109,7 @@ export default async function OrganizationTaxPage({
             </h1>
           </div>
 
-          <section className="grid gap-3 md:grid-cols-3">
+          <section className="grid gap-3 md:grid-cols-4">
             <article className="metric-card">
               <span className="metric-card__label">Debito Fiscal</span>
               <span className="ui-kpi-badge bg-[rgba(94,130,184,0.92)]">
@@ -136,6 +139,18 @@ export default async function OrganizationTaxPage({
                 {formatAmount(latestRun?.netVatPayable ?? null)}
               </span>
               <p className="metric-card__hint">Resultado neto del ultimo run consolidado.</p>
+            </article>
+            <article className="metric-card">
+              <span className="metric-card__label">IVA Importacion</span>
+              <span className="ui-kpi-badge bg-[rgba(94,130,184,0.92)]">
+                {formatAmount(latestRun?.importVat ?? null)}
+              </span>
+              <span className="metric-card__value">
+                {formatAmount(latestRun?.importVat ?? null)}
+              </span>
+              <p className="metric-card__hint">
+                Anticipos e IVA aduanero aprobados para el periodo.
+              </p>
             </article>
           </section>
 
@@ -171,6 +186,22 @@ export default async function OrganizationTaxPage({
                   <span>{formatAmount(latestRun?.inputVatCreditable ?? null)}</span>
                   <span className="status-pill status-pill--success">
                     {latestPurchases.length} docs
+                  </span>
+                </div>
+              </div>
+              <div className="ui-subtle-row">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-[3px] border border-white/10 bg-white/10 text-[12px] text-white">
+                    I
+                  </span>
+                  <span className="text-white">IVA importacion / anticipo</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>
+                    {formatAmount(latestRun ? latestRun.importVat + latestRun.importVatAdvance : null)}
+                  </span>
+                  <span className="status-pill status-pill--success">
+                    {latestExportDataset?.imports.length ?? 0} trib.
                   </span>
                 </div>
               </div>
@@ -422,6 +453,43 @@ export default async function OrganizationTaxPage({
                 ))
               )}
             </div>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <h2 className="text-[16px] font-semibold text-white">
+                Resumen DGI
+              </h2>
+              <span className="ui-filter">
+                {latestExportDataset?.dgiFormSummary.formCode ?? "2176"}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {!latestExportDataset ? (
+                <div className="text-sm text-[color:var(--color-muted)]">
+                  Todavia no hay run fiscal listo para mapear a formulario.
+                </div>
+              ) : (
+                latestExportDataset.dgiFormSummary.lines.map((line) => (
+                  <div key={`${line.lineCode}-${line.metricKey}`} className="ui-subtle-row">
+                    <div>
+                      <p className="text-white">{line.lineCode} - {line.label}</p>
+                      <p className="text-[13px] text-[color:var(--color-muted)]">
+                        {line.metricKey} / {line.sourceType}
+                      </p>
+                    </div>
+                    <span>{formatAmount(line.value)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {latestExportDataset?.dgiFormSummary.warnings.length ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                {latestExportDataset.dgiFormSummary.warnings.join(" ")}
+              </div>
+            ) : null}
           </section>
         </div>
       </div>

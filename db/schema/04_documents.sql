@@ -11,6 +11,10 @@ create table if not exists public.documents (
   file_size bigint,
   file_hash text,
   upload_source text not null default 'web',
+  source_type text not null default 'manual_upload',
+  source_message_id text,
+  source_attachment_hash text,
+  source_reference text,
   uploaded_by uuid references public.profiles(id),
   document_date date,
   external_reference text,
@@ -33,6 +37,17 @@ create index if not exists idx_documents_status
 
 create index if not exists idx_documents_org_created_at
   on public.documents (organization_id, created_at desc);
+
+create index if not exists idx_documents_org_source_type
+  on public.documents (organization_id, source_type, created_at desc);
+
+create index if not exists idx_documents_org_source_message
+  on public.documents (organization_id, source_message_id)
+  where source_message_id is not null;
+
+create index if not exists idx_documents_org_source_attachment
+  on public.documents (organization_id, source_attachment_hash)
+  where source_attachment_hash is not null;
 
 insert into storage.buckets (
   id,

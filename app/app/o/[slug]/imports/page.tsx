@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { listOrganizationImportOperations } from "@/modules/imports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
   canCancelSpreadsheetImportRun,
@@ -9,9 +10,12 @@ import {
   listOrganizationSpreadsheetImportRuns,
 } from "@/modules/spreadsheets";
 import {
+  attachDocumentToImportOperationAction,
   cancelSpreadsheetImportAction,
   confirmSpreadsheetImportAction,
+  createImportOperationAction,
   retrySpreadsheetImportAction,
+  updateImportOperationStatusAction,
   uploadSpreadsheetImportAction,
 } from "./actions";
 
@@ -103,17 +107,73 @@ function renderCanonicalSummary(run: Awaited<ReturnType<typeof listOrganizationS
   );
 }
 
+function getAvailableSections(run: Awaited<ReturnType<typeof listOrganizationSpreadsheetImportRuns>>[number]) {
+  const explicitSections = new Set<string>();
+
+  if (run.importType === "historical_vat_liquidation") {
+    explicitSections.add("historical_vat_liquidation");
+  }
+
+  if (run.importType === "chart_of_accounts_import") {
+    explicitSections.add("chart_of_accounts_import");
+  }
+
+  if (run.importType === "journal_template_import") {
+    explicitSections.add("journal_template_import");
+  }
+
+  for (const intent of run.result?.sheetIntents ?? []) {
+    if (intent.intent !== "irrelevant") {
+      explicitSections.add(intent.intent);
+    }
+  }
+
+  return Array.from(explicitSections) as Array<
+    "historical_vat_liquidation"
+    | "chart_of_accounts_import"
+    | "journal_template_import"
+  >;
+}
+
 export default async function OrganizationImportsPage({
   params,
 }: OrganizationImportsPageProps) {
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const runs = await listOrganizationSpreadsheetImportRuns(
-    getSupabaseServiceRoleClient(),
-    organization.id,
-    10,
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const [runs, importOperations, recentDocumentsResult] = await Promise.all([
+    listOrganizationSpreadsheetImportRuns(
+      supabase,
+      organization.id,
+      10,
+    ),
+    listOrganizationImportOperations(
+      supabase,
+      organization.id,
+      8,
+    ),
+    supabase
+      .from("documents")
+      .select("id, original_filename, document_type, direction, created_at, current_draft_id")
+      .eq("organization_id", organization.id)
+      .not("current_draft_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(8),
+  ]);
+
+  if (recentDocumentsResult.error) {
+    throw new Error(recentDocumentsResult.error.message);
+  }
+
   const latestRun = runs[0] ?? null;
+  const recentDocuments = (((recentDocumentsResult.data as Array<{
+    id: string;
+    original_filename: string;
+    document_type: string | null;
+    direction: string;
+    created_at: string;
+    current_draft_id: string | null;
+  }> | null) ?? []));
 
   return (
     <PrivateDashboardShell
@@ -223,6 +283,40 @@ export default async function OrganizationImportsPage({
                         </form>
                       ) : null}
 
+                      {run.status === "completed" && !run.confirmedAt && run.importType === "mixed" && getAvailableSections(run).includes("chart_of_accounts_import") ? (
+                        <form
+                          action={async () => {
+                            "use server";
+                            await confirmSpreadsheetImportAction({
+                              slug,
+                              runId: run.id,
+                              selectedSections: ["chart_of_accounts_import"],
+                            });
+                          }}
+                        >
+                          <button className="ui-button ui-button--secondary">
+                            Confirmar plan de cuentas
+                          </button>
+                        </form>
+                      ) : null}
+
+                      {run.status === "completed" && !run.confirmedAt && run.importType === "mixed" && getAvailableSections(run).includes("journal_template_import") ? (
+                        <form
+                          action={async () => {
+                            "use server";
+                            await confirmSpreadsheetImportAction({
+                              slug,
+                              runId: run.id,
+                              selectedSections: ["journal_template_import"],
+                            });
+                          }}
+                        >
+                          <button className="ui-button ui-button--secondary">
+                            Confirmar plantillas
+                          </button>
+                        </form>
+                      ) : null}
+
                       {canRetrySpreadsheetImportRun(run) ? (
                         <form
                           action={async () => {
@@ -256,6 +350,140 @@ export default async function OrganizationImportsPage({
                       ) : null}
                     </div>
                   </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Operacion de importacion</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Alta manual del carril compuesto para DUA y relacionados.
+                </p>
+              </div>
+              <span className="status-pill status-pill--info">Import phase 1</span>
+            </div>
+
+            <form
+              action={async (formData: FormData) => {
+                "use server";
+                await createImportOperationAction({
+                  slug,
+                  formData,
+                });
+              }}
+              className="mt-4 grid gap-3 md:grid-cols-2"
+            >
+              <input
+                name="referenceCode"
+                placeholder="Referencia interna"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="duaNumber"
+                placeholder="Numero DUA"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="duaYear"
+                placeholder="Ano DUA"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="customsBrokerName"
+                placeholder="Despachante"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="supplierName"
+                placeholder="Proveedor exterior"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="supplierTaxId"
+                placeholder="Tax ID proveedor"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                name="currencyCode"
+                placeholder="Moneda"
+                defaultValue="USD"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                type="date"
+                name="operationDate"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <input
+                type="date"
+                name="paymentDate"
+                className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
+              />
+              <button className="ui-button ui-button--primary">
+                Crear operacion
+              </button>
+            </form>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <h2 className="text-[16px] font-semibold text-white">Adjuntar documentos a importacion</h2>
+              <span className="ui-filter">{recentDocuments.length} docs</span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {recentDocuments.length === 0 ? (
+                <div className="text-sm text-[color:var(--color-muted)]">
+                  Todavia no hay documentos recientes listos para vincular.
+                </div>
+              ) : importOperations.length === 0 ? (
+                <div className="text-sm text-[color:var(--color-muted)]">
+                  Crea primero una operacion de importacion para poder vincular documentos.
+                </div>
+              ) : (
+                recentDocuments.map((document) => (
+                  <form
+                    key={document.id}
+                    action={async (formData: FormData) => {
+                      "use server";
+                      await attachDocumentToImportOperationAction({
+                        slug,
+                        formData,
+                      });
+                    }}
+                    className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
+                  >
+                    <input type="hidden" name="documentId" value={document.id} />
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-white">{document.original_filename}</p>
+                        <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                          {document.document_type ?? "Documento sin tipo"} / {document.direction}
+                        </p>
+                      </div>
+                      <span className="text-[13px] text-[color:var(--color-muted)]">
+                        {formatDateTime(document.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]">
+                      <select
+                        name="importOperationId"
+                        className="rounded-[10px] border border-[color:var(--color-border)] bg-white/80 px-3 py-3 text-[14px]"
+                      >
+                        {importOperations.map((operation) => (
+                          <option key={operation.id} value={operation.id}>
+                            {operation.referenceCode ?? operation.duaNumber ?? operation.id}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="ui-button ui-button--secondary">
+                        Vincular
+                      </button>
+                    </div>
+                  </form>
                 ))
               )}
             </div>
@@ -308,12 +536,111 @@ export default async function OrganizationImportsPage({
                     ))}
                   </div>
                 </div>
+
+                {Array.isArray(latestRun.metadata?.materialized_sections) ? (
+                  <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                    <p className="font-semibold">Materializacion aplicada</p>
+                    <p className="mt-2 text-[color:var(--color-muted)]">
+                      {(latestRun.metadata.materialized_sections as string[]).join(", ")}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="mt-4 text-sm text-[color:var(--color-muted)]">
                 Todavia no hay previews para mostrar.
               </div>
             )}
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <h2 className="text-[16px] font-semibold text-white">Operaciones de importacion</h2>
+              <span className="ui-filter">{importOperations.length}</span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {importOperations.length === 0 ? (
+                <div className="text-sm text-[color:var(--color-muted)]">
+                  Todavia no hay operaciones de importacion cargadas.
+                </div>
+              ) : (
+                importOperations.map((operation) => (
+                  <div
+                    key={operation.id}
+                    className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-white">
+                          {operation.referenceCode ?? operation.duaNumber ?? operation.id}
+                        </p>
+                        <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                          {operation.status} / {operation.currencyCode ?? "sin moneda"}
+                        </p>
+                      </div>
+                      <div className="text-right text-[13px] text-[color:var(--color-muted)]">
+                        <p>{operation.duaNumber ? `DUA ${operation.duaNumber}` : "Sin DUA"}</p>
+                        <p>{operation.supplierName ?? "Proveedor pendiente"}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/80 p-3 text-sm">
+                        <p className="font-medium">Documentos vinculados</p>
+                        <p className="mt-2 text-[color:var(--color-muted)]">
+                          {operation.linkedDocuments.length}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/80 p-3 text-sm">
+                        <p className="font-medium">Tributos detectados</p>
+                        <p className="mt-2 text-[color:var(--color-muted)]">
+                          {operation.taxLines.length}
+                        </p>
+                      </div>
+                    </div>
+                    {operation.warnings.length > 0 ? (
+                      <p className="mt-3 text-[13px] text-amber-900">
+                        {operation.warnings.join(" ")}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {operation.status !== "approved" ? (
+                        <form
+                          action={async () => {
+                            "use server";
+                            await updateImportOperationStatusAction({
+                              slug,
+                              importOperationId: operation.id,
+                              status: "approved",
+                            });
+                          }}
+                        >
+                          <button className="ui-button ui-button--primary">
+                            Aprobar
+                          </button>
+                        </form>
+                      ) : null}
+                      {operation.status !== "blocked_manual_review" ? (
+                        <form
+                          action={async () => {
+                            "use server";
+                            await updateImportOperationStatusAction({
+                              slug,
+                              importOperationId: operation.id,
+                              status: "blocked_manual_review",
+                            });
+                          }}
+                        >
+                          <button className="ui-button ui-button--secondary">
+                            Bloquear
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
         </div>
       </div>
