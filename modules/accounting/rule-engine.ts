@@ -25,21 +25,87 @@ function parseStoredStructuredContext(record: DocumentAccountingContextRecord | 
   };
 }
 
-export function resolveAccountingContext(input: {
+export function hasTrustedAccountingRuleCoverage(input: {
+  documentId: string;
   documentRole: AccountingSuggestionContext["documentRole"];
   vendorResolution: AccountingSuggestionContext["vendorResolution"];
   conceptResolution: AccountingSuggestionContext["conceptResolution"];
+  activeRules: AccountingSuggestionContext["activeRules"];
+}) {
+  const candidateConceptIds = input.conceptResolution.matchedConceptIds;
+
+  if (input.activeRules.some(
+    (rule) =>
+      rule.scope === "document_override"
+      && rule.document_id === input.documentId
+      && rule.document_role === input.documentRole,
+  )) {
+    return true;
+  }
+
+  if (
+    input.vendorResolution.vendorId
+    && input.activeRules.some(
+      (rule) =>
+        rule.scope === "vendor_concept"
+        && rule.vendor_id === input.vendorResolution.vendorId
+        && rule.concept_id !== null
+        && candidateConceptIds.includes(rule.concept_id)
+        && rule.document_role === input.documentRole,
+    )
+  ) {
+    return true;
+  }
+
+  if (input.activeRules.some(
+    (rule) =>
+      rule.scope === "concept_global"
+      && rule.concept_id !== null
+      && candidateConceptIds.includes(rule.concept_id)
+      && rule.document_role === input.documentRole,
+  )) {
+    return true;
+  }
+
+  if (
+    input.vendorResolution.vendorId
+    && input.activeRules.some(
+      (rule) =>
+        rule.scope === "vendor_default"
+        && rule.vendor_id === input.vendorResolution.vendorId
+        && rule.document_role === input.documentRole,
+    )
+  ) {
+    return true;
+  }
+
+  return Boolean(input.vendorResolution.defaultAccountId);
+}
+
+export function resolveAccountingContext(input: {
+  documentId: string;
+  documentRole: AccountingSuggestionContext["documentRole"];
+  vendorResolution: AccountingSuggestionContext["vendorResolution"];
+  conceptResolution: AccountingSuggestionContext["conceptResolution"];
+  activeRules: AccountingSuggestionContext["activeRules"];
   operationCategory: string | null;
   storedContext: DocumentAccountingContextRecord | null;
 }) {
   const stored = parseStoredStructuredContext(input.storedContext);
   const reasonCodes: AccountingContextReasonCode[] = [];
+  const hasTrustedRuleCoverage = hasTrustedAccountingRuleCoverage({
+    documentId: input.documentId,
+    documentRole: input.documentRole,
+    vendorResolution: input.vendorResolution,
+    conceptResolution: input.conceptResolution,
+    activeRules: input.activeRules,
+  });
 
   if (input.vendorResolution.status === "ambiguous") {
     reasonCodes.push("ambiguous_vendor");
   }
 
-  if (input.conceptResolution.needsUserContext) {
+  if (input.conceptResolution.needsUserContext && !hasTrustedRuleCoverage) {
     reasonCodes.push("unmatched_concept");
     reasonCodes.push("new_concept_without_rule");
   }
@@ -55,7 +121,7 @@ export function resolveAccountingContext(input: {
     reasonCodes.push("vat_operation_dependency");
   }
 
-  if (input.conceptResolution.unresolvedLineCount > 1) {
+  if (input.conceptResolution.unresolvedLineCount > 1 && !hasTrustedRuleCoverage) {
     reasonCodes.push("multiple_candidate_accounts");
   }
 

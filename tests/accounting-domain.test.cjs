@@ -8,6 +8,7 @@ const {
 } = require("@/modules/accounting/normalization");
 const {
   buildInvoiceIdentityResult,
+  pickSuspiciousInvoiceDuplicateDocumentId,
 } = require("@/modules/accounting/invoice-identity");
 const {
   resolveVendorFromFacts,
@@ -108,6 +109,51 @@ test("invoice identity falls back to tax id + number + total + currency when dat
 
   assert.equal(result.identityStrategy, "tax_id_number_total_currency");
   assert.equal(result.invoiceIdentityKey, "21433455019|a1234|122.00|UYU");
+});
+
+test("invoice identity flags fuzzy business duplicates when issuer and number match but date drifts", () => {
+  const duplicateId = pickSuspiciousInvoiceDuplicateDocumentId({
+    issuerTaxIdNormalized: "21433455019",
+    issuerNameNormalized: "estacion del centro",
+    documentNumberNormalized: "a1234",
+    documentDate: "2026-03-10",
+    totalAmount: 122,
+    currencyCode: "UYU",
+    candidates: [
+      {
+        documentId: "doc-nearby",
+        issuerTaxIdNormalized: "21433455019",
+        issuerNameNormalized: "estacion del centro",
+        documentNumberNormalized: "a1234",
+        documentDate: "2026-03-12",
+        totalAmount: 122,
+        currencyCode: "UYU",
+      },
+    ],
+  });
+  const result = buildInvoiceIdentityResult({
+    facts: {
+      issuer_name: "Estacion del Centro",
+      issuer_tax_id: "21-433.455/019",
+      receiver_name: null,
+      receiver_tax_id: null,
+      document_number: "1234",
+      series: "A",
+      currency_code: "uyu",
+      document_date: "2026-03-10",
+      due_date: null,
+      subtotal: 100,
+      tax_amount: 22,
+      total_amount: 122,
+      purchase_category_candidate: null,
+      sale_category_candidate: null,
+    },
+    suspiciousDuplicateDocumentId: duplicateId,
+  });
+
+  assert.equal(duplicateId, "doc-nearby");
+  assert.equal(result.duplicateStatus, "suspected_duplicate");
+  assert.equal(result.duplicateReason, "fuzzy_business_identity_match");
 });
 
 test("vendor resolution prefers tax id and uses normalized aliases before name", () => {

@@ -141,6 +141,25 @@ function ExportIcon({ className }: IconProps) {
   );
 }
 
+function ImportIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20V9" />
+      <path d="m7.5 13.5 4.5-4.5 4.5 4.5" />
+      <path d="M5 4h14" />
+    </svg>
+  );
+}
+
 function SearchIcon({ className }: IconProps) {
   return (
     <svg
@@ -197,6 +216,8 @@ function getNavIcon(label: string) {
       return HomeIcon;
     case "Documentos":
       return DocumentIcon;
+    case "Imports":
+      return ImportIcon;
     case "Asientos":
       return JournalIcon;
     case "Impuestos":

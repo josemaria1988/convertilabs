@@ -133,9 +133,11 @@ export async function deriveDocumentAccountingState(input: {
       ? await loadDocumentAccountingContext(input.supabase, input.draftId)
       : input.storedContext;
   const accountingContext = resolveAccountingContext({
+    documentId: input.documentId,
     documentRole: input.documentRole,
     vendorResolution,
     conceptResolution,
+    activeRules: runtimeContext.activeRules,
     operationCategory: input.operationCategory,
     storedContext,
   });

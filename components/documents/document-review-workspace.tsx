@@ -294,6 +294,17 @@ type DocumentReviewWorkspaceProps = {
         canonicalName: string;
       }>;
     };
+    learningSuggestions: {
+      suggestedConceptName: string | null;
+      recommendedScope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+      options: Array<{
+        scope: "vendor_concept" | "concept_global" | "vendor_default";
+        label: string;
+        reason: string;
+        recommended: boolean;
+        requiresConceptName: boolean;
+      }>;
+    };
     certaintySummary: {
       level: "green" | "yellow" | "red";
       confidence: number | null;
@@ -427,8 +438,12 @@ export function DocumentReviewWorkspace({
   const [duplicateNote, setDuplicateNote] = useState("");
   const [learningScope, setLearningScope] = useState<
     "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default"
-  >("none");
-  const [learnedConceptName, setLearnedConceptName] = useState("");
+  >(pageData.learningSuggestions.recommendedScope);
+  const [learnedConceptName, setLearnedConceptName] = useState(
+    pageData.derived.accountingContext.learnedConceptName
+    ?? pageData.learningSuggestions.suggestedConceptName
+    ?? "",
+  );
 
   useEffect(() => {
     setIdentity({
@@ -445,7 +460,12 @@ export function DocumentReviewWorkspace({
         pageData.derived.accountingContext.manualOverrideOperationCategory ?? "",
       learnedConceptName: pageData.derived.accountingContext.learnedConceptName ?? "",
     });
-    setLearnedConceptName(pageData.derived.accountingContext.learnedConceptName ?? "");
+    setLearningScope(pageData.learningSuggestions.recommendedScope);
+    setLearnedConceptName(
+      pageData.derived.accountingContext.learnedConceptName
+      ?? pageData.learningSuggestions.suggestedConceptName
+      ?? "",
+    );
   }, [pageData]);
 
   function runSave(
@@ -1303,6 +1323,46 @@ export function DocumentReviewWorkspace({
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {pageData.learningSuggestions.options.length > 0 ? (
+              <div className="md:col-span-2 rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold">Sugerencias de aprendizaje</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  {pageData.learningSuggestions.options.map((option) => (
+                    <button
+                      key={option.scope}
+                      type="button"
+                      onClick={() => {
+                        setLearningScope(option.scope);
+                        if (!learnedConceptName.trim() && pageData.learningSuggestions.suggestedConceptName) {
+                          setLearnedConceptName(pageData.learningSuggestions.suggestedConceptName);
+                        }
+                      }}
+                      className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                        learningScope === option.scope
+                          ? "border-transparent bg-[color:var(--color-accent)] text-white"
+                          : "border-[color:var(--color-border)] bg-white/80"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium">{option.label}</span>
+                        {option.recommended ? (
+                          <span className="rounded-full bg-black/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
+                            recomendado
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className={`mt-2 leading-6 ${
+                        learningScope === option.scope
+                          ? "text-white/85"
+                          : "text-[color:var(--color-muted)]"
+                      }`}>
+                        {option.reason}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <label className="space-y-2 text-sm">
               <span className="font-medium">Aprender al confirmar</span>
               <select
@@ -1327,6 +1387,7 @@ export function DocumentReviewWorkspace({
                   setLearnedConceptName(event.target.value);
                 }}
                 className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                placeholder={pageData.learningSuggestions.suggestedConceptName ?? "Ej. Servicios administrativos"}
               />
             </label>
           </div>

@@ -12,6 +12,61 @@ import type {
   DerivedDraftArtifacts,
 } from "@/modules/accounting/types";
 
+function buildAssistantBlockingReasons(input: {
+  context: AccountingSuggestionContext;
+  appliedRule: ReturnType<typeof resolveAccountingRuleWithPrecedence>;
+}) {
+  const blockers: string[] = [];
+  const contextStatus = input.context.accountingContext.status;
+  const assistant = input.context.assistantSuggestion;
+  const assistantWorkflowActive =
+    contextStatus === "provided"
+    || contextStatus === "assistant_completed"
+    || assistant.status === "completed";
+
+  if (
+    assistant.status === "failed"
+    && assistantWorkflowActive
+    && !input.context.accountingContext.manualOverrideAccountId
+  ) {
+    blockers.push(
+      "La segunda IA no pudo completar la clasificacion y el documento requiere override manual o una regla confiable.",
+    );
+  }
+
+  if (assistant.shouldBlockConfirmation) {
+    blockers.push(
+      "La segunda IA marco el documento para revision manual antes de confirmar.",
+    );
+  }
+
+  if (input.appliedRule.scope === "assistant") {
+    if ((assistant.confidence ?? 0) < 0.75) {
+      blockers.push(
+        "La segunda IA devolvio baja confianza y requiere revision manual antes de confirmar.",
+      );
+    }
+
+    if (!assistant.output?.suggestedAccountId) {
+      blockers.push(
+        "La segunda IA no pudo elegir una cuenta permitida para confirmar el documento.",
+      );
+    }
+  }
+
+  if (
+    assistantWorkflowActive
+    && input.appliedRule.scope === "manual_review"
+    && !input.context.accountingContext.manualOverrideAccountId
+  ) {
+    blockers.push(
+      "Aun falta una resolucion contable confiable despues del contexto del usuario.",
+    );
+  }
+
+  return blockers.filter((value, index, array) => array.indexOf(value) === index);
+}
+
 function buildPurchaseJournalSuggestion(input: {
   context: AccountingSuggestionContext;
   taxTreatment: ReturnType<typeof resolveUyVatTreatment>;
@@ -241,6 +296,10 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     appliedRule.scope === "manual_review"
       ? input.conceptResolution.blockingReasons
       : [];
+  const assistantBlockers = buildAssistantBlockingReasons({
+    context: input,
+    appliedRule,
+  });
   const taxTreatment = resolveUyVatTreatment({
     documentRole: input.documentRole,
     documentType: input.documentType,
@@ -282,6 +341,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     ...conceptBlockers,
     ...input.accountingContext.blockingReasons,
     ...input.assistantSuggestion.reviewFlags,
+    ...assistantBlockers,
     ...taxTreatment.blockingReasons,
     ...resolved.journalSuggestion.blockingReasons,
   ].filter((value, index, array) => array.indexOf(value) === index);

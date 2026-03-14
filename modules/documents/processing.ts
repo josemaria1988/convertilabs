@@ -33,6 +33,7 @@ import {
   buildInvoiceIdentityResult,
   deriveDocumentAccountingState,
   findDuplicateInvoiceIdentityDocumentId,
+  findSuspiciousDuplicateInvoiceIdentityDocumentId,
   insertAIDecisionLogs,
   loadOrganizationIdentityProfile,
   loadDocumentInvoiceIdentity,
@@ -837,10 +838,19 @@ async function persistDocumentArtifacts(input: {
       facts: input.structuredOutput.facts,
     }).invoiceIdentityKey,
   );
+  const suspiciousDuplicateDocumentId = await findSuspiciousDuplicateInvoiceIdentityDocumentId(
+    supabase,
+    {
+      organizationId: input.document.organization_id,
+      currentDocumentId: input.document.id,
+      facts: input.structuredOutput.facts,
+    },
+  );
   const invoiceIdentity = buildInvoiceIdentityResult({
     facts: input.structuredOutput.facts,
     fileHashDuplicateDocumentIds: input.duplicateDocumentIds,
     businessDuplicateDocumentId,
+    suspiciousDuplicateDocumentId,
     persistedDuplicateStatus: existingInvoiceIdentity?.duplicate_status ?? null,
     persistedDuplicateOfDocumentId: existingInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: existingInvoiceIdentity?.duplicate_reason ?? null,

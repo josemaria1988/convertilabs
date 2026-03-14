@@ -5,6 +5,7 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadRecentExports } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { listOrganizationSpreadsheetImportRuns } from "@/modules/spreadsheets";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 import {
   createVatRunExportAction,
@@ -68,10 +69,15 @@ export default async function OrganizationTaxPage({
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [vatRuns, exports] = await Promise.all([
+  const [vatRuns, exports, spreadsheetRuns] = await Promise.all([
     loadOrganizationVatRuns(supabase, organization.id),
     loadRecentExports(organization.id),
+    listOrganizationSpreadsheetImportRuns(supabase, organization.id, 8),
   ]);
+  const historicalImports = spreadsheetRuns.filter((run) =>
+    run.importType === "historical_vat_liquidation"
+    && run.status === "completed",
+  );
 
   const latestRun = vatRuns[0] ?? null;
   const periodTitle = formatVatTitle(latestRun?.periodLabel ?? null);
@@ -384,6 +390,35 @@ export default async function OrganizationTaxPage({
                     </div>
                     <span>{run.status}</span>
                   </Link>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <h2 className="text-[16px] font-semibold text-white">
+                Historicos importados
+              </h2>
+              <span className="ui-filter">{historicalImports.length}</span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {historicalImports.length === 0 ? (
+                <div className="text-sm text-[color:var(--color-muted)]">
+                  Todavia no hay periodos historicos traidos desde planillas.
+                </div>
+              ) : (
+                historicalImports.slice(0, 3).map((run) => (
+                  <div key={run.id} className="ui-subtle-row">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-[3px] border border-white/10 bg-white/10 text-[12px] text-white">
+                        I
+                      </span>
+                      <span className="text-white">{run.fileName}</span>
+                    </div>
+                    <span>{run.confirmedAt ? "confirmado" : "preview"}</span>
+                  </div>
                 ))
               )}
             </div>

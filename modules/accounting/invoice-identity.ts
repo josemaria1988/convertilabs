@@ -15,6 +15,7 @@ function buildReason(input: {
   duplicateStatus: InvoiceDuplicateStatus;
   fileHashDuplicateDocumentIds: string[];
   businessDuplicateDocumentId: string | null;
+  suspiciousDuplicateDocumentId: string | null;
 }) {
   if (input.duplicateStatus !== "suspected_duplicate") {
     return null;
@@ -32,6 +33,110 @@ function buildReason(input: {
     return "business_identity_match";
   }
 
+  if (input.suspiciousDuplicateDocumentId) {
+    return "fuzzy_business_identity_match";
+  }
+
+  return null;
+}
+
+type DuplicateCandidate = {
+  documentId: string;
+  issuerTaxIdNormalized: string | null;
+  issuerNameNormalized: string | null;
+  documentNumberNormalized: string | null;
+  documentDate: string | null;
+  totalAmount: number | null;
+  currencyCode: string | null;
+};
+
+function parseDateToDayValue(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 86_400_000) : null;
+}
+
+function sameIssuer(input: {
+  candidate: DuplicateCandidate;
+  issuerTaxIdNormalized: string | null;
+  issuerNameNormalized: string | null;
+}) {
+  if (
+    input.issuerTaxIdNormalized
+    && input.candidate.issuerTaxIdNormalized === input.issuerTaxIdNormalized
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    input.issuerNameNormalized
+    && input.candidate.issuerNameNormalized
+    && input.candidate.issuerNameNormalized === input.issuerNameNormalized,
+  );
+}
+
+export function pickSuspiciousInvoiceDuplicateDocumentId(input: {
+  issuerTaxIdNormalized: string | null;
+  issuerNameNormalized: string | null;
+  documentNumberNormalized: string | null;
+  documentDate: string | null;
+  totalAmount: number | null;
+  currencyCode: string | null;
+  candidates: DuplicateCandidate[];
+}) {
+  if (!input.documentNumberNormalized) {
+    return null;
+  }
+
+  const targetDay = parseDateToDayValue(input.documentDate);
+
+  for (const candidate of input.candidates) {
+    if (candidate.documentNumberNormalized !== input.documentNumberNormalized) {
+      continue;
+    }
+
+    if (!sameIssuer({
+      candidate,
+      issuerTaxIdNormalized: input.issuerTaxIdNormalized,
+      issuerNameNormalized: input.issuerNameNormalized,
+    })) {
+      continue;
+    }
+
+    if (
+      input.currencyCode
+      && candidate.currencyCode
+      && candidate.currencyCode !== input.currencyCode
+    ) {
+      continue;
+    }
+
+    const candidateDay = parseDateToDayValue(candidate.documentDate);
+    const dateDistanceDays =
+      targetDay !== null && candidateDay !== null
+        ? Math.abs(targetDay - candidateDay)
+        : null;
+    const amountDelta =
+      typeof input.totalAmount === "number" && typeof candidate.totalAmount === "number"
+        ? Math.abs(roundCurrency(input.totalAmount) - roundCurrency(candidate.totalAmount))
+        : null;
+    const dateNear = dateDistanceDays !== null && dateDistanceDays <= 7;
+    const amountNear = amountDelta !== null && amountDelta <= 2;
+    const exactDate = Boolean(
+      input.documentDate && candidate.documentDate && input.documentDate === candidate.documentDate,
+    );
+    const exactAmount = amountDelta !== null && amountDelta < 0.01;
+
+    if ((exactDate && exactAmount) || (!dateNear && !amountNear)) {
+      continue;
+    }
+
+    return candidate.documentId;
+  }
+
   return null;
 }
 
@@ -39,6 +144,7 @@ export function buildInvoiceIdentityResult(input: {
   facts: DocumentIntakeFactMap;
   fileHashDuplicateDocumentIds?: string[];
   businessDuplicateDocumentId?: string | null;
+  suspiciousDuplicateDocumentId?: string | null;
   persistedDuplicateStatus?: InvoiceDuplicateStatus | null;
   persistedDuplicateOfDocumentId?: string | null;
   persistedDuplicateReason?: string | null;
@@ -96,16 +202,20 @@ export function buildInvoiceIdentityResult(input: {
 
   const fileHashDuplicateDocumentIds = input.fileHashDuplicateDocumentIds ?? [];
   const businessDuplicateDocumentId = input.businessDuplicateDocumentId ?? null;
+  const suspiciousDuplicateDocumentId = input.suspiciousDuplicateDocumentId ?? null;
   const duplicateStatus =
     input.persistedDuplicateStatus
     ?? (
-      fileHashDuplicateDocumentIds.length > 0 || businessDuplicateDocumentId
+      fileHashDuplicateDocumentIds.length > 0
+      || businessDuplicateDocumentId
+      || suspiciousDuplicateDocumentId
         ? "suspected_duplicate"
         : "clear"
     );
   const duplicateOfDocumentId =
     input.persistedDuplicateOfDocumentId
     ?? businessDuplicateDocumentId
+    ?? suspiciousDuplicateDocumentId
     ?? fileHashDuplicateDocumentIds[0]
     ?? null;
   const duplicateReason =
@@ -114,6 +224,7 @@ export function buildInvoiceIdentityResult(input: {
       duplicateStatus,
       fileHashDuplicateDocumentIds,
       businessDuplicateDocumentId,
+      suspiciousDuplicateDocumentId,
     });
   const blockingReasons =
     duplicateStatus === "suspected_duplicate"

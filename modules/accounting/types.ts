@@ -526,6 +526,25 @@ export type ApprovalLearningInput = {
   learnedConceptName: string | null;
 };
 
+export type LearningSuggestionScope =
+  | "vendor_concept"
+  | "concept_global"
+  | "vendor_default";
+
+export type AccountingLearningSuggestionOption = {
+  scope: LearningSuggestionScope;
+  label: string;
+  reason: string;
+  recommended: boolean;
+  requiresConceptName: boolean;
+};
+
+export type AccountingLearningSuggestionSummary = {
+  suggestedConceptName: string | null;
+  recommendedScope: LearnApprovalScope;
+  options: AccountingLearningSuggestionOption[];
+};
+
 export type AccountingRuntimeContext = {
   vendors: AccountingVendorRecord[];
   concepts: OrganizationConceptRecord[];

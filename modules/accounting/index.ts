@@ -3,6 +3,7 @@ export * from "@/modules/accounting/concept-resolution";
 export * from "@/modules/accounting/decision-log";
 export * from "@/modules/accounting/invoice-identity";
 export * from "@/modules/accounting/journal-builder";
+export * from "@/modules/accounting/learning-suggestions";
 export * from "@/modules/accounting/normalization";
 export * from "@/modules/accounting/open-items";
 export * from "@/modules/accounting/organization-identity";

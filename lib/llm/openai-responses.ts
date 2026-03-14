@@ -327,7 +327,7 @@ function extractUsage(payload: Record<string, unknown>): OpenAIStructuredRespons
   };
 }
 
-function buildStructuredResponseBody(input: {
+export function buildStructuredOpenAIRequestPayload(input: {
   model?: string;
   schemaName: string;
   schema: JsonSchemaDefinition;
@@ -518,7 +518,7 @@ export async function createStructuredOpenAIPipelineRun<T>(input: {
   store?: boolean;
   metadata?: Record<string, unknown>;
 }) {
-  const requestPayload = buildStructuredResponseBody({
+  const requestPayload = buildStructuredOpenAIRequestPayload({
     ...input,
     background: input.mode === "background",
     store: input.store ?? true,

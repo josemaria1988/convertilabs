@@ -8,6 +8,9 @@ const {
 const {
   buildAccountingDraftArtifacts,
 } = require("@/modules/accounting/suggestion-engine");
+const {
+  buildAccountingLearningSuggestions: buildLearningSuggestions,
+} = require("@/modules/accounting/learning-suggestions");
 
 function buildAccount(overrides = {}) {
   return {
@@ -251,6 +254,7 @@ function buildBaseContext(overrides = {}) {
 test("accounting context only blocks when ambiguity exists and no user resolution was provided", () => {
   const seed = buildBaseContext();
   const required = resolveAccountingContext({
+    documentId: "doc-1",
     documentRole: "purchase",
     vendorResolution: {
       ...seed.vendorResolution,
@@ -271,10 +275,12 @@ test("accounting context only blocks when ambiguity exists and no user resolutio
       unresolvedLineCount: 1,
       blockingReasons: ["needs context"],
     },
+    activeRules: [],
     operationCategory: "transport",
     storedContext: null,
   });
   const provided = resolveAccountingContext({
+    documentId: "doc-1",
     documentRole: "purchase",
     vendorResolution: seed.vendorResolution,
     conceptResolution: {
@@ -283,6 +289,7 @@ test("accounting context only blocks when ambiguity exists and no user resolutio
       unresolvedLineCount: 1,
       blockingReasons: ["needs context"],
     },
+    activeRules: [],
     operationCategory: "services",
     storedContext: {
       id: "ctx-1",
@@ -308,6 +315,31 @@ test("accounting context only blocks when ambiguity exists and no user resolutio
   assert.equal(required.shouldBlockConfirmation, true);
   assert.equal(provided.status, "provided");
   assert.equal(provided.shouldBlockConfirmation, false);
+});
+
+test("accounting context is skipped when a trusted vendor default already covers the document", () => {
+  const seed = buildBaseContext();
+  const resolved = resolveAccountingContext({
+    documentId: "doc-1",
+    documentRole: "purchase",
+    vendorResolution: {
+      ...seed.vendorResolution,
+      defaultAccountId: "acct-expense",
+    },
+    conceptResolution: {
+      ...seed.conceptResolution,
+      needsUserContext: true,
+      unresolvedLineCount: 1,
+      matchedConceptIds: [],
+      blockingReasons: ["needs context"],
+    },
+    activeRules: [],
+    operationCategory: "services",
+    storedContext: null,
+  });
+
+  assert.equal(resolved.status, "not_required");
+  assert.equal(resolved.reasonCodes.length, 0);
 });
 
 test("rule selection follows explicit precedence with vendor concept over concept global and vendor default", () => {
@@ -465,6 +497,68 @@ test("assistant output can unblock a new concept once context was provided", () 
     ),
     false,
   );
+});
+
+test("assistant low confidence keeps the document blocked even if an account was suggested", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    conceptResolution: {
+      ...seed.conceptResolution,
+      matchedConceptIds: [],
+      needsUserContext: true,
+      unresolvedLineCount: 1,
+      blockingReasons: ["Hay lineas/conceptos sin match confiable y requieren contexto contable."],
+    },
+    accountingContext: {
+      ...seed.accountingContext,
+      status: "assistant_completed",
+      userFreeText: "Es una compra recurrente pero todavia dudosa.",
+      canRunAssistant: true,
+    },
+    assistantSuggestion: {
+      status: "completed",
+      shouldBlockConfirmation: false,
+      confidence: 0.51,
+      rationale: "No hay contexto suficiente para cerrar la clasificacion.",
+      output: {
+        suggestedConceptId: null,
+        suggestedAccountId: "acct-expense",
+        suggestedOperationCategory: "services",
+        linkedOperationType: null,
+        vatContextHint: null,
+        confidence: 0.51,
+        rationale: "Duda material.",
+        reviewFlags: [],
+        shouldBlockConfirmation: false,
+      },
+      providerCode: "openai",
+      modelCode: "gpt-4o",
+      promptHash: "hash",
+      latencyMs: 200,
+      requestPayload: {},
+      responsePayload: {},
+      reviewFlags: [],
+    },
+    activeRules: [],
+  }));
+
+  assert.equal(derived.validation.canConfirm, false);
+  assert.match(derived.validation.blockers.join(" "), /baja confianza/i);
+});
+
+test("learning suggestions proactively recommend vendor plus concept when both are reusable", () => {
+  const seed = buildBaseContext();
+  const suggestions = buildLearningSuggestions({
+    accountingContext: seed.accountingContext,
+    conceptResolution: seed.conceptResolution,
+    vendorResolution: seed.vendorResolution,
+    appliedRule: {
+      accountId: "acct-expense",
+    },
+  });
+
+  assert.equal(suggestions.recommendedScope, "vendor_concept");
+  assert.equal(suggestions.options[0].scope, "vendor_concept");
 });
 
 test("journal suggestion blocks when a required VAT system account is missing", () => {

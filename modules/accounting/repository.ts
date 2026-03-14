@@ -1,10 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  normalizeCurrencyCode,
+  normalizeDocumentNumber,
   normalizeTaxId,
   normalizeTextToken,
   roundCurrency,
   slugifyConceptCode,
 } from "@/modules/accounting/normalization";
+import { pickSuspiciousInvoiceDuplicateDocumentId } from "@/modules/accounting/invoice-identity";
 import type {
   AccountingArtifactsPersistenceInput,
   AccountingArtifactsPersistenceResult,
@@ -14,6 +17,7 @@ import type {
   AccountingVendorRecord,
   ApprovalLearningInput,
   DocumentAccountingContextRecord,
+  DocumentIntakeFactMap,
   DuplicateResolutionResult,
   OrganizationConceptAliasRecord,
   OrganizationConceptRecord,
@@ -376,6 +380,73 @@ export async function findDuplicateInvoiceIdentityDocumentId(
   }
 
   return typeof data?.document_id === "string" ? data.document_id : null;
+}
+
+export async function findSuspiciousDuplicateInvoiceIdentityDocumentId(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    currentDocumentId: string;
+    facts: DocumentIntakeFactMap;
+  },
+) {
+  const documentNumberNormalized = normalizeDocumentNumber(
+    [input.facts.series, input.facts.document_number].filter(Boolean).join("-"),
+  );
+
+  if (!documentNumberNormalized) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("document_invoice_identities")
+    .select(
+      "document_id, issuer_tax_id_normalized, issuer_name_normalized, document_number_normalized, document_date, total_amount, currency_code",
+    )
+    .eq("organization_id", input.organizationId)
+    .neq("document_id", input.currentDocumentId)
+    .eq("document_number_normalized", documentNumberNormalized)
+    .in("duplicate_status", [
+      "clear",
+      "suspected_duplicate",
+      "false_positive",
+      "justified_non_duplicate",
+    ])
+    .order("created_at", { ascending: true })
+    .limit(12);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return pickSuspiciousInvoiceDuplicateDocumentId({
+    issuerTaxIdNormalized: normalizeTaxId(input.facts.issuer_tax_id),
+    issuerNameNormalized: normalizeTextToken(input.facts.issuer_name),
+    documentNumberNormalized,
+    documentDate: input.facts.document_date ?? null,
+    totalAmount:
+      typeof input.facts.total_amount === "number"
+        ? roundCurrency(input.facts.total_amount)
+        : null,
+    currencyCode: normalizeCurrencyCode(input.facts.currency_code),
+    candidates: ((data as Array<{
+      document_id: string;
+      issuer_tax_id_normalized: string | null;
+      issuer_name_normalized: string | null;
+      document_number_normalized: string | null;
+      document_date: string | null;
+      total_amount: number | null;
+      currency_code: string | null;
+    }> | null) ?? []).map((row) => ({
+      documentId: row.document_id,
+      issuerTaxIdNormalized: row.issuer_tax_id_normalized,
+      issuerNameNormalized: row.issuer_name_normalized,
+      documentNumberNormalized: row.document_number_normalized,
+      documentDate: row.document_date,
+      totalAmount: row.total_amount,
+      currencyCode: row.currency_code,
+    })),
+  });
 }
 
 export async function upsertDocumentInvoiceIdentity(

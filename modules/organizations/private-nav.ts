@@ -1,6 +1,7 @@
 export type OrganizationPrivateSection =
   | "dashboard"
   | "documents"
+  | "imports"
   | "journal_entries"
   | "tax"
   | "settings";
@@ -21,6 +22,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Documentos",
       description: "Revision, original y draft persistido",
       current: currentSection === "documents",
+    },
+    {
+      href: `/app/o/${organizationSlug}/imports`,
+      label: "Imports",
+      description: "Planillas, historicos y preview canonico",
+      current: currentSection === "imports",
     },
     {
       href: `/app/o/${organizationSlug}/journal-entries`,

@@ -13,6 +13,7 @@ import {
   asRecord,
   asString,
   asStringArray,
+  buildAccountingLearningSuggestions,
   buildAccountingDecisionLog,
   buildPersistableConceptLines,
   buildDraftFieldsPayload,
@@ -294,6 +295,17 @@ export type DocumentReviewPageData = {
       id: string;
       code: string;
       canonicalName: string;
+    }>;
+  };
+  learningSuggestions: {
+    suggestedConceptName: string | null;
+    recommendedScope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    options: Array<{
+      scope: "vendor_concept" | "concept_global" | "vendor_default";
+      label: string;
+      reason: string;
+      recommended: boolean;
+      requiresConceptName: boolean;
     }>;
   };
   certaintySummary: {
@@ -1183,6 +1195,12 @@ export async function loadDocumentReviewPageData(input: {
     draft.source_confidence,
     asStringArray(draft.warnings_json),
   );
+  const learningSuggestions = buildAccountingLearningSuggestions({
+    accountingContext: derived.accountingContext,
+    conceptResolution: derived.conceptResolution,
+    vendorResolution: derived.vendorResolution,
+    appliedRule: derived.appliedRule,
+  });
 
   return {
     organizationId: input.organizationId,
@@ -1254,6 +1272,7 @@ export async function loadDocumentReviewPageData(input: {
         canonicalName: concept.canonical_name,
       })),
     },
+    learningSuggestions,
     certaintySummary,
     decisionLogs: decisionLogs.map((log) => ({
       id: log.id,
