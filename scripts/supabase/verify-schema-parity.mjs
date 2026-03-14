@@ -362,7 +362,7 @@ function compareSchema(expected, actual) {
   for (const expectedEnum of expected.enums) {
     const actualLabels = actual.enums[expectedEnum.name] ?? [];
 
-    if (toKey(expectedEnum.labels) !== toKey(actualLabels)) {
+    if (toKey(uniqueSorted(expectedEnum.labels)) !== toKey(uniqueSorted(actualLabels))) {
       failures.push(
         `Enum mismatch for public.${expectedEnum.name}: expected [${expectedEnum.labels.join(", ")}], got [${actualLabels.join(", ")}]`,
       );

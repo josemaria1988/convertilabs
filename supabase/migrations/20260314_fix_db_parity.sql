@@ -1,137 +1,69 @@
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  full_name text,
-  avatar_url text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- Consolidated parity fix for environments where:
+-- 1. organizations is missing vat_regime / dgi_group / cfe_status
+-- 2. document_processing_runs is missing the Inngest/OpenAI polling columns
+--
+-- IMPORTANT:
+-- Do not drop current_processing_run_id, current_draft_id, last_rule_snapshot_id,
+-- or last_processed_at from public.documents. Those columns are valid and used by the app.
 
-create index if not exists idx_profiles_email
-  on public.profiles (email);
+alter table public.organizations
+  add column if not exists vat_regime text not null default 'UNKNOWN',
+  add column if not exists dgi_group text not null default 'UNKNOWN',
+  add column if not exists cfe_status text not null default 'UNKNOWN';
 
-create table if not exists public.organizations (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  slug text not null unique,
-  country_code text not null default 'UY',
-  base_currency text not null default 'UYU',
-  legal_entity_type text,
-  tax_id text,
-  tax_regime_code text,
-  vat_regime text not null default 'UNKNOWN',
-  dgi_group text not null default 'UNKNOWN',
-  cfe_status text not null default 'UNKNOWN',
-  default_locale text not null default 'es-UY',
-  active boolean not null default true,
-  created_by uuid references public.profiles(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+alter table public.organization_profile_versions
+  add column if not exists vat_regime text not null default 'UNKNOWN',
+  add column if not exists dgi_group text not null default 'UNKNOWN',
+  add column if not exists cfe_status text not null default 'UNKNOWN';
 
-create table if not exists public.organization_members (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  role public.member_role not null,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (organization_id, user_id)
-);
+alter table public.organization_rule_snapshots
+  add column if not exists vat_regime text not null default 'UNKNOWN',
+  add column if not exists dgi_group text not null default 'UNKNOWN',
+  add column if not exists cfe_status text not null default 'UNKNOWN',
+  add column if not exists snapshot_json jsonb not null default '{}'::jsonb;
 
-create index if not exists idx_organization_members_user_id
-  on public.organization_members (user_id);
+update public.organizations
+set
+  vat_regime = coalesce(nullif(trim(vat_regime), ''), 'UNKNOWN'),
+  dgi_group = coalesce(nullif(trim(dgi_group), ''), 'UNKNOWN'),
+  cfe_status = coalesce(nullif(trim(cfe_status), ''), 'UNKNOWN');
 
-create index if not exists idx_organization_members_organization_id
-  on public.organization_members (organization_id);
+update public.organization_profile_versions
+set
+  vat_regime = coalesce(nullif(trim(vat_regime), ''), 'UNKNOWN'),
+  dgi_group = coalesce(nullif(trim(dgi_group), ''), 'UNKNOWN'),
+  cfe_status = coalesce(nullif(trim(cfe_status), ''), 'UNKNOWN');
 
-drop function if exists public.sync_profile_from_auth_user();
-
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.profiles (id, email, full_name, avatar_url)
-  values (
-    new.id,
-    new.email,
-    nullif(new.raw_user_meta_data ->> 'full_name', ''),
-    nullif(new.raw_user_meta_data ->> 'avatar_url', '')
-  )
-  on conflict (id) do nothing;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
-
-drop trigger if exists on_auth_user_updated on auth.users;
-
-create or replace function public.is_org_member(p_org_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.organization_members as om
-    where om.organization_id = p_org_id
-      and om.user_id = auth.uid()
-      and om.is_active = true
-  );
-$$;
-
-create or replace function public.is_org_owner(p_org_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.organization_members as om
-    where om.organization_id = p_org_id
-      and om.user_id = auth.uid()
-      and om.is_active = true
-      and om.role = 'owner'::public.member_role
-  );
-$$;
-
-create or replace function public.slugify_organization_name(p_name text)
-returns text
-language sql
-immutable
-set search_path = public
-as $$
-  select trim(
-    both '-'
-    from regexp_replace(
-      regexp_replace(
-        translate(
-          lower(coalesce(p_name, '')),
-          U&'\00E1\00E0\00E4\00E2\00E3\00E5\00E9\00E8\00EB\00EA\00ED\00EC\00EF\00EE\00F3\00F2\00F6\00F4\00F5\00FA\00F9\00FC\00FB\00F1\00E7',
-          'aaaaaaeeeeiiiiooooouuuunc'
-        ),
-        '[^a-z0-9]+',
-        '-',
-        'g'
+update public.organization_rule_snapshots
+set
+  vat_regime = coalesce(nullif(trim(vat_regime), ''), 'UNKNOWN'),
+  dgi_group = coalesce(nullif(trim(dgi_group), ''), 'UNKNOWN'),
+  cfe_status = coalesce(nullif(trim(cfe_status), ''), 'UNKNOWN'),
+  snapshot_json = case
+    when snapshot_json = '{}'::jsonb then jsonb_build_object(
+      'organization_profile', jsonb_build_object(
+        'country_code', country_code,
+        'legal_entity_type', legal_entity_type,
+        'tax_regime_code', tax_regime_code,
+        'vat_regime', coalesce(nullif(trim(vat_regime), ''), 'UNKNOWN'),
+        'dgi_group', coalesce(nullif(trim(dgi_group), ''), 'UNKNOWN'),
+        'cfe_status', coalesce(nullif(trim(cfe_status), ''), 'UNKNOWN')
       ),
-      '-{2,}',
-      '-',
-      'g'
+      'rule_refs', coalesce(deterministic_rule_refs_json, '[]'::jsonb)
     )
-  );
-$$;
+    else snapshot_json
+  end;
+
+drop function if exists public.create_organization_with_owner(text, text, text, text);
+drop function if exists public.create_organization_with_owner(
+  text,
+  text,
+  text,
+  text,
+  text,
+  text,
+  text
+);
 
 create or replace function public.create_organization_with_owner(
   p_name text,
@@ -312,3 +244,13 @@ grant execute on function public.create_organization_with_owner(text, text, text
 grant execute on function public.create_organization_with_owner(text, text, text, text) to service_role;
 grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to authenticated;
 grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to service_role;
+
+alter table public.document_processing_runs
+  add column if not exists provider_response_id text,
+  add column if not exists provider_status text,
+  add column if not exists transport_mode text,
+  add column if not exists store_remote boolean not null default false,
+  add column if not exists prompt_version text,
+  add column if not exists schema_version text,
+  add column if not exists attempt_count integer not null default 0,
+  add column if not exists last_polled_at timestamptz;

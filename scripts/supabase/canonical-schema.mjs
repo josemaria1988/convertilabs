@@ -134,6 +134,63 @@ function parseTableDefinitions(sql) {
   return tables;
 }
 
+function parseAlterTableAddColumnDefinitions(sql) {
+  const alterTablePattern =
+    /alter table public\.([a-z0-9_]+)\s+([\s\S]*?);/gi;
+  const additions = [];
+
+  for (const match of sql.matchAll(alterTablePattern)) {
+    const [, tableName, body] = match;
+    const columns = [];
+    const foreignKeys = [];
+
+    for (const rawLine of body.split("\n")) {
+      const line = rawLine.trim().replace(/,$/, "");
+
+      if (!line) {
+        continue;
+      }
+
+      const columnMatch = line.match(/^add column(?: if not exists)? ([a-z_][a-z0-9_]*)\s+/i);
+      if (!columnMatch) {
+        continue;
+      }
+
+      const columnName = columnMatch[1];
+      columns.push(columnName);
+
+      const foreignKeyMatch = line.match(
+        /\breferences\s+([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\s*\(([^)]+)\)(?:\s+on delete\s+([a-z_ ]+))?/i,
+      );
+
+      if (!foreignKeyMatch) {
+        continue;
+      }
+
+      const [, refSchema, refTable, refColumn, deleteRule] = foreignKeyMatch;
+
+      foreignKeys.push({
+        tableName,
+        columnName,
+        refSchema,
+        refTable,
+        refColumn: refColumn.trim(),
+        deleteRule: deleteRule ? deleteRule.trim().replace(/\s+/g, " ").toUpperCase() : "NO ACTION",
+      });
+    }
+
+    if (columns.length > 0 || foreignKeys.length > 0) {
+      additions.push({
+        tableName,
+        columns,
+        foreignKeys,
+      });
+    }
+  }
+
+  return additions;
+}
+
 function parseIndexDefinitions(sql) {
   const indexPattern =
     /create index if not exists ([a-z0-9_]+)\s+on public\.([a-z0-9_]+)/gi;
@@ -240,24 +297,35 @@ export async function extractExpectedSchemaSpec() {
   const tableDefinitions = sections.flatMap((section) =>
     parseTableDefinitions(section.sql),
   );
+  const alterTableAdditions = sections.flatMap((section) =>
+    parseAlterTableAddColumnDefinitions(section.sql),
+  );
+  const columnsByTable = Object.fromEntries(
+    tableDefinitions.map((definition) => [
+      definition.tableName,
+      [...definition.columns],
+    ]),
+  );
+  const foreignKeys = tableDefinitions.flatMap(
+    (definition) => definition.foreignKeys,
+  );
+
+  for (const addition of alterTableAdditions) {
+    columnsByTable[addition.tableName] ??= [];
+    columnsByTable[addition.tableName].push(...addition.columns);
+    foreignKeys.push(...addition.foreignKeys);
+  }
 
   return {
     tables: tableDefinitions.map((definition) => definition.tableName),
-    columnsByTable: Object.fromEntries(
-      tableDefinitions.map((definition) => [
-        definition.tableName,
-        definition.columns,
-      ]),
-    ),
+    columnsByTable,
     uniqueConstraints: tableDefinitions.flatMap((definition) =>
       definition.uniqueConstraints.map((columns) => ({
         tableName: definition.tableName,
         columns,
       })),
     ),
-    foreignKeys: tableDefinitions.flatMap(
-      (definition) => definition.foreignKeys,
-    ),
+    foreignKeys,
     indexes: sections.flatMap((section) => parseIndexDefinitions(section.sql)),
     functionNames: [
       ...new Set(
