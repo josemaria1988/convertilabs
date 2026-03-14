@@ -202,3 +202,39 @@ test("structured OpenAI pipeline runs keep sync trace, retries transient failure
     },
   );
 });
+
+test("responses payload uses file_id without filename for uploaded PDFs", async () => {
+  await withEnv(
+    {
+      OPENAI_API_KEY: "test-openai-key",
+      OPENAI_DOCUMENT_MODEL: "gpt-4o",
+    },
+    async () => {
+      const openAiModule = loadFresh("@/lib/llm/openai-responses");
+      const payload = openAiModule.buildStructuredOpenAIRequestPayload({
+        schemaName: "test_schema",
+        schema: {
+          type: "object",
+          properties: {
+            hello: { type: "string" },
+          },
+          required: ["hello"],
+          additionalProperties: false,
+        },
+        systemPrompt: "system",
+        userPrompt: "user",
+        fileInput: {
+          kind: "pdf",
+          fileId: "file-123",
+          filename: "invoice.pdf",
+        },
+      });
+
+      const filePart = payload.input[1].content[0];
+
+      assert.equal(filePart.type, "input_file");
+      assert.equal(filePart.file_id, "file-123");
+      assert.equal("filename" in filePart, false);
+    },
+  );
+});

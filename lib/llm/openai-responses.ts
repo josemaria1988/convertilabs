@@ -346,7 +346,6 @@ export function buildStructuredOpenAIRequestPayload(input: {
       userContent.push({
         type: "input_file",
         file_id: input.fileInput.fileId,
-        filename: input.fileInput.filename,
       });
     } else {
       userContent.push({
