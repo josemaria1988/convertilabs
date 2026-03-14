@@ -43,7 +43,6 @@ type OrganizationRow = {
   id: string;
   name: string;
   tax_id: string | null;
-  metadata: Record<string, unknown> | null;
 };
 
 type OrganizationProfileVersionRow = {
@@ -338,7 +337,7 @@ export async function loadOrganizationIdentityProfile(
     await Promise.all([
       supabase
         .from("organizations")
-        .select("id, name, tax_id, metadata")
+        .select("id, name, tax_id")
         .eq("id", organizationId)
         .limit(1)
         .maybeSingle(),
@@ -367,7 +366,6 @@ export async function loadOrganizationIdentityProfile(
     organizationId: organizationRow.id,
     legalName: organizationRow.name,
     taxId: profileVersionRow?.tax_id ?? organizationRow.tax_id,
-    metadata: asRecord(organizationRow.metadata),
     profileJson: asRecord(profileVersionRow?.profile_json),
   });
 }

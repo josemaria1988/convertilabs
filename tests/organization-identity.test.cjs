@@ -4,6 +4,7 @@ const { test, assert } = require("./testkit.cjs");
 const {
   buildOrganizationIdentityProfile,
   buildOrganizationIdentityPromptContext,
+  loadOrganizationIdentityProfile,
   matchOrganizationIdentity,
 } = require("@/modules/accounting/organization-identity");
 
@@ -59,4 +60,70 @@ test("organization identity returns tentative token overlap matches and blocks c
   assert.equal(conflictingTaxId.status, "not_matched");
   assert.match(promptContext, /21433455019/);
   assert.match(promptContext, /Rontil Trading/);
+});
+
+test("organization identity loader does not require organizations.metadata", async () => {
+  let organizationSelect = null;
+
+  const supabase = {
+    from(table) {
+      if (table === "organizations") {
+        return {
+          select(fields) {
+            organizationSelect = fields;
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          maybeSingle: async () => ({
+            data: {
+              id: "org-1",
+              name: "Rontil SAS",
+              tax_id: "21433455019",
+            },
+            error: null,
+          }),
+        };
+      }
+
+      if (table === "organization_profile_versions") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          order() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          maybeSingle: async () => ({
+            data: {
+              profile_json: {
+                trade_name: "Rontil Trading",
+              },
+              tax_id: "21433455019",
+            },
+            error: null,
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected table lookup: ${table}`);
+    },
+  };
+
+  const identity = await loadOrganizationIdentityProfile(supabase, "org-1");
+
+  assert.equal(organizationSelect.includes("metadata"), false);
+  assert.equal(identity.legalName, "Rontil SAS");
+  assert.equal(identity.taxIdNormalized, "21433455019");
+  assert.equal(identity.aliases.some((alias) => alias.value === "Rontil Trading"), true);
 });
