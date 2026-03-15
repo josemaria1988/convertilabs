@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { BusinessProfileConfigurator, type PlanSetupMode } from "@/components/onboarding/business-profile-configurator";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -10,10 +11,12 @@ import {
 } from "@/components/ui/button-styles";
 import { updateOrganizationBusinessProfileAction } from "@/app/app/o/[slug]/settings/actions";
 import { buildPresetCompositionCode } from "@/modules/accounting/presets/compose-preset";
+import type { PresetAiRunSummary } from "@/modules/accounting/presets/types";
 
 type BusinessProfileSettingsProps = {
   slug: string;
   available: boolean;
+  presetAiRecommendationEnabled: boolean;
   uiHelpHintsEnabled: boolean;
   activeBusinessProfile: {
     versionNo: number;
@@ -29,8 +32,10 @@ type BusinessProfileSettingsProps = {
     overlayCodes: string[];
     applicationMode: string;
     explanation: Record<string, unknown>;
+    aiRunId: string | null;
     appliedAt: string;
   } | null;
+  activePresetAiRun: PresetAiRunSummary | null;
 };
 
 function asStringArray(value: unknown) {
@@ -49,6 +54,8 @@ function formatApplicationMode(value: string | null | undefined) {
       return "Importacion externa";
     case "minimal_temp_only":
       return "Minimo + temporales";
+    case "hybrid_ai_recommended":
+      return "Hibrido IA";
     default:
       return "Sin aplicar";
   }
@@ -62,6 +69,8 @@ function toPlanSetupMode(value: string | null | undefined): PlanSetupMode {
       return "external_import";
     case "minimal_temp_only":
       return "minimal_temp_only";
+    case "hybrid_ai_recommended":
+      return "hybrid_ai_recommended";
     default:
       return "recommended";
   }
@@ -70,10 +79,16 @@ function toPlanSetupMode(value: string | null | undefined): PlanSetupMode {
 export function BusinessProfileSettings({
   slug,
   available,
+  presetAiRecommendationEnabled,
   uiHelpHintsEnabled,
   activeBusinessProfile,
   activePresetApplication,
+  activePresetAiRun,
 }: BusinessProfileSettingsProps) {
+  const [highlightSubmit, setHighlightSubmit] = useState(
+    activePresetApplication?.applicationMode === "hybrid_ai_recommended",
+  );
+
   if (!available) {
     return (
       <div className="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
@@ -105,13 +120,22 @@ export function BusinessProfileSettings({
                   activePresetApplication.overlayCodes,
                 )
               : null}
+            initialPresetAiRun={activePresetAiRun}
+            presetAiRecommendationEnabled={presetAiRecommendationEnabled}
+            scope="settings"
+            organizationSlug={slug}
+            onReadyToSaveHighlightChange={setHighlightSubmit}
             uiHelpHintsEnabled={uiHelpHintsEnabled}
           />
 
           <div className="flex flex-wrap items-center gap-3">
             <SubmitButton
               pendingLabel="Guardando perfil..."
-              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
+              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm transition ${
+                highlightSubmit
+                  ? "shadow-[0_0_0_1px_rgba(124,157,255,0.4),0_16px_40px_rgba(61,88,148,0.24)]"
+                  : ""
+              }`}
             >
               Guardar perfil y aplicar hacia adelante
             </SubmitButton>

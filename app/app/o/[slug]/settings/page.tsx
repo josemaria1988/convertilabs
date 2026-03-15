@@ -261,9 +261,11 @@ export default async function OrganizationSettingsPage({
               <BusinessProfileSettings
                 slug={organization.slug}
                 available={businessProfile.available}
+                presetAiRecommendationEnabled={featureFlags.presetAiRecommendationEnabled}
                 uiHelpHintsEnabled={featureFlags.uiHelpHintsEnabled}
                 activeBusinessProfile={businessProfile.activeBusinessProfile}
                 activePresetApplication={businessProfile.activePresetApplication}
+                activePresetAiRun={businessProfile.activePresetAiRun}
               />
             </ExpandableSectionCard>
           ) : null}

@@ -56,6 +56,7 @@ export function OrganizationOnboardingForm({
   const [dgiGroup, setDgiGroup] = useState("NO_CEDE");
   const [cfeStatus, setCfeStatus] = useState("ELECTRONIC_ISSUER");
   const [taxId, setTaxId] = useState("");
+  const [highlightSubmit, setHighlightSubmit] = useState(false);
   const [state, formAction, isPending] = useActionState(
     createOrganizationAction,
     initialOnboardingActionState,
@@ -278,6 +279,17 @@ export function OrganizationOnboardingForm({
 
       {showGuidedBusinessProfile ? (
         <BusinessProfileConfigurator
+          presetAiRecommendationEnabled={featureFlags.presetAiRecommendationEnabled}
+          organizationContext={{
+            organizationName,
+            legalEntityType,
+            taxId,
+            taxRegimeCode,
+            vatRegime,
+            dgiGroup,
+            cfeStatus,
+          }}
+          onReadyToSaveHighlightChange={setHighlightSubmit}
           uiHelpHintsEnabled={featureFlags.uiHelpHintsEnabled}
           fieldErrors={safeState.fieldErrors}
         />
@@ -298,7 +310,11 @@ export function OrganizationOnboardingForm({
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        className={`inline-flex w-full items-center justify-center gap-2 rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70 ${
+          highlightSubmit
+            ? "shadow-[0_0_0_1px_rgba(124,157,255,0.4),0_18px_44px_rgba(54,82,144,0.24)]"
+            : ""
+        }`}
       >
         {isPending ? <InlineSpinner /> : null}
         {isPending ? "Creando organizacion..." : "Crear organizacion"}

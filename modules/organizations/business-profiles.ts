@@ -3,6 +3,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import { toPresetAiRunSummary } from "@/modules/accounting/presets/ai-recommendation";
+import type {
+  PresetAiRunSummary,
+  PresetApplicationMode,
+} from "@/modules/accounting/presets/types";
 import type { DecisionComment } from "@/modules/explanations/types";
 import type { BusinessProfileInput } from "@/modules/organizations/activity-types";
 import { getActivityByCode } from "@/modules/organizations/activity-catalog";
@@ -33,13 +38,30 @@ type BusinessProfileTraitRow = {
 
 type PresetApplicationRow = {
   id: string;
-  business_profile_version_id: string;
+  business_profile_version_id: string | null;
   base_preset_code: string;
   overlay_codes_json: string[] | null;
   application_mode: string;
   explanation_json: Record<string, unknown> | null;
+  ai_run_id: string | null;
   applied_at: string;
   active: boolean;
+};
+
+type LoadedPresetAiRunRow = {
+  id: string;
+  input_hash: string;
+  selected_composition_code: string | null;
+  confidence: number | null;
+  target_audience_fit: string | null;
+  key_benefit: string | null;
+  setup_tip: string | null;
+  assistant_letter_markdown: string | null;
+  observations_json: unknown[] | null;
+  suggested_cost_centers_json: unknown[] | null;
+  cost_center_draft_saved: boolean;
+  status: string;
+  created_at: string;
 };
 
 export type OrganizationBusinessProfileData = {
@@ -56,13 +78,15 @@ export type OrganizationBusinessProfileData = {
   } | null;
   activePresetApplication: {
     id: string;
-    businessProfileVersionId: string;
+    businessProfileVersionId: string | null;
     basePresetCode: string;
     overlayCodes: string[];
-    applicationMode: string;
+    applicationMode: PresetApplicationMode;
     explanation: Record<string, unknown>;
+    aiRunId: string | null;
     appliedAt: string;
   } | null;
+  activePresetAiRun: PresetAiRunSummary | null;
   profileHistory: Array<{
     id: string;
     versionNo: number;
@@ -102,7 +126,7 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
       .limit(12),
     supabase
       .from("organization_preset_applications")
-      .select("id, business_profile_version_id, base_preset_code, overlay_codes_json, application_mode, explanation_json, applied_at, active")
+      .select("id, business_profile_version_id, base_preset_code, overlay_codes_json, application_mode, explanation_json, ai_run_id, applied_at, active")
       .eq("organization_id", organizationId)
       .order("applied_at", { ascending: false })
       .limit(12),
@@ -116,6 +140,7 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
       available: false,
       activeBusinessProfile: null,
       activePresetApplication: null,
+      activePresetAiRun: null,
       profileHistory: [],
     } satisfies OrganizationBusinessProfileData;
   }
@@ -152,6 +177,7 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
         available: false,
         activeBusinessProfile: null,
         activePresetApplication: null,
+        activePresetAiRun: null,
         profileHistory: [],
       } satisfies OrganizationBusinessProfileData;
     }
@@ -169,6 +195,28 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
   }
 
   const activeVersion = versions.find((version) => version.is_current) ?? versions[0] ?? null;
+  const activePresetApplicationRow =
+    presetApplications.find((application) => application.active)
+    ?? presetApplications[0]
+    ?? null;
+  let activePresetAiRun: PresetAiRunSummary | null = null;
+
+  if (activePresetApplicationRow?.ai_run_id) {
+    const aiRunResult = await supabase
+      .from("organization_preset_ai_runs")
+      .select("id, input_hash, selected_composition_code, confidence, target_audience_fit, key_benefit, setup_tip, assistant_letter_markdown, observations_json, suggested_cost_centers_json, cost_center_draft_saved, status, created_at")
+      .eq("id", activePresetApplicationRow.ai_run_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (!isMissingSupabaseRelationError(aiRunResult.error, "organization_preset_ai_runs")) {
+      if (aiRunResult.error) {
+        throw new Error(aiRunResult.error.message);
+      }
+
+      activePresetAiRun = toPresetAiRunSummary((aiRunResult.data as LoadedPresetAiRunRow | null) ?? null);
+    }
+  }
 
   return {
     available: true,
@@ -193,23 +241,19 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
           createdAt: activeVersion.created_at,
         }
       : null,
-    activePresetApplication: (() => {
-      const active = presetApplications.find((application) => application.active) ?? presetApplications[0] ?? null;
-
-      if (!active) {
-        return null;
-      }
-
-      return {
-        id: active.id,
-        businessProfileVersionId: active.business_profile_version_id,
-        basePresetCode: active.base_preset_code,
-        overlayCodes: active.overlay_codes_json ?? [],
-        applicationMode: active.application_mode,
-        explanation: (active.explanation_json ?? {}) as Record<string, unknown>,
-        appliedAt: active.applied_at,
-      };
-    })(),
+    activePresetApplication: activePresetApplicationRow
+      ? {
+          id: activePresetApplicationRow.id,
+          businessProfileVersionId: activePresetApplicationRow.business_profile_version_id,
+          basePresetCode: activePresetApplicationRow.base_preset_code,
+          overlayCodes: activePresetApplicationRow.overlay_codes_json ?? [],
+          applicationMode: activePresetApplicationRow.application_mode as PresetApplicationMode,
+          explanation: (activePresetApplicationRow.explanation_json ?? {}) as Record<string, unknown>,
+          aiRunId: activePresetApplicationRow.ai_run_id,
+          appliedAt: activePresetApplicationRow.applied_at,
+        }
+      : null,
+    activePresetAiRun,
     profileHistory: versions.map((version) => ({
       id: version.id,
       versionNo: version.version_no,
@@ -357,8 +401,9 @@ export async function recordOrganizationPresetApplication(
     businessProfileVersionId: string;
     basePresetCode: string;
     overlayCodes: string[];
-    applicationMode: "recommended" | "manual_pick" | "external_import" | "minimal_temp_only";
+    applicationMode: PresetApplicationMode;
     explanation: DecisionComment;
+    aiRunId?: string | null;
   },
 ) {
   const { error: disableCurrentError } = await supabase
@@ -384,6 +429,7 @@ export async function recordOrganizationPresetApplication(
       overlay_codes_json: input.overlayCodes,
       application_mode: input.applicationMode,
       explanation_json: input.explanation,
+      ai_run_id: input.aiRunId ?? null,
       applied_at: new Date().toISOString(),
       applied_by: input.actorId,
       active: true,

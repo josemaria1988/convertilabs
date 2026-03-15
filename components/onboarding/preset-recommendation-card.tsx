@@ -13,6 +13,7 @@ type PresetRecommendationCardProps = {
   composition: PresetComposition;
   decision: DecisionComment;
   isSelected: boolean;
+  badgeLabel?: string;
   scoreBreakdown: {
     primaryActivity: number;
     secondaryActivities: number;
@@ -26,6 +27,7 @@ export function PresetRecommendationCard({
   composition,
   decision,
   isSelected,
+  badgeLabel = "Recomendado",
   scoreBreakdown,
   onSelect,
 }: PresetRecommendationCardProps) {
@@ -41,7 +43,7 @@ export function PresetRecommendationCard({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100">
-              Recomendado
+              {badgeLabel}
             </span>
             <DecisionWhyPopover decision={decision} />
           </div>
@@ -80,7 +82,7 @@ export function PresetRecommendationCard({
           <p className="text-sm font-semibold text-white">Por que se recomendo</p>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
             {composition.reasons.slice(0, 4).map((reason) => (
-              <li key={reason}>• {reason}</li>
+              <li key={reason}>- {reason}</li>
             ))}
           </ul>
         </div>
@@ -88,7 +90,7 @@ export function PresetRecommendationCard({
           <p className="text-sm font-semibold text-white">Que agrega</p>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
             {composition.capabilities.slice(0, 4).map((capability) => (
-              <li key={capability}>• {capability}</li>
+              <li key={capability}>- {capability}</li>
             ))}
           </ul>
         </div>

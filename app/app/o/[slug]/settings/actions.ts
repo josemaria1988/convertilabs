@@ -10,6 +10,16 @@ import {
   updateOrganizationChartAccount,
 } from "@/modules/accounting/chart-admin";
 import { applyPresetComposition } from "@/modules/accounting/preset-apply-service";
+import {
+  attachPresetAiRunToOrganization,
+  buildHybridPresetApplicationExplanation,
+  buildPresetAiInputHash,
+  buildPresetAiOutputFromStoredRun,
+  derivePresetHybridRecommendation,
+  findPresetCompositionByCode,
+  loadPresetAiRunForUser,
+  resolvePresetApplicationMode,
+} from "@/modules/accounting/presets/ai-recommendation";
 import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 import { buildPresetApplicationComment } from "@/modules/explanations/decision-comment-builder";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
@@ -26,6 +36,111 @@ import {
   importChartOfAccountsSpreadsheetDirect,
   runSpreadsheetImport,
 } from "@/modules/spreadsheets";
+
+async function resolveSettingsSelectedComposition(input: {
+  actorId: string;
+  serviceRole: ReturnType<typeof getSupabaseServiceRoleClient>;
+  organization: {
+    id: string;
+    slug: string;
+  };
+  recommendation: ReturnType<typeof buildPresetRecommendation>;
+  profile: {
+    primaryActivityCode: string;
+    secondaryActivityCodes: string[];
+    selectedTraits: string[];
+    shortDescription: string | null | undefined;
+  };
+  planSetupMode: string;
+  selectedPresetComposition: string;
+  aiRunId: string | null;
+}) {
+  if (input.planSetupMode === "hybrid_ai_recommended") {
+    if (!input.aiRunId) {
+      throw new Error("La recomendacion IA ya no esta vigente. Consulta de nuevo antes de guardar.");
+    }
+
+    const aiRun = await loadPresetAiRunForUser(input.serviceRole, {
+      runId: input.aiRunId,
+      requestedBy: input.actorId,
+    });
+
+    if (!aiRun || aiRun.status !== "completed") {
+      throw new Error("No encontramos una corrida IA valida para esta recomendacion.");
+    }
+
+    const expectedInputHash = buildPresetAiInputHash({
+      scope: "settings",
+      organizationContext: {
+        organizationId: input.organization.id,
+        slug: input.organization.slug,
+      },
+      profile: input.profile,
+      recommendation: input.recommendation,
+    });
+
+    if (aiRun.input_hash !== expectedInputHash) {
+      throw new Error("La recomendacion IA quedo desactualizada. Consulta de nuevo antes de guardar.");
+    }
+
+    const aiOutput = buildPresetAiOutputFromStoredRun(aiRun);
+
+    if (!aiOutput) {
+      throw new Error("La corrida IA no tiene una salida estructurada utilizable.");
+    }
+
+    const hybridRecommendation = derivePresetHybridRecommendation({
+      recommendation: input.recommendation,
+      aiOutput,
+      runId: aiRun.id,
+      inputHash: aiRun.input_hash,
+      costCenterDraftSaved: aiRun.cost_center_draft_saved,
+    });
+
+    if (!hybridRecommendation.shouldAutoSelect) {
+      throw new Error("La recomendacion IA no alcanzo la confianza necesaria para autoaplicarse.");
+    }
+
+    const composition = findPresetCompositionByCode(
+      input.recommendation,
+      aiOutput.selectedCompositionCode,
+    );
+
+    if (!composition) {
+      throw new Error("La composicion sugerida por IA ya no coincide con el catalogo actual.");
+    }
+
+    if (input.selectedPresetComposition && input.selectedPresetComposition !== composition.code) {
+      throw new Error("La composicion elegida ya no coincide con la ultima recomendacion IA.");
+    }
+
+    return {
+      applicationMode: "hybrid_ai_recommended" as const,
+      composition,
+      aiRunId: aiRun.id,
+      hybridRecommendation,
+    };
+  }
+
+  const selectedAlternative = input.recommendation.alternatives.find(
+    (alternative) => alternative.code === input.selectedPresetComposition,
+  ) ?? null;
+
+  if (input.planSetupMode === "alternative" && !selectedAlternative) {
+    throw new Error("La alternativa elegida ya no coincide con la recomendacion actual.");
+  }
+
+  return {
+    applicationMode: resolvePresetApplicationMode({
+      planSetupMode: input.planSetupMode,
+    }),
+    composition: input.planSetupMode === "alternative"
+      ? selectedAlternative
+      : input.recommendation.recommended,
+    aiRunId: null,
+    hybridRecommendation: null,
+  };
+}
 
 function assertOrganizationManagerRole(role: string) {
   if (!["owner", "admin", "accountant"].includes(role)) {
@@ -129,26 +244,26 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
   });
   const selectedPresetComposition = String(formData.get("selectedPresetComposition") ?? "").trim();
   const planSetupMode = String(formData.get("planSetupMode") ?? "recommended").trim().toLowerCase();
-  const selectedAlternative = recommendation.alternatives.find(
-    (alternative) => alternative.code === selectedPresetComposition,
-  ) ?? null;
-
-  if (planSetupMode === "alternative" && !selectedAlternative) {
-    throw new Error("La alternativa elegida ya no coincide con la recomendacion actual.");
-  }
-
-  const selectedComposition = planSetupMode === "alternative"
-    ? selectedAlternative
-    : recommendation.recommended;
-  const applicationMode =
-    planSetupMode === "alternative"
-      ? "manual_pick"
-      : planSetupMode === "external_import"
-        ? "external_import"
-        : planSetupMode === "minimal_temp_only"
-          ? "minimal_temp_only"
-          : "recommended";
+  const aiRunId = String(formData.get("aiRunId") ?? "").trim() || null;
   const supabase = getSupabaseServiceRoleClient();
+  const selectedCompositionResolution = await resolveSettingsSelectedComposition({
+    actorId: authState.user?.id ?? "",
+    serviceRole: supabase,
+    organization: {
+      id: organization.id,
+      slug: organization.slug,
+    },
+    recommendation,
+    profile: {
+      primaryActivityCode,
+      secondaryActivityCodes,
+      selectedTraits,
+      shortDescription: shortBusinessDescription,
+    },
+    planSetupMode,
+    selectedPresetComposition,
+    aiRunId,
+  });
   const createdVersion = await createOrganizationBusinessProfileVersion(supabase, {
     organizationId: organization.id,
     actorId: authState.user?.id ?? null,
@@ -161,27 +276,51 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
     source: "settings_update",
   });
 
-  if (selectedComposition && (applicationMode === "recommended" || applicationMode === "manual_pick")) {
+  if (
+    selectedCompositionResolution.composition
+    && (
+      selectedCompositionResolution.applicationMode === "recommended"
+      || selectedCompositionResolution.applicationMode === "manual_pick"
+      || selectedCompositionResolution.applicationMode === "hybrid_ai_recommended"
+    )
+  ) {
     await applyPresetComposition(supabase, {
       organizationId: organization.id,
       actorId: authState.user?.id ?? null,
-      composition: selectedComposition,
-      source: applicationMode,
+      composition: selectedCompositionResolution.composition,
+      source: selectedCompositionResolution.applicationMode,
     });
   }
 
   if (createdVersion) {
+    if (selectedCompositionResolution.aiRunId) {
+      await attachPresetAiRunToOrganization(supabase, {
+        runId: selectedCompositionResolution.aiRunId,
+        organizationId: organization.id,
+        businessProfileVersionId: createdVersion.id,
+      });
+    }
+
     await recordOrganizationPresetApplication(supabase, {
       organizationId: organization.id,
       actorId: authState.user?.id ?? null,
       businessProfileVersionId: createdVersion.id,
-      basePresetCode: (selectedComposition ?? recommendation.recommended).basePresetCode,
-      overlayCodes: (selectedComposition ?? recommendation.recommended).overlayCodes,
-      applicationMode,
-      explanation: buildPresetApplicationComment({
-        recommendation,
-        applicationMode,
-      }),
+      basePresetCode: (selectedCompositionResolution.composition ?? recommendation.recommended).basePresetCode,
+      overlayCodes: (selectedCompositionResolution.composition ?? recommendation.recommended).overlayCodes,
+      applicationMode: selectedCompositionResolution.applicationMode,
+      aiRunId: selectedCompositionResolution.aiRunId,
+      explanation:
+        selectedCompositionResolution.applicationMode === "hybrid_ai_recommended"
+        && selectedCompositionResolution.hybridRecommendation
+        && selectedCompositionResolution.composition
+          ? buildHybridPresetApplicationExplanation({
+              selectedComposition: selectedCompositionResolution.composition,
+              hybridRecommendation: selectedCompositionResolution.hybridRecommendation,
+            })
+          : buildPresetApplicationComment({
+              recommendation,
+              applicationMode: selectedCompositionResolution.applicationMode,
+            }),
     });
   }
 

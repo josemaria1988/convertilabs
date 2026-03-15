@@ -8,6 +8,15 @@ import {
   resolvePostAuthDestination,
 } from "@/modules/auth/server-auth";
 import { applyPresetComposition } from "@/modules/accounting/preset-apply-service";
+import {
+  attachPresetAiRunToOrganization,
+  buildHybridPresetApplicationExplanation,
+  buildPresetAiInputHash,
+  buildPresetAiOutputFromStoredRun,
+  derivePresetHybridRecommendation,
+  findPresetCompositionByCode,
+  loadPresetAiRunForUser,
+} from "@/modules/accounting/presets/ai-recommendation";
 import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 import { buildPresetApplicationComment } from "@/modules/explanations/decision-comment-builder";
 import type { OnboardingActionState } from "@/modules/organizations/onboarding-action-state";
@@ -125,9 +134,27 @@ function mapCreateOrganizationError(message: string) {
 }
 
 function resolveSelectedComposition(input: {
+  actorId: string;
+  serviceRole: ReturnType<typeof getSupabaseServiceRoleClient>;
   recommendation: ReturnType<typeof buildPresetRecommendation>;
+  profile: {
+    primaryActivityCode: string;
+    secondaryActivityCodes: string[];
+    selectedTraits: string[];
+    shortDescription: string | null | undefined;
+  };
+  organizationContext: {
+    organizationName: string;
+    legalEntityType: string;
+    taxId: string;
+    taxRegimeCode: string;
+    vatRegime: string;
+    dgiGroup: string;
+    cfeStatus: string;
+  };
   planSetupMode: string | undefined;
   selectedPresetComposition: string | null | undefined;
+  aiRunId: string | null | undefined;
 }) {
   const planSetupMode = input.planSetupMode ?? "recommended";
 
@@ -160,9 +187,107 @@ function resolveSelectedComposition(input: {
     };
   }
 
+  if (planSetupMode === "hybrid_ai_recommended") {
+    throw new Error("La validacion de la recomendacion IA debe resolverse de forma asincrona.");
+  }
+
   return {
     applicationMode: "minimal_temp_only" as const,
     composition: null,
+  };
+}
+
+async function resolveSelectedCompositionWithAi(input: {
+  actorId: string;
+  serviceRole: ReturnType<typeof getSupabaseServiceRoleClient>;
+  recommendation: ReturnType<typeof buildPresetRecommendation>;
+  profile: {
+    primaryActivityCode: string;
+    secondaryActivityCodes: string[];
+    selectedTraits: string[];
+    shortDescription: string | null | undefined;
+  };
+  organizationContext: {
+    organizationName: string;
+    legalEntityType: string;
+    taxId: string;
+    taxRegimeCode: string;
+    vatRegime: string;
+    dgiGroup: string;
+    cfeStatus: string;
+  };
+  planSetupMode: string | undefined;
+  selectedPresetComposition: string | null | undefined;
+  aiRunId: string | null | undefined;
+}) {
+  if (input.planSetupMode !== "hybrid_ai_recommended") {
+    return {
+      ...(resolveSelectedComposition(input)),
+      aiRunId: null,
+      hybridRecommendation: null,
+    };
+  }
+
+  if (!input.aiRunId) {
+    throw new Error("La recomendacion IA ya no esta vigente. Consulta de nuevo antes de continuar.");
+  }
+
+  const aiRun = await loadPresetAiRunForUser(input.serviceRole, {
+    runId: input.aiRunId,
+    requestedBy: input.actorId,
+  });
+
+  if (!aiRun || aiRun.status !== "completed") {
+    throw new Error("No encontramos una corrida IA valida para esta recomendacion.");
+  }
+
+  const expectedInputHash = buildPresetAiInputHash({
+    scope: "onboarding",
+    organizationContext: input.organizationContext,
+    profile: input.profile,
+    recommendation: input.recommendation,
+  });
+
+  if (aiRun.input_hash !== expectedInputHash) {
+    throw new Error("La recomendacion IA quedo desactualizada. Consulta de nuevo antes de continuar.");
+  }
+
+  const aiOutput = buildPresetAiOutputFromStoredRun(aiRun);
+
+  if (!aiOutput) {
+    throw new Error("La corrida IA no tiene una salida estructurada utilizable.");
+  }
+
+  const hybridRecommendation = derivePresetHybridRecommendation({
+    recommendation: input.recommendation,
+    aiOutput,
+    runId: aiRun.id,
+    inputHash: aiRun.input_hash,
+    costCenterDraftSaved: aiRun.cost_center_draft_saved,
+  });
+
+  if (!hybridRecommendation.shouldAutoSelect) {
+    throw new Error("La recomendacion IA no alcanzo la confianza necesaria para autoaplicarse.");
+  }
+
+  const composition = findPresetCompositionByCode(
+    input.recommendation,
+    aiOutput.selectedCompositionCode,
+  );
+
+  if (!composition) {
+    throw new Error("La composicion sugerida por IA ya no coincide con el catalogo actual.");
+  }
+
+  if (input.selectedPresetComposition && input.selectedPresetComposition !== composition.code) {
+    throw new Error("La composicion elegida ya no coincide con la ultima recomendacion IA.");
+  }
+
+  return {
+    applicationMode: "hybrid_ai_recommended" as const,
+    composition,
+    aiRunId: aiRun.id,
+    hybridRecommendation,
   };
 }
 
@@ -194,6 +319,7 @@ export async function createOrganizationAction(
     shortBusinessDescription: String(formData.get("shortBusinessDescription") ?? ""),
     planSetupMode: String(formData.get("planSetupMode") ?? "recommended"),
     selectedPresetComposition: String(formData.get("selectedPresetComposition") ?? ""),
+    aiRunId: String(formData.get("aiRunId") ?? ""),
   }, {
     requireBusinessProfile: featureFlags.onboardingActivityBasedPresetsEnabled,
   });
@@ -209,6 +335,50 @@ export async function createOrganizationAction(
 
   if (authState.primaryOrganization) {
     redirect(resolvePostAuthDestination(authState));
+  }
+
+  const serviceRole = getSupabaseServiceRoleClient();
+  const recommendation = buildPresetRecommendation({
+    primaryActivityCode: validation.data.primaryActivityCode ?? "",
+    secondaryActivityCodes: validation.data.secondaryActivityCodes ?? [],
+    selectedTraits: validation.data.selectedTraits ?? [],
+    shortDescription: validation.data.shortBusinessDescription,
+  });
+  let selectedCompositionResolution;
+
+  try {
+    selectedCompositionResolution = await resolveSelectedCompositionWithAi({
+      actorId: user.id,
+      serviceRole,
+      recommendation,
+      profile: {
+        primaryActivityCode: validation.data.primaryActivityCode ?? "",
+        secondaryActivityCodes: validation.data.secondaryActivityCodes ?? [],
+        selectedTraits: validation.data.selectedTraits ?? [],
+        shortDescription: validation.data.shortBusinessDescription,
+      },
+      organizationContext: {
+        organizationName: validation.data.name,
+        legalEntityType: validation.data.legalEntityType,
+        taxId: validation.data.taxId,
+        taxRegimeCode: validation.data.taxRegimeCode,
+        vatRegime: validation.data.vatRegime,
+        dgiGroup: validation.data.dgiGroup,
+        cfeStatus: validation.data.cfeStatus,
+      },
+      planSetupMode: validation.data.planSetupMode,
+      selectedPresetComposition: validation.data.selectedPresetComposition,
+      aiRunId: validation.data.aiRunId,
+    });
+  } catch (error) {
+    return buildActionError(
+      error instanceof Error
+        ? error.message
+        : "No pudimos validar la recomendacion IA antes de crear la organizacion.",
+      {
+        aiRunId: "Consulta nuevamente a la IA para confirmar la configuracion.",
+      },
+    );
   }
 
   const rpcResult = await supabase
@@ -237,8 +407,6 @@ export async function createOrganizationAction(
     );
   }
 
-  const serviceRole = getSupabaseServiceRoleClient();
-
   if (!featureFlags.onboardingActivityBasedPresetsEnabled) {
     await ensureStarterAccountingSetup(serviceRole, {
       organizationId: data.organization_id,
@@ -253,17 +421,6 @@ export async function createOrganizationAction(
   let destination = `/app/o/${data.slug}/dashboard`;
 
   try {
-    const recommendation = buildPresetRecommendation({
-      primaryActivityCode: validation.data.primaryActivityCode ?? "",
-      secondaryActivityCodes: validation.data.secondaryActivityCodes ?? [],
-      selectedTraits: validation.data.selectedTraits ?? [],
-      shortDescription: validation.data.shortBusinessDescription,
-    });
-    const selectedComposition = resolveSelectedComposition({
-      recommendation,
-      planSetupMode: validation.data.planSetupMode,
-      selectedPresetComposition: validation.data.selectedPresetComposition,
-    });
     const createdBusinessProfileVersion = await createOrganizationBusinessProfileVersion(
       serviceRole,
       {
@@ -279,12 +436,12 @@ export async function createOrganizationAction(
       },
     );
 
-    if (selectedComposition.composition) {
+    if (selectedCompositionResolution.composition) {
       await applyPresetComposition(serviceRole, {
         organizationId: data.organization_id,
         actorId: user.id,
-        composition: selectedComposition.composition,
-        source: selectedComposition.applicationMode,
+        composition: selectedCompositionResolution.composition,
+        source: selectedCompositionResolution.applicationMode,
       });
     }
 
@@ -294,27 +451,43 @@ export async function createOrganizationAction(
     });
 
     if (createdBusinessProfileVersion) {
+      if (selectedCompositionResolution.aiRunId) {
+        await attachPresetAiRunToOrganization(serviceRole, {
+          runId: selectedCompositionResolution.aiRunId,
+          organizationId: data.organization_id,
+          businessProfileVersionId: createdBusinessProfileVersion.id,
+        });
+      }
+
       await recordOrganizationPresetApplication(serviceRole, {
         organizationId: data.organization_id,
         actorId: user.id,
         businessProfileVersionId: createdBusinessProfileVersion.id,
         basePresetCode:
-          selectedComposition.composition?.basePresetCode
+          selectedCompositionResolution.composition?.basePresetCode
           ?? recommendation.recommended.basePresetCode,
         overlayCodes:
-          selectedComposition.composition?.overlayCodes
+          selectedCompositionResolution.composition?.overlayCodes
           ?? recommendation.recommended.overlayCodes,
-        applicationMode: selectedComposition.applicationMode,
-        explanation: buildPresetApplicationComment({
-          recommendation,
-          applicationMode: selectedComposition.applicationMode,
-        }),
+        applicationMode: selectedCompositionResolution.applicationMode,
+        aiRunId: selectedCompositionResolution.aiRunId,
+        explanation: selectedCompositionResolution.applicationMode === "hybrid_ai_recommended"
+          && selectedCompositionResolution.hybridRecommendation
+          && selectedCompositionResolution.composition
+          ? buildHybridPresetApplicationExplanation({
+              selectedComposition: selectedCompositionResolution.composition,
+              hybridRecommendation: selectedCompositionResolution.hybridRecommendation,
+            })
+          : buildPresetApplicationComment({
+              recommendation,
+              applicationMode: selectedCompositionResolution.applicationMode,
+            }),
       });
     }
 
     revalidatePath("/app");
     revalidatePath("/onboarding");
-    if (selectedComposition.applicationMode === "external_import") {
+    if (selectedCompositionResolution.applicationMode === "external_import") {
       destination = `/app/o/${data.slug}/imports?focus=chart_of_accounts_import&from=onboarding`;
     }
   } catch {

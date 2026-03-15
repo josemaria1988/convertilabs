@@ -24,6 +24,7 @@ export const supportedPlanSetupModes = [
   "alternative",
   "external_import",
   "minimal_temp_only",
+  "hybrid_ai_recommended",
 ] as const;
 
 export type OrganizationOnboardingInput = {
@@ -40,6 +41,7 @@ export type OrganizationOnboardingInput = {
   shortBusinessDescription?: string | null;
   planSetupMode?: string;
   selectedPresetComposition?: string | null;
+  aiRunId?: string | null;
 };
 
 export type OrganizationOnboardingFieldErrors = {
@@ -56,6 +58,7 @@ export type OrganizationOnboardingFieldErrors = {
   shortBusinessDescription?: string;
   planSetupMode?: string;
   selectedPresetComposition?: string;
+  aiRunId?: string;
 };
 
 type ValidationSuccess = {
@@ -112,6 +115,7 @@ export function validateOrganizationOnboardingInput(
   );
   const planSetupMode = input.planSetupMode?.trim().toLowerCase() ?? "recommended";
   const selectedPresetComposition = input.selectedPresetComposition?.trim() || null;
+  const aiRunId = input.aiRunId?.trim() || null;
   const errors: OrganizationOnboardingFieldErrors = {};
   const requireBusinessProfile = options?.requireBusinessProfile ?? false;
 
@@ -168,6 +172,16 @@ export function validateOrganizationOnboardingInput(
       errors.selectedPresetComposition = "No pudimos identificar la composicion elegida. Revisa la recomendacion antes de continuar.";
     }
 
+    if (planSetupMode === "hybrid_ai_recommended") {
+      if (!selectedPresetComposition) {
+        errors.selectedPresetComposition = "La recomendacion hibrida no tiene una composicion seleccionada valida.";
+      }
+
+      if (!aiRunId) {
+        errors.aiRunId = "La recomendacion IA ya no esta vigente. Consulta de nuevo antes de continuar.";
+      }
+    }
+
     if (shortBusinessDescription && shortBusinessDescription.length > 240) {
       errors.shortBusinessDescription = "Usa una descripcion corta de hasta 240 caracteres.";
     }
@@ -196,6 +210,7 @@ export function validateOrganizationOnboardingInput(
       shortBusinessDescription,
       planSetupMode,
       selectedPresetComposition,
+      aiRunId,
     },
   };
 }

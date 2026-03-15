@@ -21,7 +21,12 @@ export async function applyPresetComposition(
     organizationId: string;
     actorId: string | null;
     composition: PresetComposition;
-    source: "recommended" | "manual_pick" | "minimal_temp_only" | "external_import";
+    source:
+      | "recommended"
+      | "manual_pick"
+      | "minimal_temp_only"
+      | "external_import"
+      | "hybrid_ai_recommended";
   },
 ) {
   const { data, error } = await supabase

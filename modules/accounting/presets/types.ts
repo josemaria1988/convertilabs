@@ -1,4 +1,7 @@
-import type { DecisionComment } from "@/modules/explanations/types";
+import type {
+  DecisionComment,
+  HelpHintContent,
+} from "@/modules/explanations/types";
 
 export type PresetBundleKind = "base" | "activity_overlay" | "trait_overlay";
 
@@ -66,6 +69,13 @@ export type PresetComposition = {
   capabilities: string[];
 };
 
+export type PresetApplicationMode =
+  | "recommended"
+  | "manual_pick"
+  | "external_import"
+  | "minimal_temp_only"
+  | "hybrid_ai_recommended";
+
 export type PresetRecommendationResult = {
   recommended: PresetComposition;
   alternatives: PresetComposition[];
@@ -76,4 +86,70 @@ export type PresetRecommendationResult = {
     traits: number;
     textDescription: number;
   };
+};
+
+export type PresetAiObservation = HelpHintContent & {
+  suggestedCode?: string | null;
+};
+
+export type PresetAiSuggestedCostCenter = {
+  code: string;
+  label: string;
+  rationale: string;
+  groupingHint: string;
+};
+
+export type PresetAiRecommendationOutput = {
+  selectedCompositionCode: string;
+  confidence: number;
+  targetAudienceFit: string;
+  keyBenefit: string;
+  setupTip: string;
+  observations: PresetAiObservation[];
+  suggestedCostCenters: PresetAiSuggestedCostCenter[];
+};
+
+export type PresetHybridDecisionSource =
+  | "rules_only"
+  | "rules_confirmed_by_ai"
+  | "hybrid_ai_recommended"
+  | "ai_low_confidence";
+
+export type PresetHybridRecommendation = {
+  source: PresetHybridDecisionSource;
+  shouldAutoSelect: boolean;
+  composition: PresetComposition;
+  selectedCompositionCode: string;
+  confidence: number | null;
+  decision: DecisionComment;
+  assistantLetterMarkdown: string | null;
+  observations: PresetAiObservation[];
+  suggestedCostCenters: PresetAiSuggestedCostCenter[];
+  runId: string | null;
+  inputHash: string | null;
+  costCenterDraftSaved: boolean;
+};
+
+export type PresetAiRunSummary = {
+  id: string;
+  inputHash: string;
+  selectedCompositionCode: string;
+  confidence: number | null;
+  targetAudienceFit: string | null;
+  keyBenefit: string | null;
+  setupTip: string | null;
+  assistantLetterMarkdown: string | null;
+  observations: PresetAiObservation[];
+  suggestedCostCenters: PresetAiSuggestedCostCenter[];
+  costCenterDraftSaved: boolean;
+  status: string;
+  createdAt: string;
+};
+
+export type PresetAiRouteResponse = {
+  runId: string;
+  inputHash: string;
+  ruleRecommendation: PresetRecommendationResult;
+  aiRecommendation: PresetAiRecommendationOutput;
+  hybridRecommendation: PresetHybridRecommendation;
 };
