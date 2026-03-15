@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { isMissingSupabaseColumnError } from "@/lib/supabase/schema-compat";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type ProfileVersionRow = {
@@ -19,6 +20,7 @@ type ProfileVersionRow = {
   tax_id: string;
   profile_summary: string | null;
   change_reason: string | null;
+  profile_json: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -137,7 +139,7 @@ export async function loadOrganizationSettingsData(organizationId: string) {
     supabase
       .from("organization_profile_versions")
       .select(
-        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_summary, change_reason, created_at",
+        "id, version_number, status, effective_from, effective_to, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_summary, change_reason, profile_json, created_at",
       )
       .eq("organization_id", organizationId)
       .order("version_number", { ascending: false })
@@ -256,6 +258,12 @@ export async function activateOrganizationProfileVersion(input: {
   cfeStatus: string;
   effectiveFrom: string;
   changeReason: string;
+  fiscalAddressText: string;
+  fiscalDepartment: string;
+  fiscalCity: string;
+  fiscalPostalCode: string;
+  locationRiskPolicy: string;
+  travelRadiusKmPolicy: string;
 }) {
   const supabase = getSupabaseServiceRoleClient();
   const settingsData = await loadOrganizationSettingsData(input.organizationId);
@@ -309,34 +317,65 @@ export async function activateOrganizationProfileVersion(input: {
     throw new Error(organizationError.message);
   }
 
-  const { error: insertProfileError } = await supabase
+  const travelRadiusKmPolicy = input.travelRadiusKmPolicy.trim();
+  const profileJson = {
+    activated_from_settings: true,
+    fiscal_address_text: input.fiscalAddressText.trim() || null,
+    fiscal_department: input.fiscalDepartment.trim() || null,
+    fiscal_city: input.fiscalCity.trim() || null,
+    fiscal_postal_code: input.fiscalPostalCode.trim() || null,
+    location_risk_policy: input.locationRiskPolicy.trim() || "warn_and_require_note",
+    travel_radius_km_policy:
+      travelRadiusKmPolicy && Number.isFinite(Number.parseFloat(travelRadiusKmPolicy))
+        ? Number.parseFloat(travelRadiusKmPolicy)
+        : null,
+  };
+  const insertPayload = {
+    organization_id: input.organizationId,
+    version_number: nextProfileVersionNumber,
+    status: "active",
+    effective_from: input.effectiveFrom,
+    legal_entity_type: input.legalEntityType,
+    tax_regime_code: input.taxRegimeCode,
+    vat_regime: input.vatRegime,
+    dgi_group: input.dgiGroup,
+    cfe_status: input.cfeStatus,
+    country_code: "UY",
+    tax_id: input.taxId,
+    fiscal_address_text: profileJson.fiscal_address_text,
+    fiscal_department: profileJson.fiscal_department,
+    fiscal_city: profileJson.fiscal_city,
+    fiscal_postal_code: profileJson.fiscal_postal_code,
+    location_risk_policy: profileJson.location_risk_policy,
+    travel_radius_km_policy: profileJson.travel_radius_km_policy,
+    profile_summary:
+      `Pais: UY. Forma juridica: ${input.legalEntityType}. `
+      + `Regimen tributario: ${input.taxRegimeCode}. `
+      + `Regimen IVA: ${input.vatRegime}. `
+      + `Grupo DGI: ${input.dgiGroup}. `
+      + `Estado CFE: ${input.cfeStatus}.`,
+    change_reason: input.changeReason,
+    profile_json: profileJson,
+    created_by: input.actorId,
+    approved_by: input.actorId,
+    approved_at: new Date().toISOString(),
+  };
+  let insertProfileError = (await supabase
     .from("organization_profile_versions")
-    .insert({
-      organization_id: input.organizationId,
-      version_number: nextProfileVersionNumber,
-      status: "active",
-      effective_from: input.effectiveFrom,
-      legal_entity_type: input.legalEntityType,
-      tax_regime_code: input.taxRegimeCode,
-      vat_regime: input.vatRegime,
-      dgi_group: input.dgiGroup,
-      cfe_status: input.cfeStatus,
-      country_code: "UY",
-      tax_id: input.taxId,
-      profile_summary:
-        `Pais: UY. Forma juridica: ${input.legalEntityType}. `
-        + `Regimen tributario: ${input.taxRegimeCode}. `
-        + `Regimen IVA: ${input.vatRegime}. `
-        + `Grupo DGI: ${input.dgiGroup}. `
-        + `Estado CFE: ${input.cfeStatus}.`,
-      change_reason: input.changeReason,
-      profile_json: {
-        activated_from_settings: true,
-      },
-      created_by: input.actorId,
-      approved_by: input.actorId,
-      approved_at: new Date().toISOString(),
-    });
+    .insert(insertPayload)).error;
+
+  if (insertProfileError && isMissingSupabaseColumnError(insertProfileError, "organization_profile_versions")) {
+    const legacyInsertPayload = { ...insertPayload } as Record<string, unknown>;
+    delete legacyInsertPayload.fiscal_address_text;
+    delete legacyInsertPayload.fiscal_department;
+    delete legacyInsertPayload.fiscal_city;
+    delete legacyInsertPayload.fiscal_postal_code;
+    delete legacyInsertPayload.location_risk_policy;
+    delete legacyInsertPayload.travel_radius_km_policy;
+    insertProfileError = (await supabase
+      .from("organization_profile_versions")
+      .insert(legacyInsertPayload)).error;
+  }
 
   if (insertProfileError) {
     throw new Error(insertProfileError.message);

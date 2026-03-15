@@ -21,6 +21,10 @@ function unique(values: string[]) {
 function classifyBlockerFamily(blocker: string): DraftBlockerFamily {
   const normalized = blocker.toLowerCase();
 
+  if (normalized.includes("geograf") || normalized.includes("proposito empresarial")) {
+    return "razonabilidad_geografica";
+  }
+
   if (normalized.includes("duplicad")) {
     return "duplicados";
   }
@@ -75,6 +79,8 @@ function buildProvisionalBlockers(blockers: string[]) {
       || normalized.includes("resolucion contable confiable")
       || normalized.includes("cuenta de ingreso postable resuelta")
       || normalized.includes("cuenta contable postable resuelta")
+      || normalized.includes("proposito empresarial")
+      || normalized.includes("razonabilidad geografica")
     ) {
       return false;
     }
@@ -435,6 +441,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     ruleSnapshot: input.ruleSnapshot,
     linkedOperationType: appliedRule.linkedOperationType,
     userContextText: input.accountingContext.userFreeText,
+    businessPurposeNote: input.accountingContext.businessPurposeNote,
     vatProfile: appliedRule.vatProfileJson,
     monetarySnapshot: input.monetarySnapshot,
   });

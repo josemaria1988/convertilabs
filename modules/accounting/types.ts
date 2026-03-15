@@ -65,7 +65,8 @@ export type DraftBlockerFamily =
   | "contable"
   | "ia"
   | "duplicados"
-  | "periodo";
+  | "periodo"
+  | "razonabilidad_geografica";
 
 export type ReviewJournalLine = {
   lineNumber: number;
@@ -371,7 +372,10 @@ export type AccountingContextReasonCode =
   | "new_concept_without_rule"
   | "vat_operation_dependency"
   | "multiple_candidate_accounts"
-  | "low_confidence";
+  | "low_confidence"
+  | "location_outlier"
+  | "travel_pattern"
+  | "sensitive_merchant_far_from_base";
 
 export type AccountingContextStatus =
   | "not_required"
@@ -401,6 +405,7 @@ export type DocumentAccountingContextRecord = {
 
 export type AccountingContextSaveInput = {
   userFreeText: string | null;
+  businessPurposeNote: string | null;
   manualOverrideAccountId: string | null;
   manualOverrideConceptId: string | null;
   manualOverrideOperationCategory: string | null;
@@ -411,6 +416,7 @@ export type AccountingContextResolution = {
   status: AccountingContextStatus;
   reasonCodes: AccountingContextReasonCode[];
   userFreeText: string | null;
+  businessPurposeNote: string | null;
   structuredContext: JsonRecord;
   aiRequestPayload: JsonRecord;
   aiResponse: JsonRecord;

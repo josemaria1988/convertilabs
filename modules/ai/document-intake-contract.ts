@@ -34,6 +34,12 @@ export type DocumentIntakeCertaintyBreakdown = {
 export type DocumentIntakeFactMap = {
   issuer_name: string | null;
   issuer_tax_id: string | null;
+  issuer_address_raw: string | null;
+  issuer_department: string | null;
+  issuer_city: string | null;
+  issuer_branch_code: string | null;
+  merchant_category_hints: string[];
+  location_extraction_confidence: number | null;
   receiver_name: string | null;
   receiver_tax_id: string | null;
   document_number: string | null;
@@ -259,6 +265,28 @@ export const documentIntakeJsonSchema = {
       properties: {
         issuer_name: nullableStringSchema("Issuer or supplier name."),
         issuer_tax_id: nullableStringSchema("Issuer RUT or fiscal identifier."),
+        issuer_address_raw: nullableStringSchema(
+          "Full issuer address line when the document contains enough textual evidence.",
+        ),
+        issuer_department: nullableStringSchema(
+          "Uruguay department inferred from issuer address only when evidence is sufficient.",
+        ),
+        issuer_city: nullableStringSchema(
+          "Uruguay city inferred from issuer address only when evidence is sufficient.",
+        ),
+        issuer_branch_code: nullableStringSchema(
+          "Issuer local or branch identifier when the document exposes it.",
+        ),
+        merchant_category_hints: {
+          type: "array",
+          description: "Normalized merchant category hints derived from the merchant name or document text.",
+          items: {
+            type: "string",
+          },
+        },
+        location_extraction_confidence: nullableNumberSchema(
+          "Confidence score for issuer location extraction.",
+        ),
         receiver_name: nullableStringSchema("Receiver or customer name."),
         receiver_tax_id: nullableStringSchema("Receiver RUT or fiscal identifier."),
         document_number: nullableStringSchema("Document number."),
@@ -346,6 +374,22 @@ function isNullableNumber(value: unknown): value is number | null {
   return typeof value === "number" || value === null;
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isNullableStringOrUndefined(value: unknown): value is string | null | undefined {
+  return value === undefined || isNullableString(value);
+}
+
+function isNullableNumberOrUndefined(value: unknown): value is number | null | undefined {
+  return value === undefined || isNullableNumber(value);
+}
+
+function isStringArrayOrUndefined(value: unknown): value is string[] | undefined {
+  return value === undefined || isStringArray(value);
+}
+
 function isOrganizationMatch(value: unknown): value is DocumentIntakeOrganizationMatch {
   if (!value || typeof value !== "object") {
     return false;
@@ -403,6 +447,12 @@ function isDocumentIntakeFactMap(value: unknown): value is DocumentIntakeFactMap
   return (
     isNullableString(facts.issuer_name)
     && isNullableString(facts.issuer_tax_id)
+    && isNullableStringOrUndefined(facts.issuer_address_raw)
+    && isNullableStringOrUndefined(facts.issuer_department)
+    && isNullableStringOrUndefined(facts.issuer_city)
+    && isNullableStringOrUndefined(facts.issuer_branch_code)
+    && isStringArrayOrUndefined(facts.merchant_category_hints)
+    && isNullableNumberOrUndefined(facts.location_extraction_confidence)
     && isNullableString(facts.receiver_name)
     && isNullableString(facts.receiver_tax_id)
     && isNullableString(facts.document_number)

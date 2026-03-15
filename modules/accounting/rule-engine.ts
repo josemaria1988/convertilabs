@@ -18,6 +18,7 @@ function parseStoredStructuredContext(record: DocumentAccountingContextRecord | 
   const structured = asRecord(record?.structured_context_json);
 
   return {
+    businessPurposeNote: asString(structured.business_purpose_note),
     manualOverrideAccountId: asString(structured.manual_override_account_id),
     manualOverrideConceptId: asString(structured.manual_override_concept_id),
     manualOverrideOperationCategory: asString(structured.manual_override_operation_category),
@@ -90,6 +91,10 @@ export function resolveAccountingContext(input: {
   activeRules: AccountingSuggestionContext["activeRules"];
   operationCategory: string | null;
   storedContext: DocumentAccountingContextRecord | null;
+  locationSignal?: {
+    code: string;
+    requiresBusinessPurposeReview: boolean;
+  } | null;
 }) {
   const stored = parseStoredStructuredContext(input.storedContext);
   const reasonCodes: AccountingContextReasonCode[] = [];
@@ -125,6 +130,16 @@ export function resolveAccountingContext(input: {
     reasonCodes.push("multiple_candidate_accounts");
   }
 
+  if (input.locationSignal?.requiresBusinessPurposeReview) {
+    if (input.locationSignal.code === "travel_pattern") {
+      reasonCodes.push("travel_pattern");
+    } else if (input.locationSignal.code === "sensitive_merchant_far_from_base") {
+      reasonCodes.push("sensitive_merchant_far_from_base");
+    } else {
+      reasonCodes.push("location_outlier");
+    }
+  }
+
   const uniqueReasonCodes = reasonCodes.filter(
     (reason, index, array) => array.indexOf(reason) === index,
   );
@@ -132,6 +147,7 @@ export function resolveAccountingContext(input: {
     stored.manualOverrideAccountId || stored.manualOverrideOperationCategory,
   );
   const userFreeText = input.storedContext?.user_free_text ?? null;
+  const businessPurposeNote = stored.businessPurposeNote ?? null;
   const hasAssistantPayload = Object.keys(asRecord(input.storedContext?.ai_response_json)).length > 0;
   const status =
     hasManualOverride
@@ -140,7 +156,7 @@ export function resolveAccountingContext(input: {
         ? "not_required"
         : hasAssistantPayload
           ? "assistant_completed"
-          : userFreeText
+          : userFreeText || businessPurposeNote
             ? "provided"
             : "required";
 
@@ -148,7 +164,9 @@ export function resolveAccountingContext(input: {
     status,
     reasonCodes: uniqueReasonCodes,
     userFreeText,
+    businessPurposeNote,
     structuredContext: {
+      business_purpose_note: businessPurposeNote,
       manual_override_account_id: stored.manualOverrideAccountId,
       manual_override_concept_id: stored.manualOverrideConceptId,
       manual_override_operation_category: stored.manualOverrideOperationCategory,
@@ -164,10 +182,14 @@ export function resolveAccountingContext(input: {
     manualOverrideConceptId: stored.manualOverrideConceptId,
     manualOverrideOperationCategory: stored.manualOverrideOperationCategory,
     learnedConceptName: stored.learnedConceptName,
-    shouldBlockConfirmation: uniqueReasonCodes.length > 0 && !hasManualOverride && !userFreeText,
-    canRunAssistant: uniqueReasonCodes.length > 0 && Boolean(userFreeText),
+    shouldBlockConfirmation:
+      uniqueReasonCodes.length > 0
+      && !hasManualOverride
+      && !userFreeText
+      && !businessPurposeNote,
+    canRunAssistant: uniqueReasonCodes.length > 0 && Boolean(userFreeText || businessPurposeNote),
     blockingReasons:
-      uniqueReasonCodes.length > 0 && !hasManualOverride && !userFreeText
+      uniqueReasonCodes.length > 0 && !hasManualOverride && !userFreeText && !businessPurposeNote
         ? ["Falta contexto contable para clasificar el documento con suficiente confianza."]
         : [],
   } satisfies AccountingContextResolution;

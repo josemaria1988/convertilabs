@@ -44,6 +44,12 @@ export async function activateOrganizationProfileVersionAction(formData: FormDat
     cfeStatus: String(formData.get("cfeStatus") ?? "").trim().toUpperCase(),
     effectiveFrom: String(formData.get("effectiveFrom") ?? "").trim(),
     changeReason: String(formData.get("changeReason") ?? "").trim(),
+    fiscalAddressText: String(formData.get("fiscalAddressText") ?? ""),
+    fiscalDepartment: String(formData.get("fiscalDepartment") ?? ""),
+    fiscalCity: String(formData.get("fiscalCity") ?? ""),
+    fiscalPostalCode: String(formData.get("fiscalPostalCode") ?? ""),
+    locationRiskPolicy: String(formData.get("locationRiskPolicy") ?? "warn_and_require_note"),
+    travelRadiusKmPolicy: String(formData.get("travelRadiusKmPolicy") ?? ""),
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);

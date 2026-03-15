@@ -14,6 +14,9 @@ import {
   resolveAccountingAssistantSuggestion,
 } from "@/modules/accounting/assistant";
 import {
+  evaluateLocationRisk,
+} from "@/modules/accounting/location-risk-engine";
+import {
   resolveAccountingContext,
 } from "@/modules/accounting/rule-engine";
 import {
@@ -160,6 +163,22 @@ export async function deriveDocumentAccountingState(input: {
     input.storedContext === undefined
       ? await loadDocumentAccountingContext(input.supabase, input.draftId)
       : input.storedContext;
+  const locationRisk = evaluateLocationRisk({
+    documentRole: input.documentRole,
+    organizationDepartment: input.profile?.fiscalDepartment ?? null,
+    organizationCity: input.profile?.fiscalCity ?? null,
+    locationRiskPolicy: input.profile?.locationRiskPolicy ?? null,
+    travelRadiusKmPolicy: input.profile?.travelRadiusKmPolicy ?? null,
+    issuerName: input.facts.issuer_name,
+    issuerAddressRaw: input.facts.issuer_address_raw,
+    issuerDepartment: input.facts.issuer_department,
+    issuerCity: input.facts.issuer_city,
+    issuerBranchCode: input.facts.issuer_branch_code,
+    merchantCategoryHints: input.facts.merchant_category_hints,
+    locationExtractionConfidence: input.facts.location_extraction_confidence,
+    operationCategory: input.operationCategory,
+    userContextText: storedContext?.user_free_text ?? null,
+  });
   const accountingContext = resolveAccountingContext({
     documentId: input.documentId,
     documentRole: input.documentRole,
@@ -168,6 +187,10 @@ export async function deriveDocumentAccountingState(input: {
     activeRules: runtimeContext.activeRules,
     operationCategory: input.operationCategory,
     storedContext,
+    locationSignal: {
+      code: locationRisk.locationSignalCode,
+      requiresBusinessPurposeReview: locationRisk.requiresBusinessPurposeReview,
+    },
   });
   const monetarySnapshot = await buildDocumentMonetarySnapshot({
     facts: input.facts,
@@ -212,7 +235,9 @@ export async function deriveDocumentAccountingState(input: {
         defaultAccountId: concept.default_account_id,
         defaultOperationCategory: concept.default_operation_category,
       })),
-      userContextText: accountingContext.userFreeText ?? "",
+      userContextText: [accountingContext.userFreeText, accountingContext.businessPurposeNote]
+        .filter((value): value is string => Boolean(value))
+        .join("\n"),
       allowedTargets: runtimeContext.accounts,
       allowedAccounts: runtimeContext.accounts,
       allowedConcepts: runtimeContext.concepts,

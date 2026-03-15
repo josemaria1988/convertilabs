@@ -27,6 +27,18 @@ const documentStep5Patterns = [
   /fx_rate_document_value/i,
   /fx_rate_document_date/i,
   /fx_rate_override_reason/i,
+  /issuer_address_raw/i,
+  /issuer_department/i,
+  /issuer_city/i,
+  /issuer_branch_code/i,
+  /location_extraction_confidence/i,
+  /location_signal_code/i,
+  /location_signal_severity/i,
+  /location_signal_payload/i,
+  /requires_business_purpose_review/i,
+  /business_purpose_note/i,
+  /suggested_expense_family/i,
+  /suggested_tax_profile_code/i,
   /vat_credit_category/i,
   /vat_deductibility_status/i,
   /vat_direct_tax_amount_uyu/i,
@@ -120,6 +132,18 @@ export function omitDocumentStep5Columns<T extends Record<string, unknown>>(
   delete clone.fx_rate_document_date;
   delete clone.fx_rate_source;
   delete clone.fx_rate_override_reason;
+  delete clone.issuer_address_raw;
+  delete clone.issuer_department;
+  delete clone.issuer_city;
+  delete clone.issuer_branch_code;
+  delete clone.location_extraction_confidence;
+  delete clone.location_signal_code;
+  delete clone.location_signal_severity;
+  delete clone.location_signal_payload;
+  delete clone.requires_business_purpose_review;
+  delete clone.business_purpose_note;
+  delete clone.suggested_expense_family;
+  delete clone.suggested_tax_profile_code;
   delete clone.vat_credit_category;
   delete clone.vat_deductibility_status;
   delete clone.vat_direct_tax_amount_uyu;
@@ -152,6 +176,18 @@ export function omitDocumentStep5Columns<T extends Record<string, unknown>>(
     | "fx_rate_document_date"
     | "fx_rate_source"
     | "fx_rate_override_reason"
+    | "issuer_address_raw"
+    | "issuer_department"
+    | "issuer_city"
+    | "issuer_branch_code"
+    | "location_extraction_confidence"
+    | "location_signal_code"
+    | "location_signal_severity"
+    | "location_signal_payload"
+    | "requires_business_purpose_review"
+    | "business_purpose_note"
+    | "suggested_expense_family"
+    | "suggested_tax_profile_code"
     | "vat_credit_category"
     | "vat_deductibility_status"
     | "vat_direct_tax_amount_uyu"

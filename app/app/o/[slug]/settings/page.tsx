@@ -71,6 +71,31 @@ export default async function OrganizationSettingsPage({
     loadOrganizationChartManagementData(organization.id),
   ]);
   const effectiveFromDefault = new Date().toISOString().slice(0, 10);
+  const activeProfileJson = (settings.activeProfile?.profile_json ?? {}) as Record<string, unknown>;
+  const activeFiscalAddress =
+    typeof activeProfileJson.fiscal_address_text === "string"
+      ? activeProfileJson.fiscal_address_text
+      : "";
+  const activeFiscalDepartment =
+    typeof activeProfileJson.fiscal_department === "string"
+      ? activeProfileJson.fiscal_department
+      : "";
+  const activeFiscalCity =
+    typeof activeProfileJson.fiscal_city === "string"
+      ? activeProfileJson.fiscal_city
+      : "";
+  const activeFiscalPostalCode =
+    typeof activeProfileJson.fiscal_postal_code === "string"
+      ? activeProfileJson.fiscal_postal_code
+      : "";
+  const activeLocationRiskPolicy =
+    typeof activeProfileJson.location_risk_policy === "string"
+      ? activeProfileJson.location_risk_policy
+      : "warn_and_require_note";
+  const activeTravelRadiusKmPolicy =
+    typeof activeProfileJson.travel_radius_km_policy === "number"
+      ? String(activeProfileJson.travel_radius_km_policy)
+      : "";
 
   return (
     <PrivateDashboardShell
@@ -234,6 +259,10 @@ export default async function OrganizationSettingsPage({
               <p>Grupo DGI: {settings.organization.dgiGroup ?? "Sin definir"}</p>
               <p>Estado CFE: {settings.organization.cfeStatus ?? "Sin definir"}</p>
               <p>RUT: {settings.organization.taxId ?? "Sin definir"}</p>
+              <p>Base geografica: {activeFiscalCity || activeFiscalDepartment
+                ? `${activeFiscalCity || "Ciudad sin definir"} / ${activeFiscalDepartment || "Departamento sin definir"}`
+                : "Sin definir"}</p>
+              <p>Politica geografica: {activeLocationRiskPolicy.replace(/_/g, " ")}</p>
             </div>
 
             <form action={activateOrganizationProfileVersionAction} className="mt-6 space-y-4">
@@ -333,6 +362,69 @@ export default async function OrganizationSettingsPage({
                     type="date"
                     name="effectiveFrom"
                     defaultValue={effectiveFromDefault}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span className="font-medium">Direccion fiscal</span>
+                  <input
+                    name="fiscalAddressText"
+                    defaultValue={activeFiscalAddress}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Departamento base</span>
+                  <input
+                    name="fiscalDepartment"
+                    defaultValue={activeFiscalDepartment}
+                    placeholder="Montevideo"
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Ciudad base</span>
+                  <input
+                    name="fiscalCity"
+                    defaultValue={activeFiscalCity}
+                    placeholder="Montevideo"
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Codigo postal</span>
+                  <input
+                    name="fiscalPostalCode"
+                    defaultValue={activeFiscalPostalCode}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Politica geografica</span>
+                  <select
+                    name="locationRiskPolicy"
+                    defaultValue={activeLocationRiskPolicy}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  >
+                    <option value="soft_warn">Solo advertir</option>
+                    <option value="warn_and_require_note">Advertir y exigir nota</option>
+                    <option value="suggest_non_deductible">Sugerir no deducible</option>
+                  </select>
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Radio de viaje (km)</span>
+                  <input
+                    name="travelRadiusKmPolicy"
+                    defaultValue={activeTravelRadiusKmPolicy}
+                    placeholder="Opcional"
                     className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
                   />
                 </label>

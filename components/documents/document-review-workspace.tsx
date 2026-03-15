@@ -33,6 +33,7 @@ type SaveDraftReviewAction = (input: {
     facts?: Partial<Record<keyof DocumentIntakeFactMap, string | number | null>>;
     accountingContext?: {
       userFreeText?: string | null;
+      businessPurposeNote?: string | null;
       manualOverrideAccountId?: string | null;
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
@@ -169,6 +170,15 @@ type DocumentReviewWorkspaceProps = {
         vatNondeductibleTaxAmountUyu: number;
         vatProrationCoefficient: number | null;
         businessLinkStatus: string;
+        locationSignalCode: string;
+        locationSignalSeverity: "info" | "warning" | "high";
+        locationSignalExplanation: string | null;
+        locationSignalPayload: Record<string, unknown>;
+        requiresBusinessPurposeReview: boolean;
+        requiresUserJustification: boolean;
+        businessPurposeNote: string | null;
+        suggestedTaxProfileCode: string | null;
+        suggestedExpenseFamily: string | null;
         rate: number | null;
         explanation: string;
         warnings: string[];
@@ -260,6 +270,7 @@ type DocumentReviewWorkspaceProps = {
         status: string;
         reasonCodes: string[];
         userFreeText: string | null;
+        businessPurposeNote: string | null;
         manualOverrideAccountId: string | null;
         manualOverrideConceptId: string | null;
         manualOverrideOperationCategory: string | null;
@@ -472,6 +483,68 @@ function formatPostingStatus(value: string | null) {
   }
 }
 
+function formatBlockerFamily(value: string) {
+  switch (value) {
+    case "documental":
+      return "Documental";
+    case "fiscal":
+      return "Fiscal";
+    case "contable":
+      return "Contable";
+    case "ia":
+      return "IA";
+    case "duplicados":
+      return "Duplicados";
+    case "periodo":
+      return "Periodo";
+    case "razonabilidad_geografica":
+      return "Razonabilidad geografica";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function formatLocationSignalSeverity(value: "info" | "warning" | "high") {
+  switch (value) {
+    case "high":
+      return "Alto";
+    case "warning":
+      return "Advertencia";
+    default:
+      return "Informativo";
+  }
+}
+
+function getLocationSignalSeverityClasses(value: "info" | "warning" | "high") {
+  switch (value) {
+    case "high":
+      return "bg-rose-100 text-rose-900";
+    case "warning":
+      return "bg-amber-100 text-amber-900";
+    default:
+      return "bg-sky-100 text-sky-900";
+  }
+}
+
+function formatLocationSignalCode(value: string) {
+  switch (value) {
+    case "same_city":
+      return "Misma ciudad";
+    case "same_department_other_city":
+      return "Mismo departamento, otra ciudad";
+    case "other_department":
+      return "Otro departamento";
+    case "travel_pattern":
+      return "Patron de viaje";
+    case "sensitive_merchant_far_from_base":
+      return "Comercio sensible lejos de la base";
+    case "missing_location_evidence":
+      return "Sin evidencia suficiente";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
 function getPostingStatusClasses(value: string | null) {
   switch (value) {
     case "posted_final":
@@ -530,6 +603,9 @@ export function DocumentReviewWorkspace({
   );
   const [accountingContext, setAccountingContext] = useState({
     userFreeText: pageData.derived.accountingContext.userFreeText ?? "",
+    businessPurposeNote: pageData.derived.accountingContext.businessPurposeNote
+      ?? pageData.derived.taxTreatment.businessPurposeNote
+      ?? "",
     manualOverrideAccountId: pageData.derived.accountingContext.manualOverrideAccountId ?? "",
     manualOverrideConceptId: pageData.derived.accountingContext.manualOverrideConceptId ?? "",
     manualOverrideOperationCategory:
@@ -575,6 +651,9 @@ export function DocumentReviewWorkspace({
     setOperationCategory(pageData.draft.operationCategory ?? "");
     setAccountingContext({
       userFreeText: pageData.derived.accountingContext.userFreeText ?? "",
+      businessPurposeNote: pageData.derived.accountingContext.businessPurposeNote
+        ?? pageData.derived.taxTreatment.businessPurposeNote
+        ?? "",
       manualOverrideAccountId: pageData.derived.accountingContext.manualOverrideAccountId ?? "",
       manualOverrideConceptId: pageData.derived.accountingContext.manualOverrideConceptId ?? "",
       manualOverrideOperationCategory:
@@ -598,6 +677,7 @@ export function DocumentReviewWorkspace({
     return {
       accountingContext: {
         userFreeText: nextAccountingContext.userFreeText,
+        businessPurposeNote: nextAccountingContext.businessPurposeNote,
         manualOverrideAccountId: nextAccountingContext.manualOverrideAccountId || null,
         manualOverrideConceptId: nextAccountingContext.manualOverrideConceptId || null,
         manualOverrideOperationCategory:
@@ -1167,11 +1247,37 @@ export function DocumentReviewWorkspace({
 
         <article className="panel p-6">
           <div className="mb-4">
-            <h3 className="text-2xl font-semibold tracking-[-0.05em]">Accounting Context</h3>
+            <h3 className="text-2xl font-semibold tracking-[-0.05em]">Contexto contable y proposito empresarial</h3>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
               Se pide solo cuando el matching no alcanza. El texto queda auditado y puede disparar una segunda pasada de IA.
             </p>
           </div>
+
+          {pageData.derived.taxTreatment.locationSignalCode !== "none" ? (
+            <div className="mb-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-semibold">Razonabilidad geografica</p>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getLocationSignalSeverityClasses(pageData.derived.taxTreatment.locationSignalSeverity)}`}>
+                  {formatLocationSignalSeverity(pageData.derived.taxTreatment.locationSignalSeverity)}
+                </span>
+              </div>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Signal: {formatLocationSignalCode(pageData.derived.taxTreatment.locationSignalCode)}
+              </p>
+              <p className="mt-2 leading-6 text-[color:var(--color-muted)]">
+                {pageData.derived.taxTreatment.locationSignalExplanation
+                  ?? "Sin explicacion adicional."}
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <p className="text-[color:var(--color-muted)]">
+                  Familia sugerida: {pageData.derived.taxTreatment.suggestedExpenseFamily ?? "Sin sugerencia"}
+                </p>
+                <p className="text-[color:var(--color-muted)]">
+                  Perfil fiscal sugerido: {pageData.derived.taxTreatment.suggestedTaxProfileCode ?? "Sin sugerencia"}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm md:col-span-2">
@@ -1187,6 +1293,29 @@ export function DocumentReviewWorkspace({
                 placeholder="Explica que tipo de gasto es, con que finalidad se incurrio, a que operacion/proyecto/actividad esta vinculado y cualquier otro dato util."
                 className="min-h-32 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
               />
+            </label>
+
+            <label className="space-y-2 text-sm md:col-span-2">
+              <span className="font-medium">
+                Justificacion de proposito empresarial
+                {pageData.derived.taxTreatment.requiresUserJustification ? " *" : ""}
+              </span>
+              <textarea
+                value={accountingContext.businessPurposeNote}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    businessPurposeNote: event.target.value,
+                  }));
+                }}
+                placeholder="Explica por que el gasto fuera de la base geografica sigue siendo empresarial, a que viaje, cliente, obra o actividad responde y que evidencia contextual lo respalda."
+                className="min-h-28 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+              />
+              {pageData.derived.taxTreatment.requiresUserJustification ? (
+                <p className="text-xs leading-6 text-amber-900">
+                  Este caso requiere nota auditada para confirmar final. El posteo provisional sigue habilitado si el resto del documento esta consistente.
+                </p>
+              ) : null}
             </label>
 
             <label className="space-y-2 text-sm">
@@ -1455,7 +1584,7 @@ export function DocumentReviewWorkspace({
             <div className="mt-4 space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
               {pageData.derived.validation.blockerGroups.map((group) => (
                 <div key={group.family}>
-                  <p className="font-semibold capitalize">{group.family}</p>
+                  <p className="font-semibold">{formatBlockerFamily(group.family)}</p>
                   <p className="mt-1 leading-6">{group.blockers.join(" ")}</p>
                 </div>
               ))}

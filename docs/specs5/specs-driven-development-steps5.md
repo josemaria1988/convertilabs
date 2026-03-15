@@ -10,7 +10,8 @@ Implementar una evolución del flujo contable/fiscal para Convertilabs que:
 4. soporte importación inteligente de planes de cuentas desde planillas heterogéneas;
 5. deje la base lista para otros impuestos y cierre anual;
 6. incorpore correctamente la capa bimonetaria Uruguay (UYU/USD) con persistencia del tipo de cambio fiscal usado;
-7. reencuadre el MVP como capa de conciliación y decisión fiscal sobre CFE/DGI, sin competir con DGI como simple resumen de IVA ni exigir migración de ERP.
+7. reencuadre el MVP como capa de conciliación y decisión fiscal sobre CFE/DGI, sin competir con DGI como simple resumen de IVA ni exigir migración de ERP;
+8. incorpore una capa determinística de razonabilidad geográfica para ayudar a decidir deducibilidad, viáticos y revisión manual sin depender de APIs pagas.
 
 ---
 
@@ -40,6 +41,8 @@ Adoptar un híbrido de:
 6. Agregar un plan de cuentas estándar del sistema, importador-friendly y NIIF-ready.
 7. Agregar importación inteligente de plan de cuentas desde XLSX/CSV con IA + schema estricto.
 8. Persistir montos originales y montos convertidos a UYU con tipo de cambio fiscal trazable.
+9. Agregar validación determinística de geolocalización por departamento/ciudad con dataset offline de Uruguay.
+10. Tratar la geolocalización como señal de riesgo y evidencia de razonabilidad, no como sustituto del criterio contable/tributario humano.
 
 ### Lo que no se hará
 
@@ -49,6 +52,9 @@ Adoptar un híbrido de:
 4. No usar sólo una confirmación monolítica para todo el downstream.
 5. No usar el tipo de cambio “del mismo día de factura” como regla fiscal automática: se debe modelar la regla normativa y guardar la fecha BCU realmente usada.
 6. No posicionar el producto como reemplazo del ERP del cliente ni como un duplicado del resumen fiscal de DGI.
+7. No tratar la distancia como una regla legal dura de DGI: debe modelarse como señal de riesgo auditable.
+8. No depender de Google Maps ni APIs pagas en el hot path documental.
+9. No negar el crédito fiscal únicamente por geografía sin posibilidad de justificación documentada y override auditado.
 
 ---
 
@@ -81,6 +87,7 @@ Convertilabs se posiciona como la capa intermedia que:
 5. Propósito económico/operativo del gasto o compra.
 6. Cuenta destino o template contable que debe alimentarse en el ERP del cliente.
 7. Open items, deuda con proveedores, vencimientos, importaciones vinculadas y demás efectos operativos.
+8. Razonabilidad geográfica del gasto y evidencia contextual de propósito empresarial.
 
 ### Nueva definición del MVP
 
@@ -108,6 +115,23 @@ Sí convertirlo en:
 - capa de estructuración/exportación,
 - y puente entre documentos, DGI y el sistema contable del cliente.
 
+### Nueva cuña adicional: razonabilidad geográfica
+
+La geolocalización no entra como una regla legal autónoma de DGI del tipo “si está a X km entonces no deduce”.
+
+Entra como una señal de razonabilidad y de riesgo fiscal/contable que ayuda a responder preguntas que hoy muchos contadores resuelven “a ojo”:
+
+- ¿la ubicación del emisor parece compatible con el uso empresarial declarado?
+- ¿esto parece compra operativa, viático, gasto de representación o gasto personal?
+- ¿corresponde pedir justificación antes de tomar el IVA como deducible?
+
+Por diseño, esta capa debe:
+
+1. ser determinística y barata;
+2. correr offline con datos de Uruguay;
+3. producir warning, evidencia y sugerencia;
+4. no reemplazar el juicio profesional ni la política fiscal de la organización.
+
 ---
 
 ## Contexto del repo actual que se debe respetar
@@ -123,6 +147,53 @@ Del workflow actual ya surge que:
 - hoy la confirmación exige demasiada madurez contable demasiado temprano.
 
 Por lo tanto, este rediseño debe extender el flujo existente y no demolerlo.
+
+## Capa determinística de geolocalización fiscal
+
+### Decisión adoptada
+
+Implementar una primera versión simple, robusta y barata basada en `departamento + ciudad`, corriendo offline con datos oficiales de Uruguay.
+
+### Motivo
+
+El objetivo no es “hacer mapas”. El objetivo es automatizar una prueba de razonabilidad que muchos contadores hoy hacen manualmente al mirar supermercado, restaurante, farmacia, hotel, peaje o tickets similares.
+
+### Diseño elegido
+
+#### Fase 1 — Offline y suficiente para el piloto
+
+Comparar:
+
+- `organization.fiscal_department`
+- `organization.fiscal_city`
+- `document.issuer_department`
+- `document.issuer_city`
+- `vendor.merchant_category_hint`
+
+Con eso alcanza para generar señales útiles en la mayoría de los casos del piloto, sin costo operativo externo.
+
+#### Fase 2 — Mejoras opcionales
+
+Agregar cuando exista evidencia suficiente:
+
+- lat/long de la organización;
+- lat/long del emisor/sucursal;
+- distancia geodésica;
+- branch mapping por proveedor recurrente.
+
+#### Fase 3 — Nunca en el hot path inicial
+
+No llamar a APIs pagas ni a geocodificación online en cada documento.
+
+Si en el futuro se usa un servicio de geocodificación, debe ser sólo para enriquecimiento asíncrono y cacheado.
+
+### Principios de implementación
+
+1. `department mismatch` es una señal fuerte pero no una condena automática.
+2. `same department + different city` es señal media y se usa para revisión contextual.
+3. La categoría del proveedor pesa tanto como la distancia.
+4. La política final la define la organización y puede ser más o menos conservadora.
+5. Toda decisión derivada de esta capa debe dejar auditoría y explicación visible.
 
 ---
 
@@ -180,10 +251,6 @@ Campos mínimos:
 - `is_import_related`
 - `requires_linked_import_operation`
 - `result_kind`
-- `vat_credit_category`
-- `deductibility_mode`
-- `requires_proration`
-- `requires_business_purpose_review`
 - `default_dgi_mapping_key`
 - `block_if_missing_fx_rate`
 
@@ -236,6 +303,53 @@ Campos mínimos:
 - `last_applied_at`
 
 ---
+### 5. Location Risk Signals
+
+Capa determinística auxiliar. No decide sola la deducibilidad; produce señal de riesgo y puede exigir justificación.
+
+Objetivos:
+
+- elevar precisión en deducible / no deducible;
+- distinguir mejor entre gasto operativo, viático, representación y gasto personal probable;
+- dar tranquilidad a contadores conservadores sin llenar el sistema de criterios mágicos.
+
+Fuentes de evidencia:
+
+- domicilio fiscal de la organización;
+- dirección/ciudad/departamento del emisor extraídos del documento;
+- código de sucursal/local cuando el documento lo muestre;
+- padrón offline de localidades y, más adelante, direcciones geográficas oficiales de Uruguay.
+
+Salida mínima del engine:
+
+- `none`
+- `same_city`
+- `same_department_other_city`
+- `other_department`
+- `distance_outlier`
+- `travel_pattern`
+- `sensitive_merchant_far_from_base`
+- `missing_location_evidence`
+
+Campos mínimos asociados:
+
+- `location_signal_code`
+- `location_signal_severity` (`info`, `warning`, `high`)
+- `location_signal_payload`
+- `requires_business_purpose_review`
+- `business_purpose_note`
+- `suggested_expense_family`
+- `suggested_tax_profile_code`
+
+Reglas de producto:
+
+1. La geografía es evidencia contextual, no sentencia tributaria automática.
+2. Para rubros sensibles (`supermercado`, `restaurante`, `farmacia`, `retail_general`) y señal fuerte, el sistema debe exigir revisión o justificación antes de `posted_final`.
+3. Para rubros naturalmente itinerantes (`hotel`, `peaje`, `combustible_ruta`, `pasajes`, `logística`) la misma señal puede sugerir `viático` o `travel_pattern`, no necesariamente `no_deducible`.
+4. El criterio debe ser parametrizable por organización y por categoría de proveedor.
+5. La primera versión debe comparar principalmente `departamento` y `ciudad`; la distancia geodésica exacta queda como mejora opcional cuando ambas ubicaciones estén geocodificadas con suficiente confianza.
+
+---
 
 ## Nuevo lifecycle de documentos
 
@@ -270,7 +384,6 @@ Uso:
 - sí alimenta VAT run
 - sí permite trazabilidad fiscal
 - sí permite open items cuando corresponda
-- requiere que el tratamiento fiscal mínimo ya esté resuelto
 - no promueve aprendizaje fuerte
 - debe aparecer en bandeja de recategorización
 
@@ -310,44 +423,6 @@ si el documento no tiene journal persistido, se vuelve más difícil mantener co
 - reaperturas,
 - reaplicación de reglas,
 - auditoría.
-
----
-
-## Motor de crédito fiscal y prorrata
-
-Este es uno de los diferenciales reales del producto frente al simple resumen de DGI.
-
-Todo documento de compra, gasto, importación o activo con potencial impacto en IVA debe terminar con una resolución explícita de crédito fiscal.
-
-### Resultado fiscal mínimo por documento
-
-Persistir como mínimo:
-
-- `vat_credit_category` (`input_direct`, `input_indirect`, `input_import`, `input_non_deductible`, `not_applicable`)
-- `vat_deductibility_status` (`full`, `partial_prorrata`, `none`, `pending_review`)
-- `vat_direct_tax_amount_uyu`
-- `vat_indirect_tax_amount_uyu`
-- `vat_deductible_tax_amount_uyu`
-- `vat_nondeductible_tax_amount_uyu`
-- `vat_proration_coefficient`
-- `business_link_status` (`linked`, `not_linked`, `needs_review`)
-
-### Reglas funcionales
-
-1. El baseline de DGI nunca sustituye esta clasificación; solo sirve como referencia y conciliación.
-2. Para llegar a `posted_provisional`, el documento ya debe tener resuelto el tratamiento fiscal mínimo de IVA; `pending_review` no puede alimentar el VAT run.
-3. El IVA no deducible o parcialmente deducible no debe quedar silenciosamente registrado como 100% crédito fiscal.
-4. La porción no deducible podrá:
-   - absorberse en la cuenta principal del documento, o
-   - ir a una cuenta/configuración técnica específica,
-   según template y política de la organización.
-5. Cuando haya ventas gravadas, no gravadas, exentas, exportaciones o regímenes mixtos, el engine debe soportar prorrata / porcentual con coeficiente por período.
-6. La UI de review debe mostrar esta decisión de forma separada de la cuenta contable.
-
-### Regla de seguridad
-
-No inferir automáticamente que un IVA compras es deducible solo porque existe una factura electrónica en DGI.
-La deducibilidad depende de la operación, del vínculo con la actividad y del régimen aplicable.
 
 ---
 
@@ -571,24 +646,6 @@ Condiciones:
 - `main_purchase_slot` puede resolver a inventario, gasto o activo fijo según contexto
 - si no hay cuenta definitiva, puede resolver a `TEMP-EXP`, `TEMP-INV` o `TEMP-AST`
 
-## T1B. Compra local gravada con IVA parcialmente deducible / prorrata
-
-Plantilla:
-
-- Dr `main_purchase_slot` por neto + porción IVA no deducible
-- Dr `vat_input_slot` por porción IVA deducible
-- Cr `ap_slot`
-
-## T1C. Compra local gravada con IVA no deducible
-
-Plantilla:
-
-- Dr `main_purchase_slot` por neto + IVA total
-- Cr `ap_slot`
-
-Observación:
-no debe usarse `vat_input_slot` salvo política específica de puente técnico.
-
 ## T2. Venta local gravada 22%
 
 Plantilla:
@@ -765,15 +822,6 @@ Agregar:
 - `fx_rate_document_date`
 - `fx_rate_source`
 - `fx_rate_override_reason`
-- `vat_credit_category`
-- `vat_deductibility_status`
-- `vat_direct_tax_amount_uyu`
-- `vat_indirect_tax_amount_uyu`
-- `vat_deductible_tax_amount_uyu`
-- `vat_nondeductible_tax_amount_uyu`
-- `vat_proration_coefficient`
-- `business_link_status`
-- `dgi_reconciliation_status`
 
 ## 2. `chart_of_accounts`
 
@@ -839,35 +887,73 @@ Agregar o confirmar campos para:
 - `normalized_payload`
 - `error_report`
 
+## 8. `organization_profile_versions`
 
-## 8. `dgi_reconciliation_runs`
+Agregar:
 
-Agregar tabla para conciliación mensual contra baseline DGI:
+- `fiscal_address_text`
+- `fiscal_department`
+- `fiscal_city`
+- `fiscal_postal_code`
+- `fiscal_lat`
+- `fiscal_long`
+- `location_risk_policy` (`soft_warn`, `warn_and_require_note`, `suggest_non_deductible`)
+- `travel_radius_km_policy` (nullable; no usar en v1 como regla única)
 
-- `id`
-- `organization_id`
-- `period_year`
-- `period_month`
-- `source_kind` (`manual_summary`, `imported_file`, `future_connector`)
-- `status` (`draft`, `computed`, `reviewed`, `closed`)
-- `baseline_payload`
-- `differences_payload`
-- `created_by`
-- `reviewed_at`
+## 9. `vendors`
 
-## 9. `dgi_reconciliation_buckets`
+Agregar:
 
-Agregar tabla hija opcional o vista materializada con buckets calculados:
+- `fiscal_address_text`
+- `fiscal_department`
+- `fiscal_city`
+- `fiscal_lat`
+- `fiscal_long`
+- `issuer_branch_code`
+- `merchant_category_hint`
+- `location_confidence`
 
-- `run_id`
-- `bucket_code`
-- `dgi_net_amount_uyu`
-- `system_net_amount_uyu`
-- `dgi_tax_amount_uyu`
-- `system_tax_amount_uyu`
-- `delta_net_amount_uyu`
-- `delta_tax_amount_uyu`
-- `difference_status`
+## 10. `document_drafts` o tabla equivalente de facts persistidos
+
+Persistir, cuando surjan del intake:
+
+- `issuer_address_raw`
+- `issuer_department`
+- `issuer_city`
+- `issuer_branch_code`
+- `location_signal_code`
+- `location_signal_severity`
+- `location_signal_payload`
+- `requires_business_purpose_review`
+- `business_purpose_note`
+
+## 11. `document_accounting_contexts` o tabla equivalente
+
+Agregar reason code nuevo:
+
+- `location_outlier`
+- `travel_pattern`
+- `sensitive_merchant_far_from_base`
+
+## 12. Nueva tabla seed/local registry
+
+Crear:
+
+- `uy_locations`
+
+Campos mínimos:
+
+- `department`
+- `city`
+- `postal_code`
+- `lat`
+- `long`
+- `source`
+- `source_version`
+
+Opcional futura:
+
+- `vendor_branch_locations` para mapear sucursales recurrentes a ubicación validada.
 
 ---
 
@@ -902,6 +988,7 @@ Resolver contra:
 - regla provisional
 - template contable
 - tax profile
+- location signal
 - cuentas provisionales cuando falte cuenta fina
 
 ### `modules/accounting/journal-builder.ts`
@@ -916,14 +1003,16 @@ Implementar promoción:
 - `candidate -> provisional -> approved`
 
 ### `modules/tax/uy-vat-engine.ts`
-Consumir y producir:
+Consumir:
 - montos UYU ya convertidos,
 - `fx_rate_policy_code`,
 - `tax_profile_code`,
-- `posted_provisional` como elegible downstream,
-- clasificación `directo / indirecto / no deducible / importación`,
-- montos deducibles y no deducibles,
-- coeficiente de prorrata cuando corresponda
+- `location_signal_code`,
+- `requires_business_purpose_review`,
+- `posted_provisional` como elegible downstream
+
+Regla importante:
+- la geolocalización no debe reescribir sola el tratamiento IVA final; debe actuar como señal que puede sugerir `UY_VAT_NON_DEDUCTIBLE`, `viático` o revisión obligatoria según política.
 
 ### `modules/tax/vat-runs.ts`
 Tomar documentos en:
@@ -939,12 +1028,28 @@ Hacer el salto final:
 - `tax_profile_code` -> `organization_dgi_form_mappings`
 - nunca inferir la línea DGI desde la cuenta sola
 
+### `modules/ai/document-intake-contract.ts`
+Extender extracción documental con:
+- `issuer_address_raw`
+- `issuer_department`
+- `issuer_city`
+- `issuer_branch_code`
+- `merchant_category_hints`
+- `location_extraction_confidence`
+
+### `modules/accounting/vendor-resolution.ts`
+Permitir enriquecimiento y persistencia incremental de:
+- departamento / ciudad del proveedor
+- sucursal si se detecta
+- categoría de comercio sugerida
+
 ### `modules/documents/review.ts`
 Separar:
 - validación documental/fiscal
 - posteo provisional
 - posteo final
 - reapertura y recategorización
+- captura de justificación de propósito empresarial cuando el signal geográfico lo requiera
 
 ### `components/documents/document-review-workspace.tsx`
 Agregar:
@@ -953,8 +1058,8 @@ Agregar:
 - indicador de cuenta provisional
 - CTA para `Asignar cuenta definitiva`
 - CTA para `Importar plan de cuentas`
-- panel `Crédito fiscal` con directo / indirecto / no deducible / prorrata
-- warning separado cuando existe diferencia con baseline DGI del período
+- warning de razonabilidad geográfica
+- campo obligatorio de justificación cuando la política lo requiera
 
 ### `modules/spreadsheets/import-runner.ts`
 Extender con modo:
@@ -966,22 +1071,6 @@ Agregar flujo para:
 - parsear
 - previsualizar
 - aprobar adopción
-
-### `modules/tax/dgi-reconciliation.ts`
-Nuevo servicio para:
-- recibir baseline DGI del período
-- calcular buckets comparables
-- detectar diferencias
-- producir payload auditable de conciliación
-
-### `modules/tax/dgi-reconciliation-repository.ts`
-Persistir corridas, buckets y estados de conciliación.
-
-### `modules/exports/accounting-adapters.ts`
-Agregar exportación contable genérica sin migración:
-- CSV/XLSX de journals
-- mapping por `external_code`
-- layouts configurables por cliente/sistema destino
 
 ---
 
@@ -995,9 +1084,9 @@ Agregar exportación contable genérica sin migración:
 - `modules/accounting/chart-import-normalizer.ts`
 - `modules/accounting/fx-policy.ts`
 - `modules/accounting/bcu-fx-service.ts`
-- `modules/tax/dgi-summary-normalizer.ts`
-- `components/tax/dgi-reconciliation-workspace.tsx`
-- `modules/exports/external-system-layouts.ts`
+- `modules/accounting/location-risk-engine.ts`
+- `modules/accounting/location-parser.ts`
+- `modules/accounting/uy-location-registry.ts`
 
 ---
 
@@ -1137,6 +1226,25 @@ Aceptar planillas exportadas de sistemas externos o hechas a mano, donde el orde
 
 ---
 
+## Extensión del intake documental para geolocalización
+
+Además del contrato actual de intake documental, agregar extracción explícita de ubicación del emisor con este criterio:
+
+1. priorizar `issuer_branch_code` o identificadores de local/sucursal cuando existan;
+2. extraer `issuer_address_raw` como texto completo;
+3. inferir `issuer_department` e `issuer_city` sólo cuando haya evidencia textual suficiente;
+4. si no hay evidencia suficiente, devolver `null` y `needs_review`, no inventar;
+5. devolver `location_extraction_confidence`;
+6. conservar snapshot textual para auditoría.
+
+### Mini system prompt adicional para intake documental
+
+> Extrae la ubicación del emisor sólo cuando exista evidencia suficiente en el documento.
+> Prioriza códigos de sucursal/local, ciudad, departamento y dirección completa.
+> No inventes departamento o ciudad a partir del nombre comercial solamente.
+> Si la evidencia es parcial, devuelve `issuer_address_raw` y deja `issuer_department` o `issuer_city` en null.
+> Devuelve siempre `location_extraction_confidence` y una breve explicación estructurada de dónde surgió la ubicación.
+
 ## Flujo de adopción de plan de cuentas importado
 
 1. usuario sube archivo;
@@ -1172,52 +1280,61 @@ Nunca fusionar automáticamente cuentas importadas con cuentas existentes sin ap
 
 ---
 
-## Capacidad nueva obligatoria: conciliación contra DGI
+## Reglas determinísticas de geolocalización
 
-### Objetivo
+### Objetivo operativo
 
-Usar DGI como baseline y validador fiscal, no como enemigo de producto.
+Aumentar precisión en la decisión de IVA deducible / no deducible y mejorar la detección temprana de viáticos, representación o gasto personal probable.
 
-El sistema debe poder comparar lo que Convertilabs procesó contra lo que el contribuyente ve en DGI para el mismo período y explicar diferencias.
+### Política adoptada para v1
 
-### Formas de entrada del baseline DGI para MVP
+#### 1. Fuente de datos
 
-1. carga manual asistida de totales por bucket;
-2. importación de archivo estructurado si el usuario lo obtiene desde su flujo;
-3. futura integración/conector sólo si existe un canal técnico/operativo estable y legalmente adecuado.
+Usar datasets oficiales de Uruguay para seed offline:
 
-### Fuera de alcance del MVP
+- localidades del país;
+- opcionalmente direcciones geográficas para enriquecimiento posterior.
 
-- OCR de capturas de pantalla como vía principal;
-- scraping frágil del portal DGI;
-- autoajuste ciego del sistema sólo porque el total DGI difiere.
+#### 2. Motor mínimo
 
-### Buckets mínimos de conciliación
+`location-risk-engine.ts` debe evaluar, como mínimo:
 
-- IVA básica ventas
-- IVA básica compras
-- IVA mínima ventas
-- IVA mínima compras
-- no gravado / exento
-- importaciones / anticipos IVA importación cuando aplique
-- percepciones / retenciones si el régimen del cliente las usa
+- departamento de la organización vs departamento del emisor;
+- ciudad de la organización vs ciudad del emisor;
+- categoría del proveedor / comercio;
+- presencia de palabras de contexto como viaje, hotel, peaje, terminal, aeropuerto, ruta, viático.
 
-### Estados mínimos de diferencia
+#### 3. Tabla de decisión simplificada v1
 
-- `matched`
-- `missing_in_system`
-- `extra_in_system`
-- `amount_mismatch`
-- `tax_treatment_mismatch`
-- `pending_manual_adjustment`
+- `same_city + supermercado` -> riesgo bajo/medio; no bloquear, sólo clasificar con contexto normal.
+- `other_department + supermercado` -> riesgo alto; sugerir `requires_business_purpose_review`.
+- `other_department + restaurante` -> sugerir `travel_pattern` o `viático`, no negar automáticamente.
+- `other_department + hotel/peaje/pasaje` -> sugerir `travel_pattern`.
+- `missing_location_evidence` -> no inferir riesgo alto por ausencia de dato.
 
-### Regla importante
+#### 4. Resultado en el workflow
 
-La conciliación DGI nunca debe sobreescribir de forma automática la clasificación fiscal-documental interna.
-Solo debe:
-- mostrar diferencias,
-- proponer investigación,
-- y generar evidencia para ajuste o reapertura deliberada.
+El engine debe devolver:
+
+- `location_signal_code`
+- `severity`
+- `explanation`
+- `suggested_tax_profile_code` (nullable)
+- `suggested_expense_family` (nullable)
+- `requires_user_justification`
+
+#### 5. Cómo impacta en IVA
+
+- si la política organizacional es conservadora y el signal es alto, el sistema puede sugerir `UY_VAT_NON_DEDUCTIBLE`;
+- pero la confirmación final debe admitir override con nota y auditoría;
+- para `posted_provisional`, basta con persistir el signal y la sugerencia, aunque la cuenta definitiva llegue después.
+
+#### 6. Qué no debe hacer
+
+- no bloquear sólo por km cuando no existe categoría sensible;
+- no usar APIs pagas;
+- no usar regex frágiles como única verdad si existe código de sucursal mejor;
+- no convertir esto en una policía absurda del yogur del domingo sin posibilidad de explicar el contexto.
 
 ---
 
@@ -1251,19 +1368,9 @@ Agregar:
   - IA
   - duplicados
   - período
-
-## En conciliación fiscal mensual
-
-Nueva pantalla:
-
-`Conciliación DGI`
-
-Elementos mínimos:
-- selector de período
-- carga de baseline DGI
-- comparación por bucket
-- diferencias `missing / extra / mismatch / treatment`
-- acciones: justificar, reabrir documento, marcar ajuste externo
+  - razonabilidad geográfica
+- banner específico cuando exista `location_signal_code`
+- selector de motivo / nota cuando el usuario overridee un caso de riesgo
 
 ## En configuración contable
 
@@ -1278,30 +1385,7 @@ Tabs:
 - presets
 - equivalencias
 - recategorización
-
----
-
-## Integración sin migración del sistema contable del cliente
-
-### Principio
-
-Convertilabs no debe obligar al cliente a abandonar su ERP o sistema contable actual para capturar valor.
-
-### Requerimientos mínimos
-
-1. Exportar journals y/o movimientos en CSV/XLSX genérico.
-2. Permitir mapping por `external_code` y alias de cuenta.
-3. Soportar layouts configurables por cliente.
-4. Permitir export mensual de:
-   - asientos finales,
-   - asientos provisionales si la política lo permite,
-   - resumen de diferencias DGI,
-   - cola de recategorización pendiente.
-5. No exigir write-back en tiempo real como condición del MVP.
-
-### Regla de producto
-
-El discurso comercial y la UX deben presentar a Convertilabs como acelerador y filtro inteligente para el sistema actual del cliente, no como reemplazo obligatorio de su backoffice contable.
+- reglas geográficas
 
 ---
 
@@ -1375,35 +1459,14 @@ Guardar:
 3. Los open items conservan moneda original.
 4. Las diferencias de cambio futuras quedan soportadas.
 
+## E. Geolocalización y razonabilidad
 
-## E. Crédito fiscal y prorrata
-
-1. Todo documento elegible para IVA compras termina con `vat_credit_category` y `vat_deductibility_status`.
-2. Un documento no puede llegar a `posted_provisional` si sigue en `pending_review` para el crédito fiscal.
-3. El engine puede distinguir al menos:
-   - directo,
-   - indirecto,
-   - no deducible,
-   - importación,
-   - no aplicable.
-4. Cuando corresponda prorrata, el sistema persiste coeficiente y montos deducible/no deducible en UYU.
-
-## F. Conciliación DGI
-
-1. El usuario puede crear una corrida mensual de conciliación contra baseline DGI.
-2. El sistema compara por bucket y detecta:
-   - faltantes en sistema,
-   - sobrantes en sistema,
-   - diferencias de monto,
-   - diferencias de tratamiento fiscal.
-3. La conciliación no reescribe automáticamente journals ni tax profiles.
-4. El usuario puede dejar una diferencia marcada como ajuste externo o disparar reapertura deliberada.
-
-## G. Exportación sin migración
-
-1. El sistema puede exportar journals a CSV/XLSX genérico usando `external_code` si existe.
-2. Un cliente puede seguir usando su sistema contable actual y obtener valor del flujo sin cambiar de ERP.
-3. La exportación distingue provisionales y finales.
+1. El sistema puede operar sin geolocalización exacta; `department/city` alcanzan para v1.
+2. Un documento sensible con `location_signal_severity = high` muestra warning separado y explicación.
+3. La ausencia de dato de ubicación no se trata como prueba de improcedencia.
+4. Un override sobre un caso geográfico de riesgo guarda nota y auditoría.
+5. El `uy-vat-engine` puede sugerir `non_deductible` o `viático` por geolocalización, pero nunca cerrar el caso sin dejar rastro de la regla aplicada.
+6. El hot path documental no realiza llamadas a APIs pagas de mapas.
 
 ---
 
@@ -1418,9 +1481,8 @@ Guardar:
 - `vat-run eligibility`
 - `learning promotion`
 - `dgi mapping by tax profile`
-- `vat credit classifier direct/indirect/prorrata`
-- `dgi reconciliation bucket matcher`
-- `external accounting export adapter`
+- `location-risk-engine department/city matrix`
+- `location parser from issuer address`
 
 ## Integration tests
 
@@ -1431,8 +1493,8 @@ Guardar:
 - documento con `TEMP-EXP`
 - importación de plan de cuentas heterogéneo
 - promoción provisional a final
-- conciliación mensual contra baseline DGI
-- exportación CSV/XLSX a sistema externo
+- supermercado en otro departamento con warning y nota
+- restaurante fuera de sede sugerido como viático
 
 ## Regression tests
 
@@ -1440,6 +1502,7 @@ Guardar:
 - no romper create account inline
 - no romper bloqueo por duplicados
 - no romper `runAssistant: false` en carga inicial del review workspace
+- no romper confirmación de documentos sin ubicación extraíble
 
 ---
 
@@ -1457,31 +1520,31 @@ Guardar:
 2. `uy-vat-engine` con montos UYU
 3. `vat-runs` con `posted_provisional`
 
-## Fase 3 — UX, review y crédito fiscal
+## Fase 3 — UX y review
 1. blockers segmentados
 2. botón `Postear provisional`
 3. panel FX
-4. panel de crédito fiscal
-5. bandeja de provisionales pendientes
+4. bandeja de provisionales pendientes
 
-## Fase 4 — Conciliación DGI
-1. modelo de corrida de conciliación
-2. buckets comparables por período
-3. pantalla `Conciliación DGI`
-4. manejo de diferencias y reapertura deliberada
+## Fase 3B — Geolocalización y razonabilidad
+1. migraciones de dirección y ubicación
+2. seed `uy_locations`
+3. extensión del intake para dirección del emisor
+4. `location-risk-engine` offline
+5. warnings y nota obligatoria en UI
+6. integración con `uy-vat-engine` como señal, no como juez único
 
-## Fase 5 — Importación IA de plan de cuentas
+## Fase 4 — Importación IA de plan de cuentas
 1. nuevo contrato IA
 2. `import-runner` modo `chart_of_accounts`
 3. preview + aprobación
 4. adopción parcial
 
-## Fase 6 — Promoción, reporting y exportación
+## Fase 5 — Promoción y reporting
 1. aprendizaje `candidate/provisional/approved`
 2. recategorización a final
 3. tags NIIF-ready
 4. export mapping por `tax_profile`
-5. layouts de exportación a sistemas externos
 
 ---
 
@@ -1494,9 +1557,7 @@ Implementar este documento en el repo actual respetando estos principios:
 - mantener IA acotada por schema y sets permitidos;
 - no introducir asientos libres;
 - no romper el flujo actual de revisión;
-- añadir posteo provisional, importación inteligente de plan de cuentas y capa multi-moneda con tipo de cambio fiscal persistido;
-- usar DGI como baseline de conciliación y no como simple competidor;
-- mantener a Convertilabs como capa de decisión/exportación, no como ERP obligatorio.
+- añadir posteo provisional, importación inteligente de plan de cuentas, capa multi-moneda con tipo de cambio fiscal persistido y capa de razonabilidad geográfica determinística.
 
 Si alguna tabla o módulo ya cubre parcialmente una pieza del diseño:
 - reutilizarlo;
@@ -1525,23 +1586,8 @@ Este preset y estas reglas no pretenden sustituir asesoramiento contable ni trib
 6. En activos fijos, los costos directamente atribuibles a poner el bien en condiciones de uso deben capitalizarse.
 7. Para operaciones en moneda extranjera, los montos fiscales deben convertirse a moneda nacional con una política explícita y trazable; además debe conservarse la moneda original del documento.
 8. IFRS 18 debe impactar principalmente en presentación/tags/reporting futuro, no en el diseño mínimo del asiento operativo del MVP.
-9. DGI ya dispone de servicios de consulta de CFE recibidos y de formularios/servicios con datos precargados que pueden confirmarse o modificarse; por eso el producto debe usar a DGI como baseline y validador, no como enemigo a reemplazar.
-10. La determinación del IVA compras deducible exige separar directo e indirecto y, cuando corresponda, aplicar prorrata/porcentual; el formulario puede distribuir automáticamente el indirecto una vez cargados los datos correctos, pero no decide por sí mismo esa clasificación.
-11. En regímenes agro o mixtos, la asignación de IVA compras y las reglas de suspenso, exportación o ingresos no gravados generan un diferencial real de producto frente al simple resumen por tasa.
-12. Los formularios precargados admiten ajustes por diferencias en comprobantes electrónicos o por comprobantes manuales/no precargados, por lo que la conciliación mensual sigue siendo una necesidad operativa real.
-13. Para hacer uso del crédito fiscal, la documentación debe cumplir condiciones formales y de identificación del comprador en los casos aplicables; la existencia del comprobante en DGI no equivale automáticamente a crédito fiscal utilizable.
+9. DGI ya ofrece consulta de CFE y formularios con datos precargados que pueden confirmarse o modificarse; por eso el valor del producto debe concentrarse en conciliación, clasificación y explicación de diferencias, no en duplicar un resumen fiscal.
+10. En formularios y guías de IVA agro/régimen especial, la administración exige separar IVA compras directo e indirecto y aplicar prorrata cuando corresponde; por eso el motor fiscal debe modelar esa separación explícitamente.
+11. La geolocalización propuesta en este documento no surge de una regla legal dura publicada por DGI. Se usa como prueba de razonabilidad y evidencia contextual para reforzar la evaluación de necesidad, vínculo con la actividad y revisión humana.
+12. Para poblar la capa geográfica offline deben priorizarse fuentes oficiales de datos abiertos de Uruguay (localidades y, opcionalmente, direcciones geográficas) antes que servicios privados o APIs pagas.
 
-
----
-
-## Fuentes oficiales específicas consideradas en este reencuadre
-
-- DGI — Servicios en línea / Consulta de CFE recibidos.
-- DGI — Formulario 2178 con datos precargados y sus instructivos.
-- DGI — `Cálculo del IVA compras deducible (Rubro 3 del Formulario 1379)`.
-- DGI — `Datos a ingresar en el Formulario 2178`.
-- DGI — Instructivo `Declaración Jurada 1306 IVA Agropecuario – NO CEDE`.
-- DGI — `Tratamiento del IVA compras`.
-- DGI — `Operaciones en moneda extranjera`.
-- MEF — `Normas contables adecuadas publicadas según reglamentación`.
-- BCU — cotizaciones y normativa sectorial cuando existan planes de cuentas regulados.

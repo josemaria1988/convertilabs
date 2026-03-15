@@ -3,6 +3,13 @@ import type {
   DocumentIntakeFactMap,
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
+import {
+  evaluateLocationRisk,
+  type LocationRiskEvaluation,
+  type LocationRiskPolicy,
+  type LocationSignalCode,
+  type LocationSignalSeverity,
+} from "@/modules/accounting/location-risk-engine";
 import { getUyVatFeatureFlags } from "@/modules/tax/feature-flags";
 import { isAutomaticUyVatLegalEntityType } from "@/modules/tax/uy-vat-profile";
 
@@ -21,6 +28,11 @@ type OrganizationFiscalProfile = {
   dgiGroup: string;
   cfeStatus: string;
   taxId: string;
+  fiscalDepartment?: string | null;
+  fiscalCity?: string | null;
+  fiscalAddressText?: string | null;
+  locationRiskPolicy?: LocationRiskPolicy | null;
+  travelRadiusKmPolicy?: number | null;
 };
 
 type OrganizationRuleSnapshotContext = {
@@ -82,6 +94,15 @@ export type VatEngineResult = {
   vatNondeductibleTaxAmountUyu: number;
   vatProrationCoefficient: number | null;
   businessLinkStatus: BusinessLinkStatus;
+  locationSignalCode: LocationSignalCode;
+  locationSignalSeverity: LocationSignalSeverity;
+  locationSignalExplanation: string | null;
+  locationSignalPayload: Record<string, unknown>;
+  requiresBusinessPurposeReview: boolean;
+  requiresUserJustification: boolean;
+  businessPurposeNote: string | null;
+  suggestedTaxProfileCode: string | null;
+  suggestedExpenseFamily: string | null;
   rate: number | null;
   explanation: string;
   warnings: string[];
@@ -102,6 +123,7 @@ type VatEngineInput = {
   ruleSnapshot: OrganizationRuleSnapshotContext | null;
   linkedOperationType?: string | null;
   userContextText?: string | null;
+  businessPurposeNote?: string | null;
   vatProfile?: Record<string, unknown> | null;
   monetarySnapshot?: {
     currencyCode: string;
@@ -453,6 +475,55 @@ function resolveMonetaryAmounts(input: VatEngineInput) {
   };
 }
 
+function buildLocationRisk(input: VatEngineInput) {
+  return evaluateLocationRisk({
+    documentRole: input.documentRole,
+    organizationDepartment: input.profile?.fiscalDepartment ?? null,
+    organizationCity: input.profile?.fiscalCity ?? null,
+    locationRiskPolicy: input.profile?.locationRiskPolicy ?? null,
+    travelRadiusKmPolicy: input.profile?.travelRadiusKmPolicy ?? null,
+    issuerName: input.facts.issuer_name,
+    issuerAddressRaw: input.facts.issuer_address_raw,
+    issuerDepartment: input.facts.issuer_department,
+    issuerCity: input.facts.issuer_city,
+    issuerBranchCode: input.facts.issuer_branch_code,
+    merchantCategoryHints: input.facts.merchant_category_hints,
+    locationExtractionConfidence: input.facts.location_extraction_confidence,
+    operationCategory: input.operationCategory,
+    userContextText: input.userContextText,
+  });
+}
+
+function applyLocationRiskToReview(input: {
+  blockers: string[];
+  warnings: string[];
+  locationRisk: LocationRiskEvaluation;
+  businessPurposeNote?: string | null;
+}) {
+  const blockers = [...input.blockers];
+  const warnings = [...input.warnings];
+  const note = input.businessPurposeNote?.trim() ?? "";
+
+  if (input.locationRisk.locationSignalCode !== "none") {
+    warnings.push(input.locationRisk.explanation);
+  }
+
+  if (input.locationRisk.requiresUserJustification && !note) {
+    blockers.push(
+      "Falta justificar el proposito empresarial de un gasto con razonabilidad geografica sensible.",
+    );
+  }
+
+  if (input.locationRisk.requiresUserJustification && note) {
+    warnings.push("La razonabilidad geografica quedo respaldada con nota auditada.");
+  }
+
+  return {
+    blockers: blockers.filter((value, index, array) => array.indexOf(value) === index),
+    warnings: warnings.filter((value, index, array) => array.indexOf(value) === index),
+  };
+}
+
 function buildFiscalCreditResult(input: {
   documentRole: DocumentRoleCandidate;
   vatBucket: VatBucket;
@@ -667,6 +738,8 @@ function buildManualReviewResult(input: {
   blockers: string[];
   ruleSnapshot: OrganizationRuleSnapshotContext | null;
   profile: OrganizationFiscalProfile | null;
+  locationRisk?: LocationRiskEvaluation | null;
+  businessPurposeNote?: string | null;
 }) {
   return {
     ready: false,
@@ -686,6 +759,15 @@ function buildManualReviewResult(input: {
     vatNondeductibleTaxAmountUyu: 0,
     vatProrationCoefficient: null,
     businessLinkStatus: "needs_review",
+    locationSignalCode: input.locationRisk?.locationSignalCode ?? "none",
+    locationSignalSeverity: input.locationRisk?.locationSignalSeverity ?? "info",
+    locationSignalExplanation: input.locationRisk?.explanation ?? null,
+    locationSignalPayload: input.locationRisk?.payload ?? {},
+    requiresBusinessPurposeReview: input.locationRisk?.requiresBusinessPurposeReview ?? false,
+    requiresUserJustification: input.locationRisk?.requiresUserJustification ?? false,
+    businessPurposeNote: input.businessPurposeNote ?? null,
+    suggestedTaxProfileCode: input.locationRisk?.suggestedTaxProfileCode ?? null,
+    suggestedExpenseFamily: input.locationRisk?.suggestedExpenseFamily ?? null,
     rate: null,
     explanation: input.explanation,
     warnings: input.warnings,
@@ -695,6 +777,34 @@ function buildManualReviewResult(input: {
     requiresManualReview: true,
     journalSeed: null,
   } satisfies VatEngineResult;
+}
+
+function buildLocationRiskFields(input: {
+  locationRisk: LocationRiskEvaluation;
+  businessPurposeNote?: string | null;
+}) {
+  return {
+    locationSignalCode: input.locationRisk.locationSignalCode,
+    locationSignalSeverity: input.locationRisk.locationSignalSeverity,
+    locationSignalExplanation: input.locationRisk.explanation,
+    locationSignalPayload: input.locationRisk.payload,
+    requiresBusinessPurposeReview: input.locationRisk.requiresBusinessPurposeReview,
+    requiresUserJustification: input.locationRisk.requiresUserJustification,
+    businessPurposeNote: input.businessPurposeNote ?? null,
+    suggestedTaxProfileCode: input.locationRisk.suggestedTaxProfileCode,
+    suggestedExpenseFamily: input.locationRisk.suggestedExpenseFamily,
+  } satisfies Pick<
+    VatEngineResult,
+    | "locationSignalCode"
+    | "locationSignalSeverity"
+    | "locationSignalExplanation"
+    | "locationSignalPayload"
+    | "requiresBusinessPurposeReview"
+    | "requiresUserJustification"
+    | "businessPurposeNote"
+    | "suggestedTaxProfileCode"
+    | "suggestedExpenseFamily"
+  >;
 }
 
 export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
@@ -709,8 +819,9 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
   const category = resolvePurchaseCategory(input.operationCategory);
   const flags = getUyVatFeatureFlags();
   const profileGate = collectProfileGateBlockers(input.profile);
-  const blockers = [...profileGate.blockers];
-  const warnings = [...profileGate.warnings];
+  const locationRisk = buildLocationRisk(input);
+  let blockers = [...profileGate.blockers];
+  let warnings = [...profileGate.warnings];
   const normalizedCategory = [
     input.operationCategory,
     input.userContextText,
@@ -780,6 +891,13 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     warnings.push("Se detecto un indicio de proveedor simplificado/IVA minimo; no se otorga credito automatico.");
   }
 
+  ({ blockers, warnings } = applyLocationRiskToReview({
+    blockers,
+    warnings,
+    locationRisk,
+    businessPurposeNote: input.businessPurposeNote,
+  }));
+
   const label =
     vatBucket === "input_creditable"
       ? "IVA compras acreditable"
@@ -796,6 +914,13 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     ready: blockers.length === 0,
     taxAmountUyu,
   });
+  const adjustedFiscalCredit = {
+    ...fiscalCredit,
+    businessLinkStatus:
+      locationRisk.requiresBusinessPurposeReview && !(input.businessPurposeNote?.trim())
+        ? "needs_review"
+        : fiscalCredit.businessLinkStatus,
+  };
 
   if (blockers.length > 0) {
     return {
@@ -813,7 +938,11 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
       taxableAmountUyu: subtotalUyu,
       taxAmountUyu,
       totalAmountUyu,
-      ...fiscalCredit,
+      ...adjustedFiscalCredit,
+      ...buildLocationRiskFields({
+        locationRisk,
+        businessPurposeNote: input.businessPurposeNote,
+      }),
       rate: taxAmount > 0 ? taxRate : null,
       explanation:
         category
@@ -851,7 +980,11 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     taxableAmountUyu: subtotalUyu,
     taxAmountUyu,
     totalAmountUyu,
-    ...fiscalCredit,
+    ...adjustedFiscalCredit,
+    ...buildLocationRiskFields({
+      locationRisk,
+      businessPurposeNote: input.businessPurposeNote,
+    }),
     rate: taxRate,
     explanation: `La compra se encuadra como "${category?.label}" y se resuelve con reglas IVA deterministicas del snapshot organizacional.`,
     warnings,
@@ -883,8 +1016,9 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
   const category = resolveSaleCategory(input.operationCategory, taxRate);
   const flags = getUyVatFeatureFlags();
   const profileGate = collectProfileGateBlockers(input.profile);
-  const blockers = [...profileGate.blockers];
-  const warnings = [...profileGate.warnings];
+  const locationRisk = buildLocationRisk(input);
+  let blockers = [...profileGate.blockers];
+  let warnings = [...profileGate.warnings];
   const normalizedCategory = [
     input.operationCategory,
     input.userContextText,
@@ -955,6 +1089,13 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
     taxAmountUyu: resolvedTaxAmountUyu,
   });
 
+  ({ blockers, warnings } = applyLocationRiskToReview({
+    blockers,
+    warnings,
+    locationRisk,
+    businessPurposeNote: input.businessPurposeNote,
+  }));
+
   if (blockers.length > 0) {
     return {
       ready: false,
@@ -972,6 +1113,10 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
       taxAmountUyu: resolvedTaxAmountUyu,
       totalAmountUyu,
       ...fiscalCredit,
+      ...buildLocationRiskFields({
+        locationRisk,
+        businessPurposeNote: input.businessPurposeNote,
+      }),
       rate: category?.rate ?? taxRate,
       explanation:
         category
@@ -1010,6 +1155,10 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
     taxAmountUyu: resolvedTaxAmountUyu,
     totalAmountUyu,
     ...fiscalCredit,
+    ...buildLocationRiskFields({
+      locationRisk,
+      businessPurposeNote: input.businessPurposeNote,
+    }),
     rate: category?.rate ?? taxRate,
     explanation: `La venta se resuelve como "${category?.label}" con reglas IVA deterministicas del snapshot organizacional.`,
     warnings,
@@ -1046,6 +1195,8 @@ export function resolveUyVatTreatment(input: VatEngineInput): VatEngineResult {
     blockers: ["Los documentos fuera de compra/venta quedan en revision manual."],
     ruleSnapshot: input.ruleSnapshot,
     profile: input.profile,
+    locationRisk: buildLocationRisk(input),
+    businessPurposeNote: input.businessPurposeNote ?? null,
   });
 }
 
@@ -1053,6 +1204,9 @@ export type {
   DeterministicRuleRef,
   OrganizationFiscalProfile,
   OrganizationRuleSnapshotContext,
+  LocationRiskPolicy,
+  LocationSignalCode,
+  LocationSignalSeverity,
   VatBucket,
   VatJournalSeed,
 };

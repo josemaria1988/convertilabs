@@ -143,6 +143,7 @@ type ProfileVersionRow = {
   cfe_status: string;
   country_code: string;
   tax_id: string;
+  profile_json: JsonRecord | null;
 };
 
 type ProcessingRunRow = {
@@ -371,6 +372,7 @@ export type SaveDraftReviewInput = {
     facts?: Partial<Record<keyof DocumentIntakeFactMap, string | number | null>>;
     accountingContext?: {
       userFreeText?: string | null;
+      businessPurposeNote?: string | null;
       manualOverrideAccountId?: string | null;
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
@@ -431,6 +433,8 @@ function buildOrganizationFiscalProfile(
     return null;
   }
 
+  const profileJson = asRecord(profileVersion.profile_json);
+
   return {
     countryCode: profileVersion.country_code,
     legalEntityType: profileVersion.legal_entity_type,
@@ -439,6 +443,13 @@ function buildOrganizationFiscalProfile(
     dgiGroup: profileVersion.dgi_group,
     cfeStatus: profileVersion.cfe_status,
     taxId: profileVersion.tax_id,
+    fiscalAddressText: asString(profileJson.fiscal_address_text),
+    fiscalDepartment: asString(profileJson.fiscal_department),
+    fiscalCity: asString(profileJson.fiscal_city),
+    locationRiskPolicy:
+      (asString(profileJson.location_risk_policy) as OrganizationFiscalProfile["locationRiskPolicy"])
+      ?? "warn_and_require_note",
+    travelRadiusKmPolicy: asNumber(profileJson.travel_radius_km_policy),
   };
 }
 
@@ -686,6 +697,7 @@ async function loadRuleSnapshot(
         cfe_status: profileVersion.cfe_status,
         country_code: profileVersion.country_code,
         tax_id: profileVersion.tax_id,
+        profile_json: asRecord(profileVersion.profile_json),
       } satisfies ProfileVersionRow,
       ruleSnapshot: {
         id: ruleSnapshot.id,
@@ -715,7 +727,7 @@ async function loadRuleSnapshot(
     supabase
       .from("organization_profile_versions")
       .select(
-        "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id",
+        "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id, profile_json",
       )
       .eq("organization_id", document.organization_id)
       .eq("status", "active")
@@ -961,6 +973,10 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
             typeof input.accountingContext.userFreeText === "string"
               ? input.accountingContext.userFreeText.trim() || null
               : input.accountingContext.userFreeText ?? null,
+          businessPurposeNote:
+            typeof input.accountingContext.businessPurposeNote === "string"
+              ? input.accountingContext.businessPurposeNote.trim() || null
+              : input.accountingContext.businessPurposeNote ?? null,
           manualOverrideAccountId:
             typeof input.accountingContext.manualOverrideAccountId === "string"
               ? input.accountingContext.manualOverrideAccountId.trim() || null
@@ -1000,6 +1016,8 @@ function mergeStoredAccountingContext(
     ...currentStructured,
     ...(patch
       ? {
+          business_purpose_note:
+            patch.businessPurposeNote ?? asString(currentStructured.business_purpose_note),
           manual_override_account_id:
             patch.manualOverrideAccountId ?? asString(currentStructured.manual_override_account_id),
           manual_override_concept_id:
@@ -1147,6 +1165,18 @@ async function persistDraftArtifacts(
     fx_rate_document_date: derived.monetarySnapshot?.fx.documentDate ?? facts.document_date ?? null,
     fx_rate_source: derived.journalSuggestion.fxRateSource,
     fx_rate_override_reason: derived.monetarySnapshot?.fx.overrideReason ?? null,
+    issuer_address_raw: facts.issuer_address_raw ?? null,
+    issuer_department: facts.issuer_department ?? null,
+    issuer_city: facts.issuer_city ?? null,
+    issuer_branch_code: facts.issuer_branch_code ?? null,
+    location_extraction_confidence: facts.location_extraction_confidence ?? null,
+    location_signal_code: derived.taxTreatment.locationSignalCode,
+    location_signal_severity: derived.taxTreatment.locationSignalSeverity,
+    location_signal_payload: derived.taxTreatment.locationSignalPayload,
+    requires_business_purpose_review: derived.taxTreatment.requiresBusinessPurposeReview,
+    business_purpose_note: derived.taxTreatment.businessPurposeNote,
+    suggested_expense_family: derived.taxTreatment.suggestedExpenseFamily,
+    suggested_tax_profile_code: derived.taxTreatment.suggestedTaxProfileCode,
     vat_credit_category: derived.taxTreatment.vatCreditCategory,
     vat_deductibility_status: derived.taxTreatment.vatDeductibilityStatus,
     vat_direct_tax_amount_uyu: derived.taxTreatment.vatDirectTaxAmountUyu,
@@ -1162,6 +1192,7 @@ async function persistDraftArtifacts(
       duplicate_reason: derived.invoiceIdentity?.duplicateReason ?? null,
       accounting_context_required: derived.accountingContext.status !== "not_required",
       matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
+      merchant_category_hints: facts.merchant_category_hints,
       provisional_posting_ready: derived.validation.canPostProvisional,
       final_posting_ready: derived.validation.canConfirmFinal,
     },
