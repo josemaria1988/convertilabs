@@ -1,0 +1,110 @@
+[
+  {
+    "code": "46590",
+    "title": "Comercio al por mayor de otro tipo de maquinaria y equipo",
+    "section": "G",
+    "division": "46",
+    "group": "465",
+    "class": "4659",
+    "aliases": ["maquinaria", "equipos", "repuestos", "equipamiento", "mayorista"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "33120",
+    "title": "Reparacion de maquinaria y equipo",
+    "section": "C",
+    "division": "33",
+    "group": "331",
+    "class": "3312",
+    "aliases": ["reparacion", "servicio tecnico", "mantenimiento", "instalacion tecnica"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "43210",
+    "title": "Instalaciones electricas",
+    "section": "F",
+    "division": "43",
+    "group": "432",
+    "class": "4321",
+    "aliases": ["instalacion", "obra", "montaje", "electricidad"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "47520",
+    "title": "Comercio al por menor de ferreteria, pinturas y vidrio",
+    "section": "G",
+    "division": "47",
+    "group": "475",
+    "class": "4752",
+    "aliases": ["retail", "minorista", "mostrador", "ferreteria", "tienda"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "28290",
+    "title": "Fabricacion de otros tipos de maquinaria de uso general",
+    "section": "C",
+    "division": "28",
+    "group": "282",
+    "class": "2829",
+    "aliases": ["fabricacion", "ensamble", "armado", "produccion liviana"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "01110",
+    "title": "Cultivo de cereales excepto arroz y semillas oleaginosas",
+    "section": "A",
+    "division": "01",
+    "group": "011",
+    "class": "0111",
+    "aliases": ["agro", "campo", "granos", "semillas", "agricola"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "01410",
+    "title": "Cria de ganado bovino y bufalos",
+    "section": "A",
+    "division": "01",
+    "group": "014",
+    "class": "0141",
+    "aliases": ["ganado", "bovino", "agropecuario", "hacienda"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "62010",
+    "title": "Actividades de programacion informatica",
+    "section": "J",
+    "division": "62",
+    "group": "620",
+    "class": "6201",
+    "aliases": ["software", "desarrollo", "servicios digitales", "programacion"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  },
+  {
+    "code": "70200",
+    "title": "Actividades de consultoria de gestion",
+    "section": "M",
+    "division": "70",
+    "group": "702",
+    "class": "7020",
+    "aliases": ["consultoria", "asesoria", "servicios profesionales", "proyectos"],
+    "is_active": true,
+    "source": "DGI CIIU Rev.4",
+    "snapshot_version": "2026-03-15"
+  }
+]

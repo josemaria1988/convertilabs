@@ -1,0 +1,155 @@
+[
+  {
+    "code": "imports_goods",
+    "group": "tax_and_operations",
+    "label": "Importa bienes",
+    "description": "La empresa compra bienes en el exterior y nacionaliza mercaderia o activos.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_IMPORTER_V1", "TRAIT_MULTI_CURRENCY_V1"],
+    "affects_tax_profiles": ["UY_VAT_IMPORT_CREDITABLE", "UY_VAT_IMPORT_ANTICIPO"]
+  },
+  {
+    "code": "exports_goods",
+    "group": "tax_and_operations",
+    "label": "Exporta bienes",
+    "description": "La empresa vende bienes al exterior y puede tener operativa fiscal diferencial.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_EXPORTER_V1", "TRAIT_MULTI_CURRENCY_V1"],
+    "affects_tax_profiles": ["UY_VAT_EXPORT"]
+  },
+  {
+    "code": "exports_services",
+    "group": "tax_and_operations",
+    "label": "Exporta servicios",
+    "description": "La empresa presta servicios a clientes del exterior.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_EXPORTER_V1", "TRAIT_MULTI_CURRENCY_V1"],
+    "affects_tax_profiles": ["UY_VAT_EXPORT"]
+  },
+  {
+    "code": "vat_taxed_operations",
+    "group": "tax_and_operations",
+    "label": "Realiza operaciones gravadas por IVA",
+    "description": "La empresa vende o compra operaciones normalmente gravadas y necesita una estructura IVA estandar.",
+    "source_kind": "official-inspired",
+    "affects_presets": [],
+    "affects_tax_profiles": ["UY_VAT_PURCHASE_BASIC", "UY_VAT_SALE_BASIC"]
+  },
+  {
+    "code": "vat_exempt_or_non_taxed_operations",
+    "group": "tax_and_operations",
+    "label": "Realiza operaciones exentas o no gravadas",
+    "description": "Puede afectar el credito fiscal y la necesidad de prorrata o IVA indirecto.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_MIXED_VAT_V1"],
+    "affects_tax_profiles": ["UY_VAT_PURCHASE_EXEMPT"]
+  },
+  {
+    "code": "mixed_vat_operations",
+    "group": "tax_and_operations",
+    "label": "Puede tener IVA indirecto o prorrata",
+    "description": "La empresa mezcla operaciones con distinto tratamiento y necesita cuentas y comentarios mas claros.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_MIXED_VAT_V1"],
+    "affects_tax_profiles": ["UY_VAT_PURCHASE_MIXED_USE"]
+  },
+  {
+    "code": "possible_vat_suspenso",
+    "group": "tax_and_operations",
+    "label": "Puede operar con IVA en suspenso",
+    "description": "La empresa podria usar regimens especiales que requieren control documental y fiscal mas fino.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_EXPORTER_V1"],
+    "affects_tax_profiles": ["UY_VAT_EXPORT"]
+  },
+  {
+    "code": "multi_currency_operations",
+    "group": "tax_and_operations",
+    "label": "Opera en varias monedas",
+    "description": "La empresa compra o vende en moneda extranjera y necesita trazabilidad de tipo de cambio.",
+    "source_kind": "official-inspired",
+    "affects_presets": ["TRAIT_MULTI_CURRENCY_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "sells_goods",
+    "group": "business_activity",
+    "label": "Vende bienes",
+    "description": "Ayuda a proponer cuentas de ventas, inventario y costo de ventas acordes a una operativa comercial.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_46_WHOLESALE_EQUIPMENT_V1", "CIIU_47_RETAIL_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "provides_services",
+    "group": "business_activity",
+    "label": "Presta servicios",
+    "description": "Agrega estructura de servicios, contratos y seguimiento de trabajos o mantenimientos.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_33_REPAIR_INSTALLATION_V1", "TRAIT_RECURRING_SERVICES_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "maintains_inventory",
+    "group": "business_activity",
+    "label": "Mantiene inventario",
+    "description": "Necesita cuentas de mercaderia, insumos, repuestos o stock movil.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_46_WHOLESALE_EQUIPMENT_V1", "CIIU_47_RETAIL_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "technical_installation_or_maintenance",
+    "group": "business_activity",
+    "label": "Hace instalacion o mantenimiento tecnico",
+    "description": "Suma cuentas y templates para trabajos tecnicos, contratos y materiales aplicados a servicios.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_33_REPAIR_INSTALLATION_V1", "TRAIT_RECURRING_SERVICES_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "manufactures_or_assembles",
+    "group": "business_activity",
+    "label": "Fabrica o ensambla",
+    "description": "Propone cuentas de produccion, proceso y terminados.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_28_LIGHT_MANUFACTURING_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "public_tenders",
+    "group": "operating_model",
+    "label": "Trabaja con licitaciones u organismos publicos",
+    "description": "Puede requerir cuentas para garantias, retenciones y circuitos de cobranza especiales.",
+    "source_kind": "system",
+    "affects_presets": ["TRAIT_PUBLIC_TENDERS_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "recurring_service_contracts",
+    "group": "operating_model",
+    "label": "Trabaja por contratos recurrentes",
+    "description": "Sugiere cuentas para contratos, abonos y diferimientos simples.",
+    "source_kind": "system",
+    "affects_presets": ["TRAIT_RECURRING_SERVICES_V1"],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "uses_cost_centers",
+    "group": "operating_model",
+    "label": "Usa centros de costo o proyectos",
+    "description": "No cambia la operativa minima, pero sugiere una estructura preparada para mayor analitica.",
+    "source_kind": "system",
+    "affects_presets": [],
+    "affects_tax_profiles": []
+  },
+  {
+    "code": "field_technicians_or_mobile_units",
+    "group": "operating_model",
+    "label": "Tiene tecnicos en campo o stock movil",
+    "description": "Ayuda a contemplar gastos de movilidad, stock fuera de base y evidencia operacional.",
+    "source_kind": "system",
+    "affects_presets": ["CIIU_33_REPAIR_INSTALLATION_V1"],
+    "affects_tax_profiles": []
+  }
+]

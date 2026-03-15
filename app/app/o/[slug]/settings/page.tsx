@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
 import { SectionCard } from "@/components/section-card";
 import {
   buttonBaseClassName,
@@ -17,6 +18,8 @@ import {
   supportedLegalEntityTypes,
   supportedTaxRegimeCodes,
 } from "@/modules/organizations/onboarding-schema";
+import { loadOrganizationBusinessProfileData } from "@/modules/organizations/business-profiles";
+import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadOrganizationSettingsData } from "@/modules/organizations/settings";
 import {
@@ -66,9 +69,11 @@ export default async function OrganizationSettingsPage({
 }: OrganizationSettingsPageProps) {
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const [settings, chart] = await Promise.all([
+  const featureFlags = getOrganizationFeatureFlags();
+  const [settings, chart, businessProfile] = await Promise.all([
     loadOrganizationSettingsData(organization.id),
     loadOrganizationChartManagementData(organization.id),
+    loadOrganizationBusinessProfileData(organization.id),
   ]);
   const effectiveFromDefault = new Date().toISOString().slice(0, 10);
   const activeProfileJson = (settings.activeProfile?.profile_json ?? {}) as Record<string, unknown>;
@@ -246,6 +251,21 @@ export default async function OrganizationSettingsPage({
               </SubmitButton>
             </form>
           </SectionCard>
+
+          {featureFlags.onboardingActivityBasedPresetsEnabled ? (
+            <SectionCard
+              title="Perfil de negocio y recomendacion de plan"
+              description="Actividad economica, rasgos operativos y composicion sugerida del plan de cuentas. Cada cambio crea una nueva version hacia adelante sin tocar historicos."
+            >
+              <BusinessProfileSettings
+                slug={organization.slug}
+                available={businessProfile.available}
+                uiHelpHintsEnabled={featureFlags.uiHelpHintsEnabled}
+                activeBusinessProfile={businessProfile.activeBusinessProfile}
+                activePresetApplication={businessProfile.activePresetApplication}
+              />
+            </SectionCard>
+          ) : null}
 
           <SectionCard
             title="Perfil fiscal versionado"

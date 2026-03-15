@@ -15,6 +15,7 @@ import {
   buttonPrimaryChromeClassName,
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
+import { HelpHint } from "@/components/ui/help-hint";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 type StepCode =
@@ -938,8 +939,9 @@ export function DocumentReviewWorkspace({
                   {formatPostingStatus(pageData.document.postingStatus)}
                 </span>
                 {pageData.derived.journalSuggestion.hasProvisionalAccounts ? (
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-                    Provisional
+                  <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+                    <span>Provisional</span>
+                    <HelpHint contentKey="cuenta_temporal" />
                   </span>
                 ) : null}
               </div>
@@ -965,6 +967,9 @@ export function DocumentReviewWorkspace({
                 {pendingAction === "post_provisional" && isPending ? <InlineSpinner /> : null}
                 Postear provisional
               </button>
+              <div className="flex items-center">
+                <HelpHint contentKey="posteo_provisional" />
+              </div>
               <button
                 type="button"
                 disabled={!pageData.canConfirmFinal || isPending}
@@ -1296,9 +1301,12 @@ export function DocumentReviewWorkspace({
             </label>
 
             <label className="space-y-2 text-sm md:col-span-2">
-              <span className="font-medium">
-                Justificacion de proposito empresarial
-                {pageData.derived.taxTreatment.requiresUserJustification ? " *" : ""}
+              <span className="flex items-center gap-2 font-medium">
+                <span>
+                  Justificacion de proposito empresarial
+                  {pageData.derived.taxTreatment.requiresUserJustification ? " *" : ""}
+                </span>
+                <HelpHint contentKey="razonabilidad_geografica" tone="warning" />
               </span>
               <textarea
                 value={accountingContext.businessPurposeNote}
@@ -1730,7 +1738,10 @@ export function DocumentReviewWorkspace({
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Credito fiscal</p>
+              <p className="flex items-center gap-2 font-semibold">
+                <span>Credito fiscal</span>
+                <HelpHint contentKey="iva_no_deducible" />
+              </p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 Categoria: {pageData.derived.taxTreatment.vatCreditCategory}
               </p>
@@ -1741,7 +1752,10 @@ export function DocumentReviewWorkspace({
                 IVA deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatDeductibleTaxAmountUyu)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                IVA no deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatNondeductibleTaxAmountUyu)}
+                <span className="inline-flex items-center gap-2">
+                  <span>IVA no deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatNondeductibleTaxAmountUyu)}</span>
+                  <HelpHint contentKey="iva_no_deducible" />
+                </span>
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
@@ -1755,10 +1769,16 @@ export function DocumentReviewWorkspace({
                   : "No aplica"}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                IVA directo UYU: {formatMoney(pageData.derived.taxTreatment.vatDirectTaxAmountUyu)}
+                <span className="inline-flex items-center gap-2">
+                  <span>IVA directo UYU: {formatMoney(pageData.derived.taxTreatment.vatDirectTaxAmountUyu)}</span>
+                  <HelpHint contentKey="iva_directo" />
+                </span>
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                IVA indirecto UYU: {formatMoney(pageData.derived.taxTreatment.vatIndirectTaxAmountUyu)}
+                <span className="inline-flex items-center gap-2">
+                  <span>IVA indirecto UYU: {formatMoney(pageData.derived.taxTreatment.vatIndirectTaxAmountUyu)}</span>
+                  <HelpHint contentKey="iva_indirecto" />
+                </span>
               </p>
             </div>
           </div>
@@ -1777,7 +1797,10 @@ export function DocumentReviewWorkspace({
         </article>
 
         <article className="panel p-6">
-          <h3 className="text-2xl font-semibold tracking-[-0.05em]">FX fiscal</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-semibold tracking-[-0.05em]">FX fiscal</h3>
+            <HelpHint contentKey="tipo_cambio_fiscal" />
+          </div>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
             Trazabilidad monetaria para IVA y contabilidad en UYU.
           </p>

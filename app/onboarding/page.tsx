@@ -3,6 +3,7 @@ import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { OrganizationOnboardingForm } from "@/components/organization-onboarding-form";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { requireOnboardingPage } from "@/modules/auth/server-auth";
+import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 
 export const metadata: Metadata = {
   title: "Onboarding",
@@ -11,12 +12,14 @@ export const metadata: Metadata = {
 const onboardingChecks = [
   "Crear organizacion con slug unico y membresia owner.",
   "Capturar forma juridica, RUT y perfil fiscal base.",
+  "Entender actividad, rasgos operativos y plan recomendado.",
   "Materializar instantanea inicial para intake e IVA.",
-  "Entrar directo al cockpit privado de la organizacion.",
+  "Entrar directo al cockpit privado o al carril de importacion externa.",
 ];
 
 export default async function OnboardingPage() {
   const { user } = await requireOnboardingPage();
+  const featureFlags = getOrganizationFeatureFlags();
 
   return (
     <div className="auth-stage">
@@ -63,15 +66,18 @@ export default async function OnboardingPage() {
               Configuracion inicial
             </p>
             <h2 className="text-3xl font-semibold tracking-[-0.06em] text-white">
-              Alta de la organizacion y perfil fiscal base
+              Alta de la organizacion, perfil fiscal y plan inicial
             </h2>
             <p className="max-w-xl text-sm leading-7 text-[color:var(--color-muted)]">
-              La operacion corre en servidor mediante una transaccion controlada: crea la organizacion, asigna la titularidad y deja listo el perfil inicial para Uruguay.
+              La operacion corre en servidor mediante una transaccion controlada: crea la organizacion, asigna la titularidad, deja listo el perfil inicial para Uruguay y prepara una recomendacion razonable del plan de cuentas para empezar sin inventar todo desde cero.
             </p>
           </div>
 
           <div className="mt-8 rounded-[1.3rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.64)] p-5 md:p-6">
-            <OrganizationOnboardingForm userEmail={user?.email} />
+            <OrganizationOnboardingForm
+              userEmail={user?.email}
+              featureFlags={featureFlags}
+            />
           </div>
 
           <form action="/logout" method="post" className="mt-6">
