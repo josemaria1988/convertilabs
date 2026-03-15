@@ -5,6 +5,9 @@ const {
   buildStarterChartAccountPayload,
   ensureStarterAccountingSetup,
 } = require("@/modules/accounting/starter-accounts");
+const {
+  toLegacyChartAccountInsertRow,
+} = require("@/modules/accounting/chart-write-compat");
 
 test("starter chart payload includes minimal system and generic accounts for empty organizations", () => {
   const payload = buildStarterChartAccountPayload({
@@ -98,6 +101,78 @@ test("starter accounting setup inserts only missing accounts", async () => {
   assert.equal(seeded.insertedCount, 11);
   assert.equal(state.inserts.length, 1);
   assert.equal(repeated.insertedCount, 0);
+});
+
+test("starter accounting setup falls back to legacy chart insert payload when step 5 columns are unavailable", async () => {
+  const state = {
+    accounts: [],
+    insertPayloads: [],
+  };
+  const missingColumnError = {
+    code: "PGRST204",
+    message: "Could not find the 'source' column of 'chart_of_accounts' in the schema cache",
+  };
+
+  const supabase = {
+    from(table) {
+      assert.equal(table, "chart_of_accounts");
+
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq() {
+          return builder;
+        },
+        then(resolve) {
+          resolve({
+            data: state.accounts,
+            error: null,
+          });
+        },
+        insert(payload) {
+          state.insertPayloads.push(payload);
+
+          if (state.insertPayloads.length === 1) {
+            return Promise.resolve({
+              error: missingColumnError,
+            });
+          }
+
+          state.accounts.push(...payload.map((row) => ({
+            code: row.code,
+            account_type: row.account_type,
+            is_postable: row.is_postable,
+            metadata: row.metadata,
+          })));
+
+          return Promise.resolve({
+            error: null,
+          });
+        },
+      };
+
+      return builder;
+    },
+  };
+
+  const seeded = await ensureStarterAccountingSetup(supabase, {
+    organizationId: "org-1",
+    actorId: "user-1",
+  });
+
+  assert.equal(seeded.insertedCount, 11);
+  assert.equal(state.insertPayloads.length, 2);
+  assert.equal("source" in state.insertPayloads[0][0], true);
+  assert.equal("source" in state.insertPayloads[1][0], false);
+  assert.equal(
+    state.insertPayloads[1][0].metadata.source,
+    state.insertPayloads[0][0].metadata.source,
+  );
+  assert.deepEqual(
+    state.insertPayloads[1][0],
+    toLegacyChartAccountInsertRow(state.insertPayloads[0][0]),
+  );
 });
 
 test("starter chart skips synthetic revenue and expense when organization already has postable ones", () => {

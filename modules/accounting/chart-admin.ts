@@ -8,6 +8,7 @@ import {
   listChartPresets,
   type ChartPresetCode,
 } from "@/modules/accounting/chart-presets";
+import { insertChartAccountsWithCompat } from "@/modules/accounting/chart-write-compat";
 
 export type ChartAccountType =
   | "asset"
@@ -606,9 +607,7 @@ export async function applyOrganizationChartPreset(input: {
     };
   }
 
-  const { error } = await supabase
-    .from("chart_of_accounts")
-    .insert(payload);
+  const { error } = await insertChartAccountsWithCompat(supabase, payload);
 
   if (error) {
     throw new Error(error.message);

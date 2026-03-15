@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
-import { SectionCard } from "@/components/section-card";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
+import { ExpandableSectionCard } from "@/components/ui/expandable-section-card";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
@@ -179,9 +179,9 @@ export default async function OrganizationSettingsPage({
         </article>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="grid gap-4">
-          <SectionCard
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        <div className="contents">
+          <ExpandableSectionCard
             title="Datos base de la organizacion"
             description="Identidad operativa de la organizacion. Estos datos afectan presentacion, moneda base y configuracion general del espacio."
           >
@@ -250,12 +250,13 @@ export default async function OrganizationSettingsPage({
                 Guardar datos base
               </SubmitButton>
             </form>
-          </SectionCard>
+          </ExpandableSectionCard>
 
           {featureFlags.onboardingActivityBasedPresetsEnabled ? (
-            <SectionCard
+            <ExpandableSectionCard
               title="Perfil de negocio y recomendacion de plan"
               description="Actividad economica, rasgos operativos y composicion sugerida del plan de cuentas. Cada cambio crea una nueva version hacia adelante sin tocar historicos."
+              defaultOpen
             >
               <BusinessProfileSettings
                 slug={organization.slug}
@@ -264,10 +265,10 @@ export default async function OrganizationSettingsPage({
                 activeBusinessProfile={businessProfile.activeBusinessProfile}
                 activePresetApplication={businessProfile.activePresetApplication}
               />
-            </SectionCard>
+            </ExpandableSectionCard>
           ) : null}
 
-          <SectionCard
+          <ExpandableSectionCard
             title="Perfil fiscal versionado"
             description="Cada activacion crea una nueva version del perfil y materializa una instantanea nueva. Los borradores anteriores quedan congelados con la version previa."
           >
@@ -471,11 +472,11 @@ export default async function OrganizationSettingsPage({
                 Activar nueva version fiscal
               </SubmitButton>
             </form>
-          </SectionCard>
+          </ExpandableSectionCard>
         </div>
 
-        <div className="grid gap-4">
-          <SectionCard
+        <div className="contents">
+          <ExpandableSectionCard
             title="Instantanea activa"
             description="La IA recibe el resumen materializado de esta instantanea, no toda la normativa cruda."
           >
@@ -501,9 +502,9 @@ export default async function OrganizationSettingsPage({
                 Aun no hay una instantanea activa materializada.
               </div>
             )}
-          </SectionCard>
+          </ExpandableSectionCard>
 
-          <SectionCard
+          <ExpandableSectionCard
             title="Historial versionado"
             description="Trazabilidad de perfiles e instantaneas para entender por que un borrador viejo no cambia al modificar configuracion."
           >
@@ -554,15 +555,15 @@ export default async function OrganizationSettingsPage({
                 ))}
               </div>
             </div>
-          </SectionCard>
+          </ExpandableSectionCard>
         </div>
       </div>
 
-      <SectionCard
+      <ExpandableSectionCard
         title="Plan de cuentas"
         description="Chart Manager de la organizacion: preset, importacion con preview, cuentas provisionales, equivalencias y alta/edicion directa."
       >
-        <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
+        <div className="grid items-start gap-4 xl:grid-cols-[0.78fr_1.22fr]">
           <div className="space-y-4">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
               <p className="font-semibold text-white">Acciones rapidas</p>
@@ -949,7 +950,7 @@ export default async function OrganizationSettingsPage({
             )}
           </div>
         </div>
-      </SectionCard>
+      </ExpandableSectionCard>
     </PrivateDashboardShell>
   );
 }

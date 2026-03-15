@@ -1,7 +1,6 @@
 "use client";
 
 import { BusinessProfileConfigurator, type PlanSetupMode } from "@/components/onboarding/business-profile-configurator";
-import { buildPresetCompositionCode } from "@/modules/accounting/presets/compose-preset";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
@@ -10,6 +9,7 @@ import {
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
 import { updateOrganizationBusinessProfileAction } from "@/app/app/o/[slug]/settings/actions";
+import { buildPresetCompositionCode } from "@/modules/accounting/presets/compose-preset";
 
 type BusinessProfileSettingsProps = {
   slug: string;
@@ -89,8 +89,36 @@ export function BusinessProfileSettings({
     <form action={updateOrganizationBusinessProfileAction} className="space-y-5">
       <input type="hidden" name="slug" value={slug} />
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-4">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.28fr)_minmax(290px,0.72fr)]">
+        <div className="min-w-0 space-y-5">
+          <BusinessProfileConfigurator
+            initialProfile={{
+              primaryActivityCode: activeBusinessProfile?.primaryActivityCode ?? "",
+              secondaryActivityCodes: activeBusinessProfile?.secondaryActivityCodes ?? [],
+              selectedTraits: activeBusinessProfile?.selectedTraits ?? [],
+              shortDescription: activeBusinessProfile?.shortDescription ?? "",
+            }}
+            initialPlanSetupMode={toPlanSetupMode(activePresetApplication?.applicationMode)}
+            initialSelectedPresetCompositionCode={activePresetApplication
+              ? buildPresetCompositionCode(
+                  activePresetApplication.basePresetCode,
+                  activePresetApplication.overlayCodes,
+                )
+              : null}
+            uiHelpHintsEnabled={uiHelpHintsEnabled}
+          />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <SubmitButton
+              pendingLabel="Guardando perfil..."
+              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
+            >
+              Guardar perfil y aplicar hacia adelante
+            </SubmitButton>
+          </div>
+        </div>
+
+        <aside className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/6 p-4">
             <p className="text-sm font-semibold text-white">Perfil activo</p>
             <div className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
@@ -120,7 +148,7 @@ export function BusinessProfileSettings({
                 </p>
                 <div className="mt-2 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
                   {explanationReasons.map((reason) => (
-                    <p key={reason}>• {reason}</p>
+                    <p key={reason}>- {reason}</p>
                   ))}
                 </div>
               </div>
@@ -132,18 +160,18 @@ export function BusinessProfileSettings({
                 </p>
                 <div className="mt-2 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
                   {explanationImpacts.map((impact) => (
-                    <p key={impact}>• {impact}</p>
+                    <p key={impact}>- {impact}</p>
                   ))}
                 </div>
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/6 p-4 text-sm leading-6 text-[color:var(--color-muted)]">
+          <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/6 p-4 text-sm leading-6 text-[color:var(--color-muted)] md:col-span-2 xl:col-span-1">
             Cambiar actividad, rasgos o preset recalcula sugerencias hacia adelante. No reescribe journals historicos ni documentos cerrados.
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 md:col-span-2 xl:col-span-1">
             <LoadingLink
               href={`/app/o/${slug}/imports?focus=chart_of_accounts_import`}
               pendingLabel="Abriendo importaciones..."
@@ -152,33 +180,7 @@ export function BusinessProfileSettings({
               Abrir importaciones avanzadas
             </LoadingLink>
           </div>
-        </div>
-
-        <BusinessProfileConfigurator
-          initialProfile={{
-            primaryActivityCode: activeBusinessProfile?.primaryActivityCode ?? "",
-            secondaryActivityCodes: activeBusinessProfile?.secondaryActivityCodes ?? [],
-            selectedTraits: activeBusinessProfile?.selectedTraits ?? [],
-            shortDescription: activeBusinessProfile?.shortDescription ?? "",
-          }}
-          initialPlanSetupMode={toPlanSetupMode(activePresetApplication?.applicationMode)}
-          initialSelectedPresetCompositionCode={activePresetApplication
-            ? buildPresetCompositionCode(
-                activePresetApplication.basePresetCode,
-                activePresetApplication.overlayCodes,
-              )
-            : null}
-          uiHelpHintsEnabled={uiHelpHintsEnabled}
-        />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton
-          pendingLabel="Guardando perfil..."
-          className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
-        >
-          Guardar perfil y aplicar hacia adelante
-        </SubmitButton>
+        </aside>
       </div>
     </form>
   );

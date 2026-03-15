@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PresetComposition } from "@/modules/accounting/presets/types";
+import { insertChartAccountsWithCompat } from "@/modules/accounting/chart-write-compat";
 
 function inferNormalSide(
   accountType: "asset" | "liability" | "equity" | "revenue" | "expense",
@@ -71,9 +72,7 @@ export async function applyPresetComposition(
     return { insertedCount: 0, insertedCodes: [] as string[] };
   }
 
-  const { error: insertError } = await supabase
-    .from("chart_of_accounts")
-    .insert(payload);
+  const { error: insertError } = await insertChartAccountsWithCompat(supabase, payload);
 
   if (insertError) {
     throw new Error(insertError.message);
