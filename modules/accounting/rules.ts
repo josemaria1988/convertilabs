@@ -4,6 +4,7 @@ import type { AccountingSuggestionContext } from "@/modules/accounting/types";
 export const accountingRulePrecedence = [
   "manual_override",
   "document_override",
+  "vendor_concept_operation_category",
   "vendor_concept",
   "concept_global",
   "vendor_default",

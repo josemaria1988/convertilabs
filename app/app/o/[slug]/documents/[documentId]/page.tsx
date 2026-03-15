@@ -16,11 +16,12 @@ import {
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
   confirmFinalDocumentReviewAction,
-  confirmDocumentReviewAction,
   createDocumentReviewOverrideAccountAction,
   postProvisionalDocumentReviewAction,
   reopenDocumentReviewAction,
+  runDocumentClassificationAction,
   resolveDocumentDuplicateAction,
+  saveDocumentLearningRuleAction,
   saveDocumentDraftReviewAction,
 } from "./actions";
 
@@ -52,6 +53,7 @@ export default async function DocumentReviewPage({
       userRole: organization.role as
         | "owner"
         | "admin"
+        | "admin_processing"
         | "accountant"
         | "reviewer"
         | "operator"
@@ -67,6 +69,7 @@ export default async function DocumentReviewPage({
         userRole: organization.role as
           | "owner"
           | "admin"
+          | "admin_processing"
           | "accountant"
           | "reviewer"
           | "operator"
@@ -160,14 +163,6 @@ export default async function DocumentReviewPage({
             ...input,
           });
         }}
-        confirmDocumentAction={async (payload) => {
-          "use server";
-          return confirmDocumentReviewAction({
-            slug,
-            documentId,
-            ...payload,
-          });
-        }}
         postProvisionalDocumentAction={async () => {
           "use server";
           return postProvisionalDocumentReviewAction({
@@ -194,6 +189,21 @@ export default async function DocumentReviewPage({
         resolveDuplicateAction={async (payload) => {
           "use server";
           return resolveDocumentDuplicateAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        runClassificationAction={async () => {
+          "use server";
+          return runDocumentClassificationAction({
+            slug,
+            documentId,
+          });
+        }}
+        saveLearningRuleAction={async (payload) => {
+          "use server";
+          return saveDocumentLearningRuleAction({
             slug,
             documentId,
             ...payload,

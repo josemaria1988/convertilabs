@@ -38,7 +38,7 @@ export async function uploadSpreadsheetImportAction(input: {
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
 
-  if (!["owner", "admin", "accountant", "reviewer", "operator"].includes(organization.role)) {
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer", "operator"].includes(organization.role)) {
     return {
       ok: false,
       message: "Tu rol no puede importar planillas.",

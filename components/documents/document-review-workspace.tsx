@@ -3,13 +3,13 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type {
-  DocumentIntakeAmountBreakdown,
   DocumentIntakeFactMap,
-  DocumentIntakeLineItem,
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
+import { AccountingImpactPreview } from "@/components/documents/accounting-impact-preview";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
-import type { DocumentDirection } from "@/modules/documents/status";
+import { RuleApplicationCard } from "@/components/documents/rule-application-card";
+import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
@@ -47,17 +47,15 @@ type SaveDraftReviewAction = (input: {
   blockers: string[];
 }>;
 
-type ConfirmDocumentAction = (input: {
+type ConfirmFinalDocumentAction = (input: {
   learning: {
-    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
     learnedConceptName: string | null;
   };
 }) => Promise<{
   ok: boolean;
   message: string;
 }>;
-
-type ConfirmFinalDocumentAction = ConfirmDocumentAction;
 
 type CreateReviewAccountAction = (input: {
   code: string;
@@ -85,335 +83,26 @@ type ResolveDuplicateAction = (input: {
   message: string;
 }>;
 
-type DocumentReviewWorkspaceProps = {
-  pageData: {
-    document: {
-      id: string;
-      status: string;
-      postingStatus: "draft" | "vat_ready" | "posted_provisional" | "posted_final" | "locked" | null;
-      direction: DocumentDirection;
-      documentType: string | null;
-      originalFilename: string;
-      mimeType: string | null;
-      createdAt: string;
-      documentDate: string | null;
-      previewUrl: string | null;
-      metadataWarnings: string[];
-    };
-    draft: {
-      id: string;
-      revisionNumber: number;
-      status: string;
-      sourceConfidence: number | null;
-      extractedText: string;
-      warnings: string[];
-      facts: DocumentIntakeFactMap;
-      amountBreakdown: DocumentIntakeAmountBreakdown[];
-      lineItems: DocumentIntakeLineItem[];
-      documentRole: DocumentRoleCandidate;
-      documentType: string;
-      operationCategory: string | null;
-      transactionFamilyResolution: {
-        source: string | null;
-        confidence: number | null;
-        shouldReview: boolean;
-        warnings: string[];
-        evidence: string[];
-      } | null;
-    };
-    steps: Array<{
-      step_code: string;
-      status: string;
-      stale_reason: string | null;
-      last_saved_at: string | null;
-      last_confirmed_at: string | null;
-    }>;
-    derived: {
-      monetarySnapshot: {
-        currencyCode: string;
-        netAmountOriginal: number;
-        taxAmountOriginal: number;
-        totalAmountOriginal: number;
-        netAmountUyu: number;
-        taxAmountUyu: number;
-        totalAmountUyu: number;
-        fx: {
-          policyCode: string;
-          currencyCode: string;
-          functionalCurrencyCode: string;
-          source: string;
-          rate: number;
-          bcuValue: number | null;
-          bcuDateUsed: string | null;
-          bcuSeries: string | null;
-          documentValue: number | null;
-          documentDate: string | null;
-          overrideReason: string | null;
-          warnings: string[];
-          blockingReasons: string[];
-        };
-      } | null;
-      taxTreatment: {
-        ready: boolean;
-        treatmentCode: string;
-        label: string;
-        vatBucket: string | null;
-        taxableAmount: number;
-        taxAmount: number;
-        taxableAmountUyu: number;
-        taxAmountUyu: number;
-        totalAmountUyu: number;
-        vatCreditCategory: string;
-        vatDeductibilityStatus: string;
-        vatDirectTaxAmountUyu: number;
-        vatIndirectTaxAmountUyu: number;
-        vatDeductibleTaxAmountUyu: number;
-        vatNondeductibleTaxAmountUyu: number;
-        vatProrationCoefficient: number | null;
-        businessLinkStatus: string;
-        locationSignalCode: string;
-        locationSignalSeverity: "info" | "warning" | "high";
-        locationSignalExplanation: string | null;
-        locationSignalPayload: Record<string, unknown>;
-        requiresBusinessPurposeReview: boolean;
-        requiresUserJustification: boolean;
-        businessPurposeNote: string | null;
-        suggestedTaxProfileCode: string | null;
-        suggestedExpenseFamily: string | null;
-        rate: number | null;
-        explanation: string;
-        warnings: string[];
-        blockingReasons: string[];
-        normativeSummary: string;
-        deterministicRuleRefs: Array<{
-          id: string | null;
-          scope: string | null;
-          priority: number | null;
-          sourceReference: string | null;
-        }>;
-      };
-      journalSuggestion: {
-        ready: boolean;
-        isBalanced: boolean;
-        postingMode: "provisional" | "final";
-        hasProvisionalAccounts: boolean;
-        totalDebit: number;
-        totalCredit: number;
-        functionalTotalDebit: number;
-        functionalTotalCredit: number;
-        currencyCode: string;
-        functionalCurrencyCode: string;
-        fxRate: number;
-        fxRateDate: string | null;
-        fxRateSource: string;
-        fxRateBcuValue: number | null;
-        fxRateBcuDateUsed: string | null;
-        fxRateBcuSeries: string | null;
-        templateCode: string | null;
-        taxProfileCode: string | null;
-        explanation: string;
-        lines: Array<{
-          lineNumber: number;
-          accountCode: string;
-          accountName: string;
-          debit: number;
-          credit: number;
-          functionalDebit: number;
-          functionalCredit: number;
-          currencyCode: string;
-          fxRate: number;
-          provenance: string;
-        }>;
-        blockingReasons: string[];
-      };
-      vendorResolution: {
-        status: string;
-        matchStrategy: string;
-        vendorId: string | null;
-        vendorName: string | null;
-        normalizedTaxId: string | null;
-        normalizedName: string | null;
-        blockingReasons: string[];
-      };
-      invoiceIdentity: {
-        issuerTaxIdNormalized: string | null;
-        issuerNameNormalized: string | null;
-        documentNumberNormalized: string | null;
-        documentDate: string | null;
-        totalAmount: number | null;
-        currencyCode: string | null;
-        identityStrategy: string;
-        invoiceIdentityKey: string | null;
-        duplicateStatus: string;
-        duplicateOfDocumentId: string | null;
-        duplicateReason: string | null;
-        shouldBlockConfirmation: boolean;
-        blockingReasons: string[];
-      } | null;
-      conceptResolution: {
-        lines: Array<{
-          lineNumber: number;
-          rawCode: string | null;
-          rawDescription: string | null;
-          normalizedCode: string | null;
-          normalizedDescription: string | null;
-          source: string;
-          matchedConceptId: string | null;
-          matchedConceptName: string | null;
-          matchStrategy: string;
-          matchConfidence: number;
-          requiresUserContext: boolean;
-        }>;
-        fallbackUsed: boolean;
-        primaryConceptLabels: string[];
-      };
-      accountingContext: {
-        status: string;
-        reasonCodes: string[];
-        userFreeText: string | null;
-        businessPurposeNote: string | null;
-        manualOverrideAccountId: string | null;
-        manualOverrideConceptId: string | null;
-        manualOverrideOperationCategory: string | null;
-        learnedConceptName: string | null;
-        shouldBlockConfirmation: boolean;
-        blockingReasons: string[];
-      };
-      assistantSuggestion: {
-        status: string;
-        confidence: number | null;
-        rationale: string | null;
-        reviewFlags: string[];
-      };
-      appliedRule: {
-        scope: string;
-        accountCode: string | null;
-        accountName: string | null;
-        accountIsProvisional: boolean;
-        status: string;
-        taxProfileCode: string | null;
-        templateCode: string | null;
-        provenance: string;
-      };
-      validation: {
-        canConfirm: boolean;
-        blockers: string[];
-        canPostProvisional: boolean;
-        canConfirmFinal: boolean;
-        postingStatus: "draft" | "vat_ready" | "posted_provisional" | "posted_final" | "locked";
-        blockerGroups: Array<{
-          family: string;
-          blockers: string[];
-        }>;
-      };
-    };
-    ruleSnapshot: {
-      id: string;
-      versionNumber: number;
-      effectiveFrom: string;
-      legalEntityType: string;
-      taxRegimeCode: string;
-      vatRegime: string;
-      dgiGroup: string;
-      cfeStatus: string;
-      promptSummary: string;
-    } | null;
-    profileVersion: {
-      id: string;
-      versionNumber: number;
-      effectiveFrom: string;
-      legalEntityType: string;
-      taxRegimeCode: string;
-      vatRegime: string;
-      dgiGroup: string;
-      cfeStatus: string;
-      countryCode: string;
-      taxId: string;
-    } | null;
-    processingRun: {
-      id: string;
-      status: string;
-      provider_code: string;
-      model_code: string | null;
-      triggered_by: string;
-      created_at: string;
-      started_at: string | null;
-      finished_at: string | null;
-      latency_ms: number | null;
-      input_tokens: number | null;
-      output_tokens: number | null;
-      total_tokens: number | null;
-      failure_stage: string | null;
-      failure_message: string | null;
-    } | null;
-    revision: {
-      id: string;
-      revision_number: number;
-      status: string;
-      opened_at: string;
-      reconfirmed_at: string | null;
-    } | null;
-    confirmations: Array<{
-      id: string;
-      type: string;
-      confirmedAt: string;
-      confirmedBy: string;
-    }>;
-    operationCategoryOptions: Array<{
-      code: string;
-      label: string;
-    }>;
-    accountingOptions: {
-      accounts: Array<{
-        id: string;
-        code: string;
-        name: string;
-      }>;
-      concepts: Array<{
-        id: string;
-        code: string;
-        canonicalName: string;
-      }>;
-    };
-    learningSuggestions: {
-      suggestedConceptName: string | null;
-      recommendedScope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
-      options: Array<{
-        scope: "vendor_concept" | "concept_global" | "vendor_default";
-        label: string;
-        reason: string;
-        recommended: boolean;
-        requiresConceptName: boolean;
-      }>;
-    };
-    certaintySummary: {
-      level: "green" | "yellow" | "red";
-      confidence: number | null;
-      warningCount: number;
-    };
-    decisionLogs: Array<{
-      id: string;
-      runType: string;
-      decisionSource: string;
-      confidenceScore: number | null;
-      certaintyLevel: "green" | "yellow" | "red";
-      rationaleText: string | null;
-      warnings: string[];
-      evidence: Record<string, unknown> | null;
-      metadata: Record<string, unknown> | null;
-      createdAt: string;
-    }>;
-    canConfirm: boolean;
-    canPostProvisional: boolean;
-    canConfirmFinal: boolean;
-    canReopen: boolean;
+type SaveLearningRuleAction = (input: {
+  learning: {
+    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
+    learnedConceptName: string | null;
   };
+}) => Promise<{
+  ok: boolean;
+  message: string;
+  ruleId?: string | null;
+}>;
+
+type DocumentReviewWorkspaceProps = {
+  pageData: DocumentReviewPageData;
   saveDraftReviewAction: SaveDraftReviewAction;
-  confirmDocumentAction: ConfirmDocumentAction;
   postProvisionalDocumentAction: ReviewSimpleAction;
   confirmFinalDocumentAction: ConfirmFinalDocumentAction;
   createReviewAccountAction: CreateReviewAccountAction;
   resolveDuplicateAction: ResolveDuplicateAction;
+  runClassificationAction: ReviewSimpleAction;
+  saveLearningRuleAction: SaveLearningRuleAction;
   reopenDocumentAction: ReviewSimpleAction;
 };
 
@@ -481,6 +170,44 @@ function formatPostingStatus(value: string | null) {
       return "Bloqueado";
     default:
       return value ?? "Sin posteo";
+  }
+}
+
+function formatWorkflowQueue(value: string) {
+  switch (value) {
+    case "pending_factual_review":
+      return "Pendiente de revision factual";
+    case "pending_assignment":
+      return "Pendiente de asignacion";
+    case "pending_learning_decision":
+      return "Pendiente de aprendizaje";
+    case "ready_for_provisional_posting":
+      return "Listo para posteo provisional";
+    case "posted_provisional":
+      return "Posteado provisional";
+    case "ready_for_final_confirmation":
+      return "Listo para confirmacion final";
+    case "posted_final":
+      return "Posteado final";
+    case "reopened_needs_manual_remap":
+      return "Reabierto para remap manual";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function formatClassificationStatus(value: string) {
+  switch (value) {
+    case "completed":
+      return "Completada";
+    case "failed":
+      return "Fallida";
+    case "stale":
+      return "Stale";
+    case "needs_context":
+      return "Falta contexto";
+    default:
+      return "Pendiente";
   }
 }
 
@@ -580,11 +307,12 @@ function toEditableFacts(facts: DocumentIntakeFactMap) {
 export function DocumentReviewWorkspace({
   pageData,
   saveDraftReviewAction,
-  confirmDocumentAction,
   postProvisionalDocumentAction,
   confirmFinalDocumentAction,
   createReviewAccountAction,
   resolveDuplicateAction,
+  runClassificationAction,
+  saveLearningRuleAction,
   reopenDocumentAction,
 }: DocumentReviewWorkspaceProps) {
   const router = useRouter();
@@ -627,7 +355,7 @@ export function DocumentReviewWorkspace({
   });
   const [actionMessage, setActionMessage] = useState("");
   const [pendingAction, setPendingAction] = useState<
-    "confirm" | "confirm_final" | "post_provisional" | "reopen" | null
+    "classify" | "confirm_final" | "post_provisional" | "save_learning" | "reopen" | null
   >(null);
   const [pendingInlineAction, setPendingInlineAction] = useState<"create_account" | null>(null);
   const [pendingDuplicateAction, setPendingDuplicateAction] = useState<
@@ -635,7 +363,7 @@ export function DocumentReviewWorkspace({
   >(null);
   const [duplicateNote, setDuplicateNote] = useState("");
   const [learningScope, setLearningScope] = useState<
-    "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default"
+    "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default"
   >(pageData.learningSuggestions.recommendedScope);
   const [learnedConceptName, setLearnedConceptName] = useState(
     pageData.derived.accountingContext.learnedConceptName
@@ -746,30 +474,6 @@ export function DocumentReviewWorkspace({
     });
   }
 
-  function runConfirmAction() {
-    setPendingAction("confirm");
-    setActionMessage("Procesando...");
-    startTransition(async () => {
-      try {
-        const result = await confirmDocumentAction({
-          learning: {
-            scope: learningScope,
-            learnedConceptName: learnedConceptName.trim() || null,
-          },
-        });
-        setActionMessage(result.message);
-
-        if (result.ok) {
-          router.refresh();
-        }
-      } catch (error) {
-        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
-      } finally {
-        setPendingAction(null);
-      }
-    });
-  }
-
   function runPostProvisionalAction() {
     setPendingAction("post_provisional");
     setActionMessage("Procesando...");
@@ -796,8 +500,8 @@ export function DocumentReviewWorkspace({
       try {
         const result = await confirmFinalDocumentAction({
           learning: {
-            scope: learningScope,
-            learnedConceptName: learnedConceptName.trim() || null,
+            scope: "none",
+            learnedConceptName: null,
           },
         });
         setActionMessage(result.message);
@@ -894,6 +598,49 @@ export function DocumentReviewWorkspace({
     });
   }
 
+  function runClassification() {
+    setPendingAction("classify");
+    setActionMessage("Ejecutando clasificacion...");
+    startTransition(async () => {
+      try {
+        const result = await runClassificationAction();
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
+  function runSaveLearningRule() {
+    setPendingAction("save_learning");
+    setActionMessage("Guardando criterio reusable...");
+    startTransition(async () => {
+      try {
+        const result = await saveLearningRuleAction({
+          learning: {
+            scope: learningScope,
+            learnedConceptName: learnedConceptName.trim() || null,
+          },
+        });
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
   function runDuplicateResolution(
     action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate",
   ) {
@@ -958,6 +705,17 @@ export function DocumentReviewWorkspace({
               />
               <button
                 type="button"
+                disabled={!pageData.canRunClassification || isPending}
+                onClick={() => {
+                  runClassification();
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
+              >
+                {pendingAction === "classify" && isPending ? <InlineSpinner /> : null}
+                Clasificar ahora
+              </button>
+              <button
+                type="button"
                 disabled={!pageData.canPostProvisional || isPending}
                 onClick={() => {
                   runPostProvisionalAction();
@@ -995,7 +753,7 @@ export function DocumentReviewWorkspace({
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold">Semaforo</p>
@@ -1029,11 +787,66 @@ export function DocumentReviewWorkspace({
                 Posteo: {formatPostingStatus(pageData.document.postingStatus)}
               </p>
             </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+              <p className="font-semibold">Workflow</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {formatWorkflowQueue(pageData.workflowState.queueCode)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Siguiente: {pageData.workflowState.nextRecommendedAction}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+              <p className="font-semibold">Estado de clasificacion</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {formatClassificationStatus(pageData.workflowState.classificationStatus)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Ultima corrida: {pageData.latestClassificationRun
+                  ? formatDate(pageData.latestClassificationRun.createdAt)
+                  : "Sin ejecucion explicita"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+              <p className="font-semibold">Cuenta propuesta</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.appliedRule.accountCode && pageData.derived.appliedRule.accountName
+                  ? `${pageData.derived.appliedRule.accountCode} - ${pageData.derived.appliedRule.accountName}`
+                  : "Pendiente de clasificacion"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Operacion: {pageData.derived.appliedRule.operationCategory ?? pageData.draft.operationCategory ?? "Sin definir"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+              <p className="font-semibold">Modelo / provider</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.latestClassificationRun?.providerCode ?? pageData.derived.assistantSuggestion.providerCode ?? "sin provider"}
+                {" / "}
+                {pageData.latestClassificationRun?.modelCode ?? pageData.derived.assistantSuggestion.modelCode ?? "sin modelo"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Confianza: {pageData.latestClassificationRun?.confidence !== null && pageData.latestClassificationRun?.confidence !== undefined
+                  ? `${Math.round(pageData.latestClassificationRun.confidence * 100)}%`
+                  : pageData.derived.assistantSuggestion.confidence !== null
+                    ? `${Math.round(pageData.derived.assistantSuggestion.confidence * 100)}%`
+                    : "Sin score"}
+              </p>
+            </div>
           </div>
 
           <div aria-live="polite" className="mt-4 min-h-6 text-sm text-[color:var(--color-muted)]">
             {actionMessage}
           </div>
+
+          {pageData.workflowState.visibleWarnings.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              {pageData.workflowState.visibleWarnings.join(" ")}
+            </div>
+          ) : null}
         </article>
 
         <article className="panel p-6">
@@ -1903,63 +1716,64 @@ export function DocumentReviewWorkspace({
             </p>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {pageData.learningSuggestions.options.length > 0 ? (
-              <div className="md:col-span-2 rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
-                <p className="text-sm font-semibold">Sugerencias de aprendizaje</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  {pageData.learningSuggestions.options.map((option) => (
-                    <button
-                      key={option.scope}
-                      type="button"
-                      onClick={() => {
-                        setLearningScope(option.scope);
-                        if (!learnedConceptName.trim() && pageData.learningSuggestions.suggestedConceptName) {
-                          setLearnedConceptName(pageData.learningSuggestions.suggestedConceptName);
-                        }
-                      }}
-                      className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                        learningScope === option.scope
-                          ? "border-transparent bg-[color:var(--color-accent)] text-white"
-                          : "border-[color:var(--color-border)] bg-white/80"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium">{option.label}</span>
-                        {option.recommended ? (
-                          <span className="rounded-full bg-black/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
-                            recomendado
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className={`mt-2 leading-6 ${
-                        learningScope === option.scope
-                          ? "text-white/85"
-                          : "text-[color:var(--color-muted)]"
-                      }`}>
-                        {option.reason}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Aprender al confirmar</span>
-              <select
-                value={learningScope}
-                onChange={(event) => {
-                  setLearningScope(event.target.value as typeof learningScope);
-                }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
-              >
-                <option value="none">No aprender</option>
-                <option value="document_override">Solo este documento</option>
-                <option value="vendor_concept">Proveedor + concepto</option>
-                <option value="concept_global">Concepto global</option>
-                <option value="vendor_default">Default del proveedor</option>
-              </select>
-            </label>
+          <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+            La clasificacion ya no queda acoplada al aprendizaje: primero revisas la sugerencia, despues decides si guardas o no una regla reusable.
+          </div>
+        </article>
+
+        <RuleApplicationCard explanation={pageData.ruleExplanation} />
+
+        <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+
+        <article className="panel p-6">
+          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Guardar criterio para futuras facturas</h3>
+          <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+            Este bloque es explicito y separado de la confirmacion final.
+          </p>
+
+          {pageData.learningSuggestions.options.length > 0 ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {pageData.learningSuggestions.options.map((option) => (
+                <button
+                  key={option.scope}
+                  type="button"
+                  onClick={() => {
+                    setLearningScope(option.scope);
+                    if (!learnedConceptName.trim() && pageData.learningSuggestions.suggestedConceptName) {
+                      setLearnedConceptName(pageData.learningSuggestions.suggestedConceptName);
+                    }
+                  }}
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                    learningScope === option.scope
+                      ? "border-transparent bg-[color:var(--color-accent)] text-white"
+                      : "border-[color:var(--color-border)] bg-white/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{option.label}</span>
+                    {option.recommended ? (
+                      <span className="rounded-full bg-black/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
+                        recomendado
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className={`mt-2 leading-6 ${
+                    learningScope === option.scope
+                      ? "text-white/85"
+                      : "text-[color:var(--color-muted)]"
+                  }`}>
+                    {option.reason}
+                  </p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-[color:var(--color-border)] px-4 py-3 text-sm text-[color:var(--color-muted)]">
+              Todavia no hay una clasificacion reusable suficientemente estable para guardar como criterio.
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
             <label className="space-y-2 text-sm">
               <span className="font-medium">Nombre canonico para aprendizaje</span>
               <input
@@ -1971,6 +1785,17 @@ export function DocumentReviewWorkspace({
                 placeholder={pageData.learningSuggestions.suggestedConceptName ?? "Ej. Servicios administrativos"}
               />
             </label>
+            <button
+              type="button"
+              disabled={!pageData.canSaveLearningRule || learningScope === "none" || isPending}
+              onClick={() => {
+                runSaveLearningRule();
+              }}
+              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} self-end px-4 py-3 text-sm disabled:opacity-60`}
+            >
+              {pendingAction === "save_learning" && isPending ? <InlineSpinner /> : null}
+              Guardar criterio
+            </button>
           </div>
         </article>
 

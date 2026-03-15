@@ -32,6 +32,7 @@ export function hasTrustedAccountingRuleCoverage(input: {
   vendorResolution: AccountingSuggestionContext["vendorResolution"];
   conceptResolution: AccountingSuggestionContext["conceptResolution"];
   activeRules: AccountingSuggestionContext["activeRules"];
+  operationCategory: string | null;
 }) {
   const candidateConceptIds = input.conceptResolution.matchedConceptIds;
 
@@ -41,6 +42,22 @@ export function hasTrustedAccountingRuleCoverage(input: {
       && rule.document_id === input.documentId
       && rule.document_role === input.documentRole,
   )) {
+    return true;
+  }
+
+  if (
+    input.vendorResolution.vendorId
+    && input.operationCategory
+    && input.activeRules.some(
+      (rule) =>
+        rule.scope === "vendor_concept_operation_category"
+        && rule.vendor_id === input.vendorResolution.vendorId
+        && rule.concept_id !== null
+        && candidateConceptIds.includes(rule.concept_id)
+        && rule.operation_category === input.operationCategory
+        && rule.document_role === input.documentRole,
+    )
+  ) {
     return true;
   }
 
@@ -104,6 +121,7 @@ export function resolveAccountingContext(input: {
     vendorResolution: input.vendorResolution,
     conceptResolution: input.conceptResolution,
     activeRules: input.activeRules,
+    operationCategory: input.operationCategory,
   });
 
   if (input.vendorResolution.status === "ambiguous") {
@@ -304,6 +322,28 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
     accountingContext: input.accountingContext,
     assistantSuggestion: input.assistantSuggestion,
   });
+  const targetOperationCategory =
+    input.accountingContext.manualOverrideOperationCategory ?? input.operationCategory;
+  const vendorConceptOperationCategoryRule = input.activeRules.find(
+    (rule) =>
+      rule.scope === "vendor_concept_operation_category"
+      && rule.vendor_id === input.vendorResolution.vendorId
+      && rule.concept_id !== null
+      && candidateConceptIds.includes(rule.concept_id)
+      && rule.operation_category === targetOperationCategory
+      && rule.document_role === input.documentRole,
+  );
+
+  if (vendorConceptOperationCategoryRule) {
+    return buildResolvedRule({
+      rule: vendorConceptOperationCategoryRule,
+      accounts: input.accounts,
+      scope: "vendor_concept_operation_category",
+      provenance: "accounting_rule:vendor_concept_operation_category",
+      fallbackOperationCategory: targetOperationCategory,
+    })!;
+  }
+
   const vendorConceptRule = input.activeRules.find(
     (rule) =>
       rule.scope === "vendor_concept"
@@ -319,7 +359,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       accounts: input.accounts,
       scope: "vendor_concept",
       provenance: "accounting_rule:vendor_concept",
-      fallbackOperationCategory: input.operationCategory,
+      fallbackOperationCategory: targetOperationCategory,
     })!;
   }
 
@@ -337,7 +377,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       accounts: input.accounts,
       scope: "concept_global",
       provenance: "accounting_rule:concept_global",
-      fallbackOperationCategory: input.operationCategory,
+      fallbackOperationCategory: targetOperationCategory,
     })!;
   }
 
@@ -355,7 +395,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       scope: "vendor_default",
       provenance: "accounting_rule:vendor_default",
       fallbackOperationCategory:
-        input.vendorResolution.defaultOperationCategory ?? input.operationCategory,
+        input.vendorResolution.defaultOperationCategory ?? targetOperationCategory,
     })!;
   }
 
@@ -373,7 +413,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       vatProfileJson: input.vendorResolution.defaultTaxProfile,
       taxProfileCode: account?.tax_profile_hint ?? null,
       operationCategory:
-        input.vendorResolution.defaultOperationCategory ?? input.operationCategory,
+        input.vendorResolution.defaultOperationCategory ?? targetOperationCategory,
       linkedOperationType: null,
       templateCode: null,
       provenance: "vendor_default_fields",
@@ -401,7 +441,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       taxProfileCode: account?.tax_profile_hint ?? null,
       operationCategory:
         input.assistantSuggestion.output.suggestedOperationCategory
-        ?? input.operationCategory,
+        ?? targetOperationCategory,
       linkedOperationType: input.assistantSuggestion.output.linkedOperationType,
       templateCode: null,
       provenance: "assistant_second_pass",
@@ -421,7 +461,7 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
     status: "manual_review",
     vatProfileJson: null,
     taxProfileCode: null,
-    operationCategory: input.operationCategory,
+    operationCategory: targetOperationCategory,
     linkedOperationType: null,
     templateCode: null,
     provenance: "manual_review_required",

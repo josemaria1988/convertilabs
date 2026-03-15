@@ -1,142 +1,46 @@
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  full_name text,
-  avatar_url text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+alter type public.member_role add value if not exists 'admin_processing';
 
-create index if not exists idx_profiles_email
-  on public.profiles (email);
+alter table public.organizations
+  add column if not exists tax_id_normalized text;
 
-create table if not exists public.organizations (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  slug text not null unique,
-  country_code text not null default 'UY',
-  base_currency text not null default 'UYU',
-  legal_entity_type text,
-  tax_id text,
-  tax_id_normalized text,
-  tax_regime_code text,
-  vat_regime text not null default 'UNKNOWN',
-  dgi_group text not null default 'UNKNOWN',
-  cfe_status text not null default 'UNKNOWN',
-  default_locale text not null default 'es-UY',
-  active boolean not null default true,
-  created_by uuid references public.profiles(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+update public.organizations
+set
+  tax_id_normalized = nullif(regexp_replace(coalesce(tax_id, ''), '\D+', '', 'g'), ''),
+  updated_at = now()
+where coalesce(tax_id, '') <> '';
 
-create table if not exists public.organization_members (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  role public.member_role not null,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (organization_id, user_id)
-);
+with ranked_duplicates as (
+  select
+    id,
+    row_number() over (
+      partition by tax_id_normalized
+      order by created_at asc, id asc
+    ) as duplicate_rank
+  from public.organizations
+  where tax_id_normalized is not null
+)
+update public.organizations as organizations
+set
+  tax_id_normalized = null,
+  updated_at = now()
+from ranked_duplicates
+where ranked_duplicates.id = organizations.id
+  and ranked_duplicates.duplicate_rank > 1;
 
 create unique index if not exists idx_organizations_tax_id_normalized
   on public.organizations (tax_id_normalized)
   where tax_id_normalized is not null;
 
-create index if not exists idx_organization_members_user_id
-  on public.organization_members (user_id);
-
-create index if not exists idx_organization_members_organization_id
-  on public.organization_members (organization_id);
-
-drop function if exists public.sync_profile_from_auth_user();
-
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.profiles (id, email, full_name, avatar_url)
-  values (
-    new.id,
-    new.email,
-    nullif(new.raw_user_meta_data ->> 'full_name', ''),
-    nullif(new.raw_user_meta_data ->> 'avatar_url', '')
-  )
-  on conflict (id) do nothing;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
-
-drop trigger if exists on_auth_user_updated on auth.users;
-
-create or replace function public.is_org_member(p_org_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.organization_members as om
-    where om.organization_id = p_org_id
-      and om.user_id = auth.uid()
-      and om.is_active = true
-  );
-$$;
-
-create or replace function public.is_org_owner(p_org_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.organization_members as om
-    where om.organization_id = p_org_id
-      and om.user_id = auth.uid()
-      and om.is_active = true
-      and om.role = 'owner'::public.member_role
-  );
-$$;
-
-create or replace function public.slugify_organization_name(p_name text)
-returns text
-language sql
-immutable
-set search_path = public
-as $$
-  select trim(
-    both '-'
-    from regexp_replace(
-      regexp_replace(
-        translate(
-          lower(coalesce(p_name, '')),
-          U&'\00E1\00E0\00E4\00E2\00E3\00E5\00E9\00E8\00EB\00EA\00ED\00EC\00EF\00EE\00F3\00F2\00F6\00F4\00F5\00FA\00F9\00FC\00FB\00F1\00E7',
-          'aaaaaaeeeeiiiiooooouuuunc'
-        ),
-        '[^a-z0-9]+',
-        '-',
-        'g'
-      ),
-      '-{2,}',
-      '-',
-      'g'
-    )
-  );
-$$;
+drop function if exists public.create_organization_with_owner(text, text, text, text);
+drop function if exists public.create_organization_with_owner(
+  text,
+  text,
+  text,
+  text,
+  text,
+  text,
+  text
+);
 
 create or replace function public.create_organization_with_owner(
   p_name text,
@@ -336,3 +240,27 @@ grant execute on function public.create_organization_with_owner(text, text, text
 grant execute on function public.create_organization_with_owner(text, text, text, text) to service_role;
 grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to authenticated;
 grant execute on function public.create_organization_with_owner(text, text, text, text, text, text, text) to service_role;
+
+create table if not exists public.document_assignment_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  draft_id uuid not null references public.document_drafts(id) on delete cascade,
+  triggered_by_user_id uuid references public.profiles(id) on delete set null,
+  status text not null default 'started',
+  request_payload_json jsonb not null default '{}'::jsonb,
+  response_json jsonb not null default '{}'::jsonb,
+  selected_account_id uuid references public.chart_of_accounts(id) on delete set null,
+  selected_operation_category text,
+  selected_template_code text,
+  selected_tax_profile_code text,
+  confidence numeric(5,4),
+  provider_code text,
+  model_code text,
+  latency_ms integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
+);
+
+create index if not exists idx_document_assignment_runs_doc_created
+  on public.document_assignment_runs (document_id, created_at desc);

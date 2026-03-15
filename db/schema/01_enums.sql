@@ -1,6 +1,7 @@
 create type public.member_role as enum (
   'owner',
   'admin',
+  'admin_processing',
   'accountant',
   'reviewer',
   'operator',

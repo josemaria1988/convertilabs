@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { approveDocumentLearning } from "@/modules/accounting/learning-approval-service";
+import { runDocumentClassification } from "@/modules/accounting/classification-runner";
+import { confirmDocumentFinal } from "@/modules/documents/confirm-final-service";
+import { postDocumentProvisional } from "@/modules/documents/post-provisional-service";
+import { reopenDocumentForRemap } from "@/modules/documents/reopen-remap-service";
 import {
-  confirmFinalDocumentReview,
   confirmDocumentReview,
   createDocumentReviewOverrideAccount,
-  postProvisionalDocumentReview,
-  reopenDocumentReview,
   resolveDocumentDuplicate,
   saveDraftReview,
 } from "@/modules/documents/review";
@@ -65,14 +67,14 @@ export async function confirmDocumentReviewAction(input: {
   slug: string;
   documentId: string;
   learning?: {
-    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
     learnedConceptName: string | null;
   };
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
 
-  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
     return {
       ok: false,
       message: "Tu rol no puede confirmar este documento.",
@@ -103,14 +105,14 @@ export async function postProvisionalDocumentReviewAction(input: {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
 
-  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
     return {
       ok: false,
       message: "Tu rol no puede postear este documento en modo provisional.",
     };
   }
 
-  const result = await postProvisionalDocumentReview({
+  const result = await postDocumentProvisional({
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,
@@ -130,21 +132,21 @@ export async function confirmFinalDocumentReviewAction(input: {
   slug: string;
   documentId: string;
   learning?: {
-    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
     learnedConceptName: string | null;
   };
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
 
-  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
     return {
       ok: false,
       message: "Tu rol no puede confirmar este documento.",
     };
   }
 
-  const result = await confirmFinalDocumentReview({
+  const result = await confirmDocumentFinal({
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,
@@ -202,7 +204,7 @@ export async function resolveDocumentDuplicateAction(input: {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
 
-  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
     return {
       ok: false,
       message: "Tu rol no puede resolver duplicados documentales.",
@@ -239,10 +241,74 @@ export async function reopenDocumentReviewAction(input: {
     };
   }
 
-  const result = await reopenDocumentReview({
+  const result = await reopenDocumentForRemap({
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+
+  return result;
+}
+
+export async function runDocumentClassificationAction(input: {
+  slug: string;
+  documentId: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede ejecutar clasificacion contable.",
+    };
+  }
+
+  const result = await runDocumentClassification({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+
+  return {
+    ok: result.ok,
+    message: result.message,
+  };
+}
+
+export async function saveDocumentLearningRuleAction(input: {
+  slug: string;
+  documentId: string;
+  learning: {
+    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
+    learnedConceptName: string | null;
+  };
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede guardar criterios reusables.",
+    };
+  }
+
+  const result = await approveDocumentLearning({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    learning: input.learning,
   });
   const paths = buildPaths(input.slug, input.documentId);
 

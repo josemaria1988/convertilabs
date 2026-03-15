@@ -318,6 +318,7 @@ export type PostableAccountRecord = {
 
 export type AccountingRuleScope =
   | "document_override"
+  | "vendor_concept_operation_category"
   | "vendor_concept"
   | "concept_global"
   | "vendor_default";
@@ -603,6 +604,7 @@ export type DuplicateResolutionResult = {
 export type LearnApprovalScope =
   | "none"
   | "document_override"
+  | "vendor_concept_operation_category"
   | "vendor_concept"
   | "concept_global"
   | "vendor_default";
@@ -613,6 +615,7 @@ export type ApprovalLearningInput = {
 };
 
 export type LearningSuggestionScope =
+  | "vendor_concept_operation_category"
   | "vendor_concept"
   | "concept_global"
   | "vendor_default";
@@ -637,6 +640,33 @@ export type AccountingRuntimeContext = {
   conceptAliases: OrganizationConceptAliasRecord[];
   accounts: PostableAccountRecord[];
   activeRules: AccountingRuleRecord[];
+};
+
+export type DocumentAssignmentRunStatus =
+  | "started"
+  | "completed"
+  | "failed"
+  | "stale";
+
+export type DocumentAssignmentRunRecord = {
+  id: string;
+  organizationId: string;
+  documentId: string;
+  draftId: string;
+  triggeredByUserId: string | null;
+  status: DocumentAssignmentRunStatus;
+  requestPayload: JsonRecord;
+  responseJson: JsonRecord;
+  selectedAccountId: string | null;
+  selectedOperationCategory: string | null;
+  selectedTemplateCode: string | null;
+  selectedTaxProfileCode: string | null;
+  confidence: number | null;
+  providerCode: string | null;
+  modelCode: string | null;
+  latencyMs: number | null;
+  createdAt: string;
+  updatedAt: string | null;
 };
 
 export type {

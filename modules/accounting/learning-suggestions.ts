@@ -17,6 +17,7 @@ export function buildAccountingLearningSuggestions(input: {
   accountingContext: AccountingSuggestionContext["accountingContext"];
   conceptResolution: AccountingSuggestionContext["conceptResolution"];
   vendorResolution: AccountingSuggestionContext["vendorResolution"];
+  operationCategory: string | null;
   appliedRule: {
     accountId: string | null;
   };
@@ -32,8 +33,19 @@ export function buildAccountingLearningSuggestions(input: {
   );
   const hasVendor =
     input.vendorResolution.status === "matched" && Boolean(input.vendorResolution.vendorId);
+  const hasOperationCategory = Boolean(input.operationCategory);
   const options: AccountingLearningSuggestionSummary["options"] = [];
   let recommendedScope: LearnApprovalScope = "none";
+
+  if (hasVendor && hasReusableConcept && hasOperationCategory) {
+    options.push({
+      scope: "vendor_concept_operation_category",
+      label: "Proveedor + concepto + operacion",
+      reason: "Conviene cuando el mismo proveedor y concepto cambian de cuenta segun el tipo de operacion.",
+      recommended: false,
+      requiresConceptName: !input.conceptResolution.matchedConceptIds[0],
+    });
+  }
 
   if (hasVendor && hasReusableConcept) {
     options.push({
@@ -66,7 +78,9 @@ export function buildAccountingLearningSuggestions(input: {
   }
 
   if (options.length > 0 && input.appliedRule.accountId) {
-    if (hasVendor && hasReusableConcept) {
+    if (hasVendor && hasReusableConcept && hasOperationCategory) {
+      recommendedScope = "vendor_concept_operation_category";
+    } else if (hasVendor && hasReusableConcept) {
       recommendedScope = "vendor_concept";
     } else if (hasReusableConcept) {
       recommendedScope = "concept_global";

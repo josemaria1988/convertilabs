@@ -1392,13 +1392,19 @@ async function createConceptAliasesFromApproval(
     .map((line) => ({
       organization_id: input.organizationId,
       concept_id: input.conceptId,
-      vendor_id: input.scope === "vendor_concept" ? input.vendorId : null,
+      vendor_id:
+        input.scope === "vendor_concept" || input.scope === "vendor_concept_operation_category"
+          ? input.vendorId
+          : null,
       alias_code_normalized: line.normalizedCode,
       alias_description_normalized:
         line.normalizedDescription
         ?? line.normalizedCode
         ?? `line_${line.lineNumber}`,
-      match_scope: input.scope === "vendor_concept" ? "vendor" : "organization",
+      match_scope:
+        input.scope === "vendor_concept" || input.scope === "vendor_concept_operation_category"
+          ? "vendor"
+          : "organization",
       source: "learned_from_approval",
       updated_at: new Date().toISOString(),
     }));
@@ -1448,7 +1454,11 @@ export async function createRuleFromApproval(
 
   let conceptId = input.conceptId;
 
-  if (input.learning.scope === "concept_global" || input.learning.scope === "vendor_concept") {
+  if (
+    input.learning.scope === "concept_global"
+    || input.learning.scope === "vendor_concept"
+    || input.learning.scope === "vendor_concept_operation_category"
+  ) {
     conceptId = await ensureConceptForApproval(supabase, {
       organizationId: input.organizationId,
       documentRole: input.documentRole,
@@ -1488,11 +1498,15 @@ export async function createRuleFromApproval(
       document_id: input.learning.scope === "document_override" ? input.documentId : null,
       source_document_id: input.documentId,
       vendor_id:
-        input.learning.scope === "vendor_concept" || input.learning.scope === "vendor_default"
+        input.learning.scope === "vendor_concept"
+        || input.learning.scope === "vendor_concept_operation_category"
+        || input.learning.scope === "vendor_default"
           ? input.vendorId
           : null,
       concept_id:
-        input.learning.scope === "vendor_concept" || input.learning.scope === "concept_global"
+        input.learning.scope === "vendor_concept"
+        || input.learning.scope === "vendor_concept_operation_category"
+        || input.learning.scope === "concept_global"
           ? conceptId
           : null,
       document_role: input.documentRole,
@@ -1508,6 +1522,8 @@ export async function createRuleFromApproval(
       priority:
         input.learning.scope === "document_override"
           ? 1000
+          : input.learning.scope === "vendor_concept_operation_category"
+            ? 950
           : input.learning.scope === "vendor_concept"
             ? 900
             : input.learning.scope === "concept_global"
@@ -1530,7 +1546,11 @@ export async function createRuleFromApproval(
 
   if (
     conceptId
-    && (input.learning.scope === "vendor_concept" || input.learning.scope === "concept_global")
+    && (
+      input.learning.scope === "vendor_concept"
+      || input.learning.scope === "vendor_concept_operation_category"
+      || input.learning.scope === "concept_global"
+    )
   ) {
     await createConceptAliasesFromApproval(supabase, {
       organizationId: input.organizationId,

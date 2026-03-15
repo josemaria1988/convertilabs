@@ -136,7 +136,8 @@ export function resolveDecisionSourceFromAppliedRule(input: {
   }
 
   if (
-    input.appliedRule.scope === "vendor_concept"
+    input.appliedRule.scope === "vendor_concept_operation_category"
+    || input.appliedRule.scope === "vendor_concept"
     || input.appliedRule.scope === "vendor_default"
   ) {
     return "vendor_rule" satisfies AIDecisionSource;

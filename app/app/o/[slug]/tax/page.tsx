@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { VatRunPreviewCard } from "@/components/tax/vat-run-preview-card";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -8,9 +9,11 @@ import { loadRecentExports, loadVatRunExportDataset } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
 import { listOrganizationSpreadsheetImportRuns } from "@/modules/spreadsheets";
+import { buildVatRunPreview } from "@/modules/tax/vat-run-preview";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 import {
   createVatRunExportAction,
+  generateVatRunDefinitiveAction,
   updateVatRunLifecycleAction,
 } from "./actions";
 
@@ -82,6 +85,15 @@ export default async function OrganizationTaxPage({
   );
 
   const latestRun = vatRuns[0] ?? null;
+  const previewPeriod = latestRun?.periodLabel ?? new Date().toISOString().slice(0, 7);
+  const [previewYear, previewMonth] = previewPeriod
+    .split("-")
+    .map((value) => Number.parseInt(value, 10));
+  const vatPreview = await buildVatRunPreview({
+    organizationId: organization.id,
+    year: previewYear,
+    month: previewMonth,
+  });
   const latestExportDataset = latestRun
     ? await loadVatRunExportDataset(supabase, organization.id, latestRun.id)
     : null;
@@ -155,6 +167,22 @@ export default async function OrganizationTaxPage({
               </p>
             </article>
           </section>
+
+          <VatRunPreviewCard preview={vatPreview} />
+
+          <form
+            action={async () => {
+              "use server";
+              await generateVatRunDefinitiveAction({
+                slug,
+                period: vatPreview.period,
+              });
+            }}
+          >
+            <SubmitButton pendingLabel="Regenerando..." className="ui-button ui-button--primary">
+              Generar IVA definitivo desde la simulacion
+            </SubmitButton>
+          </form>
 
           <section className="ui-panel">
             <div className="ui-panel-header">

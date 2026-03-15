@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { createVatRunExport } from "@/modules/exports";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { rebuildMonthlyVatRunFromConfirmations } from "@/modules/tax/vat-runs";
 import { updateVatRunLifecycle } from "@/modules/tax/vat-runs";
 
 function taxPath(slug: string) {
@@ -71,5 +72,35 @@ export async function createVatRunExportAction(input: {
     ok: true,
     message: "Export generado.",
     downloadUrl: result.downloadUrl,
+  };
+}
+
+export async function generateVatRunDefinitiveAction(input: {
+  slug: string;
+  period: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede generar la corrida definitiva de IVA.",
+    };
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  await rebuildMonthlyVatRunFromConfirmations(
+    supabase,
+    organization.id,
+    input.period,
+    authState.user?.id ?? null,
+  );
+
+  revalidatePath(taxPath(input.slug));
+
+  return {
+    ok: true,
+    message: "Corrida definitiva de IVA regenerada desde la simulacion actual.",
   };
 }

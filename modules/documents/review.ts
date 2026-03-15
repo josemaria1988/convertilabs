@@ -14,20 +14,24 @@ import {
   asRecord,
   asString,
   asStringArray,
+  buildAccountingImpactPreview,
   buildAccountingLearningSuggestions,
   buildAccountingDecisionLog,
   buildPersistableConceptLines,
   buildDraftFieldsPayload,
   buildDraftStepSnapshots,
   buildInvoiceIdentityResult,
+  buildRuleApplicationExplanation,
   createReviewOverrideAccount,
   createRuleFromApproval,
   deriveDocumentAccountingState,
   getOperationCategoryValue,
   insertAIDecisionLogs,
+  loadLatestDocumentAssignmentRun,
   loadDocumentAccountingContext,
   loadDocumentAIDecisionLogs,
   loadDocumentInvoiceIdentity,
+  markDocumentAssignmentRunsStale,
   parseAmountBreakdown,
   parseDraftFacts,
   parseLineItems,
@@ -57,10 +61,12 @@ import {
   assertVatPeriodMutableForDocument,
   rebuildMonthlyVatRunFromConfirmations,
 } from "@/modules/tax/vat-runs";
+import { deriveDocumentWorkflowState } from "@/modules/documents/workflow-state";
 
 type OrganizationMemberRole =
   | "owner"
   | "admin"
+  | "admin_processing"
   | "accountant"
   | "reviewer"
   | "operator"
@@ -316,15 +322,19 @@ export type DocumentReviewPageData = {
   };
   learningSuggestions: {
     suggestedConceptName: string | null;
-    recommendedScope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    recommendedScope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
     options: Array<{
-      scope: "vendor_concept" | "concept_global" | "vendor_default";
+      scope: "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
       label: string;
       reason: string;
       recommended: boolean;
       requiresConceptName: boolean;
     }>;
   };
+  workflowState: ReturnType<typeof deriveDocumentWorkflowState>;
+  latestClassificationRun: Awaited<ReturnType<typeof loadLatestDocumentAssignmentRun>>;
+  ruleExplanation: ReturnType<typeof buildRuleApplicationExplanation>;
+  accountingImpactPreview: ReturnType<typeof buildAccountingImpactPreview>;
   certaintySummary: {
     level: "green" | "yellow" | "red";
     confidence: number | null;
@@ -346,6 +356,8 @@ export type DocumentReviewPageData = {
   canConfirmFinal: boolean;
   canConfirm: boolean;
   canReopen: boolean;
+  canRunClassification: boolean;
+  canSaveLearningRule: boolean;
 };
 
 export type DocumentOriginalPageData = {
@@ -1422,7 +1434,7 @@ export async function loadDocumentReviewPageData(input: {
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
   const lineItems = parseLineItems(draft.fields_json);
   const operationCategory = getOperationCategoryValue(draft, facts);
-  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity, decisionLogs] =
+  const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity, decisionLogs, latestClassificationRun] =
     await Promise.all([
       loadRuleSnapshot(supabase, document, draft, input.actorId),
       loadDraftSteps(supabase, draft.id),
@@ -1435,6 +1447,7 @@ export async function loadDocumentReviewPageData(input: {
         organizationId: input.organizationId,
         documentId: document.id,
       }),
+      loadLatestDocumentAssignmentRun(supabase, input.organizationId, document.id),
     ]);
   const invoiceIdentity = buildInvoiceIdentityResult({
     facts,
@@ -1470,7 +1483,28 @@ export async function loadDocumentReviewPageData(input: {
     accountingContext: derived.accountingContext,
     conceptResolution: derived.conceptResolution,
     vendorResolution: derived.vendorResolution,
+    operationCategory,
     appliedRule: derived.appliedRule,
+  });
+  const ruleExplanation = buildRuleApplicationExplanation({
+    appliedRule: derived.appliedRule,
+    vendorResolution: derived.vendorResolution,
+    conceptResolution: derived.conceptResolution,
+    accountingContext: derived.accountingContext,
+  });
+  const accountingImpactPreview = buildAccountingImpactPreview({
+    journalSuggestion: derived.journalSuggestion,
+    taxTreatment: derived.taxTreatment,
+    appliedRule: derived.appliedRule,
+  });
+  const workflowState = deriveDocumentWorkflowState({
+    documentStatus: document.status,
+    postingStatus: document.posting_status,
+    draftStatus: draft.status,
+    steps,
+    derived,
+    latestClassificationRun,
+    learningOptionCount: learningSuggestions.options.length,
   });
 
   return {
@@ -1544,6 +1578,10 @@ export async function loadDocumentReviewPageData(input: {
       })),
     },
     learningSuggestions,
+    workflowState,
+    latestClassificationRun,
+    ruleExplanation,
+    accountingImpactPreview,
     certaintySummary,
     decisionLogs: decisionLogs.map((log) => ({
       id: log.id,
@@ -1558,20 +1596,26 @@ export async function loadDocumentReviewPageData(input: {
       createdAt: log.created_at,
     })),
     canPostProvisional:
-      ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
+      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
       && derived.validation.canPostProvisional
       && draft.status !== "confirmed",
     canConfirmFinal:
-      ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
+      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
       && derived.validation.canConfirmFinal
       && draft.status !== "confirmed",
     canConfirm:
-      ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
+      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
       && derived.validation.canConfirmFinal
       && draft.status !== "confirmed",
     canReopen:
       ["owner", "admin"].includes(input.userRole)
       && (document.status === "classified" || draft.status === "confirmed"),
+    canRunClassification:
+      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
+      && workflowState.canRunClassification,
+    canSaveLearningRule:
+      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
+      && workflowState.canCreateLearningRule,
   } satisfies DocumentReviewPageData;
 }
 
@@ -1714,6 +1758,9 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
   }
 
   await persistDraftArtifacts(supabase, document, nextDraft, input.actorId, derived);
+  await markDocumentAssignmentRunsStale(supabase, {
+    documentId: document.id,
+  });
 
   return {
     ok: true,
@@ -2331,6 +2378,10 @@ export async function reopenDocumentReview(input: {
   if (documentError) {
     throw new Error(documentError.message);
   }
+
+  await markDocumentAssignmentRunsStale(supabase, {
+    documentId: document.id,
+  });
 
   return {
     ok: true,

@@ -233,6 +233,30 @@ create table if not exists public.document_accounting_contexts (
 create index if not exists idx_document_accounting_contexts_doc_status
   on public.document_accounting_contexts (document_id, status);
 
+create table if not exists public.document_assignment_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  draft_id uuid not null references public.document_drafts(id) on delete cascade,
+  triggered_by_user_id uuid references public.profiles(id) on delete set null,
+  status text not null default 'started',
+  request_payload_json jsonb not null default '{}'::jsonb,
+  response_json jsonb not null default '{}'::jsonb,
+  selected_account_id uuid references public.chart_of_accounts(id) on delete set null,
+  selected_operation_category text,
+  selected_template_code text,
+  selected_tax_profile_code text,
+  confidence numeric(5,4),
+  provider_code text,
+  model_code text,
+  latency_ms integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
+);
+
+create index if not exists idx_document_assignment_runs_doc_created
+  on public.document_assignment_runs (document_id, created_at desc);
+
 create table if not exists public.document_confirmations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

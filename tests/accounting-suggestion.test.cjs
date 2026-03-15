@@ -413,6 +413,50 @@ test("rule selection follows explicit precedence with vendor concept over concep
   assert.equal(manual.provenance, "manual_override");
 });
 
+test("rule selection gives priority to vendor concept plus operation category over vendor concept", () => {
+  const selected = resolveAccountingRuleSelection(buildBaseContext({
+    activeRules: [
+      {
+        id: "rule-vendor-concept",
+        organization_id: "org-1",
+        scope: "vendor_concept",
+        document_id: null,
+        vendor_id: "vendor-1",
+        concept_id: "concept-services",
+        document_role: "purchase",
+        account_id: "acct-expense",
+        vat_profile_json: {},
+        operation_category: "services",
+        linked_operation_type: null,
+        priority: 900,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+      {
+        id: "rule-vendor-concept-operation",
+        organization_id: "org-1",
+        scope: "vendor_concept_operation_category",
+        document_id: null,
+        vendor_id: "vendor-1",
+        concept_id: "concept-services",
+        document_role: "purchase",
+        account_id: "acct-expense",
+        vat_profile_json: {},
+        operation_category: "services",
+        linked_operation_type: null,
+        priority: 950,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+  }));
+
+  assert.equal(selected.scope, "vendor_concept_operation_category");
+  assert.equal(selected.ruleId, "rule-vendor-concept-operation");
+});
+
 test("purchase artifacts build a balanced journal from organization accounts and rules", () => {
   const derived = buildAccountingDraftArtifacts(buildBaseContext());
 
@@ -552,13 +596,14 @@ test("learning suggestions proactively recommend vendor plus concept when both a
     accountingContext: seed.accountingContext,
     conceptResolution: seed.conceptResolution,
     vendorResolution: seed.vendorResolution,
+    operationCategory: "services",
     appliedRule: {
       accountId: "acct-expense",
     },
   });
 
-  assert.equal(suggestions.recommendedScope, "vendor_concept");
-  assert.equal(suggestions.options[0].scope, "vendor_concept");
+  assert.equal(suggestions.recommendedScope, "vendor_concept_operation_category");
+  assert.equal(suggestions.options[0].scope, "vendor_concept_operation_category");
 });
 
 test("journal suggestion blocks when a required VAT system account is missing", () => {

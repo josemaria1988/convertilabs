@@ -86,6 +86,15 @@ function mapCreateOrganizationError(message: string) {
     });
   }
 
+  if (
+    normalizedMessage.includes("organization with this tax id already exists")
+    || normalizedMessage.includes("request access to the existing tenant")
+  ) {
+    return buildActionError("Ya existe una organizacion registrada con este RUT.", {
+      taxId: "Si perteneces a esa empresa, pide acceso al owner o al contador responsable.",
+    });
+  }
+
   if (normalizedMessage.includes("tax regime code is required")) {
     return buildActionError("Falta el regimen tributario de la organizacion.", {
       taxRegimeCode: "Selecciona un regimen tributario soportado para V1.",

@@ -288,7 +288,7 @@ async function loadPostedDrafts(
   supabase: SupabaseClient,
   organizationId: string,
 ) {
-  let documentResult = await supabase
+  const documentResult = await supabase
     .from("documents")
     .select("id, current_draft_id, posting_status")
     .eq("organization_id", organizationId)
