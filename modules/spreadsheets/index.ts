@@ -1,4 +1,5 @@
 export * from "@/modules/spreadsheets/batch";
+export * from "@/modules/spreadsheets/direct-chart-import";
 export * from "@/modules/spreadsheets/import-runner";
 export * from "@/modules/spreadsheets/interpreter";
 export * from "@/modules/spreadsheets/materialize";

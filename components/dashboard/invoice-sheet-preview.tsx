@@ -3,6 +3,8 @@ import { DocumentPreview } from "@/components/documents/document-preview";
 type InvoiceSheetPreviewProps = {
   title?: string;
   counterpartyName?: string | null;
+  documentNumber?: string | null;
+  documentSeries?: string | null;
   documentType?: string | null;
   documentDate?: string | null;
   taxAmount?: number | null;
@@ -24,18 +26,39 @@ function formatAmount(value: number | null | undefined) {
   return moneyFormatter.format(value);
 }
 
-function getInvoiceCode(title: string | undefined) {
-  if (!title) {
-    return "1534";
+function getInvoiceCode(
+  documentNumber: string | null | undefined,
+  documentSeries: string | null | undefined,
+  title: string | undefined,
+) {
+  const normalizedNumber = documentNumber?.trim();
+  const normalizedSeries = documentSeries?.trim();
+
+  if (normalizedSeries && normalizedNumber) {
+    return `${normalizedSeries} ${normalizedNumber}`;
   }
 
-  const match = title.match(/(\d{3,6})/);
-  return match?.[1] ?? "1534";
+  if (normalizedNumber) {
+    return normalizedNumber;
+  }
+
+  if (normalizedSeries) {
+    return normalizedSeries;
+  }
+
+  if (!title) {
+    return "s/d";
+  }
+
+  const matches = Array.from(title.matchAll(/(\d{3,8})/g));
+  return matches.at(-1)?.[1] ?? "s/d";
 }
 
 export function InvoiceSheetPreview({
   title,
   counterpartyName,
+  documentNumber,
+  documentSeries,
   documentType,
   documentDate,
   taxAmount,
@@ -50,7 +73,7 @@ export function InvoiceSheetPreview({
           Documento fiscal
         </p>
         <h3 className="mt-3 text-[29px] font-semibold tracking-[-0.04em] text-[#161a21]">
-          Factura N&deg; {getInvoiceCode(title)}
+          Factura N&deg; {getInvoiceCode(documentNumber, documentSeries, title)}
         </h3>
         <p className="mt-2 text-[13px] text-[#60646d]">
           {counterpartyName ?? "Proveedor identificado"}

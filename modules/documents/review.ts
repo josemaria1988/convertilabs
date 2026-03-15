@@ -204,6 +204,8 @@ export type DocumentWorkspaceListItem = {
   createdAt: string;
   documentDate: string | null;
   counterpartyName: string | null;
+  documentNumber: string | null;
+  documentSeries: string | null;
   taxAmount: number | null;
   totalAmount: number | null;
   hasProcessedDraft: boolean;
@@ -1144,6 +1146,8 @@ export async function listOrganizationWorkspaceDocuments(input: {
 
       return {
         counterpartyName,
+        documentNumber: facts?.document_number ?? null,
+        documentSeries: facts?.series ?? null,
         taxAmount: facts?.tax_amount ?? null,
         totalAmount: facts?.total_amount ?? null,
       };

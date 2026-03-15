@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import {
   buildCanonicalTaxPayload,
   buildDgiFormSummary,
@@ -263,7 +264,13 @@ export async function loadVatRunExportDataset(
     || journalEntriesResult.error
     || importOperationsResult.error
     || importTaxesResult.error
-    || historicalRunsResult.error
+    || (
+      historicalRunsResult.error
+      && !isMissingSupabaseRelationError(
+        historicalRunsResult.error,
+        "organization_spreadsheet_import_runs",
+      )
+    )
   ) {
     throw new Error(
       documentsResult.error?.message
@@ -275,7 +282,15 @@ export async function loadVatRunExportDataset(
       ?? journalEntriesResult.error?.message
       ?? importOperationsResult.error?.message
       ?? importTaxesResult.error?.message
-      ?? historicalRunsResult.error?.message
+      ?? (
+        historicalRunsResult.error
+        && !isMissingSupabaseRelationError(
+          historicalRunsResult.error,
+          "organization_spreadsheet_import_runs",
+        )
+          ? historicalRunsResult.error.message
+          : null
+      )
       ?? "No se pudo cargar el dataset de export.",
     );
   }

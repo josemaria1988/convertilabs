@@ -22,6 +22,8 @@ type DashboardDocumentWorkspaceItem = {
   documentType: string | null;
   documentDate: string | null;
   counterpartyName: string | null;
+  documentNumber: string | null;
+  documentSeries: string | null;
   taxAmount: number | null;
   totalAmount: number | null;
 };
@@ -43,6 +45,8 @@ const emptyDocument: DashboardDocumentWorkspaceItem = {
   processedHref: null,
   previewUrl: null,
   mimeType: null,
+  documentNumber: null,
+  documentSeries: null,
   taxAmount: null,
   totalAmount: null,
 };
@@ -185,6 +189,8 @@ export function DashboardDocumentWorkspace({
         <InvoiceSheetPreview
           title={selectedDocument.originalFilename}
           counterpartyName={selectedDocument.counterpartyName}
+          documentNumber={selectedDocument.documentNumber}
+          documentSeries={selectedDocument.documentSeries}
           documentType={selectedDocument.documentType}
           documentDate={selectedDocument.documentDate}
           taxAmount={selectedDocument.taxAmount}

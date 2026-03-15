@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import {
   createOrganizationChartAccount,
   updateOrganizationChartAccount,
@@ -14,6 +15,7 @@ import {
 import {
   appendSpreadsheetStatusEvent,
   confirmCompletedSpreadsheetImport,
+  importChartOfAccountsSpreadsheetDirect,
   materializeSpreadsheetImportRun,
   runSpreadsheetImport,
   updateSpreadsheetImportRun,
@@ -122,53 +124,70 @@ export async function importOrganizationChartSpreadsheetAction(formData: FormDat
   }
 
   const supabase = getSupabaseServiceRoleClient();
-  const run = await runSpreadsheetImport({
-    supabase,
-    organizationId: organization.id,
-    actorId: authState.user?.id ?? null,
-    fileName: file.name,
-    mimeType: file.type,
-    bytes: await file.arrayBuffer(),
-    preferredMode: "interactive",
-  });
+  const bytes = await file.arrayBuffer();
 
-  if (run.status !== "completed") {
-    throw new Error("La importacion rapida no pudo completarse en modo interactivo.");
+  try {
+    const run = await runSpreadsheetImport({
+      supabase,
+      organizationId: organization.id,
+      actorId: authState.user?.id ?? null,
+      fileName: file.name,
+      mimeType: file.type,
+      bytes,
+      preferredMode: "interactive",
+    });
+
+    if (run.status !== "completed") {
+      throw new Error("La importacion rapida no pudo completarse en modo interactivo.");
+    }
+
+    if (run.importType !== "chart_of_accounts_import" && run.importType !== "mixed") {
+      throw new Error("La planilla no fue detectada como un import valido de plan de cuentas.");
+    }
+
+    const materialized = await materializeSpreadsheetImportRun(supabase, {
+      organizationId: organization.id,
+      actorId: authState.user?.id ?? null,
+      run,
+      selectedSections: ["chart_of_accounts_import"],
+    });
+    const confirmed = await confirmCompletedSpreadsheetImport({
+      supabase,
+      organizationId: organization.id,
+      runId: run.id,
+      actorId: authState.user?.id ?? null,
+    });
+
+    await updateSpreadsheetImportRun(supabase, {
+      organizationId: organization.id,
+      runId: confirmed.id,
+      statusEvents: appendSpreadsheetStatusEvent(
+        confirmed.statusEvents,
+        "materialized",
+        materialized.notes.join(" ") || "Plan de cuentas materializado desde configuracion.",
+      ),
+      metadata: {
+        ...confirmed.metadata,
+        materialized_sections: materialized.sections,
+        materialization_stats: materialized.stats,
+        materialization_notes: materialized.notes,
+        imported_from_settings: true,
+      },
+    });
+  } catch (error) {
+    if (!isMissingSupabaseRelationError(error as { message?: string } | null, "organization_spreadsheet_import_runs")) {
+      throw error;
+    }
+
+    await importChartOfAccountsSpreadsheetDirect({
+      supabase,
+      organizationId: organization.id,
+      actorId: authState.user?.id ?? null,
+      fileName: file.name,
+      mimeType: file.type,
+      bytes,
+    });
   }
-
-  if (run.importType !== "chart_of_accounts_import" && run.importType !== "mixed") {
-    throw new Error("La planilla no fue detectada como un import valido de plan de cuentas.");
-  }
-
-  const materialized = await materializeSpreadsheetImportRun(supabase, {
-    organizationId: organization.id,
-    actorId: authState.user?.id ?? null,
-    run,
-    selectedSections: ["chart_of_accounts_import"],
-  });
-  const confirmed = await confirmCompletedSpreadsheetImport({
-    supabase,
-    organizationId: organization.id,
-    runId: run.id,
-    actorId: authState.user?.id ?? null,
-  });
-
-  await updateSpreadsheetImportRun(supabase, {
-    organizationId: organization.id,
-    runId: confirmed.id,
-    statusEvents: appendSpreadsheetStatusEvent(
-      confirmed.statusEvents,
-      "materialized",
-      materialized.notes.join(" ") || "Plan de cuentas materializado desde configuracion.",
-    ),
-    metadata: {
-      ...confirmed.metadata,
-      materialized_sections: materialized.sections,
-      materialization_stats: materialized.stats,
-      materialization_notes: materialized.notes,
-      imported_from_settings: true,
-    },
-  });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/imports`);

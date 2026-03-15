@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import type {
   SpreadsheetFileKind,
   SpreadsheetImportRunRecord,
@@ -324,6 +325,10 @@ export async function loadSpreadsheetImportRun(
     .limit(1)
     .maybeSingle();
 
+  if (error && isMissingSupabaseRelationError(error, "organization_spreadsheet_import_runs")) {
+    return null;
+  }
+
   if (error) {
     throw new Error(error.message);
   }
@@ -344,6 +349,10 @@ export async function listOrganizationSpreadsheetImportRuns(
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (error && isMissingSupabaseRelationError(error, "organization_spreadsheet_import_runs")) {
+    return [];
+  }
 
   if (error) {
     throw new Error(error.message);
