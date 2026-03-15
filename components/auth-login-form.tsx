@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { LoadingLink } from "@/components/ui/loading-link";
 import {
   type LoginFieldErrors,
   type LoginInput,
@@ -164,14 +165,16 @@ export function AuthLoginForm({ nextPath }: AuthLoginFormProps) {
           disabled={isPending}
           className="ui-button ui-button--primary min-w-[118px] flex-1 disabled:cursor-not-allowed disabled:opacity-70"
         >
+          {isPending ? <InlineSpinner /> : null}
           {isPending ? "Ingresando..." : "Ingresar"}
         </button>
-        <Link
+        <LoadingLink
           href="/signup"
+          pendingLabel="Abriendo..."
           className="ui-button ui-button--secondary min-w-[118px] flex-1"
         >
           Crear cuenta
-        </Link>
+        </LoadingLink>
       </div>
     </form>
   );

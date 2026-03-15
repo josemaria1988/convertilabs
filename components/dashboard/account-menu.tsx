@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buttonBaseClassName,
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
+import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 type AccountMenuProps = {
@@ -135,8 +135,9 @@ export function AccountMenu({
               </p>
             </div>
 
-            <Link
+            <LoadingLink
               href={`/app/o/${organizationSlug}/settings`}
+              pendingLabel="Abriendo..."
               className="block rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm transition hover:border-[rgba(255,255,255,0.12)] hover:bg-[rgba(255,255,255,0.05)]"
               onClick={() => {
                 setIsOpen(false);
@@ -146,7 +147,7 @@ export function AccountMenu({
               <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
                 Perfil de la organizacion, datos fiscales y plan de cuentas.
               </p>
-            </Link>
+            </LoadingLink>
 
             <form action="/logout" method="post">
               <SubmitButton

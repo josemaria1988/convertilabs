@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { DocumentUploadDropzone } from "@/components/documents/upload-dropzone";
+import { LoadingLink } from "@/components/ui/loading-link";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationWorkspaceDocuments } from "@/modules/documents/review";
 import {
@@ -154,12 +155,13 @@ export default async function OrganizationDocumentsPage({
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
                           {document.processedHref ? (
-                            <Link
+                            <LoadingLink
                               href={document.processedHref}
+                              pendingLabel="Abriendo..."
                               className={getReviewButtonClasses(document.status)}
                             >
                               Abrir revision
-                            </Link>
+                            </LoadingLink>
                           ) : (
                             <span>Draft pendiente</span>
                           )}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { AuthSignupForm } from "@/components/auth-signup-form";
 import { ConvertilabsLogo } from "@/components/convertilabs-logo";
+import { LoadingLink } from "@/components/ui/loading-link";
 import { redirectAuthenticatedUserFromPublicAuthPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
@@ -48,12 +48,13 @@ export default async function SignupPage() {
             </div>
 
             <div className="mt-auto pt-10">
-              <Link
+              <LoadingLink
                 href="/login"
+                pendingLabel="Abriendo..."
                 className="inline-flex rounded-[0.95rem] border border-[color:var(--color-border)] bg-transparent px-4 py-3 text-sm font-medium text-[color:var(--color-muted)] transition hover:border-[rgba(124,157,255,0.22)] hover:text-white"
               >
                 Ya tengo cuenta
-              </Link>
+              </LoadingLink>
             </div>
           </div>
         </section>

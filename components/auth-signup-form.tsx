@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { LoadingLink } from "@/components/ui/loading-link";
 import {
   signupPasswordMinLength,
   type SignupFieldErrors,
@@ -221,16 +222,21 @@ export function AuthSignupForm() {
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
+        {isPending ? <InlineSpinner /> : null}
         {isPending ? "Creando cuenta..." : "Crear cuenta"}
       </button>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--color-muted)]">
         <p>La cuenta se crea en Supabase Auth y puede requerir confirmacion por email.</p>
-        <Link href="/login" className="font-medium text-[color:var(--color-accent-strong)]">
+        <LoadingLink
+          href="/login"
+          pendingLabel="Abriendo..."
+          className="font-medium text-[color:var(--color-accent-strong)]"
+        >
           Ya tengo cuenta
-        </Link>
+        </LoadingLink>
       </div>
     </form>
   );

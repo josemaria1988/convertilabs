@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { LoadingLink } from "@/components/ui/loading-link";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
@@ -192,9 +194,9 @@ export default async function OrganizationExportsPage({
                     </select>
                   </label>
                 </div>
-                <button formMethod="get" className="ui-button ui-button--secondary">
+                <SubmitButton formMethod="get" pendingLabel="Actualizando..." className="ui-button ui-button--secondary">
                   Actualizar preview
-                </button>
+                </SubmitButton>
               </form>
 
               <form action={createAccountingExportAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
@@ -255,9 +257,9 @@ export default async function OrganizationExportsPage({
                     </select>
                   </label>
                 </div>
-                <button className="ui-button ui-button--primary">
+                <SubmitButton pendingLabel="Generando..." className="ui-button ui-button--primary">
                   Generar exportacion
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </section>
@@ -336,16 +338,17 @@ export default async function OrganizationExportsPage({
                 </div>
               ) : (
                 previewDataset.recategorizationQueue.map((document) => (
-                  <a
+                  <LoadingLink
                     key={document.documentId}
                     href={`/app/o/${organization.slug}/documents/${document.documentId}`}
+                    pendingLabel="Abriendo..."
                     className="block rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
                   >
                     <p className="font-semibold text-white">{document.documentFilename}</p>
                     <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
                       {document.documentDate ?? "Sin fecha"} / {document.postingStatus ?? "Sin posting status"}
                     </p>
-                  </a>
+                  </LoadingLink>
                 ))
               )}
             </div>

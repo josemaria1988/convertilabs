@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Link from "next/link";
 import { InvoiceSheetPreview } from "@/components/dashboard/invoice-sheet-preview";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import { LoadingLink } from "@/components/ui/loading-link";
 import {
   formatDocumentStatusLabel,
   getDocumentRoleLabel,
@@ -84,12 +84,13 @@ export function DashboardDocumentWorkspace({
             <div className="flex flex-wrap items-center gap-2">
               <span className="ui-filter">Escanear</span>
               <span className="ui-filter">Filtrar</span>
-              <Link
+              <LoadingLink
                 href={`/app/o/${organizationSlug}/documents#document-upload-panel`}
+                pendingLabel="Abriendo..."
                 className="ui-button ui-button--primary"
               >
                 Cargar Documentos
-              </Link>
+              </LoadingLink>
               <span className="ui-button ui-button--secondary">Importar</span>
             </div>
           </div>
@@ -136,9 +137,13 @@ export function DashboardDocumentWorkspace({
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
                         {document.processedHref ? (
-                          <Link href={document.processedHref} className="text-white/80">
+                          <LoadingLink
+                            href={document.processedHref}
+                            pendingLabel="Abriendo..."
+                            className="text-white/80"
+                          >
                             Abrir revision
-                          </Link>
+                          </LoadingLink>
                         ) : (
                           <span>Draft pendiente</span>
                         )}
@@ -202,12 +207,13 @@ export function DashboardDocumentWorkspace({
         {(selectedDocument.processedHref || selectedDocument.previewUrl) ? (
           <div className="flex flex-wrap gap-2">
             {selectedDocument.processedHref ? (
-              <Link
+              <LoadingLink
                 href={selectedDocument.processedHref}
+                pendingLabel="Abriendo..."
                 className="ui-button ui-button--secondary flex-1"
               >
                 Abrir revision
-              </Link>
+              </LoadingLink>
             ) : null}
             {selectedDocument.previewUrl ? (
               <DocumentOriginalModalTrigger

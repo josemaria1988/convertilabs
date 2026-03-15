@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { LoadingLink } from "@/components/ui/loading-link";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
@@ -250,9 +252,9 @@ export default async function DgiReconciliationPage({
                 })}
               </div>
 
-              <button className="ui-button ui-button--primary">
+              <SubmitButton pendingLabel="Calculando..." className="ui-button ui-button--primary">
                 Calcular conciliacion
-              </button>
+              </SubmitButton>
             </form>
           </section>
 
@@ -325,22 +327,24 @@ export default async function DgiReconciliationPage({
                         placeholder="Justificacion o evidencia del ajuste"
                         className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
                       />
-                      <button
+                      <SubmitButton
                         type="submit"
                         name="action"
                         value="justify"
+                        pendingLabel="Guardando..."
                         className="ui-button ui-button--secondary"
                       >
                         Guardar justificacion
-                      </button>
-                      <button
+                      </SubmitButton>
+                      <SubmitButton
                         type="submit"
                         name="action"
                         value="mark_external_adjustment"
+                        pendingLabel="Marcando..."
                         className="ui-button ui-button--danger"
                       >
                         Marcar ajuste externo
-                      </button>
+                      </SubmitButton>
                     </div>
                   </form>
                 ))}
@@ -349,9 +353,9 @@ export default async function DgiReconciliationPage({
                   <form action={closeDgiReconciliationRunAction}>
                     <input type="hidden" name="slug" value={organization.slug} />
                     <input type="hidden" name="runId" value={selectedRun.id} />
-                    <button className="ui-button ui-button--primary">
+                    <SubmitButton pendingLabel="Cerrando..." className="ui-button ui-button--primary">
                       Cerrar conciliacion
-                    </button>
+                    </SubmitButton>
                   </form>
                 ) : null}
               </div>
@@ -373,9 +377,10 @@ export default async function DgiReconciliationPage({
                 </div>
               ) : (
                 runs.map((run) => (
-                  <a
+                  <LoadingLink
                     key={run.id}
                     href={`/app/o/${organization.slug}/tax/reconciliation?run=${run.id}`}
+                    pendingLabel="Abriendo..."
                     className="block rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -392,7 +397,7 @@ export default async function DgiReconciliationPage({
                     <p className="mt-3 text-[13px] text-[color:var(--color-muted)]">
                       Creada {formatDateTime(run.createdAt)}
                     </p>
-                  </a>
+                  </LoadingLink>
                 ))
               )}
             </div>
@@ -423,15 +428,16 @@ export default async function DgiReconciliationPage({
                       {document.documentDate ?? "Sin fecha"} / {document.postingStatus ?? "Sin posting status"}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <a
+                      <LoadingLink
                         href={`/app/o/${organization.slug}/documents/${document.id}`}
+                        pendingLabel="Abriendo..."
                         className="ui-button ui-button--secondary"
                       >
                         Ver documento
-                      </a>
-                      <button className="ui-button ui-button--warning">
+                      </LoadingLink>
+                      <SubmitButton pendingLabel="Reabriendo..." className="ui-button ui-button--warning">
                         Reabrir revision
-                      </button>
+                      </SubmitButton>
                     </div>
                   </form>
                 ))

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { LoadingLink } from "@/components/ui/loading-link";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadRecentExports, loadVatRunExportDataset } from "@/modules/exports";
@@ -221,9 +222,9 @@ export default async function OrganizationTaxPage({
                       });
                     }}
                   >
-                    <button className="ui-button ui-button--secondary w-full">
+                    <SubmitButton pendingLabel="Revisando..." className="ui-button ui-button--secondary w-full">
                       Revisar
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form
                     action={async () => {
@@ -235,9 +236,9 @@ export default async function OrganizationTaxPage({
                       });
                     }}
                   >
-                    <button className="ui-button ui-button--primary w-full">
+                    <SubmitButton pendingLabel="Finalizando..." className="ui-button ui-button--primary w-full">
                       Finalizar
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form
                     action={async () => {
@@ -249,9 +250,9 @@ export default async function OrganizationTaxPage({
                       });
                     }}
                   >
-                    <button className="ui-button ui-button--secondary w-full">
+                    <SubmitButton pendingLabel="Bloqueando..." className="ui-button ui-button--secondary w-full">
                       Bloquear
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form
                     action={async () => {
@@ -262,9 +263,9 @@ export default async function OrganizationTaxPage({
                       });
                     }}
                   >
-                    <button className="ui-button ui-button--secondary w-full">
+                    <SubmitButton pendingLabel="Exportando..." className="ui-button ui-button--secondary w-full">
                       Exportar
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
 
@@ -285,9 +286,9 @@ export default async function OrganizationTaxPage({
                     placeholder="Motivo de reapertura"
                     className="h-[34px] rounded-[6px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 text-[14px] outline-none"
                   />
-                  <button className="ui-button ui-button--secondary w-full">
+                  <SubmitButton pendingLabel="Reabriendo..." className="ui-button ui-button--secondary w-full">
                     Reabrir
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             ) : null}
@@ -308,24 +309,26 @@ export default async function OrganizationTaxPage({
                 <span className="flex-1 text-[14px] font-medium text-white">
                   Diferencia en Ventas
                 </span>
-                <Link
+                <LoadingLink
                   href={`/app/o/${organization.slug}/tax/reconciliation`}
+                  pendingLabel="Abriendo..."
                   className="ui-button ui-button--primary min-h-[28px] px-3 text-[13px]"
                 >
                   Conciliar Diferencias
-                </Link>
+                </LoadingLink>
               </div>
               <div className="ui-alert-row">
                 <span className="ui-alert-row__icon" />
                 <span className="flex-1 text-[14px] font-medium text-white">
                   Credito Fiscal Inconsistente
                 </span>
-                <Link
+                <LoadingLink
                   href={`/app/o/${organization.slug}/tax/reconciliation`}
+                  pendingLabel="Abriendo..."
                   className="ui-button ui-button--secondary min-h-[28px] px-3 text-[13px]"
                 >
                   Ver Detalles
-                </Link>
+                </LoadingLink>
               </div>
             </div>
 
@@ -390,9 +393,9 @@ export default async function OrganizationTaxPage({
                 }}
                 className="mt-4"
               >
-                <button className="ui-button ui-button--secondary w-full">
+                <SubmitButton pendingLabel="Generando..." className="ui-button ui-button--secondary w-full">
                   Generar export
-                </button>
+                </SubmitButton>
               </form>
             ) : (
               <span className="ui-button ui-button--secondary mt-4 w-full">
@@ -415,9 +418,10 @@ export default async function OrganizationTaxPage({
                 </div>
               ) : (
                 vatRuns.slice(0, 3).map((run) => (
-                  <Link
+                  <LoadingLink
                     key={run.id}
                     href={`/app/o/${organization.slug}/tax`}
+                    pendingLabel="Abriendo..."
                     className="ui-subtle-row"
                   >
                     <div className="flex items-center gap-3">
@@ -427,7 +431,7 @@ export default async function OrganizationTaxPage({
                       <span className="text-white">{run.periodLabel}</span>
                     </div>
                     <span>{formatLifecycleStatusLabel(run.status)}</span>
-                  </Link>
+                  </LoadingLink>
                 ))
               )}
             </div>

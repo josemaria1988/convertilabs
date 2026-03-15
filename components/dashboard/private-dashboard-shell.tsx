@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { AccountMenu } from "@/components/dashboard/account-menu";
@@ -273,9 +272,9 @@ export function PrivateDashboardShell({
       <aside className="app-sidebar">
         <div className="app-sidebar-panel">
           <div className="app-sidebar-brand">
-            <Link href="/app" className="block">
+            <LoadingLink href="/app" pendingLabel="Abriendo..." className="block">
               <ConvertilabsLogo />
-            </Link>
+            </LoadingLink>
           </div>
 
           <nav className="app-sidebar-nav">

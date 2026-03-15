@@ -1,5 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { LoadingLink } from "@/components/ui/loading-link";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { workspaceNav } from "@/lib/navigation";
 
 type WorkspaceShellProps = {
@@ -21,7 +22,7 @@ export function WorkspaceShell({
     <div className="min-h-screen">
       <div className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="panel h-fit p-5 lg:sticky lg:top-6">
-          <Link href="/app" className="mb-6 flex items-center gap-3">
+          <LoadingLink href="/app" pendingLabel="Abriendo..." className="mb-6 flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--color-accent)] text-sm font-semibold text-white">
               CL
             </span>
@@ -29,16 +30,17 @@ export function WorkspaceShell({
               <p className="font-semibold tracking-[-0.04em]">Convertilabs</p>
               <p className="text-sm text-[color:var(--color-muted)]">Workspace</p>
             </div>
-          </Link>
+          </LoadingLink>
 
           <div className="space-y-2">
             {workspaceNav.map((item) => {
               const isActive = item.href === activePath;
 
               return (
-                <Link
+                <LoadingLink
                   key={item.href}
                   href={item.href}
+                  pendingLabel="Abriendo..."
                   className={`block rounded-2xl border px-4 py-3 transition ${
                     isActive
                       ? "border-transparent bg-[color:var(--color-accent)] text-white"
@@ -55,7 +57,7 @@ export function WorkspaceShell({
                       {item.description}
                     </p>
                   ) : null}
-                </Link>
+                </LoadingLink>
               );
             })}
           </div>
@@ -83,12 +85,12 @@ export function WorkspaceShell({
               <div className="flex flex-wrap gap-3">
                 {actions}
                 <form action="/logout" method="post">
-                  <button
-                    type="submit"
+                  <SubmitButton
+                    pendingLabel="Cerrando..."
                     className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-4 py-2 text-sm font-medium"
                   >
                     Cerrar sesion
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </div>

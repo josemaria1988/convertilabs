@@ -1,7 +1,7 @@
 "use client";
 
 import Link, { type LinkProps } from "next/link";
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent, MouseEventHandler, ReactNode } from "react";
 import { useState } from "react";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
@@ -12,6 +12,7 @@ type LoadingLinkProps = LinkProps & {
   target?: string;
   rel?: string;
   disabled?: boolean;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 };
 
 export function LoadingLink({
@@ -21,11 +22,14 @@ export function LoadingLink({
   target,
   rel,
   disabled,
+  onClick,
   ...props
 }: LoadingLinkProps) {
   const [isPending, setIsPending] = useState(false);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    onClick?.(event);
+
     if (
       disabled
       || event.defaultPrevented
@@ -48,13 +52,14 @@ export function LoadingLink({
       target={target}
       rel={rel}
       aria-disabled={disabled ? "true" : undefined}
+      aria-busy={isPending ? "true" : undefined}
       onClick={handleClick}
       className={`${className ?? ""} ${isPending ? "pointer-events-none opacity-85" : ""}`.trim()}
     >
-      <span className="flex w-full items-center gap-2">
+      <div className="flex w-full items-center gap-2">
         {isPending ? <InlineSpinner /> : null}
-        <span className="min-w-0 flex-1">{isPending && pendingLabel ? pendingLabel : children}</span>
-      </span>
+        <div className="min-w-0 flex-1">{isPending && pendingLabel ? pendingLabel : children}</div>
+      </div>
     </Link>
   );
 }

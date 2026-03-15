@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { listOrganizationImportOperations } from "@/modules/imports";
@@ -232,9 +233,9 @@ export default async function OrganizationImportsPage({
                 <option value="interactive">Interactivo</option>
                 <option value="batch">Lote</option>
               </select>
-              <button className="ui-button ui-button--primary">
+              <SubmitButton pendingLabel="Analizando..." className="ui-button ui-button--primary">
                 Analizar planilla
-              </button>
+              </SubmitButton>
             </form>
           </section>
 
@@ -285,9 +286,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--primary">
+                          <SubmitButton pendingLabel="Confirmando..." className="ui-button ui-button--primary">
                             Confirmar vista previa
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
 
@@ -302,9 +303,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--secondary">
+                          <SubmitButton pendingLabel="Confirmando..." className="ui-button ui-button--secondary">
                             Confirmar plan de cuentas
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
 
@@ -319,9 +320,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--secondary">
+                          <SubmitButton pendingLabel="Confirmando..." className="ui-button ui-button--secondary">
                             Confirmar plantillas
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
 
@@ -335,9 +336,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--secondary">
+                          <SubmitButton pendingLabel="Reintentando..." className="ui-button ui-button--secondary">
                             Reintentar
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
 
@@ -351,9 +352,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--secondary">
+                          <SubmitButton pendingLabel="Cancelando..." className="ui-button ui-button--secondary">
                             Cancelar
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
                     </div>
@@ -430,9 +431,9 @@ export default async function OrganizationImportsPage({
                 name="paymentDate"
                 className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-3 text-[14px]"
               />
-              <button className="ui-button ui-button--primary">
+              <SubmitButton pendingLabel="Creando..." className="ui-button ui-button--primary">
                 Crear operacion
-              </button>
+              </SubmitButton>
             </form>
           </section>
 
@@ -487,9 +488,9 @@ export default async function OrganizationImportsPage({
                           </option>
                         ))}
                       </select>
-                      <button className="ui-button ui-button--secondary">
+                      <SubmitButton pendingLabel="Vinculando..." className="ui-button ui-button--secondary">
                         Vincular
-                      </button>
+                      </SubmitButton>
                     </div>
                   </form>
                 ))
@@ -623,9 +624,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--primary">
+                          <SubmitButton pendingLabel="Aprobando..." className="ui-button ui-button--primary">
                             Aprobar
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
                       {operation.status !== "blocked_manual_review" ? (
@@ -639,9 +640,9 @@ export default async function OrganizationImportsPage({
                             });
                           }}
                         >
-                          <button className="ui-button ui-button--secondary">
+                          <SubmitButton pendingLabel="Bloqueando..." className="ui-button ui-button--secondary">
                             Bloquear
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : null}
                     </div>

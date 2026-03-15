@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { OrganizationOnboardingForm } from "@/components/organization-onboarding-form";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { requireOnboardingPage } from "@/modules/auth/server-auth";
 
 export const metadata: Metadata = {
@@ -74,12 +75,12 @@ export default async function OnboardingPage() {
           </div>
 
           <form action="/logout" method="post" className="mt-6">
-            <button
-              type="submit"
+            <SubmitButton
+              pendingLabel="Cerrando..."
               className="inline-flex rounded-[0.95rem] border border-[color:var(--color-border)] bg-transparent px-4 py-3 text-sm font-medium text-[color:var(--color-muted)] transition hover:border-[rgba(124,157,255,0.22)] hover:text-white"
             >
               Cerrar sesion
-            </button>
+            </SubmitButton>
           </form>
         </section>
       </div>

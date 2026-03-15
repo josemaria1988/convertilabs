@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import {
   createOrganizationAction,
 } from "@/app/onboarding/actions";
+import { InlineSpinner } from "@/components/ui/inline-spinner";
 import {
   initialOnboardingActionState,
   normalizeOnboardingActionState,
@@ -229,8 +230,9 @@ export function OrganizationOnboardingForm({
       <button
         type="submit"
         disabled={isPending}
-        className="w-full rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
+        {isPending ? <InlineSpinner /> : null}
         {isPending ? "Creando organizacion..." : "Crear organizacion"}
       </button>
     </form>

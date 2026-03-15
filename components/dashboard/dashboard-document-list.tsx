@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { LoadingLink } from "@/components/ui/loading-link";
 import type { DashboardDocument } from "@/modules/documents/dashboard";
 import {
   formatDocumentStatusLabel,
@@ -53,12 +53,13 @@ export function DashboardDocumentList({
               </td>
               <td>
                 {organizationSlug ? (
-                  <Link
+                  <LoadingLink
                     href={`/app/o/${organizationSlug}/documents/${document.id}`}
+                    pendingLabel="Abriendo..."
                     className="inline-flex rounded-[0.85rem] border border-[color:var(--color-border)] bg-[rgba(24,39,77,0.92)] px-3 py-2 text-xs font-semibold text-white transition hover:border-[rgba(124,157,255,0.22)] hover:bg-[rgba(30,47,91,0.96)]"
                   >
                     Abrir
-                  </Link>
+                  </LoadingLink>
                 ) : (
                   <span className="text-xs text-[color:var(--color-muted)]">Solo lectura</span>
                 )}
