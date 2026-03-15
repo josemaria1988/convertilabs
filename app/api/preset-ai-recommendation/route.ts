@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient, getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import {
+  buildPresetAiSettingsOrganizationContext,
   buildPresetAiInputHash,
   buildPresetAiInputSnapshot,
   buildPresetAiRouteResponse,
@@ -209,7 +210,17 @@ export async function POST(request: Request) {
     }
 
     organizationId = organization.id;
-    organizationContext = organization;
+    organizationContext = buildPresetAiSettingsOrganizationContext({
+      organizationId: organization.id,
+      slug: organization.slug,
+      organizationName: organization.organizationName,
+      legalEntityType: organization.legalEntityType,
+      taxId: organization.taxId,
+      taxRegimeCode: organization.taxRegimeCode,
+      vatRegime: organization.vatRegime,
+      dgiGroup: organization.dgiGroup,
+      cfeStatus: organization.cfeStatus,
+    });
   }
 
   const recommendation = buildPresetRecommendation(profile);

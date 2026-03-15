@@ -12,6 +12,7 @@ import {
 import { applyPresetComposition } from "@/modules/accounting/preset-apply-service";
 import {
   attachPresetAiRunToOrganization,
+  buildPresetAiSettingsOrganizationContext,
   buildHybridPresetApplicationExplanation,
   buildPresetAiInputHash,
   buildPresetAiOutputFromStoredRun,
@@ -43,6 +44,13 @@ async function resolveSettingsSelectedComposition(input: {
   organization: {
     id: string;
     slug: string;
+    name: string;
+    legalEntityType: string | null;
+    taxId: string | null;
+    taxRegimeCode: string | null;
+    vatRegime: string | null;
+    dgiGroup: string | null;
+    cfeStatus: string | null;
   };
   recommendation: ReturnType<typeof buildPresetRecommendation>;
   profile: {
@@ -71,10 +79,17 @@ async function resolveSettingsSelectedComposition(input: {
 
     const expectedInputHash = buildPresetAiInputHash({
       scope: "settings",
-      organizationContext: {
+      organizationContext: buildPresetAiSettingsOrganizationContext({
         organizationId: input.organization.id,
         slug: input.organization.slug,
-      },
+        organizationName: input.organization.name,
+        legalEntityType: input.organization.legalEntityType,
+        taxId: input.organization.taxId,
+        taxRegimeCode: input.organization.taxRegimeCode,
+        vatRegime: input.organization.vatRegime,
+        dgiGroup: input.organization.dgiGroup,
+        cfeStatus: input.organization.cfeStatus,
+      }),
       profile: input.profile,
       recommendation: input.recommendation,
     });
@@ -163,6 +178,32 @@ function parseStringArray(value: FormDataEntryValue | null) {
   }
 }
 
+async function loadOrganizationPresetAiContext(
+  serviceRole: ReturnType<typeof getSupabaseServiceRoleClient>,
+  organizationId: string,
+) {
+  const { data, error } = await serviceRole
+    .from("organizations")
+    .select("name, legal_entity_type, tax_id, tax_regime_code, vat_regime, dgi_group, cfe_status")
+    .eq("id", organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "No pudimos cargar el contexto actual de la organizacion.");
+  }
+
+  return {
+    name: data.name as string,
+    legalEntityType: (data.legal_entity_type as string | null) ?? null,
+    taxId: (data.tax_id as string | null) ?? null,
+    taxRegimeCode: (data.tax_regime_code as string | null) ?? null,
+    vatRegime: (data.vat_regime as string | null) ?? null,
+    dgiGroup: (data.dgi_group as string | null) ?? null,
+    cfeStatus: (data.cfe_status as string | null) ?? null,
+  };
+}
+
 export async function activateOrganizationProfileVersionAction(formData: FormData) {
   const slug = String(formData.get("slug") ?? "");
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
@@ -246,12 +287,20 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
   const planSetupMode = String(formData.get("planSetupMode") ?? "recommended").trim().toLowerCase();
   const aiRunId = String(formData.get("aiRunId") ?? "").trim() || null;
   const supabase = getSupabaseServiceRoleClient();
+  const settingsSnapshot = await loadOrganizationPresetAiContext(supabase, organization.id);
   const selectedCompositionResolution = await resolveSettingsSelectedComposition({
     actorId: authState.user?.id ?? "",
     serviceRole: supabase,
     organization: {
       id: organization.id,
       slug: organization.slug,
+      name: organization.name,
+      legalEntityType: settingsSnapshot.legalEntityType,
+      taxId: settingsSnapshot.taxId,
+      taxRegimeCode: settingsSnapshot.taxRegimeCode,
+      vatRegime: settingsSnapshot.vatRegime,
+      dgiGroup: settingsSnapshot.dgiGroup,
+      cfeStatus: settingsSnapshot.cfeStatus,
     },
     recommendation,
     profile: {

@@ -2,6 +2,7 @@
 const { test, assert } = require("./testkit.cjs");
 
 const {
+  buildPresetAiSettingsOrganizationContext,
   buildAssistantLetterMarkdown,
   buildPresetAiInputHash,
   buildPresetAiOutputFromStoredRun,
@@ -132,6 +133,56 @@ test("preset ai input hash changes when onboarding context changes", () => {
   });
 
   assert.notEqual(firstHash, secondHash);
+});
+
+test("preset ai input hash stays aligned in settings when organization context is normalized", () => {
+  const recommendation = buildBaseRecommendation();
+  const routeContext = buildPresetAiSettingsOrganizationContext({
+    organizationId: "org-1",
+    slug: "rontil-sa-1",
+    organizationName: "Rontil SA",
+    legalEntityType: "sa",
+    taxId: "21.123.456/0019",
+    taxRegimeCode: "irae_general",
+    vatRegime: "general",
+    dgiGroup: "ce_de",
+    cfeStatus: "emisor_total",
+  });
+  const saveContext = buildPresetAiSettingsOrganizationContext({
+    organizationId: "org-1",
+    slug: "rontil-sa-1",
+    organizationName: "Rontil SA",
+    legalEntityType: "SA",
+    taxId: "211234560019",
+    taxRegimeCode: "IRAE_GENERAL",
+    vatRegime: "GENERAL",
+    dgiGroup: "CE_DE",
+    cfeStatus: "EMISOR_TOTAL",
+  });
+  const routeHash = buildPresetAiInputHash({
+    scope: "settings",
+    organizationContext: routeContext,
+    profile: {
+      primaryActivityCode: "46590",
+      secondaryActivityCodes: ["33120"],
+      selectedTraits: ["imports_goods"],
+      shortDescription: "Importamos equipos.",
+    },
+    recommendation,
+  });
+  const saveHash = buildPresetAiInputHash({
+    scope: "settings",
+    organizationContext: saveContext,
+    profile: {
+      primaryActivityCode: "46590",
+      secondaryActivityCodes: ["33120"],
+      selectedTraits: ["imports_goods"],
+      shortDescription: "Importamos equipos.",
+    },
+    recommendation,
+  });
+
+  assert.equal(routeHash, saveHash);
 });
 
 test("stored ai runs hydrate back into structured output only when required fields are present", () => {

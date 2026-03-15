@@ -125,6 +125,30 @@ type PresetAiOrganizationContext = {
   cfeStatus?: string | null;
 };
 
+export function buildPresetAiSettingsOrganizationContext(input: {
+  organizationId: string;
+  slug: string;
+  organizationName?: string | null;
+  legalEntityType?: string | null;
+  taxId?: string | null;
+  taxRegimeCode?: string | null;
+  vatRegime?: string | null;
+  dgiGroup?: string | null;
+  cfeStatus?: string | null;
+}) {
+  return {
+    organizationId: input.organizationId,
+    slug: input.slug,
+    organizationName: input.organizationName ?? null,
+    legalEntityType: input.legalEntityType ?? null,
+    taxId: input.taxId ?? null,
+    taxRegimeCode: input.taxRegimeCode ?? null,
+    vatRegime: input.vatRegime ?? null,
+    dgiGroup: input.dgiGroup ?? null,
+    cfeStatus: input.cfeStatus ?? null,
+  } satisfies PresetAiOrganizationContext;
+}
+
 type PresetAiRequestOrigin = "onboarding" | "settings";
 
 type PresetAiInputSnapshot = {
