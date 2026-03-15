@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import {
+  applyOrganizationChartPreset,
   createOrganizationChartAccount,
   updateOrganizationChartAccount,
 } from "@/modules/accounting/chart-admin";
@@ -13,12 +15,8 @@ import {
   updateOrganizationBasics,
 } from "@/modules/organizations/settings";
 import {
-  appendSpreadsheetStatusEvent,
-  confirmCompletedSpreadsheetImport,
   importChartOfAccountsSpreadsheetDirect,
-  materializeSpreadsheetImportRun,
   runSpreadsheetImport,
-  updateSpreadsheetImportRun,
 } from "@/modules/spreadsheets";
 
 function assertOrganizationManagerRole(role: string) {
@@ -85,6 +83,14 @@ export async function createOrganizationChartAccountAction(formData: FormData) {
     accountType: String(formData.get("accountType") ?? ""),
     normalSide: String(formData.get("normalSide") ?? ""),
     isPostable: formData.get("isPostable") === "on",
+    isProvisional: formData.get("isProvisional") === "on",
+    externalCode: String(formData.get("externalCode") ?? ""),
+    statementSection: String(formData.get("statementSection") ?? ""),
+    natureTag: String(formData.get("natureTag") ?? ""),
+    functionTag: String(formData.get("functionTag") ?? ""),
+    cashflowTag: String(formData.get("cashflowTag") ?? ""),
+    taxProfileHint: String(formData.get("taxProfileHint") ?? ""),
+    currencyPolicy: String(formData.get("currencyPolicy") ?? ""),
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
@@ -106,6 +112,14 @@ export async function updateOrganizationChartAccountAction(formData: FormData) {
     accountType: String(formData.get("accountType") ?? ""),
     normalSide: String(formData.get("normalSide") ?? ""),
     isPostable: formData.get("isPostable") === "on",
+    isProvisional: formData.get("isProvisional") === "on",
+    externalCode: String(formData.get("externalCode") ?? ""),
+    statementSection: String(formData.get("statementSection") ?? ""),
+    natureTag: String(formData.get("natureTag") ?? ""),
+    functionTag: String(formData.get("functionTag") ?? ""),
+    cashflowTag: String(formData.get("cashflowTag") ?? ""),
+    taxProfileHint: String(formData.get("taxProfileHint") ?? ""),
+    currencyPolicy: String(formData.get("currencyPolicy") ?? ""),
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
@@ -137,43 +151,7 @@ export async function importOrganizationChartSpreadsheetAction(formData: FormDat
       preferredMode: "interactive",
     });
 
-    if (run.status !== "completed") {
-      throw new Error("La importacion rapida no pudo completarse en modo interactivo.");
-    }
-
-    if (run.importType !== "chart_of_accounts_import" && run.importType !== "mixed") {
-      throw new Error("La planilla no fue detectada como un import valido de plan de cuentas.");
-    }
-
-    const materialized = await materializeSpreadsheetImportRun(supabase, {
-      organizationId: organization.id,
-      actorId: authState.user?.id ?? null,
-      run,
-      selectedSections: ["chart_of_accounts_import"],
-    });
-    const confirmed = await confirmCompletedSpreadsheetImport({
-      supabase,
-      organizationId: organization.id,
-      runId: run.id,
-      actorId: authState.user?.id ?? null,
-    });
-
-    await updateSpreadsheetImportRun(supabase, {
-      organizationId: organization.id,
-      runId: confirmed.id,
-      statusEvents: appendSpreadsheetStatusEvent(
-        confirmed.statusEvents,
-        "materialized",
-        materialized.notes.join(" ") || "Plan de cuentas materializado desde configuracion.",
-      ),
-      metadata: {
-        ...confirmed.metadata,
-        materialized_sections: materialized.sections,
-        materialization_stats: materialized.stats,
-        materialization_notes: materialized.notes,
-        imported_from_settings: true,
-      },
-    });
+    redirect(`/app/o/${organization.slug}/imports?run=${run.id}&focus=chart_of_accounts_import`);
   } catch (error) {
     if (!isMissingSupabaseRelationError(error as { message?: string } | null, "organization_spreadsheet_import_runs")) {
       throw error;
@@ -191,4 +169,21 @@ export async function importOrganizationChartSpreadsheetAction(formData: FormDat
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/imports`);
+}
+
+export async function applyOrganizationChartPresetAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const presetCode = String(formData.get("presetCode") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationManagerRole(organization.role);
+
+  await applyOrganizationChartPreset({
+    organizationId: organization.id,
+    actorId: authState.user?.id ?? null,
+    presetCode: presetCode as "uy_niif_importadores",
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/dashboard`);
 }

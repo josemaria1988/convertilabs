@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingSupabaseColumnError } from "@/lib/supabase/schema-compat";
 import {
   normalizeCurrencyCode,
   normalizeDocumentNumber,
@@ -8,6 +9,12 @@ import {
   slugifyConceptCode,
 } from "@/modules/accounting/normalization";
 import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
+import {
+  isMissingJournalEntryLineStep5ColumnError,
+  isMissingJournalEntryStep5ColumnError,
+  omitJournalEntryLineStep5Columns,
+  omitJournalEntryStep5Columns,
+} from "@/modules/accounting/step5-schema-compat";
 import { pickSuspiciousInvoiceDuplicateDocumentId } from "@/modules/accounting/invoice-identity";
 import type {
   AccountingArtifactsPersistenceInput,
@@ -59,6 +66,15 @@ type ChartAccountRow = {
   account_type: string;
   normal_side: "debit" | "credit";
   is_postable: boolean;
+  is_provisional?: boolean | null;
+  source?: string | null;
+  external_code?: string | null;
+  statement_section?: string | null;
+  nature_tag?: string | null;
+  function_tag?: string | null;
+  cashflow_tag?: string | null;
+  tax_profile_hint?: string | null;
+  currency_policy?: string | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -67,13 +83,19 @@ type AccountingRuleRow = {
   organization_id: string;
   scope: AccountingRuleRecord["scope"];
   document_id: string | null;
+  source_document_id: string | null;
   vendor_id: string | null;
   concept_id: string | null;
   document_role: AccountingRuleRecord["document_role"];
   account_id: string;
+  status: AccountingRuleRecord["status"];
   vat_profile_json: Record<string, unknown> | null;
+  tax_profile_code: string | null;
   operation_category: string | null;
   linked_operation_type: string | null;
+  template_code: string | null;
+  times_reused: number;
+  times_corrected: number;
   priority: number;
   source: string;
   is_active: boolean;
@@ -83,6 +105,24 @@ type AccountingRuleRow = {
 
 function asArray<T>(value: T[] | null | undefined) {
   return value ?? [];
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function asNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 async function recordAuditEvent(
@@ -205,19 +245,74 @@ export async function loadOrganizationPostableAccounts(
   supabase: SupabaseClient,
   organizationId: string,
 ) {
-  const { data, error } = await supabase
+  const selectClause = [
+    "id",
+    "organization_id",
+    "code",
+    "name",
+    "account_type",
+    "normal_side",
+    "is_postable",
+    "is_provisional",
+    "source",
+    "external_code",
+    "statement_section",
+    "nature_tag",
+    "function_tag",
+    "cashflow_tag",
+    "tax_profile_hint",
+    "currency_policy",
+    "metadata",
+  ].join(", ");
+  const legacySelectClause = [
+    "id",
+    "organization_id",
+    "code",
+    "name",
+    "account_type",
+    "normal_side",
+    "is_postable",
+    "metadata",
+  ].join(", ");
+  let { data, error } = await supabase
     .from("chart_of_accounts")
-    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .select(selectClause)
     .eq("organization_id", organizationId)
     .eq("is_active", true)
     .eq("is_postable", true)
     .order("code", { ascending: true });
 
+  if (error && isMissingSupabaseColumnError(error, "chart_of_accounts")) {
+    ({ data, error } = await supabase
+      .from("chart_of_accounts")
+      .select(legacySelectClause)
+      .eq("organization_id", organizationId)
+      .eq("is_active", true)
+      .eq("is_postable", true)
+      .order("code", { ascending: true }));
+  }
+
   if (error) {
     throw new Error(error.message);
   }
 
-  return asArray(data as PostableAccountRecord[] | null);
+  return asArray(data as ChartAccountRow[] | null).map((row) => {
+    const metadata = asRecord(row.metadata);
+
+    return {
+      ...row,
+      is_provisional: asBoolean(row.is_provisional) ?? asBoolean(metadata.is_provisional) ?? false,
+      source: asString(row.source) ?? asString(metadata.source),
+      external_code: asString(row.external_code) ?? asString(metadata.external_code),
+      statement_section: asString(row.statement_section) ?? asString(metadata.statement_section),
+      nature_tag: asString(row.nature_tag) ?? asString(metadata.nature_tag),
+      function_tag: asString(row.function_tag) ?? asString(metadata.function_tag),
+      cashflow_tag: asString(row.cashflow_tag) ?? asString(metadata.cashflow_tag),
+      tax_profile_hint: asString(row.tax_profile_hint) ?? asString(metadata.tax_profile_hint),
+      currency_policy: asString(row.currency_policy) ?? asString(metadata.currency_policy) ?? "mono_currency",
+      metadata,
+    } satisfies PostableAccountRecord;
+  });
 }
 
 export function buildReviewOverrideAccountPayload(input: {
@@ -255,6 +350,15 @@ export function buildReviewOverrideAccountPayload(input: {
     account_type: accountType,
     normal_side: normalSide,
     is_postable: true,
+    is_provisional: false,
+    source: "manual",
+    external_code: null,
+    statement_section: null,
+    nature_tag: accountType === "revenue" ? "revenue" : "expense",
+    function_tag: null,
+    cashflow_tag: null,
+    tax_profile_hint: null,
+    currency_policy: "mono_currency",
     metadata: {
       source: "document_review_inline_create",
       created_by: input.actorId,
@@ -280,33 +384,65 @@ export async function createReviewOverrideAccount(
   },
 ) {
   const payload = buildReviewOverrideAccountPayload(input);
-  const { data: existing, error: existingError } = await supabase
+  const selectClause = "id, organization_id, code, name, account_type, normal_side, is_postable, is_provisional, source, external_code, statement_section, nature_tag, function_tag, cashflow_tag, tax_profile_hint, currency_policy, metadata";
+  const legacySelectClause =
+    "id, organization_id, code, name, account_type, normal_side, is_postable, metadata";
+  let existingResult = await supabase
     .from("chart_of_accounts")
-    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .select(selectClause)
     .eq("organization_id", input.organizationId)
     .eq("code", payload.code)
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
 
-  if (existingError) {
-    throw new Error(existingError.message);
+  if (existingResult.error && isMissingSupabaseColumnError(existingResult.error, "chart_of_accounts")) {
+    existingResult = await supabase
+      .from("chart_of_accounts")
+      .select(legacySelectClause)
+      .eq("organization_id", input.organizationId)
+      .eq("code", payload.code)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
   }
 
-  if (existing) {
+  if (existingResult.error) {
+    throw new Error(existingResult.error.message);
+  }
+
+  if (existingResult.data) {
     throw new Error("Ya existe una cuenta activa con ese codigo en la organizacion.");
   }
 
-  const { data, error } = await supabase
+  let insertResult = await supabase
     .from("chart_of_accounts")
     .insert(payload)
-    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .select(selectClause)
     .limit(1)
     .single();
 
-  if (error || !data?.id) {
-    throw new Error(error?.message ?? "No se pudo crear la cuenta contable.");
+  if (insertResult.error && isMissingSupabaseColumnError(insertResult.error, "chart_of_accounts")) {
+    insertResult = await supabase
+      .from("chart_of_accounts")
+      .insert({
+        organization_id: payload.organization_id,
+        code: payload.code,
+        name: payload.name,
+        account_type: payload.account_type,
+        normal_side: payload.normal_side,
+        is_postable: payload.is_postable,
+        metadata: payload.metadata,
+      })
+      .select(legacySelectClause)
+      .limit(1)
+      .single();
   }
+
+  if (insertResult.error || !insertResult.data?.id) {
+    throw new Error(insertResult.error?.message ?? "No se pudo crear la cuenta contable.");
+  }
+  const data = insertResult.data as unknown as PostableAccountRecord;
 
   await recordAuditEvent(supabase, {
     organizationId: input.organizationId,
@@ -337,11 +473,13 @@ export async function loadActiveAccountingRules(
   organizationId: string,
   documentRole?: AccountingRuleRecord["document_role"] | null,
 ) {
+  const selectClause =
+    "id, organization_id, scope, document_id, source_document_id, vendor_id, concept_id, document_role, account_id, status, vat_profile_json, tax_profile_code, operation_category, linked_operation_type, template_code, times_reused, times_corrected, priority, source, is_active, metadata, created_at";
+  const legacySelectClause =
+    "id, organization_id, scope, document_id, vendor_id, concept_id, document_role, account_id, vat_profile_json, operation_category, linked_operation_type, priority, source, is_active, metadata, created_at";
   let query = supabase
     .from("accounting_rules")
-    .select(
-      "id, organization_id, scope, document_id, vendor_id, concept_id, document_role, account_id, vat_profile_json, operation_category, linked_operation_type, priority, source, is_active, metadata, created_at",
-    )
+    .select(selectClause)
     .eq("organization_id", organizationId)
     .eq("is_active", true)
     .order("priority", { ascending: false });
@@ -350,13 +488,55 @@ export async function loadActiveAccountingRules(
     query = query.eq("document_role", documentRole);
   }
 
-  const { data, error } = await query;
+  const primaryResult = await query;
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingSupabaseColumnError(error, "accounting_rules")) {
+    let legacyQuery = supabase
+      .from("accounting_rules")
+      .select(legacySelectClause)
+      .eq("organization_id", organizationId)
+      .eq("is_active", true)
+      .order("priority", { ascending: false });
+
+    if (documentRole) {
+      legacyQuery = legacyQuery.eq("document_role", documentRole);
+    }
+
+    const legacyResult = await legacyQuery;
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return asArray(data as AccountingRuleRow[] | null);
+  return asArray(data as Array<Record<string, unknown>> | null).map((row) => ({
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    scope: row.scope as AccountingRuleRecord["scope"],
+    document_id: asString(row.document_id),
+    source_document_id: asString(row.source_document_id) ?? asString(row.document_id),
+    vendor_id: asString(row.vendor_id),
+    concept_id: asString(row.concept_id),
+    document_role: row.document_role as AccountingRuleRecord["document_role"],
+    account_id: String(row.account_id),
+    status: (asString(row.status) as AccountingRuleRecord["status"] | null) ?? "approved",
+    vat_profile_json: (row.vat_profile_json as Record<string, unknown> | null) ?? null,
+    tax_profile_code: asString(row.tax_profile_code),
+    operation_category: asString(row.operation_category),
+    linked_operation_type: asString(row.linked_operation_type),
+    template_code: asString(row.template_code),
+    times_reused: asNumber(row.times_reused) ?? 0,
+    times_corrected: asNumber(row.times_corrected) ?? 0,
+    priority: asNumber(row.priority) ?? 0,
+    source: asString(row.source) ?? "manual",
+    is_active: row.is_active === true,
+    metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+    created_at: String(row.created_at ?? new Date().toISOString()),
+  }) satisfies AccountingRuleRecord);
 }
 
 export async function loadAccountingRuntimeContext(
@@ -817,17 +997,166 @@ async function loadOrganizationChartAccounts(
   supabase: SupabaseClient,
   organizationId: string,
 ) {
-  const { data, error } = await supabase
+  const selectClause = [
+    "id",
+    "organization_id",
+    "code",
+    "name",
+    "account_type",
+    "normal_side",
+    "is_postable",
+    "is_provisional",
+    "source",
+    "external_code",
+    "statement_section",
+    "nature_tag",
+    "function_tag",
+    "cashflow_tag",
+    "tax_profile_hint",
+    "currency_policy",
+    "metadata",
+  ].join(", ");
+  const legacySelectClause =
+    "id, organization_id, code, name, account_type, normal_side, is_postable, metadata";
+  const primaryResult = await supabase
     .from("chart_of_accounts")
-    .select("id, organization_id, code, name, account_type, normal_side, is_postable, metadata")
+    .select(selectClause)
     .eq("organization_id", organizationId)
     .eq("is_active", true);
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingSupabaseColumnError(error, "chart_of_accounts")) {
+    const legacyResult = await supabase
+      .from("chart_of_accounts")
+      .select(legacySelectClause)
+      .eq("organization_id", organizationId)
+      .eq("is_active", true);
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
 
   if (error) {
     throw new Error(error.message);
   }
 
   return asArray(data as ChartAccountRow[] | null);
+}
+
+async function upsertJournalEntryWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    documentId: string;
+    sourceSuggestionId: string;
+    payload: Record<string, unknown>;
+  },
+) {
+  const { data: existing, error: existingError } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("organization_id", input.organizationId)
+    .eq("source_document_id", input.documentId)
+    .neq("status", "void")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existing?.id) {
+    let updateResult = await supabase
+      .from("journal_entries")
+      .update({
+        ...input.payload,
+        source_suggestion_id: input.sourceSuggestionId,
+      })
+      .eq("id", existing.id)
+      .select("id")
+      .limit(1)
+      .single();
+
+    if (updateResult.error && isMissingJournalEntryStep5ColumnError(updateResult.error)) {
+      updateResult = await supabase
+        .from("journal_entries")
+        .update({
+          ...omitJournalEntryStep5Columns(input.payload),
+          source_suggestion_id: input.sourceSuggestionId,
+        })
+        .eq("id", existing.id)
+        .select("id")
+        .limit(1)
+        .single();
+    }
+
+    if (updateResult.error || !updateResult.data?.id) {
+      throw new Error(updateResult.error?.message ?? "No se pudo actualizar el journal entry.");
+    }
+
+    const { error: deleteLinesError } = await supabase
+      .from("journal_entry_lines")
+      .delete()
+      .eq("journal_entry_id", existing.id);
+
+    if (deleteLinesError) {
+      throw new Error(deleteLinesError.message);
+    }
+
+    return existing.id as string;
+  }
+
+  let insertResult = await supabase
+    .from("journal_entries")
+    .insert({
+      ...input.payload,
+      source_suggestion_id: input.sourceSuggestionId,
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (insertResult.error && isMissingJournalEntryStep5ColumnError(insertResult.error)) {
+    insertResult = await supabase
+      .from("journal_entries")
+      .insert({
+        ...omitJournalEntryStep5Columns(input.payload),
+        source_suggestion_id: input.sourceSuggestionId,
+      })
+      .select("id")
+      .limit(1)
+      .single();
+  }
+
+  if (insertResult.error || !insertResult.data?.id) {
+    throw new Error(insertResult.error?.message ?? "No se pudo crear el journal entry draft.");
+  }
+
+  return insertResult.data.id as string;
+}
+
+async function insertJournalEntryLinesWithCompat(
+  supabase: SupabaseClient,
+  linePayload: Array<Record<string, unknown>>,
+) {
+  if (linePayload.length === 0) {
+    return;
+  }
+
+  let insertResult = await supabase
+    .from("journal_entry_lines")
+    .insert(linePayload);
+
+  if (insertResult.error && isMissingJournalEntryLineStep5ColumnError(insertResult.error)) {
+    insertResult = await supabase
+      .from("journal_entry_lines")
+      .insert(linePayload.map((line) => omitJournalEntryLineStep5Columns(line)));
+  }
+
+  if (insertResult.error) {
+    throw new Error(insertResult.error.message);
+  }
 }
 
 export async function persistApprovedAccountingArtifacts(
@@ -874,6 +1203,15 @@ export async function persistApprovedAccountingArtifacts(
     throw new Error(suggestionError?.message ?? "No se pudo persistir la sugerencia contable.");
   }
 
+  const { error: deleteSuggestionLinesError } = await supabase
+    .from("accounting_suggestion_lines")
+    .delete()
+    .eq("suggestion_id", suggestion.id);
+
+  if (deleteSuggestionLinesError) {
+    throw new Error(deleteSuggestionLinesError.message);
+  }
+
   const suggestionLinePayload = input.derived.journalSuggestion.lines.map((line) => ({
     suggestion_id: suggestion.id,
     line_no: line.lineNumber,
@@ -913,19 +1251,27 @@ export async function persistApprovedAccountingArtifacts(
   const description = missingCodes.length > 0
     ? `${input.derived.journalSuggestion.explanation} Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
     : input.derived.journalSuggestion.explanation;
-  const { data: journalEntry, error: journalEntryError } = await supabase
-    .from("journal_entries")
-    .insert({
+  const journalEntryId = await upsertJournalEntryWithCompat(supabase, {
+    organizationId: input.organizationId,
+    documentId: input.documentId,
+    sourceSuggestionId: suggestion.id as string,
+    payload: {
       organization_id: input.organizationId,
       source_document_id: input.documentId,
-      source_suggestion_id: suggestion.id,
       entry_date: input.documentDate,
       status: "draft",
+      posting_mode: input.derived.journalSuggestion.postingMode,
       currency_code: input.currencyCode ?? "UYU",
       fx_rate: input.derived.journalSuggestion.fxRate,
       fx_rate_date: input.derived.journalSuggestion.fxRateDate,
       fx_rate_source: input.derived.journalSuggestion.fxRateSource,
+      fx_rate_bcu_value: input.derived.journalSuggestion.fxRateBcuValue,
+      fx_rate_bcu_date_used: input.derived.journalSuggestion.fxRateBcuDateUsed,
       functional_currency_code: input.derived.journalSuggestion.functionalCurrencyCode,
+      functional_currency: input.derived.journalSuggestion.functionalCurrencyCode,
+      source_currency_present:
+        (input.currencyCode ?? "UYU").toUpperCase()
+        !== input.derived.journalSuggestion.functionalCurrencyCode.toUpperCase(),
       reference: input.reference,
       description,
       total_debit: input.derived.journalSuggestion.totalDebit,
@@ -933,14 +1279,9 @@ export async function persistApprovedAccountingArtifacts(
       functional_total_debit: input.derived.journalSuggestion.functionalTotalDebit,
       functional_total_credit: input.derived.journalSuggestion.functionalTotalCredit,
       created_by: input.actorId,
-    })
-    .select("id")
-    .limit(1)
-    .single();
-
-  if (journalEntryError || !journalEntry?.id) {
-    throw new Error(journalEntryError?.message ?? "No se pudo crear el journal entry draft.");
-  }
+      updated_at: new Date().toISOString(),
+    },
+  });
 
   const linePayload = journalLines
     .map((line) => ({
@@ -953,7 +1294,7 @@ export async function persistApprovedAccountingArtifacts(
     }))
     .filter((entry) => entry.account !== null)
     .map((entry) => ({
-      journal_entry_id: journalEntry.id,
+      journal_entry_id: journalEntryId,
       line_no: entry.line.lineNumber,
       account_id: entry.account?.id,
       debit: roundCurrency(entry.line.debit),
@@ -961,27 +1302,29 @@ export async function persistApprovedAccountingArtifacts(
       description: entry.line.accountName,
       tax_tag: entry.line.taxTag,
       currency_code: entry.line.currencyCode,
+      original_currency_code: entry.line.currencyCode,
+      original_amount: roundCurrency(
+        entry.line.debit > 0 ? entry.line.debit : entry.line.credit,
+      ),
       fx_rate: entry.line.fxRate,
+      fx_rate_applied: entry.line.fxRate,
       functional_debit: roundCurrency(entry.line.functionalDebit),
       functional_credit: roundCurrency(entry.line.functionalCredit),
+      functional_amount_uyu: roundCurrency(
+        entry.line.functionalDebit > 0
+          ? entry.line.functionalDebit
+          : entry.line.functionalCredit,
+      ),
       metadata: {
         provenance: entry.line.provenance,
       },
     }));
 
-  if (linePayload.length > 0) {
-    const { error: lineError } = await supabase
-      .from("journal_entry_lines")
-      .insert(linePayload);
-
-    if (lineError) {
-      throw new Error(lineError.message);
-    }
-  }
+  await insertJournalEntryLinesWithCompat(supabase, linePayload);
 
   return {
     suggestionId: suggestion.id as string,
-    journalEntryId: journalEntry.id as string,
+    journalEntryId,
   } satisfies AccountingArtifactsPersistenceResult;
 }
 
@@ -1088,6 +1431,9 @@ export async function createRuleFromApproval(
     operationCategory: string | null;
     linkedOperationType: string | null;
     vatProfileJson: Record<string, unknown>;
+    taxProfileCode?: string | null;
+    templateCode?: string | null;
+    status?: AccountingRuleRecord["status"] | null;
     conceptLines: AccountingArtifactsPersistenceInput["derived"]["conceptResolution"]["lines"];
     rationale: string | null;
   },
@@ -1140,6 +1486,7 @@ export async function createRuleFromApproval(
       organization_id: input.organizationId,
       scope: input.learning.scope,
       document_id: input.learning.scope === "document_override" ? input.documentId : null,
+      source_document_id: input.documentId,
       vendor_id:
         input.learning.scope === "vendor_concept" || input.learning.scope === "vendor_default"
           ? input.vendorId
@@ -1150,9 +1497,14 @@ export async function createRuleFromApproval(
           : null,
       document_role: input.documentRole,
       account_id: input.accountId,
+      status: input.status ?? "approved",
       vat_profile_json: input.vatProfileJson,
+      tax_profile_code: input.taxProfileCode ?? null,
       operation_category: input.operationCategory,
       linked_operation_type: input.linkedOperationType,
+      template_code: input.templateCode ?? null,
+      times_reused: 0,
+      times_corrected: 0,
       priority:
         input.learning.scope === "document_override"
           ? 1000

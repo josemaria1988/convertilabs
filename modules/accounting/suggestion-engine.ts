@@ -1,4 +1,5 @@
 import { resolveUyVatTreatment } from "@/modules/tax/uy-vat-engine";
+import { resolveJournalTemplateCode } from "@/modules/accounting/journal-templates";
 import { resolveAccountingRuleWithPrecedence } from "@/modules/accounting/rules";
 import {
   buildBlockedJournalSuggestion,
@@ -10,7 +11,77 @@ import {
 import type {
   AccountingSuggestionContext,
   DerivedDraftArtifacts,
+  DraftBlockerFamily,
 } from "@/modules/accounting/types";
+
+function unique(values: string[]) {
+  return values.filter((value, index, array) => array.indexOf(value) === index);
+}
+
+function classifyBlockerFamily(blocker: string): DraftBlockerFamily {
+  const normalized = blocker.toLowerCase();
+
+  if (normalized.includes("duplicad")) {
+    return "duplicados";
+  }
+
+  if (normalized.includes("period") || normalized.includes("cierre")) {
+    return "periodo";
+  }
+
+  if (normalized.includes("iva") || normalized.includes("fiscal") || normalized.includes("prorrata")) {
+    return "fiscal";
+  }
+
+  if (normalized.includes("ia") || normalized.includes("asistente")) {
+    return "ia";
+  }
+
+  if (
+    normalized.includes("cuenta")
+    || normalized.includes("contable")
+    || normalized.includes("journal")
+    || normalized.includes("contrapartida")
+  ) {
+    return "contable";
+  }
+
+  return "documental";
+}
+
+function buildBlockerGroups(blockers: string[]) {
+  const groups = new Map<DraftBlockerFamily, string[]>();
+
+  for (const blocker of blockers) {
+    const family = classifyBlockerFamily(blocker);
+    const current = groups.get(family) ?? [];
+    current.push(blocker);
+    groups.set(family, unique(current));
+  }
+
+  return Array.from(groups.entries()).map(([family, familyBlockers]) => ({
+    family,
+    blockers: familyBlockers,
+  }));
+}
+
+function buildProvisionalBlockers(blockers: string[]) {
+  return blockers.filter((blocker) => {
+    const normalized = blocker.toLowerCase();
+
+    if (
+      normalized.includes("segunda ia")
+      || normalized.includes("baja confianza")
+      || normalized.includes("resolucion contable confiable")
+      || normalized.includes("cuenta de ingreso postable resuelta")
+      || normalized.includes("cuenta contable postable resuelta")
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
 
 function buildAssistantBlockingReasons(input: {
   context: AccountingSuggestionContext;
@@ -77,8 +148,24 @@ function buildPurchaseJournalSuggestion(input: {
     ...input.context.assistantSuggestion.reviewFlags,
   ];
   const monetary = buildJournalMonetaryContext({
-    currencyCode: input.context.facts.currency_code,
-    documentDate: input.context.facts.document_date,
+    currencyCode: input.context.monetarySnapshot?.currencyCode ?? input.context.facts.currency_code,
+    documentDate:
+      input.context.monetarySnapshot?.fx.documentDate ?? input.context.facts.document_date,
+    functionalCurrencyCode: input.context.monetarySnapshot?.fx.functionalCurrencyCode,
+    fxRate: input.context.monetarySnapshot?.fx.rate,
+    fxRateSource: input.context.monetarySnapshot?.fx.source,
+    fxRateBcuValue: input.context.monetarySnapshot?.fx.bcuValue,
+    fxRateBcuDateUsed: input.context.monetarySnapshot?.fx.bcuDateUsed,
+    fxRateBcuSeries: input.context.monetarySnapshot?.fx.bcuSeries,
+  });
+  const templateCode = resolveJournalTemplateCode({
+    documentRole: input.context.documentRole,
+    operationFamily: appliedRule.operationCategory,
+    linkedOperationType: appliedRule.linkedOperationType,
+    vatCreditCategory: input.taxTreatment.vatBucket === "input_non_deductible"
+      ? "input_non_deductible"
+      : "input_direct",
+    vatRate: input.taxTreatment.rate,
   });
 
   if (!appliedRule.accountId || !appliedRule.accountCode || !appliedRule.accountName) {
@@ -92,6 +179,10 @@ function buildPurchaseJournalSuggestion(input: {
         blockingReasons: [...blockers, ...input.taxTreatment.blockingReasons],
         explanation: "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
         monetary,
+        postingMode: "final",
+        hasProvisionalAccounts: false,
+        templateCode,
+        taxProfileCode: appliedRule.taxProfileCode,
       }),
     };
   }
@@ -119,6 +210,10 @@ function buildPurchaseJournalSuggestion(input: {
         blockingReasons: blockers,
         explanation: "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
         monetary,
+        postingMode: appliedRule.accountIsProvisional ? "provisional" : "final",
+        hasProvisionalAccounts: appliedRule.accountIsProvisional,
+        templateCode,
+        taxProfileCode: appliedRule.taxProfileCode,
       }),
     };
   }
@@ -180,6 +275,10 @@ function buildPurchaseJournalSuggestion(input: {
       explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
       blockingReasons: [],
       monetary,
+      postingMode: appliedRule.accountIsProvisional ? "provisional" : "final",
+      hasProvisionalAccounts: appliedRule.accountIsProvisional,
+      templateCode,
+      taxProfileCode: appliedRule.taxProfileCode,
     }),
   };
 }
@@ -194,8 +293,22 @@ function buildSaleJournalSuggestion(input: {
     ...input.context.assistantSuggestion.reviewFlags,
   ];
   const monetary = buildJournalMonetaryContext({
-    currencyCode: input.context.facts.currency_code,
-    documentDate: input.context.facts.document_date,
+    currencyCode: input.context.monetarySnapshot?.currencyCode ?? input.context.facts.currency_code,
+    documentDate:
+      input.context.monetarySnapshot?.fx.documentDate ?? input.context.facts.document_date,
+    functionalCurrencyCode: input.context.monetarySnapshot?.fx.functionalCurrencyCode,
+    fxRate: input.context.monetarySnapshot?.fx.rate,
+    fxRateSource: input.context.monetarySnapshot?.fx.source,
+    fxRateBcuValue: input.context.monetarySnapshot?.fx.bcuValue,
+    fxRateBcuDateUsed: input.context.monetarySnapshot?.fx.bcuDateUsed,
+    fxRateBcuSeries: input.context.monetarySnapshot?.fx.bcuSeries,
+  });
+  const templateCode = resolveJournalTemplateCode({
+    documentRole: input.context.documentRole,
+    operationFamily: appliedRule.operationCategory,
+    linkedOperationType: appliedRule.linkedOperationType,
+    vatCreditCategory: "not_applicable",
+    vatRate: input.taxTreatment.rate,
   });
 
   if (!appliedRule.accountId || !appliedRule.accountCode || !appliedRule.accountName) {
@@ -209,6 +322,10 @@ function buildSaleJournalSuggestion(input: {
         blockingReasons: [...blockers, ...input.taxTreatment.blockingReasons],
         explanation: "La sugerencia contable queda bloqueada hasta que el tratamiento IVA sea confirmable.",
         monetary,
+        postingMode: "final",
+        hasProvisionalAccounts: false,
+        templateCode,
+        taxProfileCode: appliedRule.taxProfileCode,
       }),
     };
   }
@@ -236,6 +353,10 @@ function buildSaleJournalSuggestion(input: {
         blockingReasons: blockers,
         explanation: "La sugerencia contable se bloqueo porque faltan mappings contables obligatorios.",
         monetary,
+        postingMode: appliedRule.accountIsProvisional ? "provisional" : "final",
+        hasProvisionalAccounts: appliedRule.accountIsProvisional,
+        templateCode,
+        taxProfileCode: appliedRule.taxProfileCode,
       }),
     };
   }
@@ -286,6 +407,10 @@ function buildSaleJournalSuggestion(input: {
       explanation: `Asiento sugerido con precedencia ${appliedRule.scope} y tratamiento ${input.taxTreatment.label.toLowerCase()}.`,
       blockingReasons: [],
       monetary,
+      postingMode: appliedRule.accountIsProvisional ? "provisional" : "final",
+      hasProvisionalAccounts: appliedRule.accountIsProvisional,
+      templateCode,
+      taxProfileCode: appliedRule.taxProfileCode,
     }),
   };
 }
@@ -311,6 +436,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     linkedOperationType: appliedRule.linkedOperationType,
     userContextText: input.accountingContext.userFreeText,
     vatProfile: appliedRule.vatProfileJson,
+    monetarySnapshot: input.monetarySnapshot,
   });
 
   const resolved =
@@ -330,9 +456,20 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
               blockingReasons: ["Solo compra y venta entran en el flujo contable automatizado del MVP."],
               explanation: "No hay sugerencia contable automatica para documentos fuera de compra/venta.",
               monetary: buildJournalMonetaryContext({
-                currencyCode: input.facts.currency_code,
-                documentDate: input.facts.document_date,
+                currencyCode: input.monetarySnapshot?.currencyCode ?? input.facts.currency_code,
+                documentDate:
+                  input.monetarySnapshot?.fx.documentDate ?? input.facts.document_date,
+                functionalCurrencyCode: input.monetarySnapshot?.fx.functionalCurrencyCode,
+                fxRate: input.monetarySnapshot?.fx.rate,
+                fxRateSource: input.monetarySnapshot?.fx.source,
+                fxRateBcuValue: input.monetarySnapshot?.fx.bcuValue,
+                fxRateBcuDateUsed: input.monetarySnapshot?.fx.bcuDateUsed,
+                fxRateBcuSeries: input.monetarySnapshot?.fx.bcuSeries,
               }),
+              postingMode: "final",
+              hasProvisionalAccounts: false,
+              templateCode: null,
+              taxProfileCode: null,
             }),
           };
   const blockers = [
@@ -346,7 +483,21 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     ...resolved.journalSuggestion.blockingReasons,
   ].filter((value, index, array) => array.indexOf(value) === index);
 
+  const finalBlockers = unique(blockers);
+  const provisionalBlockers = buildProvisionalBlockers(finalBlockers);
+  const canPostProvisional =
+    provisionalBlockers.length === 0
+    && resolved.journalSuggestion.isBalanced
+    && resolved.journalSuggestion.totalDebit > 0
+    && taxTreatment.ready;
+  const canConfirmFinal =
+    finalBlockers.length === 0
+    && resolved.journalSuggestion.isBalanced
+    && resolved.journalSuggestion.totalDebit > 0
+    && !resolved.journalSuggestion.hasProvisionalAccounts;
+
   return {
+    monetarySnapshot: input.monetarySnapshot,
     taxTreatment,
     journalSuggestion: resolved.journalSuggestion,
     vendorResolution: input.vendorResolution,
@@ -356,11 +507,12 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     assistantSuggestion: input.assistantSuggestion,
     appliedRule: resolved.appliedRule,
     validation: {
-      canConfirm:
-        blockers.length === 0
-        && resolved.journalSuggestion.isBalanced
-        && resolved.journalSuggestion.totalDebit > 0,
-      blockers,
+      canConfirm: canConfirmFinal,
+      blockers: finalBlockers,
+      canPostProvisional,
+      canConfirmFinal,
+      postingStatus: canPostProvisional ? "vat_ready" : "draft",
+      blockerGroups: buildBlockerGroups(finalBlockers),
     },
   } satisfies DerivedDraftArtifacts;
 }

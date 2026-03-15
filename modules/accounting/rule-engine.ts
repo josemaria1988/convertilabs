@@ -181,6 +181,13 @@ function findAccount(accounts: PostableAccountRecord[], accountId: string | null
   return accounts.find((account) => account.id === accountId) ?? null;
 }
 
+function isProvisionalAccount(account: PostableAccountRecord | null) {
+  return Boolean(
+    account?.is_provisional
+    || (typeof account?.code === "string" && account.code.startsWith("TEMP-")),
+    );
+}
+
 function resolveCandidateConceptIds(input: {
   conceptResolution: AccountingSuggestionContext["conceptResolution"];
   accountingContext: AccountingSuggestionContext["accountingContext"];
@@ -214,9 +221,13 @@ function buildResolvedRule(input: {
     accountId: account?.id ?? input.rule.account_id,
     accountCode: account?.code ?? null,
     accountName: account?.name ?? null,
+    accountIsProvisional: isProvisionalAccount(account),
+    status: input.rule.status,
     vatProfileJson: input.rule.vat_profile_json,
+    taxProfileCode: input.rule.tax_profile_code,
     operationCategory: input.rule.operation_category ?? input.fallbackOperationCategory,
     linkedOperationType: input.rule.linked_operation_type,
+    templateCode: input.rule.template_code,
     provenance: input.provenance,
     priority: input.rule.priority,
     source: input.rule.source,
@@ -241,10 +252,14 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       accountId: account?.id ?? input.accountingContext.manualOverrideAccountId,
       accountCode: account?.code ?? null,
       accountName: account?.name ?? null,
+      accountIsProvisional: isProvisionalAccount(account),
+      status: isProvisionalAccount(account) ? "provisional" : "approved",
       vatProfileJson: null,
+      taxProfileCode: account?.tax_profile_hint ?? null,
       operationCategory:
         input.accountingContext.manualOverrideOperationCategory ?? input.operationCategory,
       linkedOperationType: null,
+      templateCode: null,
       provenance: "manual_override",
       priority: 1000,
       source: "manual",
@@ -331,10 +346,14 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       accountId: account?.id ?? input.vendorResolution.defaultAccountId,
       accountCode: account?.code ?? null,
       accountName: account?.name ?? null,
+      accountIsProvisional: isProvisionalAccount(account),
+      status: isProvisionalAccount(account) ? "provisional" : "approved",
       vatProfileJson: input.vendorResolution.defaultTaxProfile,
+      taxProfileCode: account?.tax_profile_hint ?? null,
       operationCategory:
         input.vendorResolution.defaultOperationCategory ?? input.operationCategory,
       linkedOperationType: null,
+      templateCode: null,
       provenance: "vendor_default_fields",
       priority: 650,
       source: "vendor_default",
@@ -354,11 +373,15 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
       accountId: account?.id ?? input.assistantSuggestion.output.suggestedAccountId,
       accountCode: account?.code ?? null,
       accountName: account?.name ?? null,
+      accountIsProvisional: isProvisionalAccount(account),
+      status: isProvisionalAccount(account) ? "provisional" : "assistant",
       vatProfileJson: null,
+      taxProfileCode: account?.tax_profile_hint ?? null,
       operationCategory:
         input.assistantSuggestion.output.suggestedOperationCategory
         ?? input.operationCategory,
       linkedOperationType: input.assistantSuggestion.output.linkedOperationType,
+      templateCode: null,
       provenance: "assistant_second_pass",
       priority: 500,
       source: "assistant",
@@ -372,9 +395,13 @@ export function resolveAccountingRuleSelection(input: AccountingSuggestionContex
     accountId: null,
     accountCode: null,
     accountName: null,
+    accountIsProvisional: false,
+    status: "manual_review",
     vatProfileJson: null,
+    taxProfileCode: null,
     operationCategory: input.operationCategory,
     linkedOperationType: null,
+    templateCode: null,
     provenance: "manual_review_required",
     priority: null,
     source: null,

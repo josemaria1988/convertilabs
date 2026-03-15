@@ -80,6 +80,8 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "En progreso";
     case "completed":
       return "Completada";
+    case "computed":
+      return "Calculada";
     case "failed":
       return "Con error";
     case "cancelled":
@@ -98,6 +100,23 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Sugerido";
     default:
       return value ? value.replace(/_/g, " ") : "Sin estado";
+  }
+}
+
+export function formatPostingStatusLabel(value: string | null | undefined) {
+  switch (value) {
+    case "draft":
+      return "Borrador";
+    case "vat_ready":
+      return "Listo fiscal";
+    case "posted_provisional":
+      return "Posteado provisional";
+    case "posted_final":
+      return "Posteado final";
+    case "locked":
+      return "Bloqueado";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin posting";
   }
 }
 
@@ -191,5 +210,24 @@ export function formatImportOperationStatusLabel(value: string | null | undefine
       return "Lista para revision";
     default:
       return formatLifecycleStatusLabel(value);
+  }
+}
+
+export function formatDgiDifferenceStatusLabel(value: string | null | undefined) {
+  switch (value) {
+    case "matched":
+      return "Sin diferencias";
+    case "missing_in_system":
+      return "Falta en sistema";
+    case "extra_in_system":
+      return "Extra en sistema";
+    case "amount_mismatch":
+      return "Diferencia de monto";
+    case "tax_treatment_mismatch":
+      return "Tratamiento fiscal distinto";
+    case "pending_manual_adjustment":
+      return "Ajuste externo pendiente";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin diferencia";
   }
 }

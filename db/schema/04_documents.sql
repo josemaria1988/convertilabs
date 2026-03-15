@@ -4,6 +4,7 @@ create table if not exists public.documents (
   direction public.document_direction not null default 'unknown',
   document_type text,
   status public.document_status not null default 'uploaded',
+  posting_status public.document_posting_status not null default 'draft',
   storage_bucket text not null default 'documents-private',
   storage_path text not null unique,
   original_filename text not null,
@@ -15,8 +16,35 @@ create table if not exists public.documents (
   source_message_id text,
   source_attachment_hash text,
   source_reference text,
+  vat_ready_at timestamptz,
+  posted_provisional_at timestamptz,
+  posted_final_at timestamptz,
   uploaded_by uuid references public.profiles(id),
   document_date date,
+  document_currency_code text,
+  document_net_amount_original numeric(18,2),
+  document_tax_amount_original numeric(18,2),
+  document_total_amount_original numeric(18,2),
+  net_amount_uyu numeric(18,2),
+  tax_amount_uyu numeric(18,2),
+  total_amount_uyu numeric(18,2),
+  fx_rate_policy_code text,
+  fx_rate_bcu_value numeric(18,6),
+  fx_rate_bcu_date_used date,
+  fx_rate_bcu_series text,
+  fx_rate_document_value numeric(18,6),
+  fx_rate_document_date date,
+  fx_rate_source text,
+  fx_rate_override_reason text,
+  vat_credit_category text,
+  vat_deductibility_status text,
+  vat_direct_tax_amount_uyu numeric(18,2),
+  vat_indirect_tax_amount_uyu numeric(18,2),
+  vat_deductible_tax_amount_uyu numeric(18,2),
+  vat_nondeductible_tax_amount_uyu numeric(18,2),
+  vat_proration_coefficient numeric(10,6),
+  business_link_status text,
+  dgi_reconciliation_status text,
   external_reference text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
@@ -25,6 +53,9 @@ create table if not exists public.documents (
 
 create index if not exists idx_documents_org_status
   on public.documents (organization_id, status);
+
+create index if not exists idx_documents_org_posting_status
+  on public.documents (organization_id, posting_status, created_at desc);
 
 create index if not exists idx_documents_file_hash
   on public.documents (organization_id, file_hash);

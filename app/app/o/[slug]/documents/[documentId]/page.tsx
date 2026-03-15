@@ -15,8 +15,10 @@ import {
 } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
+  confirmFinalDocumentReviewAction,
   confirmDocumentReviewAction,
   createDocumentReviewOverrideAccountAction,
+  postProvisionalDocumentReviewAction,
   reopenDocumentReviewAction,
   resolveDocumentDuplicateAction,
   saveDocumentDraftReviewAction,
@@ -161,6 +163,21 @@ export default async function DocumentReviewPage({
         confirmDocumentAction={async (payload) => {
           "use server";
           return confirmDocumentReviewAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        postProvisionalDocumentAction={async () => {
+          "use server";
+          return postProvisionalDocumentReviewAction({
+            slug,
+            documentId,
+          });
+        }}
+        confirmFinalDocumentAction={async (payload) => {
+          "use server";
+          return confirmFinalDocumentReviewAction({
             slug,
             documentId,
             ...payload,

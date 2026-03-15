@@ -115,7 +115,9 @@ function buildSystemPrompt(input: AccountingAssistantInput) {
 }
 
 function buildUserPrompt(input: AccountingAssistantInput) {
-  const allowedAccounts = input.allowedAccounts
+  const allowedTargets = ((input.allowedTargets ?? []).length > 0
+    ? input.allowedTargets ?? []
+    : input.allowedAccounts ?? [])
     .map((account) => `${account.id} | ${account.code} | ${account.name}`)
     .join("\n");
   const allowedConcepts = input.allowedConcepts
@@ -151,8 +153,8 @@ function buildUserPrompt(input: AccountingAssistantInput) {
     candidateConcepts,
     "Allowed concepts:",
     allowedConcepts || "None.",
-    "Allowed accounts:",
-    allowedAccounts || "None.",
+    "Allowed accounting targets:",
+    allowedTargets || "None.",
     "Prior approved examples:",
     priorExamples,
   ].join("\n");
@@ -162,7 +164,10 @@ function validateAssistantOutput(
   input: AccountingAssistantInput,
   output: AccountingAssistantOutput,
 ) {
-  const allowedAccountIds = new Set(input.allowedAccounts.map((account) => account.id));
+  const allowedTargets = (input.allowedTargets ?? []).length > 0
+    ? input.allowedTargets ?? []
+    : input.allowedAccounts ?? [];
+  const allowedAccountIds = new Set(allowedTargets.map((account) => account.id));
   const allowedConceptIds = new Set(input.allowedConcepts.map((concept) => concept.id));
 
   if (output.suggestedAccountId && !allowedAccountIds.has(output.suggestedAccountId)) {
@@ -213,7 +218,11 @@ export async function resolveAccountingAssistantSuggestion(
     } satisfies AccountingAssistantResult;
   }
 
-  if (input.allowedAccounts.length === 0) {
+  const allowedTargets = (input.allowedTargets ?? []).length > 0
+    ? input.allowedTargets ?? []
+    : input.allowedAccounts ?? [];
+
+  if (allowedTargets.length === 0) {
     return toFailedResult("No hay cuentas postables permitidas para ejecutar la segunda IA.");
   }
 
@@ -228,7 +237,7 @@ export async function resolveAccountingAssistantSuggestion(
   const promptHash = buildPromptHash({
     systemPrompt,
     userPrompt,
-    accountIds: input.allowedAccounts.map((account) => account.id),
+    accountIds: allowedTargets.map((account) => account.id),
     conceptIds: input.allowedConcepts.map((concept) => concept.id),
   });
   const startedAt = Date.now();

@@ -11,6 +11,9 @@ export type JournalMonetaryContext = {
   fxRate: number;
   fxRateDate: string | null;
   fxRateSource: string;
+  fxRateBcuValue: number | null;
+  fxRateBcuDateUsed: string | null;
+  fxRateBcuSeries: string | null;
 };
 
 export function resolveSystemAccount(
@@ -29,6 +32,9 @@ export function buildJournalMonetaryContext(input: {
   functionalCurrencyCode?: string | null | undefined;
   fxRate?: number | null | undefined;
   fxRateSource?: string | null | undefined;
+  fxRateBcuValue?: number | null | undefined;
+  fxRateBcuDateUsed?: string | null | undefined;
+  fxRateBcuSeries?: string | null | undefined;
 }) {
   const currencyCode = input.currencyCode?.trim().toUpperCase() || "UYU";
   const functionalCurrencyCode =
@@ -46,6 +52,14 @@ export function buildJournalMonetaryContext(input: {
     fxRateSource:
       input.fxRateSource?.trim()
       || (currencyCode === functionalCurrencyCode ? "same_currency" : "document_default"),
+    fxRateBcuValue:
+      typeof input.fxRateBcuValue === "number" && Number.isFinite(input.fxRateBcuValue)
+        ? input.fxRateBcuValue
+        : currencyCode === functionalCurrencyCode
+          ? 1
+          : null,
+    fxRateBcuDateUsed: input.fxRateBcuDateUsed ?? input.documentDate ?? null,
+    fxRateBcuSeries: input.fxRateBcuSeries ?? null,
   } satisfies JournalMonetaryContext;
 }
 
@@ -80,10 +94,16 @@ export function buildBlockedJournalSuggestion(input: {
   blockingReasons: string[];
   explanation: string;
   monetary: JournalMonetaryContext;
+  postingMode?: "provisional" | "final";
+  hasProvisionalAccounts?: boolean;
+  templateCode?: string | null;
+  taxProfileCode?: string | null;
 }) {
   return {
     ready: false,
     isBalanced: false,
+    postingMode: input.postingMode ?? "final",
+    hasProvisionalAccounts: input.hasProvisionalAccounts ?? false,
     totalDebit: 0,
     totalCredit: 0,
     functionalTotalDebit: 0,
@@ -93,6 +113,11 @@ export function buildBlockedJournalSuggestion(input: {
     fxRate: input.monetary.fxRate,
     fxRateDate: input.monetary.fxRateDate,
     fxRateSource: input.monetary.fxRateSource,
+    fxRateBcuValue: input.monetary.fxRateBcuValue,
+    fxRateBcuDateUsed: input.monetary.fxRateBcuDateUsed,
+    fxRateBcuSeries: input.monetary.fxRateBcuSeries,
+    templateCode: input.templateCode ?? null,
+    taxProfileCode: input.taxProfileCode ?? null,
     explanation: input.explanation,
     lines: [],
     blockingReasons: input.blockingReasons,
@@ -104,6 +129,10 @@ export function finalizeJournalSuggestion(input: {
   explanation: string;
   blockingReasons: string[];
   monetary: JournalMonetaryContext;
+  postingMode?: "provisional" | "final";
+  hasProvisionalAccounts?: boolean;
+  templateCode?: string | null;
+  taxProfileCode?: string | null;
 }) {
   const totalDebit = roundCurrency(input.lines.reduce((sum, line) => sum + line.debit, 0));
   const totalCredit = roundCurrency(input.lines.reduce((sum, line) => sum + line.credit, 0));
@@ -117,6 +146,8 @@ export function finalizeJournalSuggestion(input: {
   return {
     ready: true,
     isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+    postingMode: input.postingMode ?? "final",
+    hasProvisionalAccounts: input.hasProvisionalAccounts ?? false,
     totalDebit,
     totalCredit,
     functionalTotalDebit,
@@ -126,6 +157,11 @@ export function finalizeJournalSuggestion(input: {
     fxRate: input.monetary.fxRate,
     fxRateDate: input.monetary.fxRateDate,
     fxRateSource: input.monetary.fxRateSource,
+    fxRateBcuValue: input.monetary.fxRateBcuValue,
+    fxRateBcuDateUsed: input.monetary.fxRateBcuDateUsed,
+    fxRateBcuSeries: input.monetary.fxRateBcuSeries,
+    templateCode: input.templateCode ?? null,
+    taxProfileCode: input.taxProfileCode ?? null,
     explanation: input.explanation,
     lines: input.lines,
     blockingReasons: input.blockingReasons,

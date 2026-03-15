@@ -1,6 +1,10 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildChartPresetPayload,
+  type ChartPresetCode,
+} from "@/modules/accounting/chart-presets";
 
 type StarterAccountDefinition = {
   code: string;
@@ -9,6 +13,8 @@ type StarterAccountDefinition = {
   normalSide: "debit" | "credit";
   systemRole?: string;
   starterRole?: string;
+  isProvisional?: boolean;
+  taxProfileHint?: string;
 };
 
 type ExistingStarterAccountRow = {
@@ -39,6 +45,7 @@ const starterAccountDefinitions: StarterAccountDefinition[] = [
     accountType: "asset",
     normalSide: "debit",
     systemRole: "vat_input_creditable",
+    taxProfileHint: "UY_VAT_PURCHASE_BASIC",
   },
   {
     code: "SYS-VAT-OUT",
@@ -46,6 +53,7 @@ const starterAccountDefinitions: StarterAccountDefinition[] = [
     accountType: "liability",
     normalSide: "credit",
     systemRole: "vat_output_payable",
+    taxProfileHint: "UY_VAT_SALE_BASIC",
   },
   {
     code: "GEN-SALE",
@@ -60,6 +68,42 @@ const starterAccountDefinitions: StarterAccountDefinition[] = [
     accountType: "expense",
     normalSide: "debit",
     starterRole: "generic_purchase_expense",
+  },
+  {
+    code: "TEMP-EXP",
+    name: "Gasto por clasificar",
+    accountType: "expense",
+    normalSide: "debit",
+    isProvisional: true,
+    taxProfileHint: "UY_VAT_NON_DEDUCTIBLE",
+  },
+  {
+    code: "TEMP-REV",
+    name: "Ingreso por clasificar",
+    accountType: "revenue",
+    normalSide: "credit",
+    isProvisional: true,
+  },
+  {
+    code: "TEMP-INV",
+    name: "Inventario por clasificar",
+    accountType: "asset",
+    normalSide: "debit",
+    isProvisional: true,
+  },
+  {
+    code: "TEMP-AST",
+    name: "Activo por clasificar",
+    accountType: "asset",
+    normalSide: "debit",
+    isProvisional: true,
+  },
+  {
+    code: "TEMP-LIA",
+    name: "Pasivo por clasificar",
+    accountType: "liability",
+    normalSide: "credit",
+    isProvisional: true,
   },
 ];
 
@@ -77,6 +121,7 @@ export function buildStarterChartAccountPayload(input: {
   organizationId: string;
   actorId: string | null;
   existingAccounts: ExistingStarterAccountRow[];
+  presetCode?: ChartPresetCode | null;
 }) {
   const existingCodes = new Set(
     input.existingAccounts
@@ -101,7 +146,7 @@ export function buildStarterChartAccountPayload(input: {
       .filter((value): value is string => Boolean(value)),
   );
 
-  return starterAccountDefinitions
+  const starterPayload = starterAccountDefinitions
     .filter((definition) => {
       if (existingCodes.has(definition.code)) {
         return false;
@@ -132,13 +177,44 @@ export function buildStarterChartAccountPayload(input: {
       account_type: definition.accountType,
       normal_side: definition.normalSide,
       is_postable: true,
+      is_provisional: definition.isProvisional ?? false,
+      source: definition.systemRole ? "system" : definition.isProvisional ? "system" : "starter",
+      external_code: null,
+      statement_section: null,
+      nature_tag: definition.isProvisional ? "provisional" : null,
+      function_tag: null,
+      cashflow_tag: null,
+      tax_profile_hint: definition.taxProfileHint ?? null,
+      currency_policy: "mono_currency",
       metadata: {
-        source: "starter_bootstrap",
+        source: definition.systemRole ? "system" : "starter_bootstrap",
         starter_seeded_by: input.actorId,
         system_role: definition.systemRole ?? null,
         starter_role: definition.starterRole ?? null,
+        is_provisional: definition.isProvisional ?? false,
+        tax_profile_hint: definition.taxProfileHint ?? null,
       },
     }));
+
+  if (!input.presetCode) {
+    return starterPayload;
+  }
+
+  const presetPayload = buildChartPresetPayload({
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    presetCode: input.presetCode,
+    existingAccounts: [
+      ...input.existingAccounts.map((account) => ({
+        code: account.code,
+      })),
+      ...starterPayload.map((account) => ({
+        code: account.code,
+      })),
+    ],
+  });
+
+  return [...starterPayload, ...presetPayload];
 }
 
 export async function ensureStarterAccountingSetup(
@@ -146,6 +222,7 @@ export async function ensureStarterAccountingSetup(
   input: {
     organizationId: string;
     actorId: string | null;
+    presetCode?: ChartPresetCode | null;
   },
 ) {
   const { data, error } = await supabase
@@ -163,6 +240,7 @@ export async function ensureStarterAccountingSetup(
     organizationId: input.organizationId,
     actorId: input.actorId,
     existingAccounts,
+    presetCode: input.presetCode ?? null,
   });
 
   if (payload.length === 0) {

@@ -308,18 +308,24 @@ export default async function OrganizationTaxPage({
                 <span className="flex-1 text-[14px] font-medium text-white">
                   Diferencia en Ventas
                 </span>
-                <span className="ui-button ui-button--primary min-h-[28px] px-3 text-[13px]">
+                <Link
+                  href={`/app/o/${organization.slug}/tax/reconciliation`}
+                  className="ui-button ui-button--primary min-h-[28px] px-3 text-[13px]"
+                >
                   Conciliar Diferencias
-                </span>
+                </Link>
               </div>
               <div className="ui-alert-row">
                 <span className="ui-alert-row__icon" />
                 <span className="flex-1 text-[14px] font-medium text-white">
                   Credito Fiscal Inconsistente
                 </span>
-                <span className="ui-button ui-button--secondary min-h-[28px] px-3 text-[13px]">
+                <Link
+                  href={`/app/o/${organization.slug}/tax/reconciliation`}
+                  className="ui-button ui-button--secondary min-h-[28px] px-3 text-[13px]"
+                >
                   Ver Detalles
-                </span>
+                </Link>
               </div>
             </div>
 

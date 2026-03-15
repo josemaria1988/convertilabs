@@ -20,6 +20,7 @@ type PrivateDashboardShellProps = {
   description: string;
   navItems: PrivateDashboardNavItem[];
   toolbarLabel?: string;
+  isExportCurrent?: boolean;
   children: ReactNode;
 };
 
@@ -260,6 +261,7 @@ export function PrivateDashboardShell({
   description,
   navItems,
   toolbarLabel,
+  isExportCurrent = false,
   children,
 }: PrivateDashboardShellProps) {
   const primaryItems = navItems.filter((item) => item.label !== "Configuracion");
@@ -310,12 +312,25 @@ export function PrivateDashboardShell({
               );
             })}
             <div className="app-sidebar-divider" />
-            <div className="app-nav-item opacity-95" data-current="false">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                <ExportIcon className="h-[18px] w-[18px]" />
-              </span>
-              <span className="truncate text-white">Exportar</span>
-            </div>
+            {isExportCurrent ? (
+              <div className="app-nav-item opacity-95" data-current="true">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  <ExportIcon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="truncate text-white">Exportar</span>
+              </div>
+            ) : (
+              <LoadingLink
+                href={`/app/o/${organizationSlug}/exports`}
+                pendingLabel="Abriendo..."
+                className="app-nav-item opacity-95"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  <ExportIcon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="truncate text-white">Exportar</span>
+              </LoadingLink>
+            )}
           </nav>
 
           <div className="app-sidebar-footer">

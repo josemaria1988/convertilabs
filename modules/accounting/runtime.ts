@@ -3,6 +3,9 @@ import {
   buildAccountingDraftArtifacts,
 } from "@/modules/accounting/suggestion-engine";
 import {
+  buildDocumentMonetarySnapshot,
+} from "@/modules/accounting/fx-policy";
+import {
   loadAccountingRuntimeContext,
   loadDocumentAccountingContext,
   loadPriorApprovalExamples,
@@ -29,6 +32,26 @@ import type {
   OrganizationFiscalProfile,
   OrganizationRuleSnapshotContext,
 } from "@/modules/accounting/types";
+
+async function loadOrganizationFunctionalCurrency(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("base_currency")
+    .eq("id", organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return typeof data?.base_currency === "string" && data.base_currency.trim()
+    ? data.base_currency.trim().toUpperCase()
+    : "UYU";
+}
 
 function materializeStoredAssistantResult(
   accountingContext: AccountingContextResolution,
@@ -112,6 +135,10 @@ export async function deriveDocumentAccountingState(input: {
   storedContext?: DocumentAccountingContextRecord | null;
   runAssistant?: boolean;
 }) {
+  const functionalCurrencyCode = await loadOrganizationFunctionalCurrency(
+    input.supabase,
+    input.organizationId,
+  );
   const runtimeContext = await loadAccountingRuntimeContext(
     input.supabase,
     input.organizationId,
@@ -141,6 +168,10 @@ export async function deriveDocumentAccountingState(input: {
     activeRules: runtimeContext.activeRules,
     operationCategory: input.operationCategory,
     storedContext,
+  });
+  const monetarySnapshot = await buildDocumentMonetarySnapshot({
+    facts: input.facts,
+    functionalCurrencyCode,
   });
   let assistantSuggestion: AccountingAssistantResult =
     materializeStoredAssistantResult(accountingContext) ?? {
@@ -182,6 +213,7 @@ export async function deriveDocumentAccountingState(input: {
         defaultOperationCategory: concept.default_operation_category,
       })),
       userContextText: accountingContext.userFreeText ?? "",
+      allowedTargets: runtimeContext.accounts,
       allowedAccounts: runtimeContext.accounts,
       allowedConcepts: runtimeContext.concepts,
       priorApprovedExamples,
@@ -208,6 +240,7 @@ export async function deriveDocumentAccountingState(input: {
     operationCategory: input.operationCategory,
     profile: input.profile,
     ruleSnapshot: input.ruleSnapshot,
+    monetarySnapshot,
     vendorResolution,
     invoiceIdentity: input.invoiceIdentity,
     conceptResolution,

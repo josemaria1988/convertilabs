@@ -13,10 +13,22 @@ test("starter chart payload includes minimal system and generic accounts for emp
     existingAccounts: [],
   });
 
-  assert.equal(payload.length, 6);
+  assert.equal(payload.length, 11);
   assert.deepEqual(
     payload.map((row) => row.code),
-    ["SYS-AR", "SYS-AP", "SYS-VAT-IN", "SYS-VAT-OUT", "GEN-SALE", "GEN-EXP"],
+    [
+      "SYS-AR",
+      "SYS-AP",
+      "SYS-VAT-IN",
+      "SYS-VAT-OUT",
+      "GEN-SALE",
+      "GEN-EXP",
+      "TEMP-EXP",
+      "TEMP-REV",
+      "TEMP-INV",
+      "TEMP-AST",
+      "TEMP-LIA",
+    ],
   );
   assert.equal(
     payload.find((row) => row.code === "SYS-AR")?.metadata.system_role,
@@ -25,6 +37,10 @@ test("starter chart payload includes minimal system and generic accounts for emp
   assert.equal(
     payload.find((row) => row.code === "GEN-SALE")?.metadata.starter_role,
     "generic_sale_revenue",
+  );
+  assert.equal(
+    payload.find((row) => row.code === "TEMP-EXP")?.is_provisional,
+    true,
   );
 });
 
@@ -79,7 +95,7 @@ test("starter accounting setup inserts only missing accounts", async () => {
     actorId: "user-1",
   });
 
-  assert.equal(seeded.insertedCount, 6);
+  assert.equal(seeded.insertedCount, 11);
   assert.equal(state.inserts.length, 1);
   assert.equal(repeated.insertedCount, 0);
 });

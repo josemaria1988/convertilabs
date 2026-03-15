@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
+import type {
+  AccountingExportDataset,
+  AccountingExportScope,
+} from "@/modules/exports/accounting-adapters";
 import {
   buildCanonicalTaxPayload,
   buildDgiFormSummary,
@@ -8,6 +15,11 @@ import {
   type DGIFormMappingRecord,
 } from "@/modules/exports/canonical";
 import type { VatRunExportDataset } from "@/modules/exports/types";
+import {
+  isMissingDocumentStep5ColumnError,
+  isMissingJournalEntryLineStep5ColumnError,
+  isMissingJournalEntryStep5ColumnError,
+} from "@/modules/accounting/step5-schema-compat";
 import { isMissingVatRunImportColumnError } from "@/modules/tax/vat-run-schema-compat";
 
 type JsonRecord = Record<string, unknown>;
@@ -650,4 +662,369 @@ export async function loadVatRunExportDataset(
     canonicalTaxPayload,
     canonicalAccountingPayload,
   } satisfies VatRunExportDataset;
+}
+
+function buildPeriodRange(periodYear: number, periodMonth: number) {
+  const start = `${periodYear}-${String(periodMonth).padStart(2, "0")}-01`;
+  const end = periodMonth === 12
+    ? `${periodYear + 1}-01-01`
+    : `${periodYear}-${String(periodMonth + 1).padStart(2, "0")}-01`;
+
+  return {
+    start,
+    end,
+    label: `${periodYear}-${String(periodMonth).padStart(2, "0")}`,
+  };
+}
+
+export async function loadAccountingExportDataset(
+  supabase: SupabaseClient,
+  organizationId: string,
+  input: {
+    periodYear: number;
+    periodMonth: number;
+    scope: AccountingExportScope;
+  },
+) {
+  const period = buildPeriodRange(input.periodYear, input.periodMonth);
+  const { data: organization, error: organizationError } = await supabase
+    .from("organizations")
+    .select("id, name")
+    .eq("id", organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (organizationError || !organization?.id) {
+    throw new Error(organizationError?.message ?? "Organizacion no encontrada para exportacion.");
+  }
+
+  const loadJournalEntries = async () => {
+    const primary = await supabase
+      .from("journal_entries")
+      .select(
+        "id, source_document_id, entry_date, reference, description, posting_mode, currency_code, functional_currency, fx_rate_bcu_value, fx_rate_bcu_date_used",
+      )
+      .eq("organization_id", organizationId)
+      .gte("entry_date", period.start)
+      .lt("entry_date", period.end)
+      .order("entry_date", { ascending: true });
+    let data = primary.data as unknown;
+    let error = primary.error;
+
+    if (error && isMissingJournalEntryStep5ColumnError(error)) {
+      const legacy = await supabase
+        .from("journal_entries")
+        .select("id, source_document_id, entry_date, reference, description, currency_code")
+        .eq("organization_id", organizationId)
+        .gte("entry_date", period.start)
+        .lt("entry_date", period.end)
+        .order("entry_date", { ascending: true });
+      data = legacy.data as unknown;
+      error = legacy.error;
+    }
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return ((data as Array<{
+      id: string;
+      source_document_id: string | null;
+      entry_date: string;
+      reference: string | null;
+      description: string | null;
+      posting_mode?: string | null;
+      currency_code?: string | null;
+      functional_currency?: string | null;
+      fx_rate_bcu_value?: number | null;
+      fx_rate_bcu_date_used?: string | null;
+    }> | null) ?? []);
+  };
+
+  const journalEntries = await loadJournalEntries();
+  const journalIds = journalEntries.map((row) => row.id);
+  const documentIds = journalEntries
+    .map((row) => row.source_document_id)
+    .filter((value): value is string => Boolean(value));
+
+  const loadJournalLines = async () => {
+    if (journalIds.length === 0) {
+      return [];
+    }
+
+    const primary = await supabase
+      .from("journal_entry_lines")
+      .select(
+        "journal_entry_id, line_no, debit, credit, original_currency_code, original_amount, functional_amount_uyu, fx_rate_applied, description, metadata, chart_of_accounts(code, name, metadata, external_code, is_provisional, tax_profile_hint)",
+      )
+      .in("journal_entry_id", journalIds)
+      .order("line_no", { ascending: true });
+    let data = primary.data as unknown;
+    let error = primary.error;
+
+    if (
+      error
+      && (
+        isMissingJournalEntryLineStep5ColumnError(error)
+        || isMissingSupabaseColumnError(error, "chart_of_accounts")
+      )
+    ) {
+      const legacy = await supabase
+        .from("journal_entry_lines")
+        .select(
+          "journal_entry_id, line_no, debit, credit, description, metadata, chart_of_accounts(code, name, metadata)",
+        )
+        .in("journal_entry_id", journalIds)
+        .order("line_no", { ascending: true });
+      data = legacy.data as unknown;
+      error = legacy.error;
+    }
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return ((data as Array<{
+      journal_entry_id: string;
+      line_no: number;
+      debit: number;
+      credit: number;
+      original_currency_code?: string | null;
+      original_amount?: number | null;
+      functional_amount_uyu?: number | null;
+      fx_rate_applied?: number | null;
+      description: string | null;
+      metadata: JsonRecord | null;
+      chart_of_accounts:
+        | {
+            code: string;
+            name: string;
+            metadata?: JsonRecord | null;
+            external_code?: string | null;
+            is_provisional?: boolean | null;
+            tax_profile_hint?: string | null;
+          }
+        | Array<{
+            code: string;
+            name: string;
+            metadata?: JsonRecord | null;
+            external_code?: string | null;
+            is_provisional?: boolean | null;
+            tax_profile_hint?: string | null;
+          }>
+        | null;
+    }> | null) ?? []);
+  };
+
+  const loadDocuments = async () => {
+    if (documentIds.length === 0) {
+      return [];
+    }
+
+    const primary = await supabase
+      .from("documents")
+      .select("id, original_filename, document_date, posting_status")
+      .in("id", documentIds);
+    let data = primary.data as unknown;
+    let error = primary.error;
+
+    if (error && isMissingDocumentStep5ColumnError(error)) {
+      const legacy = await supabase
+        .from("documents")
+        .select("id, original_filename, document_date")
+        .in("id", documentIds);
+      data = legacy.data as unknown;
+      error = legacy.error;
+    }
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return ((data as Array<{
+      id: string;
+      original_filename: string;
+      document_date: string | null;
+      posting_status?: string | null;
+    }> | null) ?? []);
+  };
+
+  const loadLatestReconciliation = async () => {
+    const runResult = await supabase
+      .from("dgi_reconciliation_runs")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("period_year", input.periodYear)
+      .eq("period_month", input.periodMonth)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (runResult.error) {
+      if (isMissingSupabaseRelationError(runResult.error, "dgi_reconciliation_runs")) {
+        return [];
+      }
+
+      throw new Error(runResult.error.message);
+    }
+
+    if (!runResult.data?.id) {
+      return [];
+    }
+
+    const bucketResult = await supabase
+      .from("dgi_reconciliation_buckets")
+      .select("bucket_code, difference_status, delta_net_amount_uyu, delta_tax_amount_uyu, notes")
+      .eq("organization_id", organizationId)
+      .eq("run_id", runResult.data.id as string)
+      .order("bucket_code", { ascending: true });
+
+    if (bucketResult.error) {
+      if (isMissingSupabaseRelationError(bucketResult.error, "dgi_reconciliation_buckets")) {
+        return [];
+      }
+
+      throw new Error(bucketResult.error.message);
+    }
+
+    return ((bucketResult.data as Array<{
+      bucket_code: string;
+      difference_status: string;
+      delta_net_amount_uyu: number;
+      delta_tax_amount_uyu: number;
+      notes: string | null;
+    }> | null) ?? []);
+  };
+
+  const [journalLines, documents, dgiDifferences] = await Promise.all([
+    loadJournalLines(),
+    loadDocuments(),
+    loadLatestReconciliation(),
+  ]);
+  const documentById = new Map(documents.map((row) => [row.id, row]));
+  const linesByJournalId = new Map<string, typeof journalLines>();
+
+  for (const line of journalLines) {
+    const group = linesByJournalId.get(line.journal_entry_id) ?? [];
+    group.push(line);
+    linesByJournalId.set(line.journal_entry_id, group);
+  }
+
+  const exportRows = journalEntries.flatMap((entry) => {
+    const document = entry.source_document_id
+      ? documentById.get(entry.source_document_id)
+      : null;
+    const postingStatus = typeof document?.posting_status === "string"
+      ? document.posting_status
+      : null;
+    const scopeMatches =
+      input.scope === "all_posted"
+        ? !postingStatus || ["posted_provisional", "posted_final"].includes(postingStatus)
+        : postingStatus === input.scope;
+
+    if (!scopeMatches) {
+      return [];
+    }
+
+    return (linesByJournalId.get(entry.id) ?? []).map((line) => {
+      const account = Array.isArray(line.chart_of_accounts)
+        ? line.chart_of_accounts[0]
+        : line.chart_of_accounts;
+      const metadata = asRecord(account?.metadata);
+
+      return {
+        entryDate: entry.entry_date,
+        reference: entry.reference ?? entry.id,
+        description: entry.description ?? line.description,
+        documentFilename: document?.original_filename ?? null,
+        documentPostingStatus: postingStatus,
+        postingMode:
+          typeof entry.posting_mode === "string" && entry.posting_mode
+            ? entry.posting_mode
+            : "final",
+        accountCode: account?.code ?? "sin_cuenta",
+        externalAccountCode:
+          typeof account?.external_code === "string" && account.external_code
+            ? account.external_code
+            : (
+              typeof metadata.external_code === "string" && metadata.external_code
+                ? metadata.external_code
+                : null
+            ),
+        accountName: account?.name ?? line.description ?? "Sin nombre",
+        debit: line.debit,
+        credit: line.credit,
+        originalCurrencyCode:
+          typeof line.original_currency_code === "string" && line.original_currency_code
+            ? line.original_currency_code
+            : (typeof entry.currency_code === "string" ? entry.currency_code : null),
+        originalAmount:
+          typeof line.original_amount === "number"
+            ? line.original_amount
+            : (
+              line.debit !== 0
+                ? line.debit
+                : line.credit
+            ),
+        functionalCurrencyCode:
+          typeof entry.functional_currency === "string" && entry.functional_currency
+            ? entry.functional_currency
+            : "UYU",
+        functionalAmountUyu:
+          typeof line.functional_amount_uyu === "number"
+            ? line.functional_amount_uyu
+            : (line.debit !== 0 ? line.debit : line.credit),
+        fxRateApplied:
+          typeof line.fx_rate_applied === "number"
+            ? line.fx_rate_applied
+            : (typeof entry.fx_rate_bcu_value === "number" ? entry.fx_rate_bcu_value : null),
+        taxProfileHint:
+          typeof account?.tax_profile_hint === "string" && account.tax_profile_hint
+            ? account.tax_profile_hint
+            : (
+              typeof metadata.tax_profile_hint === "string" && metadata.tax_profile_hint
+                ? metadata.tax_profile_hint
+                : null
+            ),
+        accountIsProvisional:
+          typeof account?.is_provisional === "boolean"
+            ? account.is_provisional
+            : metadata.is_provisional === true,
+      };
+    });
+  });
+
+  const recategorizationQueue = documents
+    .filter((document) => document.posting_status === "posted_provisional")
+    .map((document) => ({
+      documentId: document.id,
+      documentFilename: document.original_filename,
+      documentDate: document.document_date,
+      postingStatus: typeof document.posting_status === "string" ? document.posting_status : null,
+    }));
+
+  return {
+    organizationId,
+    organizationName: organization.name as string,
+    periodLabel: period.label,
+    scope: input.scope,
+    rows: exportRows,
+    recategorizationQueue,
+    dgiDifferences: dgiDifferences.map((bucket) => ({
+      bucketCode: bucket.bucket_code,
+      label: bucket.bucket_code.replace(/_/g, " "),
+      differenceStatus: bucket.difference_status,
+      deltaNetAmountUyu: bucket.delta_net_amount_uyu,
+      deltaTaxAmountUyu: bucket.delta_tax_amount_uyu,
+      notes: bucket.notes,
+    })),
+    warnings: [
+      exportRows.length === 0
+        ? "No hay lineas de asiento para el periodo y scope seleccionados."
+        : "",
+      recategorizationQueue.length > 0
+        ? `${recategorizationQueue.length} documento(s) siguen en posteo provisional.`
+        : "",
+    ].filter(Boolean),
+  } satisfies AccountingExportDataset;
 }

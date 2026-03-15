@@ -38,6 +38,24 @@ type VatBucket =
   | "output_vat"
   | null;
 
+type VatCreditCategory =
+  | "input_direct"
+  | "input_indirect"
+  | "input_import"
+  | "input_non_deductible"
+  | "not_applicable";
+
+type VatDeductibilityStatus =
+  | "full"
+  | "partial_prorrata"
+  | "none"
+  | "pending_review";
+
+type BusinessLinkStatus =
+  | "linked"
+  | "not_linked"
+  | "needs_review";
+
 type VatJournalSeed = {
   counterpartyRole: "accounts_payable" | "accounts_receivable";
   vatRole: "vat_input_creditable" | "vat_output_payable" | null;
@@ -53,6 +71,17 @@ export type VatEngineResult = {
   vatBucket: VatBucket;
   taxableAmount: number;
   taxAmount: number;
+  taxableAmountUyu: number;
+  taxAmountUyu: number;
+  totalAmountUyu: number;
+  vatCreditCategory: VatCreditCategory;
+  vatDeductibilityStatus: VatDeductibilityStatus;
+  vatDirectTaxAmountUyu: number;
+  vatIndirectTaxAmountUyu: number;
+  vatDeductibleTaxAmountUyu: number;
+  vatNondeductibleTaxAmountUyu: number;
+  vatProrationCoefficient: number | null;
+  businessLinkStatus: BusinessLinkStatus;
   rate: number | null;
   explanation: string;
   warnings: string[];
@@ -74,6 +103,15 @@ type VatEngineInput = {
   linkedOperationType?: string | null;
   userContextText?: string | null;
   vatProfile?: Record<string, unknown> | null;
+  monetarySnapshot?: {
+    currencyCode: string;
+    netAmountOriginal: number;
+    taxAmountOriginal: number;
+    totalAmountOriginal: number;
+    netAmountUyu: number;
+    taxAmountUyu: number;
+    totalAmountUyu: number;
+  } | null;
 };
 
 type PurchaseCategory = {
@@ -316,6 +354,256 @@ function hasAnyKeyword(value: string | null, keywords: string[]) {
   return keywords.some((keyword) => normalized.includes(keyword));
 }
 
+function parseLocalizedNumber(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value
+    .replace(/\s+/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(/,(?=\d{1,4}(?:\D|$))/g, ".")
+    .replace(/[^0-9.\-]/g, "");
+  const parsed = Number.parseFloat(normalized);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampCoefficient(value: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  if (value <= 0) {
+    return 0;
+  }
+
+  if (value >= 1) {
+    return 1;
+  }
+
+  return Math.round(value * 10_000) / 10_000;
+}
+
+function resolveProrationCoefficient(input: {
+  userContextText?: string | null;
+  vatProfile?: Record<string, unknown> | null;
+}) {
+  const fromProfile =
+    typeof input.vatProfile?.proration_coefficient === "number"
+      ? input.vatProfile.proration_coefficient
+      : typeof input.vatProfile?.vat_proration_coefficient === "number"
+        ? input.vatProfile.vat_proration_coefficient
+        : null;
+
+  if (typeof fromProfile === "number") {
+    return clampCoefficient(fromProfile);
+  }
+
+  const text = input.userContextText ?? "";
+  const percentMatch = text.match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+
+  if (percentMatch) {
+    return clampCoefficient((parseLocalizedNumber(percentMatch[1]) ?? 0) / 100);
+  }
+
+  const keywordMatch = text.match(/(?:prorrata|coeficiente|porcentaje)\D+(\d{1,3}(?:[.,]\d+)?)/i);
+
+  if (keywordMatch) {
+    const parsed = parseLocalizedNumber(keywordMatch[1]);
+    return clampCoefficient(typeof parsed === "number" && parsed > 1 ? parsed / 100 : parsed);
+  }
+
+  return null;
+}
+
+function resolveMonetaryAmounts(input: VatEngineInput) {
+  const totalOriginal = roundCurrency(
+    input.monetarySnapshot?.totalAmountOriginal
+    ?? input.facts.total_amount
+    ?? (
+      typeof input.facts.subtotal === "number" && typeof input.facts.tax_amount === "number"
+        ? input.facts.subtotal + input.facts.tax_amount
+        : null
+    ),
+  );
+  const subtotalOriginal = roundCurrency(
+    input.monetarySnapshot?.netAmountOriginal ?? input.facts.subtotal,
+  );
+  const taxOriginal = roundCurrency(
+    input.monetarySnapshot?.taxAmountOriginal ?? input.facts.tax_amount,
+  );
+  const totalUyu = roundCurrency(
+    input.monetarySnapshot?.totalAmountUyu ?? totalOriginal,
+  );
+  const subtotalUyu = roundCurrency(
+    input.monetarySnapshot?.netAmountUyu ?? subtotalOriginal,
+  );
+  const taxUyu = roundCurrency(
+    input.monetarySnapshot?.taxAmountUyu ?? taxOriginal,
+  );
+
+  return {
+    totalOriginal,
+    subtotalOriginal,
+    taxOriginal,
+    totalUyu,
+    subtotalUyu,
+    taxUyu,
+  };
+}
+
+function buildFiscalCreditResult(input: {
+  documentRole: DocumentRoleCandidate;
+  vatBucket: VatBucket;
+  linkedOperationType?: string | null;
+  operationCategory?: string | null;
+  userContextText?: string | null;
+  vatProfile?: Record<string, unknown> | null;
+  ready: boolean;
+  taxAmountUyu: number;
+}) {
+  if (input.documentRole !== "purchase") {
+    return {
+      vatCreditCategory: "not_applicable",
+      vatDeductibilityStatus: "none",
+      vatDirectTaxAmountUyu: 0,
+      vatIndirectTaxAmountUyu: 0,
+      vatDeductibleTaxAmountUyu: 0,
+      vatNondeductibleTaxAmountUyu: 0,
+      vatProrationCoefficient: null,
+      businessLinkStatus: "linked",
+    } satisfies Pick<
+      VatEngineResult,
+      | "vatCreditCategory"
+      | "vatDeductibilityStatus"
+      | "vatDirectTaxAmountUyu"
+      | "vatIndirectTaxAmountUyu"
+      | "vatDeductibleTaxAmountUyu"
+      | "vatNondeductibleTaxAmountUyu"
+      | "vatProrationCoefficient"
+      | "businessLinkStatus"
+    >;
+  }
+
+  if (!input.ready) {
+    return {
+      vatCreditCategory:
+        input.vatBucket === "input_non_deductible"
+          ? "input_non_deductible"
+          : input.linkedOperationType?.includes("import")
+            ? "input_import"
+            : "input_direct",
+      vatDeductibilityStatus: "pending_review",
+      vatDirectTaxAmountUyu: 0,
+      vatIndirectTaxAmountUyu: 0,
+      vatDeductibleTaxAmountUyu: 0,
+      vatNondeductibleTaxAmountUyu: 0,
+      vatProrationCoefficient: null,
+      businessLinkStatus: "needs_review",
+    } satisfies Pick<
+      VatEngineResult,
+      | "vatCreditCategory"
+      | "vatDeductibilityStatus"
+      | "vatDirectTaxAmountUyu"
+      | "vatIndirectTaxAmountUyu"
+      | "vatDeductibleTaxAmountUyu"
+      | "vatNondeductibleTaxAmountUyu"
+      | "vatProrationCoefficient"
+      | "businessLinkStatus"
+    >;
+  }
+
+  if (input.vatBucket === "input_non_deductible") {
+    return {
+      vatCreditCategory: "input_non_deductible",
+      vatDeductibilityStatus: "none",
+      vatDirectTaxAmountUyu: 0,
+      vatIndirectTaxAmountUyu: 0,
+      vatDeductibleTaxAmountUyu: 0,
+      vatNondeductibleTaxAmountUyu: input.taxAmountUyu,
+      vatProrationCoefficient: 0,
+      businessLinkStatus: "not_linked",
+    } satisfies Pick<
+      VatEngineResult,
+      | "vatCreditCategory"
+      | "vatDeductibilityStatus"
+      | "vatDirectTaxAmountUyu"
+      | "vatIndirectTaxAmountUyu"
+      | "vatDeductibleTaxAmountUyu"
+      | "vatNondeductibleTaxAmountUyu"
+      | "vatProrationCoefficient"
+      | "businessLinkStatus"
+    >;
+  }
+
+  const normalizedScope = [
+    input.operationCategory,
+    input.linkedOperationType,
+    input.userContextText,
+  ].map((value) => normalizeToken(value)).join(" ");
+  const prorationCoefficient = resolveProrationCoefficient({
+    userContextText: input.userContextText,
+    vatProfile: input.vatProfile,
+  });
+  const isImport = normalizedScope.includes("import");
+  const isIndirect = hasAnyKeyword(normalizedScope, [
+    "indirect",
+    "administr",
+    "oficina",
+    "general",
+    "mixt",
+    "parcial",
+  ]);
+
+  if (typeof prorationCoefficient === "number" && prorationCoefficient > 0 && prorationCoefficient < 1) {
+    const deductible = roundCurrency(input.taxAmountUyu * prorationCoefficient);
+    const nonDeductible = roundCurrency(input.taxAmountUyu - deductible);
+
+    return {
+      vatCreditCategory: isImport ? "input_import" : "input_indirect",
+      vatDeductibilityStatus: "partial_prorrata",
+      vatDirectTaxAmountUyu: 0,
+      vatIndirectTaxAmountUyu: input.taxAmountUyu,
+      vatDeductibleTaxAmountUyu: deductible,
+      vatNondeductibleTaxAmountUyu: nonDeductible,
+      vatProrationCoefficient: prorationCoefficient,
+      businessLinkStatus: "linked",
+    } satisfies Pick<
+      VatEngineResult,
+      | "vatCreditCategory"
+      | "vatDeductibilityStatus"
+      | "vatDirectTaxAmountUyu"
+      | "vatIndirectTaxAmountUyu"
+      | "vatDeductibleTaxAmountUyu"
+      | "vatNondeductibleTaxAmountUyu"
+      | "vatProrationCoefficient"
+      | "businessLinkStatus"
+    >;
+  }
+
+  return {
+    vatCreditCategory: isImport ? "input_import" : isIndirect ? "input_indirect" : "input_direct",
+    vatDeductibilityStatus: "full",
+    vatDirectTaxAmountUyu: isIndirect || isImport ? 0 : input.taxAmountUyu,
+    vatIndirectTaxAmountUyu: isIndirect || isImport ? input.taxAmountUyu : 0,
+    vatDeductibleTaxAmountUyu: input.taxAmountUyu,
+    vatNondeductibleTaxAmountUyu: 0,
+    vatProrationCoefficient: 1,
+    businessLinkStatus: "linked",
+  } satisfies Pick<
+    VatEngineResult,
+    | "vatCreditCategory"
+    | "vatDeductibilityStatus"
+    | "vatDirectTaxAmountUyu"
+    | "vatIndirectTaxAmountUyu"
+    | "vatDeductibleTaxAmountUyu"
+    | "vatNondeductibleTaxAmountUyu"
+    | "vatProrationCoefficient"
+    | "businessLinkStatus"
+  >;
+}
+
 function collectProfileGateBlockers(profile: OrganizationFiscalProfile | null) {
   const flags = getUyVatFeatureFlags();
   const blockers: string[] = [];
@@ -387,6 +675,17 @@ function buildManualReviewResult(input: {
     vatBucket: null,
     taxableAmount: 0,
     taxAmount: 0,
+    taxableAmountUyu: 0,
+    taxAmountUyu: 0,
+    totalAmountUyu: 0,
+    vatCreditCategory: "not_applicable",
+    vatDeductibilityStatus: "pending_review",
+    vatDirectTaxAmountUyu: 0,
+    vatIndirectTaxAmountUyu: 0,
+    vatDeductibleTaxAmountUyu: 0,
+    vatNondeductibleTaxAmountUyu: 0,
+    vatProrationCoefficient: null,
+    businessLinkStatus: "needs_review",
     rate: null,
     explanation: input.explanation,
     warnings: input.warnings,
@@ -399,15 +698,13 @@ function buildManualReviewResult(input: {
 }
 
 export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
-  const totalAmount = roundCurrency(
-    input.facts.total_amount ?? (
-      typeof input.facts.subtotal === "number" && typeof input.facts.tax_amount === "number"
-        ? input.facts.subtotal + input.facts.tax_amount
-        : null
-    ),
-  );
-  const subtotal = roundCurrency(input.facts.subtotal);
-  const taxAmount = roundCurrency(input.facts.tax_amount);
+  const monetaryAmounts = resolveMonetaryAmounts(input);
+  const totalAmount = monetaryAmounts.totalOriginal;
+  const subtotal = monetaryAmounts.subtotalOriginal;
+  const taxAmount = monetaryAmounts.taxOriginal;
+  const totalAmountUyu = monetaryAmounts.totalUyu;
+  const subtotalUyu = monetaryAmounts.subtotalUyu;
+  const taxAmountUyu = monetaryAmounts.taxUyu;
   const taxRate = inferTaxRate(input.amountBreakdown, input.facts);
   const category = resolvePurchaseCategory(input.operationCategory);
   const flags = getUyVatFeatureFlags();
@@ -432,6 +729,10 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     "simplificado",
     "literal e",
   ]);
+  const prorationCoefficient = resolveProrationCoefficient({
+    userContextText: input.userContextText,
+    vatProfile: input.vatProfile,
+  });
 
   if (!category) {
     blockers.push("La compra no encuadra en una categoria fiscal aprobada del MVP.");
@@ -453,8 +754,12 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     blockers.push("No se pudo determinar una tasa IVA valida a partir del documento.");
   }
 
-  if (flags.mixedUseManualReview && indicatesMixedUse) {
+  if (flags.mixedUseManualReview && indicatesMixedUse && prorationCoefficient === null) {
     blockers.push("Las compras de uso mixto quedan en revision manual en este MVP.");
+  }
+
+  if (indicatesMixedUse && prorationCoefficient !== null) {
+    warnings.push(`Se aplico prorrata fiscal ${Math.round(prorationCoefficient * 100)}% segun contexto del documento.`);
   }
 
   if (flags.exportAutoDisabled && indicatesExportOrExempt) {
@@ -481,6 +786,16 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
       : vatBucket === "input_non_deductible"
         ? "IVA compras no deducible"
         : "Compra exenta o sin IVA creditable";
+  const fiscalCredit = buildFiscalCreditResult({
+    documentRole: input.documentRole,
+    vatBucket,
+    linkedOperationType: input.linkedOperationType,
+    operationCategory: input.operationCategory,
+    userContextText: input.userContextText,
+    vatProfile: input.vatProfile,
+    ready: blockers.length === 0,
+    taxAmountUyu,
+  });
 
   if (blockers.length > 0) {
     return {
@@ -495,6 +810,10 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
       vatBucket,
       taxableAmount: subtotal,
       taxAmount,
+      taxableAmountUyu: subtotalUyu,
+      taxAmountUyu,
+      totalAmountUyu,
+      ...fiscalCredit,
       rate: taxAmount > 0 ? taxRate : null,
       explanation:
         category
@@ -529,6 +848,10 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
     vatBucket,
     taxableAmount: subtotal,
     taxAmount,
+    taxableAmountUyu: subtotalUyu,
+    taxAmountUyu,
+    totalAmountUyu,
+    ...fiscalCredit,
     rate: taxRate,
     explanation: `La compra se encuadra como "${category?.label}" y se resuelve con reglas IVA deterministicas del snapshot organizacional.`,
     warnings,
@@ -549,15 +872,13 @@ export function resolvePurchaseCredit(input: VatEngineInput): VatEngineResult {
 }
 
 export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
-  const totalAmount = roundCurrency(
-    input.facts.total_amount ?? (
-      typeof input.facts.subtotal === "number" && typeof input.facts.tax_amount === "number"
-        ? input.facts.subtotal + input.facts.tax_amount
-        : null
-    ),
-  );
-  const subtotal = roundCurrency(input.facts.subtotal);
-  const taxAmount = roundCurrency(input.facts.tax_amount);
+  const monetaryAmounts = resolveMonetaryAmounts(input);
+  const totalAmount = monetaryAmounts.totalOriginal;
+  const subtotal = monetaryAmounts.subtotalOriginal;
+  const taxAmount = monetaryAmounts.taxOriginal;
+  const totalAmountUyu = monetaryAmounts.totalUyu;
+  const subtotalUyu = monetaryAmounts.subtotalUyu;
+  const taxAmountUyu = monetaryAmounts.taxUyu;
   const taxRate = inferTaxRate(input.amountBreakdown, input.facts);
   const category = resolveSaleCategory(input.operationCategory, taxRate);
   const flags = getUyVatFeatureFlags();
@@ -615,6 +936,24 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
     category?.code === "exempt_or_export" || category?.code === "non_taxed"
       ? 0
       : taxAmount;
+  const taxableAmountUyu =
+    category?.code === "exempt_or_export" || category?.code === "non_taxed"
+      ? totalAmountUyu
+      : subtotalUyu;
+  const resolvedTaxAmountUyu =
+    category?.code === "exempt_or_export" || category?.code === "non_taxed"
+      ? 0
+      : taxAmountUyu;
+  const fiscalCredit = buildFiscalCreditResult({
+    documentRole: input.documentRole,
+    vatBucket: "output_vat",
+    linkedOperationType: input.linkedOperationType,
+    operationCategory: input.operationCategory,
+    userContextText: input.userContextText,
+    vatProfile: input.vatProfile,
+    ready: blockers.length === 0,
+    taxAmountUyu: resolvedTaxAmountUyu,
+  });
 
   if (blockers.length > 0) {
     return {
@@ -629,6 +968,10 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
       vatBucket: "output_vat",
       taxableAmount,
       taxAmount: resolvedTaxAmount,
+      taxableAmountUyu,
+      taxAmountUyu: resolvedTaxAmountUyu,
+      totalAmountUyu,
+      ...fiscalCredit,
       rate: category?.rate ?? taxRate,
       explanation:
         category
@@ -663,6 +1006,10 @@ export function resolveSalesOutput(input: VatEngineInput): VatEngineResult {
     vatBucket: "output_vat",
     taxableAmount,
     taxAmount: resolvedTaxAmount,
+    taxableAmountUyu,
+    taxAmountUyu: resolvedTaxAmountUyu,
+    totalAmountUyu,
+    ...fiscalCredit,
     rate: category?.rate ?? taxRate,
     explanation: `La venta se resuelve como "${category?.label}" con reglas IVA deterministicas del snapshot organizacional.`,
     warnings,

@@ -6,6 +6,15 @@ create table if not exists public.chart_of_accounts (
   account_type public.account_type not null,
   normal_side public.normal_side not null,
   is_postable boolean not null default true,
+  is_provisional boolean not null default false,
+  source text not null default 'manual',
+  external_code text,
+  statement_section text,
+  nature_tag text,
+  function_tag text,
+  cashflow_tag text,
+  tax_profile_hint text,
+  currency_policy text not null default 'mono_currency',
   parent_id uuid references public.chart_of_accounts(id),
   is_active boolean not null default true,
   metadata jsonb not null default '{}'::jsonb,
@@ -33,6 +42,10 @@ create table if not exists public.vendors (
 create unique index if not exists idx_vendors_org_tax_id_normalized
   on public.vendors (organization_id, tax_id_normalized)
   where tax_id_normalized is not null;
+
+create index if not exists idx_chart_of_accounts_org_external_code
+  on public.chart_of_accounts (organization_id, external_code)
+  where external_code is not null;
 
 create index if not exists idx_vendors_org_name_normalized
   on public.vendors (organization_id, name_normalized);

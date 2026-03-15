@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
+  confirmFinalDocumentReview,
   confirmDocumentReview,
   createDocumentReviewOverrideAccount,
+  postProvisionalDocumentReview,
   reopenDocumentReview,
   resolveDocumentDuplicate,
   saveDraftReview,
@@ -78,6 +80,71 @@ export async function confirmDocumentReviewAction(input: {
   }
 
   const result = await confirmDocumentReview({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    learning: input.learning,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+  revalidatePath(paths.tax);
+  revalidatePath(paths.journalEntries);
+
+  return result;
+}
+
+export async function postProvisionalDocumentReviewAction(input: {
+  slug: string;
+  documentId: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede postear este documento en modo provisional.",
+    };
+  }
+
+  const result = await postProvisionalDocumentReview({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.dashboard);
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+  revalidatePath(paths.tax);
+  revalidatePath(paths.journalEntries);
+
+  return result;
+}
+
+export async function confirmFinalDocumentReviewAction(input: {
+  slug: string;
+  documentId: string;
+  learning?: {
+    scope: "none" | "document_override" | "vendor_concept" | "concept_global" | "vendor_default";
+    learnedConceptName: string | null;
+  };
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede confirmar este documento.",
+    };
+  }
+
+  const result = await confirmFinalDocumentReview({
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,

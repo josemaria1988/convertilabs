@@ -33,6 +33,7 @@ import {
 } from "@/modules/presentation/labels";
 import {
   activateOrganizationProfileVersionAction,
+  applyOrganizationChartPresetAction,
   createOrganizationChartAccountAction,
   importOrganizationChartSpreadsheetAction,
   updateOrganizationBasicsAction,
@@ -81,7 +82,7 @@ export default async function OrganizationSettingsPage({
       description="Perfil de la organizacion, configuracion fiscal versionada y gestion del plan de cuentas con importacion y exportacion desde una sola vista."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
         <article className="metric-card">
           <span className="metric-card__label">Perfil activo</span>
           <span className="metric-card__value">
@@ -131,6 +132,20 @@ export default async function OrganizationSettingsPage({
             {chart.summary.systemRoleCount}
           </span>
           <p className="metric-card__hint">Roles estructurales detectados.</p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Provisionales</span>
+          <span className="metric-card__value">
+            {chart.summary.provisionalCount}
+          </span>
+          <p className="metric-card__hint">Pendientes de recategorizacion final.</p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Con codigo externo</span>
+          <span className="metric-card__value">
+            {chart.summary.externalCodeCount}
+          </span>
+          <p className="metric-card__hint">Listas para exportacion ERP.</p>
         </article>
       </section>
 
@@ -433,7 +448,7 @@ export default async function OrganizationSettingsPage({
 
       <SectionCard
         title="Plan de cuentas"
-        description="Gestion directa del plan contable de la organizacion: alta manual, edicion, exportacion CSV e importacion rapida desde planilla."
+        description="Chart Manager de la organizacion: preset, importacion con preview, cuentas provisionales, equivalencias y alta/edicion directa."
       >
         <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
           <div className="space-y-4">
@@ -450,7 +465,7 @@ export default async function OrganizationSettingsPage({
                   Exportar CSV
                 </a>
                 <LoadingLink
-                  href={`/app/o/${organization.slug}/imports`}
+                  href={`/app/o/${organization.slug}/imports?focus=chart_of_accounts_import`}
                   pendingLabel="Abriendo importaciones..."
                   className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
                 >
@@ -459,12 +474,42 @@ export default async function OrganizationSettingsPage({
               </div>
             </div>
 
+            <form action={applyOrganizationChartPresetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
+              <input type="hidden" name="slug" value={organization.slug} />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Preset recomendado</p>
+                <p className="text-sm text-[color:var(--color-muted)]">
+                  Aplica un plan base Uruguay NIIF-ready con soporte para importadores, cuentas de sistema y temporales `TEMP-*`.
+                </p>
+              </div>
+              <select
+                name="presetCode"
+                defaultValue={chart.presets[0]?.code ?? "uy_niif_importadores"}
+                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+              >
+                {chart.presets.map((preset) => (
+                  <option key={preset.code} value={preset.code}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                {chart.presets[0]?.description ?? "Sin preset configurado."}
+              </div>
+              <SubmitButton
+                pendingLabel="Aplicando..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Aplicar preset al plan actual
+              </SubmitButton>
+            </form>
+
             <form action={importOrganizationChartSpreadsheetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
               <input type="hidden" name="slug" value={organization.slug} />
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">Importacion rapida</p>
                 <p className="text-sm text-[color:var(--color-muted)]">
-                  Sube una planilla y materializa solo la seccion de plan de cuentas detectada.
+                  Sube una planilla y te redirigimos al workspace de importaciones para revisar y aprobar solo la seccion contable detectada.
                 </p>
               </div>
               <input
@@ -474,12 +519,21 @@ export default async function OrganizationSettingsPage({
                 className="block w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
               />
               <SubmitButton
-                pendingLabel="Importando..."
+                pendingLabel="Preparando preview..."
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
               >
                 Importar plan desde planilla
               </SubmitButton>
             </form>
+
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+              <p className="font-semibold text-white">Cuentas provisionales pendientes</p>
+              <p className="mt-2">
+                {chart.summary.provisionalCount > 0
+                  ? `${chart.summary.provisionalCount} cuenta(s) temporal(es) lista(s) para recategorizacion.`
+                  : "No hay cuentas provisionales activas en este momento."}
+              </p>
+            </div>
 
             <form action={createOrganizationChartAccountAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
               <input type="hidden" name="slug" value={organization.slug} />
@@ -534,6 +588,62 @@ export default async function OrganizationSettingsPage({
                   Cuenta imputable
                 </label>
               </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Codigo externo</span>
+                  <input
+                    name="externalCode"
+                    placeholder="Codigo ERP opcional"
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium">Tax profile hint</span>
+                  <input
+                    name="taxProfileHint"
+                    placeholder="UY_VAT_PURCHASE_BASIC"
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-5">
+                <input
+                  name="statementSection"
+                  placeholder="Seccion EEFF"
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                />
+                <input
+                  name="natureTag"
+                  placeholder="Nature tag"
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                />
+                <input
+                  name="functionTag"
+                  placeholder="Function tag"
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                />
+                <input
+                  name="cashflowTag"
+                  placeholder="Cashflow tag"
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                />
+                <select
+                  name="currencyPolicy"
+                  defaultValue="mono_currency"
+                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                >
+                  <option value="mono_currency">Moneda unica</option>
+                  <option value="multi_currency">Multimoneda</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-3 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="isProvisional"
+                  className="h-4 w-4 rounded border border-[color:var(--color-border)]"
+                />
+                Cuenta provisional / temporal
+              </label>
               <SubmitButton
                 pendingLabel="Creando..."
                 className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-2 text-sm`}
@@ -567,6 +677,16 @@ export default async function OrganizationSettingsPage({
                       {account.systemRole ? (
                         <span className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2.5 py-1 text-emerald-100">
                           {formatSystemRoleLabel(account.systemRole)}
+                        </span>
+                      ) : null}
+                      {account.isProvisional ? (
+                        <span className="rounded-full border border-amber-300/40 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                          Provisional
+                        </span>
+                      ) : null}
+                      {account.externalCode ? (
+                        <span className="rounded-full border border-sky-300/40 bg-sky-500/10 px-2.5 py-1 text-sky-100">
+                          Ext. {account.externalCode}
                         </span>
                       ) : null}
                       {account.source ? (
@@ -631,6 +751,11 @@ export default async function OrganizationSettingsPage({
                           Padre: {account.parentCode}
                         </span>
                       ) : null}
+                      {account.taxProfileHint ? (
+                        <span className="text-xs text-[color:var(--color-muted)]">
+                          Perfil fiscal: {account.taxProfileHint}
+                        </span>
+                      ) : null}
                     </div>
                     <SubmitButton
                       pendingLabel="Guardando..."
@@ -645,6 +770,64 @@ export default async function OrganizationSettingsPage({
                       Cuenta de sistema. Puedes ajustar codigo y nombre, pero los atributos estructurales se mantienen bloqueados para no romper el flujo contable automatizado.
                     </p>
                   ) : null}
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <input
+                      name="externalCode"
+                      defaultValue={account.externalCode ?? ""}
+                      placeholder="Codigo externo"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                    <input
+                      name="statementSection"
+                      defaultValue={account.statementSection ?? ""}
+                      placeholder="Seccion EEFF"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                    <input
+                      name="natureTag"
+                      defaultValue={account.natureTag ?? ""}
+                      placeholder="Nature tag"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                    <input
+                      name="taxProfileHint"
+                      defaultValue={account.taxProfileHint ?? ""}
+                      placeholder="Tax profile hint"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <input
+                      name="functionTag"
+                      defaultValue={account.functionTag ?? ""}
+                      placeholder="Function tag"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                    <input
+                      name="cashflowTag"
+                      defaultValue={account.cashflowTag ?? ""}
+                      placeholder="Cashflow tag"
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    />
+                    <select
+                      name="currencyPolicy"
+                      defaultValue={account.currencyPolicy ?? "mono_currency"}
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/85 px-4 py-3 text-sm"
+                    >
+                      <option value="mono_currency">Moneda unica</option>
+                      <option value="multi_currency">Multimoneda</option>
+                    </select>
+                    <label className="flex items-center gap-3 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+                      <input
+                        type="checkbox"
+                        name="isProvisional"
+                        defaultChecked={account.isProvisional}
+                        className="h-4 w-4 rounded border border-[color:var(--color-border)]"
+                      />
+                      Provisional
+                    </label>
+                  </div>
                 </form>
               ))
             ) : (

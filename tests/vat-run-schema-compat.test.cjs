@@ -310,6 +310,15 @@ test("rebuildMonthlyVatRunFromConfirmations retries updates without import colum
       };
     }
 
+    if (query.table === "documents" && query.mode === "execute") {
+      return {
+        data: null,
+        error: {
+          message: "column documents.posting_status does not exist",
+        },
+      };
+    }
+
     if (query.table === "vat_runs" && query.mutation === "update" && query.mode === "execute") {
       updatePayloads.push(query.payload);
 

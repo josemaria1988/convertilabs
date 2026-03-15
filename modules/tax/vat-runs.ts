@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingDocumentStep5ColumnError } from "@/modules/accounting/step5-schema-compat";
 import {
   isMissingVatRunImportColumnError,
   omitVatRunImportColumns,
@@ -120,13 +121,19 @@ function getTaxSnapshot(draft: ConfirmedDraftRow) {
       ?? asString(taxJson.result_bucket)
       ?? asString(asRecord(taxJson.determination).vat_bucket),
     taxableAmount:
-      asNumber(taxJson.taxable_amount)
+      asNumber(taxJson.taxable_amount_uyu)
+      ?? asNumber(taxJson.taxableAmountUyu)
+      ?? asNumber(asRecord(taxJson.determination).taxable_amount_uyu)
+      ?? asNumber(taxJson.taxable_amount)
       ?? asNumber(taxJson.taxableAmount)
       ?? asNumber(asRecord(taxJson.determination).taxable_amount)
       ?? asNumber(getDraftFacts(draft.fields_json).subtotal)
       ?? 0,
     taxAmount:
-      asNumber(taxJson.tax_amount)
+      asNumber(taxJson.tax_amount_uyu)
+      ?? asNumber(taxJson.taxAmountUyu)
+      ?? asNumber(asRecord(taxJson.determination).tax_amount_uyu)
+      ?? asNumber(taxJson.tax_amount)
       ?? asNumber(taxJson.taxAmount)
       ?? asNumber(asRecord(taxJson.determination).tax_amount)
       ?? asNumber(getDraftFacts(draft.fields_json).tax_amount)
@@ -275,6 +282,61 @@ async function loadLatestConfirmedDrafts(
   }
 
   return (drafts as ConfirmedDraftRow[] | null) ?? [];
+}
+
+async function loadPostedDrafts(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  let documentResult = await supabase
+    .from("documents")
+    .select("id, current_draft_id, posting_status")
+    .eq("organization_id", organizationId)
+    .in("posting_status", ["posted_provisional", "posted_final"]);
+
+  if (documentResult.error && isMissingDocumentStep5ColumnError(documentResult.error)) {
+    return null;
+  }
+
+  if (documentResult.error) {
+    throw new Error(documentResult.error.message);
+  }
+
+  const draftIds = (((documentResult.data as Array<{
+    id: string;
+    current_draft_id: string | null;
+    posting_status: string | null;
+  }> | null) ?? []))
+    .map((row) => row.current_draft_id)
+    .filter((value): value is string => typeof value === "string");
+
+  if (draftIds.length === 0) {
+    return [] satisfies ConfirmedDraftRow[];
+  }
+
+  const { data: drafts, error: draftsError } = await supabase
+    .from("document_drafts")
+    .select("id, document_id, document_role, fields_json, tax_treatment_json, journal_suggestion_json")
+    .in("id", draftIds);
+
+  if (draftsError) {
+    throw new Error(draftsError.message);
+  }
+
+  return (drafts as ConfirmedDraftRow[] | null) ?? [];
+}
+
+async function loadVatEligibleDrafts(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const postedDrafts = await loadPostedDrafts(supabase, organizationId);
+
+  if (postedDrafts !== null) {
+    return postedDrafts;
+  }
+
+  return loadLatestConfirmedDrafts(supabase, organizationId);
 }
 
 async function loadLatestVatRun(
@@ -439,7 +501,7 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     throw new Error("No se puede recalcular un periodo IVA finalizado o locked sin reapertura.");
   }
 
-  const drafts = await loadLatestConfirmedDrafts(supabase, organizationId);
+  const drafts = await loadVatEligibleDrafts(supabase, organizationId);
   const importSummary = await loadApprovedImportOperationTaxSummary(
     supabase,
     organizationId,

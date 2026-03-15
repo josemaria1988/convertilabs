@@ -13,6 +13,31 @@ import type {
 
 export type JsonRecord = Record<string, unknown>;
 
+export type DocumentMonetarySnapshot = {
+  currencyCode: string;
+  netAmountOriginal: number;
+  taxAmountOriginal: number;
+  totalAmountOriginal: number;
+  netAmountUyu: number;
+  taxAmountUyu: number;
+  totalAmountUyu: number;
+  fx: {
+    policyCode: string;
+    currencyCode: string;
+    functionalCurrencyCode: string;
+    source: string;
+    rate: number;
+    bcuValue: number | null;
+    bcuDateUsed: string | null;
+    bcuSeries: string | null;
+    documentValue: number | null;
+    documentDate: string | null;
+    overrideReason: string | null;
+    warnings: string[];
+    blockingReasons: string[];
+  };
+};
+
 export type DraftStepCode =
   | "identity"
   | "fields"
@@ -22,6 +47,25 @@ export type DraftStepCode =
   | "journal"
   | "tax"
   | "confirmation";
+
+export type DocumentPostingStatus =
+  | "draft"
+  | "vat_ready"
+  | "posted_provisional"
+  | "posted_final"
+  | "locked";
+
+export type JournalPostingMode =
+  | "provisional"
+  | "final";
+
+export type DraftBlockerFamily =
+  | "documental"
+  | "fiscal"
+  | "contable"
+  | "ia"
+  | "duplicados"
+  | "periodo";
 
 export type ReviewJournalLine = {
   lineNumber: number;
@@ -41,6 +85,8 @@ export type ReviewJournalLine = {
 export type ReviewJournalSuggestion = {
   ready: boolean;
   isBalanced: boolean;
+  postingMode: JournalPostingMode;
+  hasProvisionalAccounts: boolean;
   totalDebit: number;
   totalCredit: number;
   functionalTotalDebit: number;
@@ -50,6 +96,11 @@ export type ReviewJournalSuggestion = {
   fxRate: number;
   fxRateDate: string | null;
   fxRateSource: string;
+  fxRateBcuValue: number | null;
+  fxRateBcuDateUsed: string | null;
+  fxRateBcuSeries: string | null;
+  templateCode: string | null;
+  taxProfileCode: string | null;
   explanation: string;
   lines: ReviewJournalLine[];
   blockingReasons: string[];
@@ -252,6 +303,15 @@ export type PostableAccountRecord = {
   account_type: string;
   normal_side: "debit" | "credit";
   is_postable: boolean;
+  is_provisional: boolean;
+  source: string | null;
+  external_code: string | null;
+  statement_section: string | null;
+  nature_tag: string | null;
+  function_tag: string | null;
+  cashflow_tag: string | null;
+  tax_profile_hint: string | null;
+  currency_policy: string | null;
   metadata: JsonRecord | null;
 };
 
@@ -266,13 +326,19 @@ export type AccountingRuleRecord = {
   organization_id: string;
   scope: AccountingRuleScope;
   document_id: string | null;
+  source_document_id: string | null;
   vendor_id: string | null;
   concept_id: string | null;
   document_role: DocumentRoleCandidate;
   account_id: string;
+  status: "candidate" | "provisional" | "approved";
   vat_profile_json: JsonRecord | null;
+  tax_profile_code: string | null;
   operation_category: string | null;
   linked_operation_type: string | null;
+  template_code: string | null;
+  times_reused: number;
+  times_corrected: number;
   priority: number;
   source: string;
   is_active: boolean;
@@ -286,9 +352,13 @@ export type ResolvedAccountingRule = {
   accountId: string | null;
   accountCode: string | null;
   accountName: string | null;
+  accountIsProvisional: boolean;
+  status: "candidate" | "provisional" | "approved" | "assistant" | "manual_review";
   vatProfileJson: JsonRecord | null;
+  taxProfileCode: string | null;
   operationCategory: string | null;
   linkedOperationType: string | null;
+  templateCode: string | null;
   provenance: string;
   priority: number | null;
   source: string | null;
@@ -392,7 +462,8 @@ export type AccountingAssistantInput = {
   lineItems: ConceptResolutionLine[];
   candidateConcepts: AccountingAssistantAllowedConcept[];
   userContextText: string;
-  allowedAccounts: PostableAccountRecord[];
+  allowedTargets?: PostableAccountRecord[];
+  allowedAccounts?: PostableAccountRecord[];
   allowedConcepts: OrganizationConceptRecord[];
   priorApprovedExamples: PriorApprovalExample[];
   fiscalProfileSummary: FiscalProfileSummary;
@@ -442,6 +513,7 @@ export type AccountingSuggestionContext = {
   operationCategory: string | null;
   profile: OrganizationFiscalProfile | null;
   ruleSnapshot: OrganizationRuleSnapshotContext | null;
+  monetarySnapshot: DocumentMonetarySnapshot | null;
   vendorResolution: VendorResolutionResult;
   invoiceIdentity: InvoiceIdentityResult | null;
   conceptResolution: ConceptResolutionResult;
@@ -454,9 +526,17 @@ export type AccountingSuggestionContext = {
 export type DraftValidation = {
   canConfirm: boolean;
   blockers: string[];
+  canPostProvisional: boolean;
+  canConfirmFinal: boolean;
+  postingStatus: DocumentPostingStatus;
+  blockerGroups: Array<{
+    family: DraftBlockerFamily;
+    blockers: string[];
+  }>;
 };
 
 export type DerivedDraftArtifacts = {
+  monetarySnapshot: DocumentMonetarySnapshot | null;
   taxTreatment: VatEngineResult;
   journalSuggestion: ReviewJournalSuggestion;
   vendorResolution: VendorResolutionResult;

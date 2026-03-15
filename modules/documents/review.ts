@@ -37,10 +37,15 @@ import {
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
   upsertDocumentLineItems,
+  type DocumentPostingStatus,
   type ApprovalLearningInput,
   type DerivedDraftArtifacts,
   type JsonRecord,
 } from "@/modules/accounting";
+import {
+  isMissingDocumentStep5ColumnError,
+  omitDocumentStep5Columns,
+} from "@/modules/accounting/step5-schema-compat";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 import {
   type DeterministicRuleRef,
@@ -68,6 +73,7 @@ type DocumentRow = {
   direction: DocumentDirection;
   document_type: string | null;
   status: string;
+  posting_status: DocumentPostingStatus | null;
   storage_bucket: string;
   storage_path: string;
   original_filename: string;
@@ -181,6 +187,7 @@ type DocumentListRow = {
   direction: DocumentDirection;
   document_type: string | null;
   status: string;
+  posting_status: DocumentPostingStatus | null;
   storage_bucket: string;
   storage_path: string;
   original_filename: string;
@@ -218,6 +225,7 @@ export type DocumentWorkspaceListItem = {
 type DocumentViewModel = {
   id: string;
   status: string;
+  postingStatus: DocumentPostingStatus | null;
   direction: DocumentDirection;
   documentType: string | null;
   originalFilename: string;
@@ -333,6 +341,8 @@ export type DocumentReviewPageData = {
     metadata: JsonRecord | null;
     createdAt: string;
   }>;
+  canPostProvisional: boolean;
+  canConfirmFinal: boolean;
   canConfirm: boolean;
   canReopen: boolean;
 };
@@ -493,26 +503,118 @@ function buildCertaintySummary(
   } as const;
 }
 
+const DOCUMENT_SELECT_STEP5 = [
+  "id",
+  "organization_id",
+  "direction",
+  "document_type",
+  "status",
+  "posting_status",
+  "storage_bucket",
+  "storage_path",
+  "original_filename",
+  "mime_type",
+  "document_date",
+  "created_at",
+  "metadata",
+  "current_draft_id",
+  "current_processing_run_id",
+  "last_rule_snapshot_id",
+  "last_processed_at",
+].join(", ");
+
+const DOCUMENT_SELECT_LEGACY = [
+  "id",
+  "organization_id",
+  "direction",
+  "document_type",
+  "status",
+  "storage_bucket",
+  "storage_path",
+  "original_filename",
+  "mime_type",
+  "document_date",
+  "created_at",
+  "metadata",
+  "current_draft_id",
+  "current_processing_run_id",
+  "last_rule_snapshot_id",
+  "last_processed_at",
+].join(", ");
+
+function resolveDraftLifecyclePostingStatus(
+  currentStatus: DocumentPostingStatus | null | undefined,
+  derived: DerivedDraftArtifacts,
+) {
+  if (currentStatus === "locked" || currentStatus === "posted_final") {
+    return currentStatus;
+  }
+
+  if (currentStatus === "posted_provisional" && derived.validation.canConfirmFinal) {
+    return "posted_provisional" satisfies DocumentPostingStatus;
+  }
+
+  return derived.validation.postingStatus;
+}
+
+async function updateDocumentWithCompat(
+  supabase: SupabaseClient,
+  documentId: string,
+  payload: Record<string, unknown>,
+) {
+  let updateResult = await supabase
+    .from("documents")
+    .update(payload)
+    .eq("id", documentId);
+
+  if (updateResult.error && isMissingDocumentStep5ColumnError(updateResult.error)) {
+    updateResult = await supabase
+      .from("documents")
+      .update(omitDocumentStep5Columns(payload))
+      .eq("id", documentId);
+  }
+
+  if (updateResult.error) {
+    throw new Error(updateResult.error.message);
+  }
+}
+
 async function loadDocumentRow(
   supabase: SupabaseClient,
   organizationId: string,
   documentId: string,
 ) {
-  const { data, error } = await supabase
+  let result = await supabase
     .from("documents")
-    .select(
-      "id, organization_id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, document_date, created_at, metadata, current_draft_id, current_processing_run_id, last_rule_snapshot_id, last_processed_at",
-    )
+    .select(DOCUMENT_SELECT_STEP5)
     .eq("organization_id", organizationId)
     .eq("id", documentId)
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) {
-    throw new Error(error?.message ?? "Documento no encontrado.");
+  if (result.error && isMissingDocumentStep5ColumnError(result.error)) {
+    result = await supabase
+      .from("documents")
+      .select(DOCUMENT_SELECT_LEGACY)
+      .eq("organization_id", organizationId)
+      .eq("id", documentId)
+      .limit(1)
+      .maybeSingle();
   }
 
-  return data as DocumentRow;
+  if (result.error || !result.data) {
+    throw new Error(result.error?.message ?? "Documento no encontrado.");
+  }
+
+  const data = result.data as unknown as Record<string, unknown>;
+
+  return {
+    ...(data as unknown as Omit<DocumentRow, "posting_status">),
+    posting_status:
+      typeof data.posting_status === "string"
+        ? data.posting_status as DocumentPostingStatus
+        : null,
+  } satisfies DocumentRow;
 }
 
 async function loadCurrentDraft(
@@ -740,6 +842,7 @@ async function buildDocumentViewModel(
   return {
     id: document.id,
     status: document.status,
+    postingStatus: document.posting_status,
     direction: document.direction,
     documentType: document.document_type,
     originalFilename: document.original_filename,
@@ -948,6 +1051,10 @@ async function persistDraftArtifacts(
       : derived.validation.canConfirm
         ? "draft_ready"
         : "needs_review";
+  const nextPostingStatus = resolveDraftLifecyclePostingStatus(
+    document.posting_status,
+    derived,
+  );
   const { error: draftError } = await supabase
     .from("document_drafts")
     .update({
@@ -1011,28 +1118,55 @@ async function persistDraftArtifacts(
     derived,
   );
 
-  const { error: documentError } = await supabase
-    .from("documents")
-    .update({
-      direction: draft.document_role,
-      document_type: draft.document_type,
-      document_date: facts.document_date ?? document.document_date,
-      status: nextDocumentStatus,
-      current_draft_id: draft.id,
-      metadata: {
-        ...(document.metadata ?? {}),
-        duplicate_status: derived.invoiceIdentity?.duplicateStatus ?? null,
-        duplicate_reason: derived.invoiceIdentity?.duplicateReason ?? null,
-        accounting_context_required: derived.accountingContext.status !== "not_required",
-        matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
-      },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", document.id);
-
-  if (documentError) {
-    throw new Error(documentError.message);
-  }
+  await updateDocumentWithCompat(supabase, document.id, {
+    direction: draft.document_role,
+    document_type: draft.document_type,
+    document_date: facts.document_date ?? document.document_date,
+    status: nextDocumentStatus,
+    posting_status: nextPostingStatus,
+    current_draft_id: draft.id,
+    original_currency_code:
+      derived.monetarySnapshot?.currencyCode
+      ?? facts.currency_code
+      ?? derived.journalSuggestion.currencyCode,
+    original_subtotal_amount: derived.monetarySnapshot?.netAmountOriginal ?? facts.subtotal ?? null,
+    original_tax_amount: derived.monetarySnapshot?.taxAmountOriginal ?? facts.tax_amount ?? null,
+    original_total_amount: derived.monetarySnapshot?.totalAmountOriginal ?? facts.total_amount ?? null,
+    functional_currency_code: derived.journalSuggestion.functionalCurrencyCode,
+    functional_subtotal_uyu:
+      derived.monetarySnapshot?.netAmountUyu ?? derived.taxTreatment.taxableAmountUyu ?? null,
+    functional_tax_amount_uyu:
+      derived.monetarySnapshot?.taxAmountUyu ?? derived.taxTreatment.taxAmountUyu ?? null,
+    functional_total_amount_uyu:
+      derived.monetarySnapshot?.totalAmountUyu ?? null,
+    fx_rate_policy_code: derived.monetarySnapshot?.fx.policyCode ?? "dgi_previous_business_day_interbank",
+    fx_rate_bcu_value: derived.journalSuggestion.fxRateBcuValue,
+    fx_rate_bcu_date_used: derived.journalSuggestion.fxRateBcuDateUsed,
+    fx_rate_bcu_series: derived.journalSuggestion.fxRateBcuSeries,
+    fx_rate_document_value: derived.monetarySnapshot?.fx.documentValue ?? derived.journalSuggestion.fxRate,
+    fx_rate_document_date: derived.monetarySnapshot?.fx.documentDate ?? facts.document_date ?? null,
+    fx_rate_source: derived.journalSuggestion.fxRateSource,
+    fx_rate_override_reason: derived.monetarySnapshot?.fx.overrideReason ?? null,
+    vat_credit_category: derived.taxTreatment.vatCreditCategory,
+    vat_deductibility_status: derived.taxTreatment.vatDeductibilityStatus,
+    vat_direct_tax_amount_uyu: derived.taxTreatment.vatDirectTaxAmountUyu,
+    vat_indirect_tax_amount_uyu: derived.taxTreatment.vatIndirectTaxAmountUyu,
+    vat_deductible_tax_amount_uyu: derived.taxTreatment.vatDeductibleTaxAmountUyu,
+    vat_nondeductible_tax_amount_uyu: derived.taxTreatment.vatNondeductibleTaxAmountUyu,
+    vat_proration_coefficient: derived.taxTreatment.vatProrationCoefficient,
+    business_link_status: derived.taxTreatment.businessLinkStatus,
+    dgi_reconciliation_status: "pending",
+    metadata: {
+      ...(document.metadata ?? {}),
+      duplicate_status: derived.invoiceIdentity?.duplicateStatus ?? null,
+      duplicate_reason: derived.invoiceIdentity?.duplicateReason ?? null,
+      accounting_context_required: derived.accountingContext.status !== "not_required",
+      matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
+      provisional_posting_ready: derived.validation.canPostProvisional,
+      final_posting_ready: derived.validation.canConfirmFinal,
+    },
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function listOrganizationWorkspaceDocuments(input: {
@@ -1040,20 +1174,49 @@ export async function listOrganizationWorkspaceDocuments(input: {
   organizationSlug: string;
 }) {
   const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
+  const primaryResult = await supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
     )
     .eq("organization_id", input.organizationId)
     .order("created_at", { ascending: false })
     .limit(30);
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingDocumentStep5ColumnError(error)) {
+    const legacyResult = await supabase
+      .from("documents")
+      .select(
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
+      )
+      .eq("organization_id", input.organizationId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const rows = ((data as DocumentListRow[] | null) ?? []);
+  const rows = (((data as Array<Record<string, unknown>> | null) ?? [])).map((row) => ({
+    id: String(row.id),
+    direction: row.direction as DocumentDirection,
+    document_type: typeof row.document_type === "string" ? row.document_type : null,
+    status: String(row.status ?? "uploaded"),
+    posting_status:
+      typeof row.posting_status === "string" ? row.posting_status as DocumentPostingStatus : null,
+    storage_bucket: String(row.storage_bucket ?? ""),
+    storage_path: String(row.storage_path ?? ""),
+    original_filename: String(row.original_filename ?? ""),
+    mime_type: typeof row.mime_type === "string" ? row.mime_type : null,
+    created_at: String(row.created_at ?? new Date().toISOString()),
+    document_date: typeof row.document_date === "string" ? row.document_date : null,
+    current_draft_id: typeof row.current_draft_id === "string" ? row.current_draft_id : null,
+  })) satisfies DocumentListRow[];
   const documentIds = rows.map((row) => row.id);
   const draftIds = rows
     .map((row) => row.current_draft_id)
@@ -1174,6 +1337,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
       direction: row.direction,
       document_type: row.document_type,
       status: row.status,
+      posting_status: row.posting_status ?? null,
       storage_bucket: row.storage_bucket,
       storage_path: row.storage_path,
       original_filename: row.original_filename,
@@ -1362,9 +1526,17 @@ export async function loadDocumentReviewPageData(input: {
       metadata: log.metadata_json ?? null,
       createdAt: log.created_at,
     })),
+    canPostProvisional:
+      ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
+      && derived.validation.canPostProvisional
+      && draft.status !== "confirmed",
+    canConfirmFinal:
+      ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
+      && derived.validation.canConfirmFinal
+      && draft.status !== "confirmed",
     canConfirm:
       ["owner", "admin", "accountant", "reviewer"].includes(input.userRole)
-      && derived.validation.canConfirm
+      && derived.validation.canConfirmFinal
       && draft.status !== "confirmed",
     canReopen:
       ["owner", "admin"].includes(input.userRole)
@@ -1519,11 +1691,49 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
   };
 }
 
-export async function confirmDocumentReview(input: {
+function buildAccountingArtifactsInput(input: {
+  document: DocumentRow;
+  draft: DraftRow;
+  facts: DocumentIntakeFactMap;
+  derived: DerivedDraftArtifacts;
+  actorId: string | null;
+  postingMode: "provisional" | "final";
+}) {
+  const referenceParts = [input.facts.series, input.facts.document_number].filter(Boolean);
+
+  return {
+    organizationId: input.document.organization_id,
+    documentId: input.document.id,
+    draftId: input.draft.id,
+    revisionNumber: input.draft.revision_number,
+    documentDate:
+      input.facts.document_date
+      ?? input.document.document_date
+      ?? new Date().toISOString().slice(0, 10),
+    originalFilename: input.document.original_filename,
+    currencyCode: input.facts.currency_code ?? input.derived.journalSuggestion.currencyCode ?? "UYU",
+    reference:
+      referenceParts.length > 0
+        ? referenceParts.join("-")
+        : input.document.original_filename,
+    confidence: input.draft.source_confidence,
+    actorId: input.actorId,
+    derived: {
+      ...input.derived,
+      journalSuggestion: {
+        ...input.derived.journalSuggestion,
+        postingMode: input.postingMode,
+      },
+    },
+  } as const;
+}
+
+async function postDocumentReviewInternal(input: {
   organizationId: string;
   documentId: string;
   actorId: string | null;
   learning?: ApprovalLearningInput;
+  mode: "provisional" | "final";
 }) {
   const supabase = getSupabaseServiceRoleClient();
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
@@ -1567,7 +1777,14 @@ export async function confirmDocumentReview(input: {
   });
   const derived = accountingState.derived;
 
-  if (!derived.validation.canConfirm) {
+  if (input.mode === "provisional" && !derived.validation.canPostProvisional) {
+    return {
+      ok: false,
+      message: derived.validation.blockers.join(" "),
+    };
+  }
+
+  if (input.mode === "final" && !derived.validation.canConfirmFinal) {
     return {
       ok: false,
       message: derived.validation.blockers.join(" "),
@@ -1583,27 +1800,49 @@ export async function confirmDocumentReview(input: {
   }
 
   await persistDraftArtifacts(supabase, document, draft, input.actorId, derived);
-  const referenceParts = [facts.series, facts.document_number].filter(Boolean);
   const accountingArtifacts = await persistApprovedAccountingArtifacts(
     supabase,
-    {
-      organizationId: document.organization_id,
-      documentId: document.id,
-      draftId: draft.id,
-      revisionNumber: draft.revision_number,
-      documentDate:
-        facts.document_date ?? document.document_date ?? new Date().toISOString().slice(0, 10),
-      originalFilename: document.original_filename,
-      currencyCode: facts.currency_code ?? "UYU",
-      reference:
-        referenceParts.length > 0
-          ? referenceParts.join("-")
-          : document.original_filename,
-      confidence: draft.source_confidence,
-      actorId: input.actorId,
+    buildAccountingArtifactsInput({
+      document,
+      draft,
+      facts,
       derived,
-    },
+      actorId: input.actorId,
+      postingMode: input.mode,
+    }),
   );
+
+  if (input.mode === "provisional") {
+    await updateDocumentWithCompat(supabase, document.id, {
+      posting_status: "posted_provisional",
+      vat_ready_at:
+        derived.validation.postingStatus === "vat_ready"
+          ? new Date().toISOString()
+          : null,
+      posted_provisional_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    if (facts.document_date) {
+      await rebuildMonthlyVatRunFromConfirmations(
+        supabase,
+        document.organization_id,
+        facts.document_date,
+        input.actorId,
+      );
+    }
+
+    return {
+      ok: true,
+      message: "Documento posteado en modo provisional.",
+      accountingArtifacts,
+      derived,
+      draft,
+      document,
+      facts,
+    };
+  }
+
   if ((input.learning?.scope ?? "none") !== "none") {
     await createRuleFromApproval(supabase, {
       organizationId: document.organization_id,
@@ -1629,12 +1868,16 @@ export async function confirmDocumentReview(input: {
         treatment_code: derived.taxTreatment.treatmentCode,
         vat_bucket: derived.taxTreatment.vatBucket,
       },
+      taxProfileCode: derived.appliedRule.taxProfileCode,
+      templateCode: derived.journalSuggestion.templateCode ?? derived.appliedRule.templateCode,
+      status: derived.appliedRule.accountIsProvisional ? "provisional" : "approved",
       conceptLines: derived.conceptResolution.lines,
       rationale:
         derived.assistantSuggestion.rationale
         ?? derived.journalSuggestion.explanation,
     });
   }
+
   await syncApprovedDocumentOpenItems({
     supabase,
     organizationId: document.organization_id,
@@ -1670,7 +1913,10 @@ export async function confirmDocumentReview(input: {
     .from("document_drafts")
     .update({
       status: "confirmed",
-      journal_suggestion_json: derived.journalSuggestion,
+      journal_suggestion_json: {
+        ...derived.journalSuggestion,
+        postingMode: "final",
+      },
       tax_treatment_json: derived.taxTreatment,
       confirmed_by: input.actorId,
       confirmed_at: confirmedAt,
@@ -1704,10 +1950,19 @@ export async function confirmDocumentReview(input: {
         stale_reason: null,
         snapshot_json:
           stepCode === "journal"
-            ? derived.journalSuggestion
+            ? {
+                ...derived.journalSuggestion,
+                postingMode: "final",
+              }
             : stepCode === "tax"
               ? derived.taxTreatment
-              : {},
+              : stepCode === "confirmation"
+                ? {
+                    can_confirm: true,
+                    blockers: [],
+                    posting_status: "posted_final",
+                  }
+                : {},
       })),
       {
         onConflict: "draft_id,step_code",
@@ -1732,6 +1987,7 @@ export async function confirmDocumentReview(input: {
         journal_entry_id: accountingArtifacts.journalEntryId,
         accounting_suggestion_id: accountingArtifacts.suggestionId,
         tax_treatment: derived.taxTreatment,
+        posting_mode: "final",
       },
     });
 
@@ -1752,22 +2008,21 @@ export async function confirmDocumentReview(input: {
     throw new Error(revisionError.message);
   }
 
-  const { error: documentError } = await supabase
-    .from("documents")
-    .update({
-      status: "classified",
-      current_draft_id: draft.id,
-      direction: draft.document_role,
-      document_type: draft.document_type,
-      document_date: facts.document_date ?? document.document_date,
-      updated_at: confirmedAt,
-      last_processed_at: confirmedAt,
-    })
-    .eq("id", document.id);
-
-  if (documentError) {
-    throw new Error(documentError.message);
-  }
+  await updateDocumentWithCompat(supabase, document.id, {
+    status: "classified",
+    posting_status: "posted_final",
+    current_draft_id: draft.id,
+    direction: draft.document_role,
+    document_type: draft.document_type,
+    document_date: facts.document_date ?? document.document_date,
+    posted_final_at: confirmedAt,
+    posted_provisional_at:
+      document.posting_status === "posted_provisional"
+        ? document.last_processed_at ?? confirmedAt
+        : null,
+    updated_at: confirmedAt,
+    last_processed_at: confirmedAt,
+  });
 
   if (facts.document_date) {
     await rebuildMonthlyVatRunFromConfirmations(
@@ -1782,6 +2037,39 @@ export async function confirmDocumentReview(input: {
     ok: true,
     message: "Documento confirmado y journal entry draft generado.",
   };
+}
+
+export async function postProvisionalDocumentReview(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+}) {
+  return postDocumentReviewInternal({
+    ...input,
+    mode: "provisional",
+  });
+}
+
+export async function confirmFinalDocumentReview(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  learning?: ApprovalLearningInput;
+}) {
+  return postDocumentReviewInternal({
+    ...input,
+    learning: input.learning,
+    mode: "final",
+  });
+}
+
+export async function confirmDocumentReview(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  learning?: ApprovalLearningInput;
+}) {
+  return confirmFinalDocumentReview(input);
 }
 
 export async function resolveDocumentDuplicate(input: {

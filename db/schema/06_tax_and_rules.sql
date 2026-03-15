@@ -92,6 +92,48 @@ create table if not exists public.vat_runs (
 create unique index if not exists idx_vat_runs_org_period_version
   on public.vat_runs (organization_id, period_id, version_no);
 
+create table if not exists public.dgi_reconciliation_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  period_year integer not null,
+  period_month integer not null,
+  source_kind public.dgi_reconciliation_source_kind not null default 'manual_summary',
+  status public.dgi_reconciliation_run_status not null default 'draft',
+  baseline_payload jsonb not null default '{}'::jsonb,
+  differences_payload jsonb not null default '{}'::jsonb,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_by uuid references public.profiles(id),
+  reviewed_at timestamptz,
+  closed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_dgi_reconciliation_runs_org_period
+  on public.dgi_reconciliation_runs (organization_id, period_year, period_month, created_at desc);
+
+create table if not exists public.dgi_reconciliation_buckets (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  run_id uuid not null references public.dgi_reconciliation_runs(id) on delete cascade,
+  bucket_code text not null,
+  dgi_net_amount_uyu numeric(18,2) not null default 0,
+  system_net_amount_uyu numeric(18,2) not null default 0,
+  dgi_tax_amount_uyu numeric(18,2) not null default 0,
+  system_tax_amount_uyu numeric(18,2) not null default 0,
+  delta_net_amount_uyu numeric(18,2) not null default 0,
+  delta_tax_amount_uyu numeric(18,2) not null default 0,
+  difference_status public.dgi_reconciliation_difference_status not null default 'matched',
+  notes text,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (run_id, bucket_code)
+);
+
+create index if not exists idx_dgi_reconciliation_buckets_org_run
+  on public.dgi_reconciliation_buckets (organization_id, run_id, bucket_code);
+
 create table if not exists public.organization_import_operations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

@@ -55,6 +55,8 @@ type ConfirmDocumentAction = (input: {
   message: string;
 }>;
 
+type ConfirmFinalDocumentAction = ConfirmDocumentAction;
+
 type CreateReviewAccountAction = (input: {
   code: string;
   name: string;
@@ -86,6 +88,7 @@ type DocumentReviewWorkspaceProps = {
     document: {
       id: string;
       status: string;
+      postingStatus: "draft" | "vat_ready" | "posted_provisional" | "posted_final" | "locked" | null;
       direction: DocumentDirection;
       documentType: string | null;
       originalFilename: string;
@@ -124,6 +127,30 @@ type DocumentReviewWorkspaceProps = {
       last_confirmed_at: string | null;
     }>;
     derived: {
+      monetarySnapshot: {
+        currencyCode: string;
+        netAmountOriginal: number;
+        taxAmountOriginal: number;
+        totalAmountOriginal: number;
+        netAmountUyu: number;
+        taxAmountUyu: number;
+        totalAmountUyu: number;
+        fx: {
+          policyCode: string;
+          currencyCode: string;
+          functionalCurrencyCode: string;
+          source: string;
+          rate: number;
+          bcuValue: number | null;
+          bcuDateUsed: string | null;
+          bcuSeries: string | null;
+          documentValue: number | null;
+          documentDate: string | null;
+          overrideReason: string | null;
+          warnings: string[];
+          blockingReasons: string[];
+        };
+      } | null;
       taxTreatment: {
         ready: boolean;
         treatmentCode: string;
@@ -131,6 +158,17 @@ type DocumentReviewWorkspaceProps = {
         vatBucket: string | null;
         taxableAmount: number;
         taxAmount: number;
+        taxableAmountUyu: number;
+        taxAmountUyu: number;
+        totalAmountUyu: number;
+        vatCreditCategory: string;
+        vatDeductibilityStatus: string;
+        vatDirectTaxAmountUyu: number;
+        vatIndirectTaxAmountUyu: number;
+        vatDeductibleTaxAmountUyu: number;
+        vatNondeductibleTaxAmountUyu: number;
+        vatProrationCoefficient: number | null;
+        businessLinkStatus: string;
         rate: number | null;
         explanation: string;
         warnings: string[];
@@ -146,6 +184,8 @@ type DocumentReviewWorkspaceProps = {
       journalSuggestion: {
         ready: boolean;
         isBalanced: boolean;
+        postingMode: "provisional" | "final";
+        hasProvisionalAccounts: boolean;
         totalDebit: number;
         totalCredit: number;
         functionalTotalDebit: number;
@@ -155,6 +195,11 @@ type DocumentReviewWorkspaceProps = {
         fxRate: number;
         fxRateDate: string | null;
         fxRateSource: string;
+        fxRateBcuValue: number | null;
+        fxRateBcuDateUsed: string | null;
+        fxRateBcuSeries: string | null;
+        templateCode: string | null;
+        taxProfileCode: string | null;
         explanation: string;
         lines: Array<{
           lineNumber: number;
@@ -232,11 +277,22 @@ type DocumentReviewWorkspaceProps = {
         scope: string;
         accountCode: string | null;
         accountName: string | null;
+        accountIsProvisional: boolean;
+        status: string;
+        taxProfileCode: string | null;
+        templateCode: string | null;
         provenance: string;
       };
       validation: {
         canConfirm: boolean;
         blockers: string[];
+        canPostProvisional: boolean;
+        canConfirmFinal: boolean;
+        postingStatus: "draft" | "vat_ready" | "posted_provisional" | "posted_final" | "locked";
+        blockerGroups: Array<{
+          family: string;
+          blockers: string[];
+        }>;
       };
     };
     ruleSnapshot: {
@@ -336,10 +392,14 @@ type DocumentReviewWorkspaceProps = {
       createdAt: string;
     }>;
     canConfirm: boolean;
+    canPostProvisional: boolean;
+    canConfirmFinal: boolean;
     canReopen: boolean;
   };
   saveDraftReviewAction: SaveDraftReviewAction;
   confirmDocumentAction: ConfirmDocumentAction;
+  postProvisionalDocumentAction: ReviewSimpleAction;
+  confirmFinalDocumentAction: ConfirmFinalDocumentAction;
   createReviewAccountAction: CreateReviewAccountAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   reopenDocumentAction: ReviewSimpleAction;
@@ -395,6 +455,37 @@ function formatDecisionSource(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function formatPostingStatus(value: string | null) {
+  switch (value) {
+    case "draft":
+      return "Borrador";
+    case "vat_ready":
+      return "Listo para IVA";
+    case "posted_provisional":
+      return "Posteado provisional";
+    case "posted_final":
+      return "Posteado final";
+    case "locked":
+      return "Bloqueado";
+    default:
+      return value ?? "Sin posteo";
+  }
+}
+
+function getPostingStatusClasses(value: string | null) {
+  switch (value) {
+    case "posted_final":
+      return "bg-emerald-100 text-emerald-900";
+    case "posted_provisional":
+    case "vat_ready":
+      return "bg-amber-100 text-amber-900";
+    case "locked":
+      return "bg-slate-100 text-slate-900";
+    default:
+      return "bg-slate-100 text-slate-900";
+  }
+}
+
 function toEditableFacts(facts: DocumentIntakeFactMap) {
   return {
     issuer_name: facts.issuer_name ?? "",
@@ -416,6 +507,8 @@ export function DocumentReviewWorkspace({
   pageData,
   saveDraftReviewAction,
   confirmDocumentAction,
+  postProvisionalDocumentAction,
+  confirmFinalDocumentAction,
   createReviewAccountAction,
   resolveDuplicateAction,
   reopenDocumentAction,
@@ -456,7 +549,9 @@ export function DocumentReviewWorkspace({
     accounting_context: "",
   });
   const [actionMessage, setActionMessage] = useState("");
-  const [pendingAction, setPendingAction] = useState<"confirm" | "reopen" | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "confirm" | "confirm_final" | "post_provisional" | "reopen" | null
+  >(null);
   const [pendingInlineAction, setPendingInlineAction] = useState<"create_account" | null>(null);
   const [pendingDuplicateAction, setPendingDuplicateAction] = useState<
     "confirmed_duplicate" | "false_positive" | "justified_non_duplicate" | null
@@ -576,6 +671,49 @@ export function DocumentReviewWorkspace({
     startTransition(async () => {
       try {
         const result = await confirmDocumentAction({
+          learning: {
+            scope: learningScope,
+            learnedConceptName: learnedConceptName.trim() || null,
+          },
+        });
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
+  function runPostProvisionalAction() {
+    setPendingAction("post_provisional");
+    setActionMessage("Procesando...");
+    startTransition(async () => {
+      try {
+        const result = await postProvisionalDocumentAction();
+        setActionMessage(result.message);
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
+  function runConfirmFinalAction() {
+    setPendingAction("confirm_final");
+    setActionMessage("Procesando...");
+    startTransition(async () => {
+      try {
+        const result = await confirmFinalDocumentAction({
           learning: {
             scope: learningScope,
             learnedConceptName: learnedConceptName.trim() || null,
@@ -715,6 +853,16 @@ export function DocumentReviewWorkspace({
               <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
                 Estado documental: {pageData.document.status}. Estado draft: {pageData.draft.status}.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getPostingStatusClasses(pageData.document.postingStatus)}`}>
+                  {formatPostingStatus(pageData.document.postingStatus)}
+                </span>
+                {pageData.derived.journalSuggestion.hasProvisionalAccounts ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+                    Provisional
+                  </span>
+                ) : null}
+              </div>
             </div>
             <div className="flex flex-wrap gap-3">
               <DocumentOriginalModalTrigger
@@ -728,14 +876,25 @@ export function DocumentReviewWorkspace({
               />
               <button
                 type="button"
-                disabled={!pageData.canConfirm || isPending}
+                disabled={!pageData.canPostProvisional || isPending}
                 onClick={() => {
-                  runConfirmAction();
+                  runPostProvisionalAction();
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
+              >
+                {pendingAction === "post_provisional" && isPending ? <InlineSpinner /> : null}
+                Postear provisional
+              </button>
+              <button
+                type="button"
+                disabled={!pageData.canConfirmFinal || isPending}
+                onClick={() => {
+                  runConfirmFinalAction();
                 }}
                 className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm disabled:opacity-60`}
               >
-                {pendingAction === "confirm" && isPending ? <InlineSpinner /> : null}
-                Confirmar documento
+                {pendingAction === "confirm_final" && isPending ? <InlineSpinner /> : null}
+                Confirmar final
               </button>
               <button
                 type="button"
@@ -780,6 +939,9 @@ export function DocumentReviewWorkspace({
                 {pageData.revision
                   ? `${pageData.revision.revision_number} / ${pageData.revision.status}`
                   : "Sin revision"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Posteo: {formatPostingStatus(pageData.document.postingStatus)}
               </p>
             </div>
           </div>
@@ -1289,6 +1451,16 @@ export function DocumentReviewWorkspace({
       <div className="space-y-4">
         <article className="panel p-6">
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Pasos y bloqueos</h3>
+          {pageData.derived.validation.blockerGroups.length > 0 ? (
+            <div className="mt-4 space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              {pageData.derived.validation.blockerGroups.map((group) => (
+                <div key={group.family}>
+                  <p className="font-semibold capitalize">{group.family}</p>
+                  <p className="mt-1 leading-6">{group.blockers.join(" ")}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-4 space-y-3">
             {pageData.steps.map((step) => (
               <div
@@ -1405,6 +1577,12 @@ export function DocumentReviewWorkspace({
                 IVA: {formatMoney(pageData.derived.taxTreatment.taxAmount)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
+                Base UYU: {formatMoney(pageData.derived.taxTreatment.taxableAmountUyu)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                IVA UYU: {formatMoney(pageData.derived.taxTreatment.taxAmountUyu)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
                 Bucket: {pageData.derived.taxTreatment.vatBucket ?? "manual"}
               </p>
             </div>
@@ -1417,6 +1595,41 @@ export function DocumentReviewWorkspace({
               </p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.derived.taxTreatment.normativeSummary}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Credito fiscal</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Categoria: {pageData.derived.taxTreatment.vatCreditCategory}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Deducibilidad: {pageData.derived.taxTreatment.vatDeductibilityStatus}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                IVA deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatDeductibleTaxAmountUyu)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                IVA no deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatNondeductibleTaxAmountUyu)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Prorrata y nexo</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Nexo con giro: {pageData.derived.taxTreatment.businessLinkStatus}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Coeficiente: {pageData.derived.taxTreatment.vatProrationCoefficient !== null
+                  ? `${Math.round(pageData.derived.taxTreatment.vatProrationCoefficient * 100)}%`
+                  : "No aplica"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                IVA directo UYU: {formatMoney(pageData.derived.taxTreatment.vatDirectTaxAmountUyu)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                IVA indirecto UYU: {formatMoney(pageData.derived.taxTreatment.vatIndirectTaxAmountUyu)}
               </p>
             </div>
           </div>
@@ -1435,12 +1648,51 @@ export function DocumentReviewWorkspace({
         </article>
 
         <article className="panel p-6">
+          <h3 className="text-2xl font-semibold tracking-[-0.05em]">FX fiscal</h3>
+          <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+            Trazabilidad monetaria para IVA y contabilidad en UYU.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Moneda original</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.monetarySnapshot?.currencyCode ?? pageData.derived.journalSuggestion.currencyCode}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Total original: {formatMoney(pageData.derived.monetarySnapshot?.totalAmountOriginal ?? 0)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Total UYU: {formatMoney(pageData.derived.monetarySnapshot?.totalAmountUyu ?? pageData.derived.taxTreatment.totalAmountUyu)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Fuente</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {pageData.derived.monetarySnapshot?.fx.policyCode ?? "dgi_previous_business_day_interbank"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                TC aplicado: {pageData.derived.journalSuggestion.fxRate}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                BCU: {pageData.derived.journalSuggestion.fxRateBcuValue ?? "--"}
+                {pageData.derived.journalSuggestion.fxRateBcuDateUsed
+                  ? ` / ${pageData.derived.journalSuggestion.fxRateBcuDateUsed}`
+                  : ""}
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <article className="panel p-6">
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Sugerencia contable</h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
             {pageData.derived.journalSuggestion.explanation}
           </p>
           <p className="mt-2 text-sm text-[color:var(--color-muted)]">
             Precedencia aplicada: {pageData.derived.appliedRule.scope} / {pageData.derived.appliedRule.provenance}
+          </p>
+          <p className="mt-1 text-sm text-[color:var(--color-muted)]">
+            Modo de posteo: {pageData.derived.journalSuggestion.postingMode} / Template: {pageData.derived.journalSuggestion.templateCode ?? "sin template"}
           </p>
 
           <div className="mt-4 overflow-x-auto">
