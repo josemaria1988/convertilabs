@@ -43,6 +43,9 @@ function buildAiOutput(overrides = {}) {
         whyItMatters: "Eso cambia cuentas, moneda y conciliaciones posteriores.",
         impact: "Puede alterar la recomendacion final y la configuracion de bancos USD.",
         whatCanYouDo: "Confirma si importas de forma recurrente y si liquidas en moneda extranjera.",
+        sourceLabel: null,
+        expertNotes: [],
+        suggestedCode: null,
       },
     ],
     suggestedCostCenters: [

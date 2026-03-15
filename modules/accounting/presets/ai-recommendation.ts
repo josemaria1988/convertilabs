@@ -71,6 +71,9 @@ const presetAiRecommendationJsonSchema = {
           "whyItMatters",
           "impact",
           "whatCanYouDo",
+          "sourceLabel",
+          "expertNotes",
+          "suggestedCode",
         ],
         properties: {
           key: { type: "string" },
@@ -462,6 +465,7 @@ function buildSystemPrompt(input: {
     "You must not invent preset codes, accounts, overlays, traits, or activities.",
     "You must return public-facing Spanish explanations only. Do not reveal internal chain-of-thought.",
     "Use observations to explain inconsistencies, operational risks, or setup considerations in a tooltip-friendly format.",
+    "Every observation must include sourceLabel, expertNotes and suggestedCode. Use null for sourceLabel/suggestedCode when they do not apply, and [] for expertNotes when there are no extra notes.",
     "Use suggestedCostCenters only when they are materially useful for the described business.",
     "",
     `Scope: ${input.scope}`,
