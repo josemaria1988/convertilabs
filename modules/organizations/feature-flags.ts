@@ -30,7 +30,7 @@ export function getOrganizationFeatureFlags(): OnboardingFeatureFlags {
     ),
     presetAiRecommendationEnabled: parseBooleanFlag(
       process.env.PRESET_AI_RECOMMENDATION_ENABLED,
-      false,
+      true,
     ),
     uiHelpHintsEnabled: parseBooleanFlag(
       process.env.UI_HELP_HINTS_ENABLED,

@@ -366,7 +366,7 @@ export function PrivateDashboardShell({
         </div>
       </aside>
 
-      <main className="app-main" title={description}>
+      <main className="app-main">
         <div className="app-topbar">
           <div className="app-topbar__section">
             <span className="flex h-4 w-4 items-center justify-center text-[color:var(--color-muted)]">
@@ -377,10 +377,7 @@ export function PrivateDashboardShell({
           </div>
 
           <div className="app-topbar__actions">
-            <span
-              className="app-topbar__badge"
-              title={`/app/o/${organizationSlug} | Rol ${userRole}`}
-            >
+            <span className="app-topbar__badge">
               {organizationName}
             </span>
             <button type="button" className="app-topbar__icon" aria-label="Buscar">
