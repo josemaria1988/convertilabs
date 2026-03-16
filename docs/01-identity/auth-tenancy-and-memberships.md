@@ -27,7 +27,7 @@ Archivos centrales:
 - tabla `organizations`
 - tabla `organization_members`
 - helpers `is_org_member`, `is_org_owner`, `is_active_member`, `has_org_role`
-- guardas server-side con `requirePrivateAppPage`, `requireOnboardingPage` y `requireOrganizationDashboardPage`
+- guardas server-side con `requirePrivateAppPage`, `requireOnboardingPage` y `requireOrganizationAppPage`
 - bucket privado y rutas privadas atadas a `organization_id`
 
 ### Unicidad por RUT
@@ -57,7 +57,7 @@ En el esquema y el codigo aparecen estos roles:
 
 ### Uso actual real
 
-- `requireOrganizationDashboardPage` valida membresia activa y abre la app privada.
+- `requireOrganizationAppPage` valida membresia activa y abre la app privada.
 - el endpoint de preset IA en settings restringe a `owner`, `admin` y `accountant`.
 - `admin_processing` ya existe en datos para futuras colas operativas, aunque su explotacion UI aun es parcial.
 
@@ -67,7 +67,7 @@ En el esquema y el codigo aparecen estos roles:
 2. se redirige a `/login`;
 3. al autenticarse, `resolvePostAuthDestination` decide:
    - `/onboarding` si no tiene membresia activa;
-   - `/app/o/[slug]/dashboard` si ya pertenece a una organizacion.
+   - `/app/o/[slug]/documents` si ya pertenece a una organizacion.
 
 ## Modelo y tablas relevantes
 

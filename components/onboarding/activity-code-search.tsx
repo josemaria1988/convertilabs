@@ -55,7 +55,7 @@ export function ActivityCodeSearch({
       ? selectedActivity.legacyResolvedCode ?? selectedActivity.code
       : null,
   );
-  const disabled = new Set(disabledCodes);
+  const disabledSet = useMemo(() => new Set(disabledCodes), [disabledCodes]);
 
   useEffect(() => {
     setQuery(getActivityLabel(selectedActivity));
@@ -73,13 +73,13 @@ export function ActivityCodeSearch({
     });
 
     if (baseResults.length > 0) {
-      return baseResults.filter((activity) => !disabled.has(activity.code));
+      return baseResults.filter((activity) => !disabledSet.has(activity.code));
     }
 
     return suggestedActivities.filter((activity) =>
-      !disabled.has(activity.code)
+      !disabledSet.has(activity.code)
       && (showSpecialCases || !activity.isSpecialAnnex));
-  }, [disabled, query, showSpecialCases, suggestedActivities]);
+  }, [disabledSet, query, showSpecialCases, suggestedActivities]);
 
   const refinementOptions = useMemo(
     () =>
@@ -88,9 +88,9 @@ export function ActivityCodeSearch({
             selectableOnly: true,
             includeSpecialAnnex: showSpecialCases,
             limit: 8,
-          }).filter((activity) => !disabled.has(activity.code))
+          }).filter((activity) => !disabledSet.has(activity.code))
         : [],
-    [disabled, refinementParentCode, showSpecialCases],
+    [disabledSet, refinementParentCode, showSpecialCases],
   );
 
   function handlePick(activity: ActivityCatalogEntry) {

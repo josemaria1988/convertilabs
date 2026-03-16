@@ -36,7 +36,7 @@ Responsabilidades:
 - validar salida contra schema estricto;
 - decidir si gana reglas o IA;
 - persistir auditoria completa;
-- exponer helpers para guardar borrador de centros de costo.
+- mantener la salida acotada al setup del plan para el MVP.
 
 ## Modelo de salida IA
 
@@ -118,7 +118,7 @@ Si el usuario guarda con `hybrid_ai_recommended`:
 ### Endpoint
 
 - `POST /api/preset-ai-recommendation`
-- `POST /api/preset-ai-recommendation/cost-center-draft`
+- `POST /api/preset-ai-recommendation/cost-center-draft` queda cerrado en MVP V1 (`410`).
 
 ### Guardrails
 
@@ -138,9 +138,9 @@ La resolucion toma `OPENAI_RULES_MODEL`, con default efectivo heredado desde `li
 Estado actual:
 
 - no existen entidades reales de `cost_centers`;
-- la IA puede sugerir borradores;
-- el usuario puede marcar el borrador como guardado;
-- eso solo actualiza `cost_center_draft_saved` en la corrida IA.
+- la IA todavia puede devolver sugerencias estructuradas en auditoria;
+- la UI del MVP no expone CTAs ni flujo operativo sobre esas sugerencias;
+- `cost_center_draft_saved` queda como campo legado/preparado, no como carril activo.
 
 Este diseno deja preparado el siguiente paso sin inventar entidades antes de tiempo.
 

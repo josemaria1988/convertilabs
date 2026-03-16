@@ -6,8 +6,8 @@ const appLinks = [
   { href: "/login", label: "Ingreso" },
   { href: "/app", label: "Panel" },
   { href: "/documents", label: "Documentos" },
-  { href: "/journal-entries", label: "Asientos" },
   { href: "/tax", label: "Impuestos" },
+  { href: "/settings", label: "Configuracion" },
 ];
 
 export function MarketingFooter() {

@@ -18,7 +18,6 @@ type SaveDraftPayload = Parameters<typeof saveDraftReview>[0]["payload"];
 
 function buildPaths(slug: string, documentId: string) {
   return {
-    dashboard: `/app/o/${slug}/dashboard`,
     documents: `/app/o/${slug}/documents`,
     review: `/app/o/${slug}/documents/${documentId}`,
     tax: `/app/o/${slug}/tax`,
@@ -56,7 +55,6 @@ export async function saveDocumentDraftReviewAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 
@@ -89,7 +87,6 @@ export async function confirmDocumentReviewAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
@@ -119,7 +116,6 @@ export async function postProvisionalDocumentReviewAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
@@ -154,7 +150,6 @@ export async function confirmFinalDocumentReviewAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
@@ -188,7 +183,6 @@ export async function createDocumentReviewOverrideAccountAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 
@@ -220,7 +214,6 @@ export async function resolveDocumentDuplicateAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 
@@ -248,7 +241,6 @@ export async function reopenDocumentReviewAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 
@@ -276,7 +268,6 @@ export async function runDocumentClassificationAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 
@@ -312,7 +303,6 @@ export async function saveDocumentLearningRuleAction(input: {
   });
   const paths = buildPaths(input.slug, input.documentId);
 
-  revalidatePath(paths.dashboard);
   revalidatePath(paths.documents);
   revalidatePath(paths.review);
 

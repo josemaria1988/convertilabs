@@ -48,7 +48,7 @@ docs/
 
 ## Superficies de aplicacion
 
-### Publicas
+### Publicas core
 
 - `/(marketing)`
 - `/login`
@@ -56,16 +56,29 @@ docs/
 - `/auth/confirm`
 - `/onboarding`
 
-### Privadas por organizacion
+### Publicas congeladas o redirigidas
 
-- `/app/o/[slug]/dashboard`
+- `/about`
+- `/pricing`
+- `/product`
+- `/api`
+
+### Privadas core por organizacion
+
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
-- `/app/o/[slug]/imports`
-- `/app/o/[slug]/exports`
 - `/app/o/[slug]/settings`
 - `/app/o/[slug]/tax`
+
+### Privadas support por organizacion
+
+- `/app/o/[slug]/imports`
+- `/app/o/[slug]/exports`
 - `/app/o/[slug]/tax/reconciliation`
+
+### Privadas redirigidas o fuera de foco
+
+- `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/journal-entries`
 - `/app/o/[slug]/open-items`
 
@@ -77,6 +90,9 @@ docs/
 - `/api/v1/auth/signup`
 - `/api/v1/documents/[documentId]/processing-status`
 - `/api/preset-ai-recommendation`
+
+### APIs internas congeladas o cerradas
+
 - `/api/preset-ai-recommendation/cost-center-draft`
 
 ## Flujos reales hoy
@@ -89,7 +105,7 @@ docs/
 4. se crea el business profile versionado;
 5. se aplica preset recomendado, alternativo o modo minimo;
 6. opcionalmente se consulta IA para la recomendacion hibrida;
-7. el usuario entra al espacio privado.
+7. el usuario entra a `/app/o/[slug]/documents`.
 
 ### Flujo documental
 
@@ -107,7 +123,7 @@ docs/
 2. activacion de nueva version fiscal;
 3. actualizacion de perfil de negocio;
 4. gestion del plan de cuentas;
-5. importacion de planillas y exportaciones.
+5. acceso opcional a imports/exports como carriles de soporte.
 
 ## Mapa de componentes relevantes
 

@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
-  failDashboardDocumentUpload,
-  finalizeDashboardDocumentUpload,
-  prepareDashboardDocumentUpload,
-} from "@/app/app/o/[slug]/dashboard/actions";
+  failDocumentUploadAction,
+  finalizeDocumentUploadAction,
+  prepareDocumentUploadAction,
+} from "@/app/app/o/[slug]/documents/actions";
 import { DocumentUploadButton } from "@/components/documents/upload-button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -170,7 +170,7 @@ export function DocumentUploadDropzone({
         }`,
       );
 
-      const preparedUpload = await prepareDashboardDocumentUpload({
+      const preparedUpload = await prepareDocumentUploadAction({
         slug,
         originalFilename: file.name,
         mimeType: file.type,
@@ -198,7 +198,7 @@ export function DocumentUploadDropzone({
       if (uploadError) {
         uploadErrorCount += 1;
         failureMessages.push(uploadError.message);
-        await failDashboardDocumentUpload({
+        await failDocumentUploadAction({
           slug,
           documentId: preparedUpload.documentId,
           errorMessage: uploadError.message,
@@ -206,7 +206,7 @@ export function DocumentUploadDropzone({
         continue;
       }
 
-      const finalizedUpload = await finalizeDashboardDocumentUpload({
+      const finalizedUpload = await finalizeDocumentUploadAction({
         slug,
         documentId: preparedUpload.documentId,
       });

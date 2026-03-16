@@ -319,7 +319,6 @@ export function BusinessProfileConfigurator({
   );
   const [aiError, setAiError] = useState<string | null>(null);
   const [isConsultingAi, startConsultingAi] = useTransition();
-  const [isSavingDraft, startSavingDraft] = useTransition();
   const textSuggestions = useMemo(
     () =>
       deferredShortBusinessDescription.trim()
@@ -445,46 +444,6 @@ export function BusinessProfileConfigurator({
         setPlanSetupMode("recommended");
         setSelectedPresetCompositionCode(recommendation.recommended.code);
       }
-    });
-  }
-
-  function handleSaveCostCenterDraft() {
-    if (!aiState.runId) {
-      return;
-    }
-
-    setAiError(null);
-
-    startSavingDraft(async () => {
-      const response = await fetch("/api/preset-ai-recommendation/cost-center-draft", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          runId: aiState.runId,
-        }),
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok || !payload?.run) {
-        setAiError(
-          typeof payload?.message === "string"
-            ? payload.message
-            : "No pudimos guardar el borrador de centros de costo.",
-        );
-        return;
-      }
-
-      setAiState((current) => ({
-        ...current,
-        hybridRecommendation: current.hybridRecommendation
-          ? {
-              ...current.hybridRecommendation,
-              costCenterDraftSaved: true,
-            }
-          : current.hybridRecommendation,
-      }));
     });
   }
 
@@ -730,9 +689,6 @@ export function BusinessProfileConfigurator({
             <PresetAiRecommendationCard
               suggestedComposition={aiSuggestedComposition}
               hybridRecommendation={aiState.hybridRecommendation}
-              aiRecommendation={aiState.aiRecommendation}
-              isSavingDraft={isSavingDraft}
-              onSaveDraft={handleSaveCostCenterDraft}
             />
           </div>
         ) : null}

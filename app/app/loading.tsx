@@ -1,6 +1,6 @@
 import { PageLoadingState } from "@/components/ui/page-loading-state";
 
-const sidebarRows = Array.from({ length: 7 }, (_, index) => `sidebar-${index}`);
+const sidebarRows = Array.from({ length: 3 }, (_, index) => `sidebar-${index}`);
 
 export default function PrivateAppLoading() {
   return (
@@ -17,11 +17,6 @@ export default function PrivateAppLoading() {
                 className="h-[38px] animate-pulse rounded-[5px] border border-white/6 bg-white/6"
               />
             ))}
-          </div>
-          <div className="app-sidebar-footer">
-            <div className="h-4 w-24 animate-pulse rounded bg-white/8" />
-            <div className="h-4 w-28 animate-pulse rounded bg-white/8" />
-            <div className="h-4 w-32 animate-pulse rounded bg-white/8" />
           </div>
         </div>
       </aside>

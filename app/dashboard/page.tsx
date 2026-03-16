@@ -5,7 +5,7 @@ import {
 } from "@/modules/auth/server-auth";
 
 export default async function LegacyDashboardPage() {
-  const authState = await requirePrivateAppPage("/dashboard");
+  const authState = await requirePrivateAppPage("/documents");
 
   redirect(resolvePostAuthDestination(authState));
 }

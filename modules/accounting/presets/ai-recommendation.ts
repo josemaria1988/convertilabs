@@ -317,10 +317,6 @@ function buildObservationNotes(observations: PresetAiObservation[]) {
   return observations.map((observation) => `${observation.title}: ${observation.shortLabel}`);
 }
 
-function buildCostCenterNotes(costCenters: PresetAiSuggestedCostCenter[]) {
-  return costCenters.map((center) => `${center.label}: ${center.rationale}`);
-}
-
 function buildPresetAiDecisionComment(input: {
   composition: PresetComposition;
   aiOutput: PresetAiRecommendationOutput;
@@ -354,15 +350,10 @@ function buildPresetAiDecisionComment(input: {
         ? "Revisa la sugerencia y decide si prefieres mantener la recomendacion por reglas."
         : "Si estas de acuerdo, puedes guardar y aplicar la composicion sugerida.",
       input.aiOutput.setupTip,
-      input.aiOutput.suggestedCostCenters.length > 0
-        ? "Si te sirven, guarda el borrador de centros de costo para retomarlo despues."
-        : "Si algo no coincide con tu operativa, mantente en la recomendacion por reglas o elige una alternativa.",
+      "Si algo no coincide con tu operativa, mantente en la recomendacion por reglas o elige una alternativa.",
     ],
     sourceLabel,
-    expertNotes: [
-      ...buildObservationNotes(input.aiOutput.observations),
-      ...buildCostCenterNotes(input.aiOutput.suggestedCostCenters),
-    ].slice(0, 6),
+    expertNotes: buildObservationNotes(input.aiOutput.observations).slice(0, 6),
   } satisfies DecisionComment;
 }
 
@@ -382,17 +373,6 @@ export function buildAssistantLetterMarkdown(input: {
     `**Consejo inicial**`,
     `- ${input.aiOutput.setupTip}`,
   ];
-
-  if (input.aiOutput.suggestedCostCenters.length > 0) {
-    lines.push(
-      "",
-      `**Centros de costo sugeridos**`,
-      ...input.aiOutput.suggestedCostCenters.map(
-        (center) =>
-          `- **${center.label}** (${center.code}): ${center.rationale}. Agrupacion sugerida: ${center.groupingHint}.`,
-      ),
-    );
-  }
 
   return lines.join("\n");
 }
@@ -1058,10 +1038,7 @@ export function buildHybridPresetApplicationExplanation(input: {
       ...input.hybridRecommendation.decision.whatCanYouDo,
     ].slice(0, 4),
     sourceLabel: "Reglas internas + OpenAI estructurado.",
-    expertNotes: [
-      ...buildObservationNotes(input.hybridRecommendation.observations),
-      ...buildCostCenterNotes(input.hybridRecommendation.suggestedCostCenters),
-    ].slice(0, 6),
+    expertNotes: buildObservationNotes(input.hybridRecommendation.observations).slice(0, 6),
   } satisfies DecisionComment;
 }
 

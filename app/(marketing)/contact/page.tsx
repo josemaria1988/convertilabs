@@ -122,10 +122,10 @@ export default function ContactPage() {
               Escribir ahora
             </a>
             <Link
-              href="/pricing"
+              href="/"
               className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
             >
-              Ver precios
+              Ver inicio
             </Link>
           </>
         }

@@ -92,7 +92,7 @@ test("hybrid recommendation falls back to rules when confidence is low", () => {
   assert.equal(hybrid.composition.code, recommendation.recommended.code);
 });
 
-test("assistant letter markdown includes setup guidance and suggested cost centers", () => {
+test("assistant letter markdown keeps the onboarding focus on plan setup", () => {
   const recommendation = buildBaseRecommendation();
   const letter = buildAssistantLetterMarkdown({
     composition: recommendation.recommended,
@@ -103,7 +103,7 @@ test("assistant letter markdown includes setup guidance and suggested cost cente
 
   assert.match(letter, /Mayor beneficio/i);
   assert.match(letter, /Consejo inicial/i);
-  assert.match(letter, /Centros de costo sugeridos/i);
+  assert.doesNotMatch(letter, /Centros de costo sugeridos/i);
 });
 
 test("preset ai input hash changes when onboarding context changes", () => {

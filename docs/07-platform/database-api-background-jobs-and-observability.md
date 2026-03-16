@@ -94,7 +94,7 @@ Regla de uso actual:
 ### Preset IA
 
 - `/api/preset-ai-recommendation`
-- `/api/preset-ai-recommendation/cost-center-draft`
+- `/api/preset-ai-recommendation/cost-center-draft` cerrado en MVP V1 (`410`)
 
 ### Orquestacion
 

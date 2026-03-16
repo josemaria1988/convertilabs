@@ -299,8 +299,8 @@ export function OrganizationOnboardingForm({
         <p className="text-sm font-semibold">Vista previa del slug</p>
         <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
           {slugPreview
-            ? `/app/o/${slugPreview}/dashboard`
-            : "/app/o/<slug>/dashboard"}
+            ? `/app/o/${slugPreview}/documents`
+            : "/app/o/<slug>/documents"}
         </p>
         <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
           {userEmail ? `Owner inicial: ${userEmail}` : "Owner inicial: cuenta autenticada"}

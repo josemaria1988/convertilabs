@@ -8,5 +8,5 @@ export default async function JournalEntriesRedirectPage() {
     redirect("/onboarding");
   }
 
-  redirect(`/app/o/${authState.primaryOrganization.slug}/journal-entries`);
+  redirect(`/app/o/${authState.primaryOrganization.slug}/documents`);
 }

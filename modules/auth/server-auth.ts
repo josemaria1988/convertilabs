@@ -127,7 +127,11 @@ export function resolvePostAuthDestination(
     return "/onboarding";
   }
 
-  return safeNext ?? `/app/o/${authState.primaryOrganization.slug}/dashboard`;
+  return safeNext ?? resolveOrganizationDocumentsPath(authState.primaryOrganization.slug);
+}
+
+export function resolveOrganizationDocumentsPath(slug: string) {
+  return `/app/o/${slug}/documents`;
 }
 
 export async function getServerAuthState(): Promise<ServerAuthState> {
@@ -185,12 +189,15 @@ export async function requireOnboardingPage() {
   return authState;
 }
 
-export async function requireOrganizationDashboardPage(slug: string) {
-  const authState = await requirePrivateAppPage(`/app/o/${slug}/dashboard`);
+export async function requireOrganizationAppPage(
+  slug: string,
+  pathname = resolveOrganizationDocumentsPath(slug),
+) {
+  const authState = await requirePrivateAppPage(pathname);
   const user = authState.user;
 
   if (!user) {
-    redirect(`/login?next=${encodeURIComponent(`/app/o/${slug}/dashboard`)}`);
+    redirect(`/login?next=${encodeURIComponent(pathname)}`);
   }
 
   const supabase = await getSupabaseServerClient();
@@ -206,7 +213,7 @@ export async function requireOrganizationDashboardPage(slug: string) {
   const organizationRow = data as OrganizationAccessRow | null;
 
   if (error) {
-    console.error("Failed to resolve organization dashboard context.", error);
+    console.error("Failed to resolve organization app context.", error);
   }
 
   if (!organizationRow) {
@@ -226,4 +233,8 @@ export async function requireOrganizationDashboardPage(slug: string) {
       role: membership?.role ?? authState.primaryOrganization?.role ?? "member",
     },
   };
+}
+
+export async function requireOrganizationDashboardPage(slug: string) {
+  return requireOrganizationAppPage(slug);
 }

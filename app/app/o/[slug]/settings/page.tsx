@@ -563,32 +563,10 @@ export default async function OrganizationSettingsPage({
 
       <ExpandableSectionCard
         title="Plan de cuentas"
-        description="Chart Manager de la organizacion: preset, importacion con preview, cuentas provisionales, equivalencias y alta/edicion directa."
+        description="Preset activo, cuentas del sistema, cuentas provisionales y alta/edicion directa para sostener el motor contable."
       >
         <div className="grid items-start gap-4 xl:grid-cols-[0.78fr_1.22fr]">
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
-              <p className="font-semibold text-white">Acciones rapidas</p>
-              <p className="mt-2">
-                Exporta el plan actual o importa una planilla pequena en modo interactivo. Para importaciones mixtas o lotes mas complejos, usa la vista avanzada de importaciones.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <a
-                  href={`/app/o/${organization.slug}/settings/chart-of-accounts/export`}
-                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
-                >
-                  Exportar CSV
-                </a>
-                <LoadingLink
-                  href={`/app/o/${organization.slug}/imports?focus=chart_of_accounts_import`}
-                  pendingLabel="Abriendo importaciones..."
-                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
-                >
-                  Importaciones avanzadas
-                </LoadingLink>
-              </div>
-            </div>
-
             <form action={applyOrganizationChartPresetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
               <input type="hidden" name="slug" value={organization.slug} />
               <div className="space-y-1">
@@ -616,28 +594,6 @@ export default async function OrganizationSettingsPage({
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
               >
                 Aplicar preset al plan actual
-              </SubmitButton>
-            </form>
-
-            <form action={importOrganizationChartSpreadsheetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
-              <input type="hidden" name="slug" value={organization.slug} />
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">Importacion rapida</p>
-                <p className="text-sm text-[color:var(--color-muted)]">
-                  Sube una planilla y te redirigimos al workspace de importaciones para revisar y aprobar solo la seccion contable detectada.
-                </p>
-              </div>
-              <input
-                type="file"
-                name="spreadsheet"
-                accept=".csv,.tsv,.xlsx,.xls"
-                className="block w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
-              />
-              <SubmitButton
-                pendingLabel="Preparando preview..."
-                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
-              >
-                Importar plan desde planilla
               </SubmitButton>
             </form>
 
@@ -950,6 +906,84 @@ export default async function OrganizationSettingsPage({
                 Aun no hay cuentas activas cargadas en esta organizacion.
               </div>
             )}
+          </div>
+        </div>
+      </ExpandableSectionCard>
+
+      <ExpandableSectionCard
+        title="Herramientas de soporte"
+        description="Imports, historicos y bridge de exportacion siguen disponibles para el MVP, pero quedan fuera del flujo principal de documentos, decision contable e IVA."
+      >
+        <div className="grid gap-4 xl:grid-cols-3">
+          <form action={importOrganizationChartSpreadsheetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
+            <input type="hidden" name="slug" value={organization.slug} />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-white">Importacion rapida de plan</p>
+              <p className="text-sm text-[color:var(--color-muted)]">
+                Sube una planilla y te redirigimos al workspace de soporte para revisar solo la seccion contable detectada.
+              </p>
+            </div>
+            <input
+              type="file"
+              name="spreadsheet"
+              accept=".csv,.tsv,.xlsx,.xls"
+              className="block w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+            />
+            <SubmitButton
+              pendingLabel="Preparando preview..."
+              className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+            >
+              Importar plan desde planilla
+            </SubmitButton>
+          </form>
+
+          <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+            <div className="space-y-1">
+              <p className="font-semibold text-white">Imports e historicos</p>
+              <p>
+                Usa estas vistas cuando necesites cargar historicos IVA, lotes mixtos o revisar previews canonicos fuera del loop principal.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <LoadingLink
+                href={`/app/o/${organization.slug}/imports?focus=chart_of_accounts_import`}
+                pendingLabel="Abriendo importaciones..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Importaciones avanzadas
+              </LoadingLink>
+              <LoadingLink
+                href={`/app/o/${organization.slug}/imports?focus=historical_vat_import`}
+                pendingLabel="Abriendo historicos..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Historicos IVA
+              </LoadingLink>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+            <div className="space-y-1">
+              <p className="font-semibold text-white">Bridge y exportacion</p>
+              <p>
+                Exporta el plan actual o abre el bridge contable cuando haga falta salir hacia un ERP, estudio o planilla externa.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <a
+                href={`/app/o/${organization.slug}/settings/chart-of-accounts/export`}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Exportar CSV
+              </a>
+              <LoadingLink
+                href={`/app/o/${organization.slug}/exports`}
+                pendingLabel="Abriendo exportaciones..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Bridge contable
+              </LoadingLink>
+            </div>
           </div>
         </div>
       </ExpandableSectionCard>

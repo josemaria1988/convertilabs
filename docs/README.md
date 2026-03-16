@@ -4,9 +4,12 @@ Este directorio reemplaza la documentacion historica dispersa en `docs/specs*`, 
 
 La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo, sus rutas, modulos, migraciones y pruebas.
 
+Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto: todo cambio nuevo debe justificar si mejora el motor documental, el motor de decision contable o el motor fiscal.
+
 ## Reglas de lectura
 
 - `00-foundations/` fija la vision, el alcance y el mapa real del repo.
+- `agent_rules.md` resume el foco no negociable del MVP y la regla de descarte.
 - `01-identity/` y `02-organization/` cubren auth, tenancy, onboarding y settings.
 - `03-accounting/` cubre plan de cuentas, presets y recomendacion hibrida con IA.
 - `04-documents/` cubre intake, revision, clasificacion, aprendizaje y posting.
@@ -18,6 +21,7 @@ La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, per
 
 ## Estructura actual
 
+- [agent_rules.md](./agent_rules.md)
 - [00-foundations/00-vision-rectora-v1.md](./00-foundations/00-vision-rectora-v1.md)
 - [00-foundations/01-mapa-del-repo-y-rutas.md](./00-foundations/01-mapa-del-repo-y-rutas.md)
 - [01-identity/auth-tenancy-and-memberships.md](./01-identity/auth-tenancy-and-memberships.md)

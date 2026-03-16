@@ -107,8 +107,7 @@ export default async function OrganizationExportsPage({
       title="Exportaciones"
       toolbarLabel="Exportaciones"
       description="Bridge contable hacia el ERP existente, con exportacion generica de asientos provisionales o finales y lectura de external_code."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "journal_entries")}
-      isExportCurrent
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">

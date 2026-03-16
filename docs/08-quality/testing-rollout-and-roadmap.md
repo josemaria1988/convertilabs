@@ -105,7 +105,6 @@ Estado: preparado
 
 Hecho:
 
-- borradores IA de centros de costo;
 - algunos hooks de exports.
 
 Falta:

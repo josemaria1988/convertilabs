@@ -3,13 +3,7 @@
 import ReactMarkdown from "react-markdown";
 import { DecisionWhyPopover } from "@/components/onboarding/decision-why-popover";
 import { HelpHint } from "@/components/ui/help-hint";
-import {
-  buttonBaseClassName,
-  buttonPrimaryChromeClassName,
-  buttonSecondaryChromeClassName,
-} from "@/components/ui/button-styles";
 import type {
-  PresetAiRecommendationOutput,
   PresetComposition,
   PresetHybridRecommendation,
 } from "@/modules/accounting/presets/types";
@@ -17,9 +11,6 @@ import type {
 type PresetAiRecommendationCardProps = {
   suggestedComposition: PresetComposition | null;
   hybridRecommendation: PresetHybridRecommendation;
-  aiRecommendation: PresetAiRecommendationOutput;
-  isSavingDraft: boolean;
-  onSaveDraft: () => void;
 };
 
 function formatConfidence(value: number | null) {
@@ -46,9 +37,6 @@ function resolveBadgeLabel(source: PresetHybridRecommendation["source"]) {
 export function PresetAiRecommendationCard({
   suggestedComposition,
   hybridRecommendation,
-  aiRecommendation,
-  isSavingDraft,
-  onSaveDraft,
 }: PresetAiRecommendationCardProps) {
   const composition = suggestedComposition ?? hybridRecommendation.composition;
 
@@ -123,56 +111,6 @@ export function PresetAiRecommendationCard({
         </div>
       ) : null}
 
-      {aiRecommendation.suggestedCostCenters.length > 0 ? (
-        <div className="mt-5 rounded-2xl border border-[color:var(--color-border)] bg-white/6 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">Borrador de centros de costo</p>
-              <p className="mt-1 text-sm leading-6 text-[color:var(--color-muted)]">
-                La IA no crea entidades reales todavia. Puedes guardar este borrador para retomarlo en la proxima iteracion.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onSaveDraft}
-              disabled={hybridRecommendation.costCenterDraftSaved || isSavingDraft}
-              className={`${buttonBaseClassName} ${
-                hybridRecommendation.costCenterDraftSaved
-                  ? buttonSecondaryChromeClassName
-                  : buttonPrimaryChromeClassName
-              } px-4 py-2 text-sm`}
-            >
-              {hybridRecommendation.costCenterDraftSaved
-                ? "Borrador guardado"
-                : isSavingDraft
-                  ? "Guardando..."
-                  : "Guardar borrador"}
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {aiRecommendation.suggestedCostCenters.map((costCenter) => (
-              <div
-                key={`${costCenter.code}-${costCenter.label}`}
-                className="rounded-2xl border border-[color:var(--color-border)] bg-white/6 p-4 text-sm"
-              >
-                <p className="font-medium text-white">
-                  {costCenter.label}
-                  <span className="ml-2 text-xs text-[color:var(--color-muted)]">
-                    {costCenter.code}
-                  </span>
-                </p>
-                <p className="mt-2 leading-6 text-[color:var(--color-muted)]">
-                  {costCenter.rationale}
-                </p>
-                <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                  Agrupacion sugerida: {costCenter.groupingHint}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </article>
   );
 }

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 const featureList = [
   "Alta publica sobre Supabase Auth con confirmacion SSR.",
   "Mirror minimo en `public.profiles` para la capa de aplicacion.",
-  "Redireccion a onboarding o dashboard segun memberships activas.",
+  "Redireccion a onboarding o a la bandeja documental segun memberships activas.",
 ];
 
 export default async function SignupPage() {
@@ -29,7 +29,7 @@ export default async function SignupPage() {
                 Crear cuenta
               </p>
               <h1 className="mt-4 text-4xl font-semibold tracking-[-0.07em] text-white md:text-5xl">
-                Activa tu acceso inicial al cockpit privado.
+                Activa tu acceso inicial al workspace documental.
               </h1>
               <p className="mt-5 text-sm leading-7 text-[color:var(--color-muted)] md:text-base">
                 Crea tu usuario, confirma tu email si corresponde y entra al flujo de onboarding organizacional con el perfil fiscal base de Uruguay.

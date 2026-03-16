@@ -59,6 +59,37 @@ La promesa de producto sigue esta secuencia:
 - cost centers y jobs como modulo productivo completo;
 - otros motores tributarios listos para liquidacion operativa fuera de IVA.
 
+## Cutline operativa 2026-03-16
+
+`docs/agent_rules.md` pasa a ser el resumen corto y operativo del producto. Si una iniciativa no mejora uno de estos tres motores, no entra en el foco del MVP:
+
+1. motor documental;
+2. motor de decision contable;
+3. motor fiscal IVA.
+
+Toda superficie visible o en desarrollo activo debe clasificarse como `core`, `support` o `future`.
+
+### Core visible
+
+- `documents` como bandeja principal;
+- revision, aprendizaje y posting dentro del workspace documental;
+- `tax` para VAT preview, VAT run, lifecycle y export fiscal;
+- `settings` para perfil fiscal, presets y plan de cuentas minimo.
+
+### Support visible bajo demanda
+
+- `imports` para historicos, planillas y DUA;
+- `exports` como bridge contable y fiscal;
+- `tax/reconciliation` como apoyo del motor IVA;
+- tooling de onboarding y settings que habilita bootstrap, pero no redefine el producto.
+
+### Future o congelado
+
+- cockpit `dashboard` como modulo;
+- vistas standalone de `journal-entries` y `open-items`;
+- cost centers, jobs y profitability como experiencia visible;
+- marketing ampliado mas alla de landing, signup/login y contacto.
+
 ## Principios no negociables
 
 ### Separacion de bloques

@@ -33,7 +33,7 @@ export function SecondaryActivitiesSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [showSpecialCases, setShowSpecialCases] = useState(false);
   const [refinementParentCode, setRefinementParentCode] = useState<string | null>(null);
-  const selectedSet = new Set(value);
+  const selectedSet = useMemo(() => new Set(value), [value]);
   const selectedActivities = value
     .map((code) => getActivityByCode(code))
     .filter((activity): activity is NonNullable<typeof activity> => Boolean(activity));

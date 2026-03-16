@@ -415,10 +415,10 @@ export async function createOrganizationAction(
 
     revalidatePath("/app");
     revalidatePath("/onboarding");
-    redirect(`/app/o/${data.slug}/dashboard`);
+    redirect(`/app/o/${data.slug}/documents`);
   }
 
-  let destination = `/app/o/${data.slug}/dashboard`;
+  let destination = `/app/o/${data.slug}/documents`;
 
   try {
     const createdBusinessProfileVersion = await createOrganizationBusinessProfileVersion(

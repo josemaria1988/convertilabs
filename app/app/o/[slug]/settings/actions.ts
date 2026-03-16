@@ -233,7 +233,7 @@ export async function activateOrganizationProfileVersionAction(formData: FormDat
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
-  revalidatePath(`/app/o/${organization.slug}/dashboard`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }
 
 export async function updateOrganizationBasicsAction(formData: FormData) {
@@ -252,7 +252,7 @@ export async function updateOrganizationBasicsAction(formData: FormData) {
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
-  revalidatePath(`/app/o/${organization.slug}/dashboard`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }
 
 export async function updateOrganizationBusinessProfileAction(formData: FormData) {
@@ -410,7 +410,7 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
-  revalidatePath(`/app/o/${organization.slug}/dashboard`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }
 
 export async function createOrganizationChartAccountAction(formData: FormData) {
@@ -529,5 +529,5 @@ export async function applyOrganizationChartPresetAction(formData: FormData) {
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
-  revalidatePath(`/app/o/${organization.slug}/dashboard`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }

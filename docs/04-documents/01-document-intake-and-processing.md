@@ -8,12 +8,11 @@ Capturar documentos reales, guardarlos en storage privado, extraer hechos estruc
 
 ### Rutas y UI
 
-- `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
 - `components/documents/upload-button.tsx`
 - `components/documents/upload-dropzone.tsx`
-- `components/dashboard/dashboard-document-list.tsx`
+- `components/documents/documents-workspace-table.tsx`
 
 ### Backend y jobs
 
@@ -30,7 +29,7 @@ Estado real hoy:
 - PDF
 - JPG / PNG
 - cargas individuales
-- lotes ligados al dashboard
+- lotes visibles desde la bandeja documental
 
 La arquitectura ya esta preparada para mas fuentes, pero el carril visible principal sigue siendo upload privado de comprobantes.
 

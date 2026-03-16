@@ -66,26 +66,6 @@ function DocumentIcon({ className }: IconProps) {
   );
 }
 
-function JournalIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 5h14v14H5z" />
-      <path d="M9 9h6" />
-      <path d="M9 13h6" />
-      <path d="M9 17h3" />
-    </svg>
-  );
-}
-
 function TaxIcon({ className }: IconProps) {
   return (
     <svg
@@ -122,82 +102,6 @@ function SettingsIcon({ className }: IconProps) {
   );
 }
 
-function ExportIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 4v11" />
-      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-      <path d="M5 19h14" />
-    </svg>
-  );
-}
-
-function ImportIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 20V9" />
-      <path d="m7.5 13.5 4.5-4.5 4.5 4.5" />
-      <path d="M5 4h14" />
-    </svg>
-  );
-}
-
-function OpenItemsIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 7h14" />
-      <path d="M5 12h14" />
-      <path d="M5 17h9" />
-      <path d="M17 16.5 19.5 19 22 16.5" />
-    </svg>
-  );
-}
-
-function SearchIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4.5 4.5" />
-    </svg>
-  );
-}
-
 function CaretIcon({ className }: IconProps) {
   return (
     <svg
@@ -211,43 +115,16 @@ function CaretIcon({ className }: IconProps) {
   );
 }
 
-function UtilityIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M6 7h12" />
-      <path d="M6 12h12" />
-      <path d="M6 17h8" />
-    </svg>
-  );
-}
-
 function getNavIcon(label: string) {
   switch (label) {
-    case "Inicio":
-      return HomeIcon;
     case "Documentos":
       return DocumentIcon;
-    case "Importaciones":
-      return ImportIcon;
-    case "Asientos":
-      return JournalIcon;
-    case "Saldos abiertos":
-      return OpenItemsIcon;
     case "Impuestos":
       return TaxIcon;
     case "Configuracion":
       return SettingsIcon;
     default:
-      return DocumentIcon;
+      return HomeIcon;
   }
 }
 
@@ -255,16 +132,11 @@ export function PrivateDashboardShell({
   organizationName,
   organizationSlug,
   userEmail,
-  userRole,
   title,
-  description,
   navItems,
   toolbarLabel,
-  isExportCurrent = false,
   children,
 }: PrivateDashboardShellProps) {
-  const primaryItems = navItems.filter((item) => item.label !== "Configuracion");
-  const settingsItem = navItems.find((item) => item.label === "Configuracion");
   const sectionLabel = toolbarLabel ?? title;
 
   return (
@@ -278,7 +150,7 @@ export function PrivateDashboardShell({
           </div>
 
           <nav className="app-sidebar-nav">
-            {primaryItems.map((item) => {
+            {navItems.map((item) => {
               const Icon = getNavIcon(item.label);
 
               if (item.current) {
@@ -310,59 +182,7 @@ export function PrivateDashboardShell({
                 </LoadingLink>
               );
             })}
-            <div className="app-sidebar-divider" />
-            {isExportCurrent ? (
-              <div className="app-nav-item opacity-95" data-current="true">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                  <ExportIcon className="h-[18px] w-[18px]" />
-                </span>
-                <span className="truncate text-white">Exportar</span>
-              </div>
-            ) : (
-              <LoadingLink
-                href={`/app/o/${organizationSlug}/exports`}
-                pendingLabel="Abriendo..."
-                className="app-nav-item opacity-95"
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                  <ExportIcon className="h-[18px] w-[18px]" />
-                </span>
-                <span className="truncate text-white">Exportar</span>
-              </LoadingLink>
-            )}
           </nav>
-
-          <div className="app-sidebar-footer">
-            <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[14px] w-[14px]" />
-              Tablero de ventas
-            </span>
-            <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[14px] w-[14px]" />
-              Pendientes visibles
-            </span>
-            <span className="app-sidebar-footer-link">
-              <UtilityIcon className="h-[14px] w-[14px]" />
-              Procesamiento impositivo
-            </span>
-            {settingsItem ? (
-              settingsItem.current ? (
-                <span className="app-sidebar-footer-link pt-2 text-white">
-                  <SettingsIcon className="h-[14px] w-[14px]" />
-                  Configuracion
-                </span>
-              ) : (
-                <LoadingLink
-                  href={settingsItem.href}
-                  pendingLabel="Abriendo..."
-                  className="app-sidebar-footer-link pt-2"
-                >
-                  <SettingsIcon className="h-[14px] w-[14px]" />
-                  Configuracion
-                </LoadingLink>
-              )
-            ) : null}
-          </div>
         </div>
       </aside>
 
@@ -380,9 +200,6 @@ export function PrivateDashboardShell({
             <span className="app-topbar__badge">
               {organizationName}
             </span>
-            <button type="button" className="app-topbar__icon" aria-label="Buscar">
-              <SearchIcon className="h-[12px] w-[12px]" />
-            </button>
             <AccountMenu
               organizationName={organizationName}
               organizationSlug={organizationSlug}

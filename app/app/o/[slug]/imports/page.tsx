@@ -193,7 +193,7 @@ export default async function OrganizationImportsPage({
       title="Importaciones"
       toolbarLabel="Importaciones e historicos"
       description="Asistente minimo para planillas historicas, vista previa canonica, reintentos y carril por lote cuando el volumen crece."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "imports")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
