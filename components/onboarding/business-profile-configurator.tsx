@@ -19,6 +19,7 @@ import {
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
 import type {
+  PresetAiActivityRecommendation,
   PresetAiRecommendationOutput,
   PresetAiRouteResponse,
   PresetAiRunSummary,
@@ -71,6 +72,7 @@ type BusinessProfileConfiguratorProps = {
 type AiState = {
   runId: string | null;
   inputHash: string | null;
+  activityRecommendation: PresetAiActivityRecommendation | null;
   aiRecommendation: PresetAiRecommendationOutput | null;
   hybridRecommendation: PresetHybridRecommendation | null;
 };
@@ -81,6 +83,26 @@ function unique(values: string[]) {
 
 function serializeJson(value: string[]) {
   return JSON.stringify(value);
+}
+
+function buildProfileSignature(input: {
+  scope: "onboarding" | "settings";
+  organizationSlug: string | null | undefined;
+  organizationContext: BusinessProfileConfiguratorProps["organizationContext"];
+  primaryActivityCode: string;
+  secondaryActivityCodes: string[];
+  selectedTraits: string[];
+  shortBusinessDescription: string;
+}) {
+  return JSON.stringify({
+    scope: input.scope,
+    organizationSlug: input.organizationSlug,
+    organizationContext: input.organizationContext,
+    primaryActivityCode: input.primaryActivityCode,
+    secondaryActivityCodes: input.secondaryActivityCodes,
+    selectedTraits: input.selectedTraits,
+    shortBusinessDescription: input.shortBusinessDescription,
+  });
 }
 
 function describePlanMode(planSetupMode: PlanSetupMode) {
@@ -152,6 +174,7 @@ function buildInitialAiState(input: {
     return {
       runId: null,
       inputHash: null,
+      activityRecommendation: null,
       aiRecommendation: null,
       hybridRecommendation: null,
     } satisfies AiState;
@@ -176,6 +199,7 @@ function buildInitialAiState(input: {
     return {
       runId: run.id,
       inputHash: run.inputHash,
+      activityRecommendation: null,
       aiRecommendation,
       hybridRecommendation: null,
     } satisfies AiState;
@@ -195,6 +219,7 @@ function buildInitialAiState(input: {
   return {
     runId: run.id,
     inputHash: run.inputHash,
+    activityRecommendation: null,
     aiRecommendation,
     hybridRecommendation: {
       source,
@@ -263,7 +288,7 @@ export function BusinessProfileConfigurator({
   );
   const profileSignature = useMemo(
     () =>
-      JSON.stringify({
+      buildProfileSignature({
         scope,
         organizationSlug,
         organizationContext,
@@ -326,6 +351,7 @@ export function BusinessProfileConfigurator({
     setAiState({
       runId: null,
       inputHash: null,
+      activityRecommendation: null,
       aiRecommendation: null,
       hybridRecommendation: null,
     });
@@ -389,14 +415,28 @@ export function BusinessProfileConfigurator({
       }
 
       const data = payload as PresetAiRouteResponse;
+      const nextProfileSignature = buildProfileSignature({
+        scope,
+        organizationSlug,
+        organizationContext,
+        primaryActivityCode: data.resolvedProfile.primaryActivityCode,
+        secondaryActivityCodes: data.resolvedProfile.secondaryActivityCodes,
+        selectedTraits: data.resolvedProfile.selectedTraits,
+        shortBusinessDescription: data.resolvedProfile.shortDescription ?? "",
+      });
+
+      setPrimaryActivityCode(data.resolvedProfile.primaryActivityCode);
+      setSecondaryActivityCodes(data.resolvedProfile.secondaryActivityCodes);
+      setShortBusinessDescription(data.resolvedProfile.shortDescription ?? "");
 
       setAiState({
         runId: data.runId,
         inputHash: data.inputHash,
+        activityRecommendation: data.activityRecommendation,
         aiRecommendation: data.aiRecommendation,
         hybridRecommendation: data.hybridRecommendation,
       });
-      setAiProfileSignature(profileSignature);
+      setAiProfileSignature(nextProfileSignature);
 
       if (data.hybridRecommendation.shouldAutoSelect) {
         setPlanSetupMode("hybrid_ai_recommended");
@@ -507,7 +547,7 @@ export function BusinessProfileConfigurator({
             <p className="mt-3 text-sm leading-6 text-[color:var(--color-muted)]">
               {selectedPrimaryActivity
                 ? `Tomamos ${selectedPrimaryActivity.title} como rubro principal y lo usamos para elegir la capa contable mas fuerte del plan sugerido.`
-                : "Todavia no elegiste una actividad principal. Si ya describiste el negocio abajo, usaremos eso solo para sugerirte opciones, no para elegir por ti."}
+                : "Todavia no elegiste una actividad principal. Si describes el negocio y consultas a la IA, ahora tambien puede proponerte la clasificacion CIIU mas probable."}
             </p>
             {textSuggestions.length > 0 && !selectedPrimaryActivity ? (
               <div className="mt-4 space-y-2">
@@ -524,7 +564,7 @@ export function BusinessProfileConfigurator({
                       }}
                       className="rounded-full border border-[color:var(--color-border)] bg-white/8 px-3 py-2 text-xs text-white transition hover:bg-white/14"
                     >
-                      {activity.code} - {activity.title}
+                      {activity.displayCode} - {activity.title}
                     </button>
                   ))}
                 </div>
@@ -580,12 +620,54 @@ export function BusinessProfileConfigurator({
           className="w-full rounded-3xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm outline-none transition focus:border-[color:var(--color-accent)]"
         />
         <p className="text-sm leading-6 text-[color:var(--color-muted)]">
-          Este texto solo sirve para desempatar o sugerir actividades si estas dudando. Nunca autoaplica un plan por si solo.
+          Este texto nunca autoaplica nada por si solo. Si consultas a la IA, tambien puede usarlo para elegir una clasificacion CIIU y dejar la configuracion recomendada pronta para guardar.
         </p>
         {fieldErrors?.shortBusinessDescription ? (
           <p className="text-sm text-amber-800">{fieldErrors.shortBusinessDescription}</p>
         ) : null}
       </section>
+
+      {aiState.activityRecommendation ? (
+        <section className="space-y-3">
+          <div className="rounded-3xl border border-[rgba(124,157,255,0.35)] bg-[rgba(124,157,255,0.08)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100">
+                  Clasificacion CIIU resuelta por IA
+                </p>
+                <p className="text-sm leading-6 text-white/90">
+                  {aiState.activityRecommendation.rationale}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 px-4 py-3 text-sm">
+                <p className="font-medium text-white">Confianza CIIU</p>
+                <p className="mt-1 text-[color:var(--color-muted)]">
+                  {Math.round(aiState.activityRecommendation.confidence * 100)}%
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {selectedPrimaryActivity ? (
+                <span className="rounded-full border border-[color:var(--color-border)] bg-white/8 px-3 py-2 text-xs text-white/85">
+                  Principal: {selectedPrimaryActivity.displayCode} - {selectedPrimaryActivity.title}
+                </span>
+              ) : null}
+              {secondaryActivityCodes
+                .map((code) => getActivityByCode(code))
+                .filter((activity): activity is NonNullable<typeof activity> => Boolean(activity))
+                .map((activity) => (
+                  <span
+                    key={activity.code}
+                    className="rounded-full border border-[color:var(--color-border)] bg-white/8 px-3 py-2 text-xs text-white/85"
+                  >
+                    Secundaria: {activity.displayCode} - {activity.title}
+                  </span>
+                ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -597,7 +679,7 @@ export function BusinessProfileConfigurator({
               {uiHelpHintsEnabled ? <HelpHint contentKey="plan_recomendado" /> : null}
             </div>
             <p className="text-sm leading-6 text-[color:var(--color-muted)]">
-              El sistema compone una base Uruguay con overlays por actividad y rasgos. Puedes aceptar la sugerencia, elegir una alternativa, importar tu plan o arrancar con minimo + temporales.
+              El sistema compone una base Uruguay con overlays por actividad y rasgos. Si consultas a la IA, tambien puede ayudarte a elegir la clasificacion CIIU y luego decidir entre las composiciones validas del catalogo.
             </p>
           </div>
 

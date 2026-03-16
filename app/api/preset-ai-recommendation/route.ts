@@ -13,6 +13,10 @@ import {
   resolvePresetAiRecommendation,
 } from "@/modules/accounting/presets/ai-recommendation";
 import { buildPresetRecommendation } from "@/modules/accounting/presets/recommendation-engine";
+import {
+  applyActivityRecommendationToProfile,
+  resolveActivitySelectionWithAi,
+} from "@/modules/organizations/activity-ai-selection";
 import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 
 type RecommendationRequestBody = {
@@ -151,10 +155,10 @@ export async function POST(request: Request) {
       : null,
   };
 
-  if (!profile.primaryActivityCode || profile.selectedTraits.length === 0) {
+  if ((!profile.primaryActivityCode && !profile.shortDescription?.trim()) || profile.selectedTraits.length === 0) {
     return NextResponse.json(
       {
-        message: "Completa actividad principal y al menos un rasgo antes de consultar la IA.",
+        message: "Completa una descripcion del negocio o una actividad principal, y al menos un rasgo antes de consultar la IA.",
       },
       { status: 400 },
     );
@@ -223,25 +227,61 @@ export async function POST(request: Request) {
     });
   }
 
-  const recommendation = buildPresetRecommendation(profile);
+  const activitySelectionAttempt = await resolveActivitySelectionWithAi({
+    profile,
+  });
+  const resolvedProfile = applyActivityRecommendationToProfile({
+    profile,
+    activityRecommendation: activitySelectionAttempt.output,
+  });
+
+  if (!resolvedProfile.primaryActivityCode) {
+    return NextResponse.json(
+      {
+        message: activitySelectionAttempt.failureMessage
+          ?? "No pudimos determinar una actividad principal CIIU valida con la informacion disponible.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const recommendation = buildPresetRecommendation(resolvedProfile);
   const inputHash = buildPresetAiInputHash({
     scope: body.scope === "settings" ? "settings" : "onboarding",
     organizationContext,
-    profile,
+    profile: resolvedProfile,
     recommendation,
   });
   const inputSnapshot = buildPresetAiInputSnapshot({
     scope: body.scope === "settings" ? "settings" : "onboarding",
     organizationContext,
-    profile,
+    profile: resolvedProfile,
     recommendation,
   });
   const aiAttempt = await resolvePresetAiRecommendation({
     scope: body.scope === "settings" ? "settings" : "onboarding",
     organizationContext,
-    profile,
+    profile: resolvedProfile,
     recommendation,
   });
+  const storedAiAttempt = {
+    ...aiAttempt,
+    requestPayload: {
+      ...aiAttempt.requestPayload,
+      requestedProfile: profile,
+      resolvedProfile,
+      activitySelection: {
+        status: activitySelectionAttempt.status,
+        output: activitySelectionAttempt.output,
+        requestPayload: activitySelectionAttempt.requestPayload,
+        failureMessage: activitySelectionAttempt.failureMessage,
+      },
+    },
+    responsePayload: {
+      activitySelection: activitySelectionAttempt.responsePayload,
+      presetRecommendation: aiAttempt.responsePayload,
+    },
+  };
   const runId = await createPresetAiRunRecord(serviceRole, {
     organizationId,
     businessProfileVersionId: null,
@@ -251,7 +291,7 @@ export async function POST(request: Request) {
     inputHash,
     inputSnapshot,
     recommendation,
-    aiAttempt,
+    aiAttempt: storedAiAttempt,
   });
 
   if (aiAttempt.status !== "completed" || !aiAttempt.output) {
@@ -276,6 +316,8 @@ export async function POST(request: Request) {
     buildPresetAiRouteResponse({
       runId,
       inputHash,
+      resolvedProfile,
+      activityRecommendation: activitySelectionAttempt.output,
       recommendation,
       aiOutput: aiAttempt.output,
       hybridRecommendation,

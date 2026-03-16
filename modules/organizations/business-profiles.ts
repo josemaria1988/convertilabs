@@ -2,7 +2,10 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
 import { toPresetAiRunSummary } from "@/modules/accounting/presets/ai-recommendation";
 import type {
   PresetAiRunSummary,
@@ -10,13 +13,17 @@ import type {
 } from "@/modules/accounting/presets/types";
 import type { DecisionComment } from "@/modules/explanations/types";
 import type { BusinessProfileInput } from "@/modules/organizations/activity-types";
-import { getActivityByCode } from "@/modules/organizations/activity-catalog";
+import {
+  getActivityByCode,
+  getActivityCatalogVersion,
+} from "@/modules/organizations/activity-catalog";
 import { getOrganizationTraitByCode } from "@/modules/organizations/traits-catalog";
 
 type BusinessProfileVersionRow = {
   id: string;
   version_no: number;
   primary_activity_code: string | null;
+  catalog_version: string | null;
   short_description: string | null;
   source: string;
   is_current: boolean;
@@ -70,6 +77,7 @@ export type OrganizationBusinessProfileData = {
     id: string;
     versionNo: number;
     primaryActivityCode: string | null;
+    catalogVersion: string | null;
     secondaryActivityCodes: string[];
     selectedTraits: string[];
     shortDescription: string | null;
@@ -117,13 +125,41 @@ function computeBusinessFlags(selectedTraits: string[]) {
 
 export async function loadOrganizationBusinessProfileData(organizationId: string) {
   const supabase = getSupabaseServiceRoleClient();
-  const [versionsResult, presetApplicationsResult] = await Promise.all([
-    supabase
-      .from("organization_business_profile_versions")
-      .select("id, version_no, primary_activity_code, short_description, source, is_current, created_at")
-      .eq("organization_id", organizationId)
-      .order("version_no", { ascending: false })
-      .limit(12),
+  const versionsWithCatalogResult = await supabase
+    .from("organization_business_profile_versions")
+    .select("id, version_no, primary_activity_code, catalog_version, short_description, source, is_current, created_at")
+    .eq("organization_id", organizationId)
+    .order("version_no", { ascending: false })
+    .limit(12);
+  const versionsFallbackResult = isMissingSupabaseColumnError(
+    versionsWithCatalogResult.error,
+    "organization_business_profile_versions",
+    "catalog_version",
+  )
+    ? await supabase
+        .from("organization_business_profile_versions")
+        .select("id, version_no, primary_activity_code, short_description, source, is_current, created_at")
+        .eq("organization_id", organizationId)
+        .order("version_no", { ascending: false })
+        .limit(12)
+    : null;
+  const resolvedVersionsError = versionsFallbackResult?.error ?? versionsWithCatalogResult.error;
+  const resolvedVersionRows = versionsFallbackResult
+    ? (((versionsFallbackResult.data as Array<{
+          id: string;
+          version_no: number;
+          primary_activity_code: string | null;
+          short_description: string | null;
+          source: string;
+          is_current: boolean;
+          created_at: string;
+        }> | null) ?? []).map((row) => ({
+          ...row,
+          catalog_version: null,
+        })) as BusinessProfileVersionRow[])
+    : ((versionsWithCatalogResult.data as BusinessProfileVersionRow[] | null) ?? []);
+
+  const [presetApplicationsResult] = await Promise.all([
     supabase
       .from("organization_preset_applications")
       .select("id, business_profile_version_id, base_preset_code, overlay_codes_json, application_mode, explanation_json, ai_run_id, applied_at, active")
@@ -133,7 +169,7 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
   ]);
 
   if (
-    isMissingSupabaseRelationError(versionsResult.error, "organization_business_profile_versions")
+    isMissingSupabaseRelationError(resolvedVersionsError, "organization_business_profile_versions")
     || isMissingSupabaseRelationError(presetApplicationsResult.error, "organization_preset_applications")
   ) {
     return {
@@ -145,15 +181,15 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
     } satisfies OrganizationBusinessProfileData;
   }
 
-  if (versionsResult.error) {
-    throw new Error(versionsResult.error.message);
+  if (resolvedVersionsError) {
+    throw new Error(resolvedVersionsError.message);
   }
 
   if (presetApplicationsResult.error) {
     throw new Error(presetApplicationsResult.error.message);
   }
 
-  const versions = (versionsResult.data as BusinessProfileVersionRow[] | null) ?? [];
+  const versions = resolvedVersionRows;
   const presetApplications = (((presetApplicationsResult.data as PresetApplicationRow[] | null) ?? []));
   const versionIds = versions.map((version) => version.id);
   let activities: BusinessProfileActivityRow[] = [];
@@ -225,6 +261,7 @@ export async function loadOrganizationBusinessProfileData(organizationId: string
           id: activeVersion.id,
           versionNo: activeVersion.version_no,
           primaryActivityCode: activeVersion.primary_activity_code,
+          catalogVersion: activeVersion.catalog_version ?? null,
           secondaryActivityCodes: activities
             .filter((activity) =>
               activity.business_profile_version_id === activeVersion.id
@@ -313,12 +350,13 @@ export async function createOrganizationBusinessProfileVersion(
     .filter((code) => code !== input.profile.primaryActivityCode);
   const cleanedTraits = unique(input.profile.selectedTraits);
   const businessFlags = computeBusinessFlags(cleanedTraits);
-  const { data: versionData, error: insertVersionError } = await supabase
+  let insertVersionResult = await supabase
     .from("organization_business_profile_versions")
     .insert({
       organization_id: input.organizationId,
       version_no: nextVersionNo,
       primary_activity_code: input.profile.primaryActivityCode,
+      catalog_version: getActivityCatalogVersion(),
       short_description: input.profile.shortDescription?.trim() || null,
       source: input.source,
       is_current: true,
@@ -328,6 +366,30 @@ export async function createOrganizationBusinessProfileVersion(
     .select("id")
     .limit(1)
     .single();
+
+  if (isMissingSupabaseColumnError(
+    insertVersionResult.error,
+    "organization_business_profile_versions",
+    "catalog_version",
+  )) {
+    insertVersionResult = await supabase
+      .from("organization_business_profile_versions")
+      .insert({
+        organization_id: input.organizationId,
+        version_no: nextVersionNo,
+        primary_activity_code: input.profile.primaryActivityCode,
+        short_description: input.profile.shortDescription?.trim() || null,
+        source: input.source,
+        is_current: true,
+        created_by: input.actorId,
+        ...businessFlags,
+      })
+      .select("id")
+      .limit(1)
+      .single();
+  }
+
+  const { data: versionData, error: insertVersionError } = insertVersionResult;
 
   if (isMissingSupabaseRelationError(insertVersionError, "organization_business_profile_versions")) {
     return null;
@@ -456,12 +518,12 @@ export function describeBusinessProfile(input: {
 
   return {
     primaryActivityLabel: primaryActivity
-      ? `${primaryActivity.code} - ${primaryActivity.title}`
+      ? `${primaryActivity.displayCode} - ${primaryActivity.title}`
       : "Sin actividad principal",
     secondaryActivityLabels: input.secondaryActivityCodes
       .map((code) => getActivityByCode(code))
       .filter((activity): activity is NonNullable<typeof activity> => Boolean(activity))
-      .map((activity) => `${activity.code} - ${activity.title}`),
+      .map((activity) => `${activity.displayCode} - ${activity.title}`),
     traitLabels: input.selectedTraits
       .map((code) => getOrganizationTraitByCode(code))
       .filter((trait): trait is NonNullable<typeof trait> => Boolean(trait))

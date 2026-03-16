@@ -11,6 +11,7 @@ import type { BusinessProfileInput } from "@/modules/organizations/activity-type
 import { getActivityByCode } from "@/modules/organizations/activity-catalog";
 import { getOrganizationTraitByCode } from "@/modules/organizations/traits-catalog";
 import type {
+  PresetAiActivityRecommendation,
   PresetAiObservation,
   PresetAiRecommendationOutput,
   PresetAiRouteResponse,
@@ -304,9 +305,9 @@ function buildBusinessProfileSummary(profile: BusinessProfileInput) {
 
   return {
     primaryActivity: primaryActivity
-      ? `${primaryActivity.code} - ${primaryActivity.title}`
+      ? `${primaryActivity.displayCode} - ${primaryActivity.title}`
       : normalizedProfile.primaryActivityCode || "Sin actividad principal",
-    secondaryActivities: secondaryActivities.map((activity) => `${activity.code} - ${activity.title}`),
+    secondaryActivities: secondaryActivities.map((activity) => `${activity.displayCode} - ${activity.title}`),
     traits: traits.map((trait) => trait.label),
     shortDescription: normalizedProfile.shortDescription,
   };
@@ -1020,6 +1021,8 @@ export function buildPresetAiOutputFromStoredRun(run: Pick<
 export function buildPresetAiRouteResponse(input: {
   runId: string;
   inputHash: string;
+  resolvedProfile: BusinessProfileInput;
+  activityRecommendation: PresetAiActivityRecommendation | null;
   recommendation: PresetRecommendationResult;
   aiOutput: PresetAiRecommendationOutput;
   hybridRecommendation: PresetHybridRecommendation;
@@ -1027,6 +1030,8 @@ export function buildPresetAiRouteResponse(input: {
   return {
     runId: input.runId,
     inputHash: input.inputHash,
+    resolvedProfile: input.resolvedProfile,
+    activityRecommendation: input.activityRecommendation,
     ruleRecommendation: input.recommendation,
     aiRecommendation: input.aiOutput,
     hybridRecommendation: input.hybridRecommendation,

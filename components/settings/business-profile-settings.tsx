@@ -21,6 +21,7 @@ type BusinessProfileSettingsProps = {
   activeBusinessProfile: {
     versionNo: number;
     primaryActivityCode: string | null;
+    catalogVersion: string | null;
     secondaryActivityCodes: string[];
     selectedTraits: string[];
     shortDescription: string | null;
@@ -148,6 +149,7 @@ export function BusinessProfileSettings({
             <div className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--color-muted)]">
               <p>Version: v{activeBusinessProfile?.versionNo ?? 0}</p>
               <p>Fuente: {activeBusinessProfile?.source ?? "Sin definir"}</p>
+              <p>Catalogo: {activeBusinessProfile?.catalogVersion ?? "Legacy sin version"}</p>
               <p>Actividad principal: {activeBusinessProfile?.primaryActivityCode ?? "Sin definir"}</p>
               <p>Secundarias: {activeBusinessProfile?.secondaryActivityCodes.length ?? 0}</p>
               <p>Rasgos activos: {activeBusinessProfile?.selectedTraits.length ?? 0}</p>

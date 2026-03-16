@@ -2,6 +2,7 @@ import type {
   DecisionComment,
   HelpHintContent,
 } from "@/modules/explanations/types";
+import type { BusinessProfileInput } from "@/modules/organizations/activity-types";
 
 export type PresetBundleKind = "base" | "activity_overlay" | "trait_overlay";
 
@@ -99,6 +100,14 @@ export type PresetAiSuggestedCostCenter = {
   groupingHint: string;
 };
 
+export type PresetAiActivityRecommendation = {
+  selectedPrimaryActivityCode: string;
+  selectedSecondaryActivityCodes: string[];
+  confidence: number;
+  rationale: string;
+  candidateCodes: string[];
+};
+
 export type PresetAiRecommendationOutput = {
   selectedCompositionCode: string;
   confidence: number;
@@ -149,6 +158,8 @@ export type PresetAiRunSummary = {
 export type PresetAiRouteResponse = {
   runId: string;
   inputHash: string;
+  resolvedProfile: BusinessProfileInput;
+  activityRecommendation: PresetAiActivityRecommendation | null;
   ruleRecommendation: PresetRecommendationResult;
   aiRecommendation: PresetAiRecommendationOutput;
   hybridRecommendation: PresetHybridRecommendation;

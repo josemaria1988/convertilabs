@@ -1,0 +1,132 @@
+[
+  {
+    "code": "01110",
+    "aliases": [
+      "agricola",
+      "agro",
+      "campo",
+      "cereales",
+      "granos",
+      "semillas"
+    ]
+  },
+  {
+    "code": "01411",
+    "aliases": [
+      "agropecuario",
+      "bovino",
+      "bovinos",
+      "ganaderia bovina",
+      "ganado",
+      "ganado bovino",
+      "hacienda",
+      "tambo"
+    ]
+  },
+  {
+    "code": "01905",
+    "aliases": [
+      "nucleos familiares",
+      "sin actividad economica"
+    ]
+  },
+  {
+    "code": "01906",
+    "aliases": [
+      "usuario zona franca",
+      "zona franca"
+    ]
+  },
+  {
+    "code": "01907",
+    "aliases": [
+      "actividad no bien especificada"
+    ]
+  },
+  {
+    "code": "28290",
+    "aliases": [
+      "armado",
+      "ensamble",
+      "fabricacion",
+      "produccion liviana"
+    ]
+  },
+  {
+    "code": "33120",
+    "aliases": [
+      "instalacion tecnica",
+      "mantenimiento",
+      "reparacion",
+      "servicio tecnico"
+    ]
+  },
+  {
+    "code": "43210",
+    "aliases": [
+      "electricidad",
+      "instalacion",
+      "montaje",
+      "obra"
+    ]
+  },
+  {
+    "code": "46590",
+    "aliases": [
+      "equipamiento",
+      "equipos",
+      "maquinaria",
+      "mayorista",
+      "repuestos"
+    ]
+  },
+  {
+    "code": "47521",
+    "aliases": [
+      "barraca",
+      "ferreteria",
+      "minorista",
+      "mostrador",
+      "retail",
+      "tienda"
+    ]
+  },
+  {
+    "code": "47522",
+    "aliases": [
+      "barnices",
+      "pintureria",
+      "pinturas"
+    ]
+  },
+  {
+    "code": "47523",
+    "aliases": [
+      "cristaleria",
+      "vidrieria",
+      "vidrio"
+    ]
+  },
+  {
+    "code": "62010",
+    "aliases": [
+      "desarrollo",
+      "programacion",
+      "servicios digitales",
+      "software"
+    ]
+  },
+  {
+    "code": "70201",
+    "aliases": [
+      "administracion tercerizada",
+      "asesoramiento empresarial",
+      "asesoria",
+      "consultoria",
+      "consultoria de gestion",
+      "gestoria",
+      "proyectos",
+      "servicios profesionales"
+    ]
+  }
+]

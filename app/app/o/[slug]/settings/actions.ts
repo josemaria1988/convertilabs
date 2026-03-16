@@ -25,6 +25,7 @@ import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accou
 import { buildPresetApplicationComment } from "@/modules/explanations/decision-comment-builder";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildPresetRecommendation } from "@/modules/accounting/presets/recommendation-engine";
+import { getActivityByCode } from "@/modules/organizations/activity-catalog";
 import {
   createOrganizationBusinessProfileVersion,
   recordOrganizationPresetApplication,
@@ -269,8 +270,38 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
     throw new Error("Selecciona una actividad principal antes de guardar el perfil.");
   }
 
+  const primaryActivity = getActivityByCode(primaryActivityCode);
+
+  if (!primaryActivity) {
+    throw new Error("La actividad principal no existe en el catalogo oficial actual.");
+  }
+
+  if (!primaryActivity.isSelectable) {
+    throw new Error(
+      primaryActivity.isLegacySelection
+        ? "La actividad principal quedo con una granularidad vieja. Refinala antes de guardar."
+        : "La actividad principal elegida requiere refinamiento a una subclase oficial antes de guardar.",
+    );
+  }
+
   if (secondaryActivityCodes.length > 5) {
     throw new Error("Puedes guardar hasta 5 actividades secundarias.");
+  }
+
+  const invalidSecondaryActivity = secondaryActivityCodes
+    .map((code) => getActivityByCode(code))
+    .find((activity) => !activity || !activity.isSelectable);
+
+  if (invalidSecondaryActivity === undefined) {
+    throw new Error("Las actividades secundarias deben existir en el catalogo oficial.");
+  }
+
+  if (invalidSecondaryActivity && !invalidSecondaryActivity.isSelectable) {
+    throw new Error(
+      invalidSecondaryActivity.isLegacySelection
+        ? "Tienes una actividad secundaria con granularidad vieja. Refinala antes de guardar."
+        : "Todas las actividades secundarias deben quedar refinadas a subclases oficiales.",
+    );
   }
 
   if (selectedTraits.length === 0) {

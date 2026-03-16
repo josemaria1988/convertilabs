@@ -6,6 +6,7 @@ import {
   supportedDgiGroups,
   supportedVatRegimes,
 } from "@/modules/tax/uy-vat-profile";
+import { getActivityByCode } from "@/modules/organizations/activity-catalog";
 
 export const organizationNameMinLength = 2;
 export const organizationNameMaxLength = 120;
@@ -154,6 +155,16 @@ export function validateOrganizationOnboardingInput(
   if (requireBusinessProfile) {
     if (!primaryActivityCode) {
       errors.primaryActivityCode = "Selecciona la actividad principal para recibir una recomendacion usable.";
+    } else {
+      const primaryActivity = getActivityByCode(primaryActivityCode);
+
+      if (!primaryActivity) {
+        errors.primaryActivityCode = "La actividad principal no existe en el catalogo oficial actual.";
+      } else if (!primaryActivity.isSelectable) {
+        errors.primaryActivityCode = primaryActivity.isLegacySelection
+          ? "La actividad principal quedo con una granularidad vieja. Refinala a una subclase oficial antes de continuar."
+          : "La actividad principal elegida requiere refinamiento a una subclase oficial antes de continuar.";
+      }
     }
 
     if (!supportedPlanSetupModes.includes(planSetupMode as (typeof supportedPlanSetupModes)[number])) {
@@ -162,6 +173,18 @@ export function validateOrganizationOnboardingInput(
 
     if (secondaryActivityCodes.length > 5) {
       errors.secondaryActivityCodes = "Puedes seleccionar hasta 5 actividades secundarias.";
+    } else {
+      const invalidSecondaryActivity = secondaryActivityCodes
+        .map((code) => getActivityByCode(code))
+        .find((activity) => !activity || !activity.isSelectable);
+
+      if (invalidSecondaryActivity === undefined) {
+        errors.secondaryActivityCodes = "Las actividades secundarias deben ser subclases oficiales o casos especiales validos.";
+      } else if (invalidSecondaryActivity && !invalidSecondaryActivity.isSelectable) {
+        errors.secondaryActivityCodes = invalidSecondaryActivity.isLegacySelection
+          ? "Tienes una actividad secundaria con granularidad vieja. Refinala antes de continuar."
+          : "Todas las actividades secundarias deben quedar refinadas a subclases oficiales.";
+      }
     }
 
     if (selectedTraits.length === 0) {

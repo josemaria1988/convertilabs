@@ -3,7 +3,10 @@ import type {
   ActivityCatalogEntry,
   BusinessProfileInput,
 } from "@/modules/organizations/activity-types";
-import { getActivityByCode } from "@/modules/organizations/activity-catalog";
+import {
+  getActivityByCode,
+  getActivityHierarchyCodes,
+} from "@/modules/organizations/activity-catalog";
 import { getSuggestedActivitiesFromText } from "@/modules/organizations/activity-search";
 import { getOrganizationTraitByCode } from "@/modules/organizations/traits-catalog";
 import { buildPresetRecommendationDecisionComment } from "@/modules/explanations/decision-comment-builder";
@@ -14,34 +17,67 @@ import type {
 
 const basePresetCode = "UY_BASE_SA_GENERAL_V1";
 
+type ActivityOverlayRule = {
+  overlayCode: string;
+  label: string;
+  matchCodes: string[];
+};
+
+const activityOverlayRules: ActivityOverlayRule[] = [
+  {
+    overlayCode: "CIIU_46_WHOLESALE_EQUIPMENT_V1",
+    label: "Comercio mayorista",
+    matchCodes: ["46"],
+  },
+  {
+    overlayCode: "CIIU_33_REPAIR_INSTALLATION_V1",
+    label: "Servicios tecnicos",
+    matchCodes: ["33", "4321"],
+  },
+  {
+    overlayCode: "CIIU_47_RETAIL_V1",
+    label: "Retail",
+    matchCodes: ["47"],
+  },
+  {
+    overlayCode: "CIIU_01_03_AGRO_V1",
+    label: "Agro",
+    matchCodes: ["01", "02", "03"],
+  },
+  {
+    overlayCode: "CIIU_28_LIGHT_MANUFACTURING_V1",
+    label: "Fabricacion liviana",
+    matchCodes: ["28"],
+  },
+];
+
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function activityMatchesRule(activityCode: string, rule: ActivityOverlayRule) {
+  const activity = getActivityByCode(activityCode);
+
+  if (!activity || activity.isSpecialAnnex) {
+    return false;
+  }
+
+  const hierarchyCodes = new Set(getActivityHierarchyCodes(activity.code));
+
+  return rule.matchCodes.some((matchCode) => hierarchyCodes.has(matchCode));
+}
+
 function resolveActivityOverlayCode(activityCode: string) {
-  const normalized = activityCode.trim();
+  return activityOverlayRules.find((rule) => activityMatchesRule(activityCode, rule))?.overlayCode ?? "";
+}
 
-  if (normalized.startsWith("46")) {
-    return "CIIU_46_WHOLESALE_EQUIPMENT_V1";
+function resolveActivityThemeLabel(activity: ActivityCatalogEntry | null) {
+  if (!activity || activity.isSpecialAnnex) {
+    return activity?.title ?? "";
   }
 
-  if (normalized.startsWith("33") || normalized.startsWith("43210")) {
-    return "CIIU_33_REPAIR_INSTALLATION_V1";
-  }
-
-  if (normalized.startsWith("47")) {
-    return "CIIU_47_RETAIL_V1";
-  }
-
-  if (["01", "02", "03"].some((prefix) => normalized.startsWith(prefix))) {
-    return "CIIU_01_03_AGRO_V1";
-  }
-
-  if (normalized.startsWith("28")) {
-    return "CIIU_28_LIGHT_MANUFACTURING_V1";
-  }
-
-  return "";
+  return activityOverlayRules.find((rule) => activityMatchesRule(activity.code, rule))?.label
+    ?? activity.title;
 }
 
 function resolveTraitOverlayCodes(traits: string[]) {
@@ -73,7 +109,13 @@ function formatActivityLabel(activity: ActivityCatalogEntry | null) {
     return "actividad no identificada";
   }
 
-  return `${activity.code} - ${activity.title}`;
+  const suffix = activity.requiresRefinement
+    ? " (requiere refinamiento)"
+    : activity.isSpecialAnnex
+      ? " (caso especial DGI/019)"
+      : "";
+
+  return `${activity.displayCode} - ${activity.title}${suffix}`;
 }
 
 function buildCompositionLabel(input: {
@@ -82,22 +124,13 @@ function buildCompositionLabel(input: {
   traits: string[];
 }) {
   const parts: string[] = [];
+  const primaryLabel = resolveActivityThemeLabel(input.primaryActivity);
 
-  if (input.primaryActivity?.code.startsWith("46")) {
-    parts.push("Comercio mayorista");
-  } else if (input.primaryActivity?.code.startsWith("33") || input.primaryActivity?.code.startsWith("43210")) {
-    parts.push("Servicios tecnicos");
-  } else if (input.primaryActivity?.code.startsWith("47")) {
-    parts.push("Retail");
-  } else if (input.primaryActivity?.code.startsWith("28")) {
-    parts.push("Fabricacion liviana");
-  } else if (input.primaryActivity?.code.startsWith("01") || input.primaryActivity?.code.startsWith("02") || input.primaryActivity?.code.startsWith("03")) {
-    parts.push("Agro");
-  } else if (input.primaryActivity) {
-    parts.push(input.primaryActivity.title);
+  if (primaryLabel) {
+    parts.push(primaryLabel);
   }
 
-  if (input.secondaryActivities.some((activity) => activity.code.startsWith("33") || activity.code.startsWith("43210"))) {
+  if (input.secondaryActivities.some((activity) => resolveActivityThemeLabel(activity) === "Servicios tecnicos")) {
     parts.push("Servicios tecnicos");
   }
 
@@ -211,18 +244,17 @@ export function buildPresetRecommendation(input: BusinessProfileInput): PresetRe
     unique([primaryOverlay, ...secondaryOverlays]),
   ].filter((overlayCodes) => overlayCodes.length > 0);
   const alternatives = dedupeCompositions(
-    alternativeOverlayCodes.map((overlayCodes, index) =>
+    alternativeOverlayCodes.map((overlayCodes) =>
       buildCompositionFromInput(
         input,
         overlayCodes,
         primaryActivity,
         secondaryActivities,
-      ),
-    ),
+      )),
   ).filter((composition) => composition.code !== recommended.code).slice(0, 2);
 
   const textSuggestions = input.shortDescription
-    ? getSuggestedActivitiesFromText(input.shortDescription, 3)
+    ? getSuggestedActivitiesFromText(input.shortDescription, 3, { selectableOnly: true })
     : [];
   const explanation = buildPresetRecommendationDecisionComment({
     recommended,
