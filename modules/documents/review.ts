@@ -169,6 +169,21 @@ type ProcessingRunRow = {
   failure_message: string | null;
 };
 
+type WorkspaceProcessingRunRow = {
+  id: string;
+  document_id: string;
+  status: string;
+  failure_stage: string | null;
+  failure_message: string | null;
+};
+
+type WorkspaceAssignmentRunRow = {
+  id: string;
+  document_id: string;
+  status: string;
+  response_json: JsonRecord | null;
+};
+
 type ConfirmationRow = {
   id: string;
   confirmation_type: string;
@@ -202,6 +217,9 @@ type DocumentListRow = {
   created_at: string;
   document_date: string | null;
   current_draft_id: string | null;
+  current_processing_run_id: string | null;
+  last_processed_at: string | null;
+  metadata: JsonRecord | null;
 };
 
 type ReviewRuleRef = DeterministicRuleRef;
@@ -227,6 +245,18 @@ export type DocumentWorkspaceListItem = {
   certaintyConfidence: number | null;
   duplicateStatus: string | null;
   decisionSource: string | null;
+  storageStatus: "stored" | "upload_error";
+  storageStatusLabel: string;
+  storageFailureMessage: string | null;
+  extractionStatus: "uploaded" | "queued" | "extracting" | "extracted" | "error";
+  extractionStatusLabel: string;
+  extractionFailureMessage: string | null;
+  classificationStatus: "not_started" | "ready" | "failed" | "completed";
+  classificationStatusLabel: string;
+  classificationFailureMessage: string | null;
+  canProcessExtraction: boolean;
+  canClassify: boolean;
+  hasExtractionInFlight: boolean;
 };
 
 type DocumentViewModel = {
@@ -882,6 +912,162 @@ async function buildDocumentViewModel(
   };
 }
 
+function buildWorkspaceExtractionState(input: {
+  documentStatus: string;
+  currentDraftId: string | null;
+  metadata: JsonRecord | null;
+  processingRun: WorkspaceProcessingRunRow | null;
+}) {
+  const metadata = asRecord(input.metadata);
+  const uploadError = asString(metadata.upload_error);
+  const processingError = asString(metadata.processing_error);
+  const processingStage = asString(metadata.processing_error_stage)
+    ?? input.processingRun?.failure_stage
+    ?? null;
+
+  if (uploadError) {
+    return {
+      status: "error" as const,
+      label: "Carga fallida",
+      failureMessage: uploadError,
+      canProcess: false,
+      inFlight: false,
+    };
+  }
+
+  if (input.documentStatus === "queued") {
+    return {
+      status: "queued" as const,
+      label: "En cola",
+      failureMessage: null,
+      canProcess: false,
+      inFlight: true,
+    };
+  }
+
+  if (input.documentStatus === "extracting" || input.documentStatus === "processing") {
+    return {
+      status: "extracting" as const,
+      label: "Extrayendo",
+      failureMessage: null,
+      canProcess: false,
+      inFlight: true,
+    };
+  }
+
+  if (
+    input.documentStatus === "extracted"
+    || input.documentStatus === "draft_ready"
+    || input.documentStatus === "needs_review"
+    || input.documentStatus === "classified"
+    || input.documentStatus === "classified_with_open_revision"
+    || input.documentStatus === "approved"
+    || input.currentDraftId
+  ) {
+    return {
+      status: "extracted" as const,
+      label: "Completa",
+      failureMessage: null,
+      canProcess: false,
+      inFlight: false,
+    };
+  }
+
+  if (input.documentStatus === "error" && processingStage) {
+    return {
+      status: "error" as const,
+      label: "Extraccion fallida",
+      failureMessage: processingError ?? input.processingRun?.failure_message ?? null,
+      canProcess: true,
+      inFlight: false,
+    };
+  }
+
+  if (input.documentStatus === "error" && processingError) {
+    return {
+      status: "error" as const,
+      label: "Extraccion fallida",
+      failureMessage: processingError,
+      canProcess: true,
+      inFlight: false,
+    };
+  }
+
+  return {
+    status: "uploaded" as const,
+    label: "Pendiente",
+    failureMessage: null,
+    canProcess: true,
+    inFlight: false,
+  };
+}
+
+function buildWorkspaceStorageState(metadata: JsonRecord | null) {
+  const uploadError = asString(asRecord(metadata).upload_error);
+
+  if (uploadError) {
+    return {
+      status: "upload_error" as const,
+      label: "Fallida",
+      failureMessage: uploadError,
+    };
+  }
+
+  return {
+    status: "stored" as const,
+    label: "Completa",
+    failureMessage: null,
+  };
+}
+
+function buildWorkspaceClassificationState(input: {
+  documentStatus: string;
+  currentDraftId: string | null;
+  latestAssignmentRun: WorkspaceAssignmentRunRow | null;
+}) {
+  const failureMessage = asString(asRecord(input.latestAssignmentRun?.response_json).error);
+
+  if (
+    input.documentStatus === "draft_ready"
+    || input.documentStatus === "needs_review"
+    || input.documentStatus === "classified"
+    || input.documentStatus === "classified_with_open_revision"
+    || input.documentStatus === "approved"
+  ) {
+    return {
+      status: "completed" as const,
+      label: "Completa",
+      failureMessage: null,
+      canClassify: false,
+    };
+  }
+
+  if (input.latestAssignmentRun?.status === "failed") {
+    return {
+      status: "failed" as const,
+      label: "Fallida",
+      failureMessage,
+      canClassify: input.documentStatus === "extracted" && Boolean(input.currentDraftId),
+    };
+  }
+
+  if (input.documentStatus === "extracted" && input.currentDraftId) {
+    return {
+      status: "ready" as const,
+      label: "Pendiente",
+      failureMessage: null,
+      canClassify: true,
+    };
+  }
+
+  return {
+    status: "not_started" as const,
+    label: "No iniciada",
+    failureMessage: null,
+    canClassify: false,
+  };
+}
+
 function getOperationCategoryOptions(role: DocumentRoleCandidate) {
   if (role === "purchase") {
     return purchaseOperationCategoryOptions.map((category) => ({ ...category }));
@@ -1220,7 +1406,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
   const primaryResult = await supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
     )
     .eq("organization_id", input.organizationId)
     .order("created_at", { ascending: false })
@@ -1232,7 +1418,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
     const legacyResult = await supabase
       .from("documents")
       .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id",
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
       )
       .eq("organization_id", input.organizationId)
       .order("created_at", { ascending: false })
@@ -1259,8 +1445,15 @@ export async function listOrganizationWorkspaceDocuments(input: {
     created_at: String(row.created_at ?? new Date().toISOString()),
     document_date: typeof row.document_date === "string" ? row.document_date : null,
     current_draft_id: typeof row.current_draft_id === "string" ? row.current_draft_id : null,
+    current_processing_run_id:
+      typeof row.current_processing_run_id === "string" ? row.current_processing_run_id : null,
+    last_processed_at: typeof row.last_processed_at === "string" ? row.last_processed_at : null,
+    metadata: asRecord(row.metadata),
   })) satisfies DocumentListRow[];
   const documentIds = rows.map((row) => row.id);
+  const processingRunIds = rows
+    .map((row) => row.current_processing_run_id)
+    .filter((value): value is string => typeof value === "string");
   const draftIds = rows
     .map((row) => row.current_draft_id)
     .filter((value): value is string => typeof value === "string");
@@ -1284,7 +1477,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
     }
   }
 
-  const [invoiceIdentityResult, decisionLogsResult] = await Promise.all([
+  const [invoiceIdentityResult, decisionLogsResult, processingRunsResult, assignmentRunsResult] = await Promise.all([
     documentIds.length > 0
       ? supabase
         .from("document_invoice_identities")
@@ -1295,6 +1488,20 @@ export async function listOrganizationWorkspaceDocuments(input: {
       ? supabase
         .from("ai_decision_logs")
         .select("document_id, decision_source, confidence_score, certainty_level, created_at")
+        .eq("organization_id", input.organizationId)
+        .in("document_id", documentIds)
+        .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    processingRunIds.length > 0
+      ? supabase
+        .from("document_processing_runs")
+        .select("id, document_id, status, failure_stage, failure_message")
+        .in("id", processingRunIds)
+      : Promise.resolve({ data: [], error: null }),
+    documentIds.length > 0
+      ? supabase
+        .from("document_assignment_runs")
+        .select("id, document_id, status, response_json, created_at")
         .eq("organization_id", input.organizationId)
         .in("document_id", documentIds)
         .order("created_at", { ascending: false })
@@ -1311,9 +1518,25 @@ export async function listOrganizationWorkspaceDocuments(input: {
     && !isMissingSupabaseRelationError(decisionLogsResult.error, "ai_decision_logs")
       ? decisionLogsResult.error
       : null;
+  const processingRunsError =
+    processingRunsResult.error
+    && !isMissingSupabaseRelationError(processingRunsResult.error, "document_processing_runs")
+      ? processingRunsResult.error
+      : null;
+  const assignmentRunsError =
+    assignmentRunsResult.error
+    && !isMissingSupabaseRelationError(assignmentRunsResult.error, "document_assignment_runs")
+      ? assignmentRunsResult.error
+      : null;
 
-  if (invoiceIdentityError || decisionLogsError) {
-    throw new Error(invoiceIdentityError?.message ?? decisionLogsError?.message ?? "No se pudieron cargar indicadores de confianza.");
+  if (invoiceIdentityError || decisionLogsError || processingRunsError || assignmentRunsError) {
+    throw new Error(
+      invoiceIdentityError?.message
+      ?? decisionLogsError?.message
+      ?? processingRunsError?.message
+      ?? assignmentRunsError?.message
+      ?? "No se pudieron cargar indicadores de confianza.",
+    );
   }
 
   const duplicateStatusByDocumentId = new Map(
@@ -1336,6 +1559,20 @@ export async function listOrganizationWorkspaceDocuments(input: {
   }> | null) ?? []))) {
     if (!latestDecisionLogByDocumentId.has(row.document_id)) {
       latestDecisionLogByDocumentId.set(row.document_id, row);
+    }
+  }
+
+  const processingRunById = new Map(
+    (((processingRunsResult.data as WorkspaceProcessingRunRow[] | null) ?? [])).map((row) => [
+      row.id,
+      row,
+    ]),
+  );
+  const latestAssignmentRunByDocumentId = new Map<string, WorkspaceAssignmentRunRow>();
+
+  for (const row of (((assignmentRunsResult.data as WorkspaceAssignmentRunRow[] | null) ?? []))) {
+    if (!latestAssignmentRunByDocumentId.has(row.document_id)) {
+      latestAssignmentRunByDocumentId.set(row.document_id, row);
     }
   }
 
@@ -1399,6 +1636,38 @@ export async function listOrganizationWorkspaceDocuments(input: {
     createdAt: row.created_at,
     documentDate: row.document_date,
     hasProcessedDraft: Boolean(row.current_draft_id),
+    ...(() => {
+      const storage = buildWorkspaceStorageState(row.metadata);
+      const extraction = buildWorkspaceExtractionState({
+        documentStatus: row.status,
+        currentDraftId: row.current_draft_id,
+        metadata: row.metadata,
+        processingRun:
+          row.current_processing_run_id
+            ? processingRunById.get(row.current_processing_run_id) ?? null
+            : null,
+      });
+      const classification = buildWorkspaceClassificationState({
+        documentStatus: row.status,
+        currentDraftId: row.current_draft_id,
+        latestAssignmentRun: latestAssignmentRunByDocumentId.get(row.id) ?? null,
+      });
+
+      return {
+        storageStatus: storage.status,
+        storageStatusLabel: storage.label,
+        storageFailureMessage: storage.failureMessage,
+        extractionStatus: extraction.status,
+        extractionStatusLabel: extraction.label,
+        extractionFailureMessage: extraction.failureMessage,
+        classificationStatus: classification.status,
+        classificationStatusLabel: classification.label,
+        classificationFailureMessage: classification.failureMessage,
+        canProcessExtraction: extraction.canProcess,
+        canClassify: classification.canClassify,
+        hasExtractionInFlight: extraction.inFlight,
+      };
+    })(),
   } satisfies DocumentWorkspaceListItem)));
 }
 
@@ -1597,15 +1866,15 @@ export async function loadDocumentReviewPageData(input: {
     })),
     canPostProvisional:
       ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
-      && derived.validation.canPostProvisional
+      && workflowState.canPostProvisional
       && draft.status !== "confirmed",
     canConfirmFinal:
       ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
-      && derived.validation.canConfirmFinal
+      && workflowState.canConfirmFinal
       && draft.status !== "confirmed",
     canConfirm:
       ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
-      && derived.validation.canConfirmFinal
+      && workflowState.canConfirmFinal
       && draft.status !== "confirmed",
     canReopen:
       ["owner", "admin"].includes(input.userRole)

@@ -6,7 +6,6 @@ import {
   getSupabaseServiceRoleClient,
 } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
-import { enqueueDocumentProcessing } from "@/modules/documents/processing";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 
 type PrepareDocumentUploadInput = {
@@ -36,8 +35,6 @@ type PrepareDocumentUploadSuccess = {
 type FinalizeDocumentUploadSuccess = {
   ok: true;
   documentId: string;
-  runId: string;
-  processingStatus: "queued";
 };
 
 type UploadActionError = {
@@ -54,6 +51,10 @@ type PrepareDocumentUploadRpcRow = {
 
 function buildDashboardPath(slug: string) {
   return `/app/o/${slug}/dashboard`;
+}
+
+function buildDocumentsPath(slug: string) {
+  return `/app/o/${slug}/documents`;
 }
 
 export async function prepareDashboardDocumentUpload(
@@ -123,7 +124,7 @@ export async function prepareDashboardDocumentUpload(
 export async function finalizeDashboardDocumentUpload(
   input: FinalizeDocumentUploadInput,
 ): Promise<FinalizeDocumentUploadSuccess | UploadActionError> {
-  const { authState } = await requireOrganizationDashboardPage(input.slug);
+  await requireOrganizationDashboardPage(input.slug);
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("complete_document_upload", {
     p_document_id: input.documentId,
@@ -138,26 +139,12 @@ export async function finalizeDashboardDocumentUpload(
     };
   }
 
-  const enqueueResult = await enqueueDocumentProcessing({
-    documentId: input.documentId,
-    requestedBy: authState.user?.id ?? null,
-    triggeredBy: "upload",
-  });
-
   revalidatePath(buildDashboardPath(input.slug));
-
-  if (!enqueueResult.ok) {
-    return {
-      ok: false,
-      message: enqueueResult.message,
-    };
-  }
+  revalidatePath(buildDocumentsPath(input.slug));
 
   return {
     ok: true,
     documentId: input.documentId,
-    runId: enqueueResult.runId,
-    processingStatus: enqueueResult.status,
   };
 }
 
@@ -181,6 +168,7 @@ export async function failDashboardDocumentUpload(
   }
 
   revalidatePath(buildDashboardPath(input.slug));
+  revalidatePath(buildDocumentsPath(input.slug));
 
   return {
     ok: true,

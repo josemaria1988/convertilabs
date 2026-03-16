@@ -1,6 +1,7 @@
 export type DocumentDirection = "purchase" | "sale" | "other" | "unknown";
 
 export const documentTerminalStatuses = new Set([
+  "extracted",
   "draft_ready",
   "needs_review",
   "approved",
@@ -18,6 +19,8 @@ export function formatDocumentStatusLabel(status: string) {
       return "En cola";
     case "extracting":
       return "Extrayendo";
+    case "extracted":
+      return "Extraido";
     case "processing":
       return "Procesando";
     case "draft_ready":
@@ -54,6 +57,7 @@ export function getDocumentStatusVariant(status: string) {
     "uploaded",
     "queued",
     "extracting",
+    "extracted",
     "processing",
     "needs_review",
     "draft_ready",

@@ -33,7 +33,7 @@ function getStatusBucket(status: string) {
     return "processing";
   }
 
-  if (["draft_ready", "needs_review", "classified_with_open_revision"].includes(status)) {
+  if (["extracted", "draft_ready", "needs_review", "classified_with_open_revision"].includes(status)) {
     return "review";
   }
 

@@ -92,13 +92,24 @@ export function deriveDocumentWorkflowState(input: {
     step.step_code === "accounting_context"
     && ["draft_saved", "confirmed"].includes(step.status)
   ) || input.derived.accountingContext.status === "not_required";
-  const classificationReady = input.derived.journalSuggestion.ready || input.derived.appliedRule.scope !== "manual_review";
+  const classificationCompleted = [
+    "draft_ready",
+    "needs_review",
+    "classified",
+    "classified_with_open_revision",
+    "approved",
+    "rejected",
+    "duplicate",
+    "archived",
+  ].includes(input.documentStatus);
   const canCreateLearningRule =
-    Boolean(input.derived.appliedRule.accountId)
+    classificationCompleted
+    && Boolean(input.derived.appliedRule.accountId)
     && input.derived.appliedRule.scope !== "manual_review"
     && input.learningOptionCount > 0;
   const canRunClassification =
-    input.draftStatus !== "confirmed"
+    input.documentStatus === "extracted"
+    && input.draftStatus !== "confirmed"
     && input.postingStatus !== "posted_final"
     && input.postingStatus !== "locked";
   const classificationStatus =
@@ -108,7 +119,7 @@ export function deriveDocumentWorkflowState(input: {
         ? "stale"
         : input.latestClassificationRun?.status === "completed"
           ? "completed"
-          : input.derived.accountingContext.shouldBlockConfirmation
+          : input.documentStatus === "extracted" && input.derived.accountingContext.shouldBlockConfirmation
             ? "needs_context"
             : "not_started";
   const visibleWarnings = unique([
@@ -132,7 +143,7 @@ export function deriveDocumentWorkflowState(input: {
     queueCode = "posted_provisional";
   } else if (!factualReady) {
     queueCode = "pending_factual_review";
-  } else if (!classificationReady || input.derived.appliedRule.scope === "manual_review") {
+  } else if (!classificationCompleted) {
     queueCode = "pending_assignment";
   } else if (input.derived.validation.canPostProvisional && canCreateLearningRule) {
     queueCode = "pending_learning_decision";
@@ -164,16 +175,19 @@ export function deriveDocumentWorkflowState(input: {
     stepStatuses: {
       factual: resolveStepStatus(input.steps, ["identity", "fields", "amounts"], false),
       context: resolveStepStatus(input.steps, ["operation_context", "accounting_context"], !contextReady),
-      classification: classificationReady
-        ? "ready"
+      classification: classificationCompleted
+        ? "completed"
         : classificationStatus === "failed" || classificationStatus === "needs_context"
           ? "blocked"
-          : "pending",
+          : canRunClassification
+            ? "ready"
+            : "pending",
       learning: canCreateLearningRule ? "ready" : "pending",
       posting:
         input.postingStatus === "posted_final" || input.postingStatus === "posted_provisional"
           ? "completed"
-          : input.derived.validation.canPostProvisional || input.derived.validation.canConfirmFinal
+          : classificationCompleted
+            && (input.derived.validation.canPostProvisional || input.derived.validation.canConfirmFinal)
             ? "ready"
             : "blocked",
       vat:
@@ -185,10 +199,10 @@ export function deriveDocumentWorkflowState(input: {
     visibleWarnings,
     canRunClassification,
     canCreateLearningRule,
-    canPostProvisional: input.derived.validation.canPostProvisional,
-    canConfirmFinal: input.derived.validation.canConfirmFinal,
+    canPostProvisional: classificationCompleted && input.derived.validation.canPostProvisional,
+    canConfirmFinal: classificationCompleted && input.derived.validation.canConfirmFinal,
     canRunVatPreview:
-      input.derived.validation.canPostProvisional
+      (classificationCompleted && input.derived.validation.canPostProvisional)
       || input.postingStatus === "posted_provisional"
       || input.postingStatus === "posted_final",
     classificationStatus,

@@ -19,19 +19,18 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import {
   assertDocumentIntakeOutput,
   documentIntakeJsonSchema,
+  type DocumentIntakeAmountBreakdown,
+  type DocumentIntakeFactMap,
+  type DocumentIntakeLineItem,
   type DocumentIntakeOutput,
 } from "@/modules/ai/document-intake-contract";
 import {
-  asNumber,
   asRecord,
   asString,
   buildDocumentIntakeDecisionLog,
-  buildPersistableConceptLines,
   buildOrganizationIdentityPromptContext,
-  buildDraftStepSnapshots,
   buildDraftFieldsPayload,
   buildInvoiceIdentityResult,
-  deriveDocumentAccountingState,
   findDuplicateInvoiceIdentityDocumentId,
   findSuspiciousDuplicateInvoiceIdentityDocumentId,
   insertAIDecisionLogs,
@@ -39,9 +38,7 @@ import {
   loadDocumentInvoiceIdentity,
   matchOrganizationIdentity,
   normalizeCurrencyCode,
-  upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
-  upsertDocumentLineItems,
   normalizeTaxId,
   normalizeTextToken,
   resolveTransactionFamilyByOrganizationIdentity,
@@ -81,7 +78,7 @@ type DocumentProcessingResult =
       documentId: string;
       runId: string;
       draftId: string;
-      status: "draft_ready" | "needs_review";
+      status: "extracted";
     }
   | {
       ok: false;
@@ -417,71 +414,94 @@ function harmonizeDocumentIntakeOutput(
   } satisfies DocumentIntakeOutput;
 }
 
-function getDeterministicRuleRefs(ruleSnapshot: {
-  deterministic_rule_refs_json: unknown;
-} | null) {
-  if (!ruleSnapshot) {
-    return [];
-  }
+function buildInitialDraftStepRows(input: {
+  draftId: string;
+  facts: DocumentIntakeFactMap;
+  amountBreakdown: DocumentIntakeAmountBreakdown[];
+  lineItems: DocumentIntakeLineItem[];
+  operationCategory: string | null;
+  savedAt: string;
+}) {
+  const hasAmounts =
+    typeof input.facts.subtotal === "number"
+    || typeof input.facts.tax_amount === "number"
+    || typeof input.facts.total_amount === "number"
+    || input.amountBreakdown.length > 0;
 
-  const refs = Array.isArray(ruleSnapshot.deterministic_rule_refs_json)
-    ? ruleSnapshot.deterministic_rule_refs_json
-    : [];
-
-  return refs.slice(0, 5).map((entry) => {
-    const record = asRecord(entry);
-
-    return {
-      id: asString(record.id),
-      scope: asString(record.scope),
-      priority: asNumber(record.priority),
-      sourceReference: asString(record.source_reference),
-    };
-  });
+  return [
+    {
+      draft_id: input.draftId,
+      step_code: "identity",
+      status: "draft_saved",
+      last_saved_at: input.savedAt,
+      stale_reason: null,
+      snapshot_json: {
+        issuer_name: input.facts.issuer_name ?? null,
+        issuer_tax_id: input.facts.issuer_tax_id ?? null,
+        receiver_name: input.facts.receiver_name ?? null,
+        receiver_tax_id: input.facts.receiver_tax_id ?? null,
+      },
+    },
+    {
+      draft_id: input.draftId,
+      step_code: "fields",
+      status: "draft_saved",
+      last_saved_at: input.savedAt,
+      stale_reason: null,
+      snapshot_json: {
+        document_number: input.facts.document_number ?? null,
+        series: input.facts.series ?? null,
+        document_date: input.facts.document_date ?? null,
+        currency_code: input.facts.currency_code ?? null,
+      },
+    },
+    {
+      draft_id: input.draftId,
+      step_code: "amounts",
+      status: hasAmounts ? "draft_saved" : "not_started",
+      last_saved_at: hasAmounts ? input.savedAt : null,
+      stale_reason: null,
+      snapshot_json: {
+        subtotal: input.facts.subtotal ?? null,
+        tax_amount: input.facts.tax_amount ?? null,
+        total_amount: input.facts.total_amount ?? null,
+        amount_breakdown_count: input.amountBreakdown.length,
+        line_items_count: input.lineItems.length,
+      },
+    },
+    {
+      draft_id: input.draftId,
+      step_code: "operation_context",
+      status: input.operationCategory ? "draft_saved" : "not_started",
+      last_saved_at: input.operationCategory ? input.savedAt : null,
+      stale_reason: null,
+      snapshot_json: {
+        operation_category_candidate: input.operationCategory,
+      },
+    },
+    {
+      draft_id: input.draftId,
+      step_code: "accounting_context",
+      status: "not_started",
+      last_saved_at: null,
+      stale_reason: null,
+      snapshot_json: {},
+    },
+  ];
 }
 
-function buildOrganizationFiscalProfile(profileVersion: {
-  country_code: string;
-  legal_entity_type: string;
-  tax_regime_code: string;
-  vat_regime: string;
-  dgi_group: string;
-  cfe_status: string;
-  tax_id: string;
-} | null) {
-  if (!profileVersion) {
-    return null;
+function buildExtractionEnqueueErrorMessage(message: string) {
+  if (message !== "fetch failed") {
+    return message;
   }
 
-  return {
-    countryCode: profileVersion.country_code,
-    legalEntityType: profileVersion.legal_entity_type,
-    taxRegimeCode: profileVersion.tax_regime_code,
-    vatRegime: profileVersion.vat_regime,
-    dgiGroup: profileVersion.dgi_group,
-    cfeStatus: profileVersion.cfe_status,
-    taxId: profileVersion.tax_id,
-  };
-}
+  const inngestStatus = getInngestConfigStatus();
 
-function buildRuleSnapshotContext(ruleSnapshot: {
-  id: string;
-  version_number: number;
-  effective_from: string;
-  prompt_summary: string;
-  deterministic_rule_refs_json: unknown;
-} | null) {
-  if (!ruleSnapshot) {
-    return null;
+  if (inngestStatus.isDev) {
+    return "No pudimos encolar la extraccion documental. En desarrollo, levanta `npm run inngest:dev` en una terminal paralela y vuelve a intentar.";
   }
 
-  return {
-    id: ruleSnapshot.id,
-    versionNumber: ruleSnapshot.version_number,
-    effectiveFrom: ruleSnapshot.effective_from,
-    promptSummary: ruleSnapshot.prompt_summary,
-    deterministicRuleRefs: getDeterministicRuleRefs(ruleSnapshot),
-  };
+  return message;
 }
 
 async function loadDocument(documentId: string) {
@@ -528,38 +548,17 @@ async function loadRunRuleSnapshotContext(input: {
   const supabase = getSupabaseServiceRoleClient();
 
   if (input.snapshotId) {
-    const [{ data: snapshot }, { data: profileVersion }] = await Promise.all([
-      supabase
-        .from("organization_rule_snapshots")
-        .select(
-          "id, version_number, effective_from, prompt_summary, deterministic_rule_refs_json, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
-        )
-        .eq("id", input.snapshotId)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("organization_profile_versions")
-        .select(
-          "id, version_number, effective_from, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status, country_code, tax_id",
-        )
-        .eq("organization_id", input.organizationId)
-        .eq("status", "active")
-        .order("effective_from", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    const { data: snapshot } = await supabase
+      .from("organization_rule_snapshots")
+      .select(
+        "id, version_number, effective_from, prompt_summary, deterministic_rule_refs_json, legal_entity_type, tax_regime_code, vat_regime, dgi_group, cfe_status",
+      )
+      .eq("id", input.snapshotId)
+      .limit(1)
+      .maybeSingle();
 
-    if (snapshot && profileVersion) {
+    if (snapshot) {
       return {
-        profileVersion: profileVersion as {
-          country_code: string;
-          legal_entity_type: string;
-          tax_regime_code: string;
-          vat_regime: string;
-          dgi_group: string;
-          cfe_status: string;
-          tax_id: string;
-        },
         ruleSnapshot: snapshot as {
           id: string;
           version_number: number;
@@ -571,14 +570,13 @@ async function loadRunRuleSnapshotContext(input: {
     }
   }
 
-  const { profileVersion, ruleSnapshot } = await materializeOrganizationRuleSnapshot(
+  const { ruleSnapshot } = await materializeOrganizationRuleSnapshot(
     supabase,
     input.organizationId,
     input.actorId,
   );
 
   return {
-    profileVersion,
     ruleSnapshot,
   };
 }
@@ -788,22 +786,6 @@ async function persistDocumentArtifacts(input: {
   runNumber: number;
   runMetadata: Record<string, unknown> | null;
   ruleSnapshotId: string;
-  profileVersion: {
-    country_code: string;
-    legal_entity_type: string;
-    tax_regime_code: string;
-    vat_regime: string;
-    dgi_group: string;
-    cfe_status: string;
-    tax_id: string;
-  };
-  ruleSnapshot: {
-    id: string;
-    version_number: number;
-    effective_from: string;
-    prompt_summary: string;
-    deterministic_rule_refs_json: unknown;
-  };
   requestedBy: string | null;
   organizationIdentity: Awaited<ReturnType<typeof loadOrganizationIdentityProfile>>;
   openAiFileId: string;
@@ -1015,30 +997,11 @@ async function persistDocumentArtifacts(input: {
     throw new Error(draftError?.message ?? "Could not persist the draft.");
   }
 
-  const accountingState = await deriveDocumentAccountingState({
-    supabase,
-    organizationId: input.document.organization_id,
-    documentId: input.document.id,
-    draftId: draft.id,
-    actorId: input.requestedBy,
-    documentRole: input.structuredOutput.transaction_family_candidate,
-    documentType: input.structuredOutput.document_subtype_candidate,
-    facts: input.structuredOutput.facts,
-    amountBreakdown: input.structuredOutput.amount_breakdown,
-    lineItems: input.structuredOutput.line_items,
-    operationCategory: input.structuredOutput.operation_category_candidate,
-    profile: buildOrganizationFiscalProfile(input.profileVersion),
-    ruleSnapshot: buildRuleSnapshotContext(input.ruleSnapshot),
-    invoiceIdentity,
-    runAssistant: false,
-  });
-  const derived = accountingState.derived;
-
   await upsertDocumentInvoiceIdentity(supabase, {
     organization_id: input.document.organization_id,
     document_id: input.document.id,
     source_draft_id: draft.id,
-    vendor_id: derived.vendorResolution.vendorId,
+    vendor_id: existingInvoiceIdentity?.vendor_id ?? null,
     issuer_tax_id_normalized: invoiceIdentity.issuerTaxIdNormalized,
     issuer_name_normalized: invoiceIdentity.issuerNameNormalized,
     document_number_normalized: invoiceIdentity.documentNumberNormalized,
@@ -1051,23 +1014,6 @@ async function persistDocumentArtifacts(input: {
     duplicate_of_document_id: invoiceIdentity.duplicateOfDocumentId,
     duplicate_reason: invoiceIdentity.duplicateReason,
     resolution_notes: existingInvoiceIdentity?.resolution_notes ?? null,
-  });
-  await upsertDocumentLineItems(supabase, {
-    organizationId: input.document.organization_id,
-    documentId: input.document.id,
-    draftId: draft.id,
-    lines: buildPersistableConceptLines({
-      lineItems: input.structuredOutput.line_items,
-      amountBreakdown: input.structuredOutput.amount_breakdown,
-      conceptLines: derived.conceptResolution.lines,
-    }),
-  });
-  await upsertDocumentAccountingContext(supabase, {
-    organizationId: input.document.organization_id,
-    documentId: input.document.id,
-    draftId: draft.id,
-    actorId: input.requestedBy,
-    context: derived.accountingContext,
   });
   await insertAIDecisionLogs(supabase, [
     buildDocumentIntakeDecisionLog({
@@ -1082,44 +1028,19 @@ async function persistDocumentArtifacts(input: {
       transactionFamilyResolution,
     }),
   ]);
-  const { error: draftUpdateError } = await supabase
-    .from("document_drafts")
-    .update({
-      status: derived.validation.canConfirm ? "ready_for_confirmation" : "open",
-      journal_suggestion_json: derived.journalSuggestion,
-      tax_treatment_json: derived.taxTreatment,
-      updated_by: input.requestedBy,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", draft.id);
-
-  if (draftUpdateError) {
-    throw new Error(draftUpdateError.message);
-  }
   const savedAt = new Date().toISOString();
-  const stepRows = buildDraftStepSnapshots({
-    documentRole: input.structuredOutput.transaction_family_candidate,
-    documentType: input.structuredOutput.document_subtype_candidate,
-    operationCategory: input.structuredOutput.operation_category_candidate,
+  const stepRows = buildInitialDraftStepRows({
+    draftId: draft.id,
     facts: input.structuredOutput.facts,
     amountBreakdown: input.structuredOutput.amount_breakdown,
     lineItems: input.structuredOutput.line_items,
-    derived,
+    operationCategory: input.structuredOutput.operation_category_candidate,
     savedAt,
   });
 
   const { error: stepError } = await supabase
     .from("document_draft_steps")
-    .insert(
-      stepRows.map((step) => ({
-        draft_id: draft.id,
-        step_code: step.step_code,
-        status: step.status,
-        last_saved_at: step.last_saved_at,
-        stale_reason: step.stale_reason,
-        snapshot_json: step.snapshot_json,
-      })),
-    );
+    .insert(stepRows);
 
   if (stepError) {
     throw new Error(stepError.message);
@@ -1140,17 +1061,12 @@ async function persistDocumentArtifacts(input: {
     throw new Error(revisionError.message);
   }
 
-  const documentStatus =
-    derived.validation.canConfirm && input.structuredOutput.confidence_score >= 0.6
-      ? "draft_ready"
-      : "needs_review";
-
   const { error: documentUpdateError } = await supabase
     .from("documents")
     .update({
       direction: input.structuredOutput.transaction_family_candidate,
       document_type: input.structuredOutput.document_subtype_candidate,
-      status: documentStatus,
+      status: "extracted",
       current_draft_id: draft.id,
       current_processing_run_id: input.runId,
       last_rule_snapshot_id: input.ruleSnapshotId,
@@ -1164,8 +1080,6 @@ async function persistDocumentArtifacts(input: {
         processing_provider: "openai",
         warning_count: warnings.length,
         line_item_count: input.structuredOutput.line_items.length,
-        matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
-        accounting_context_required: derived.accountingContext.status !== "not_required",
         organization_identity_confidence:
           input.structuredOutput.certainty_breakdown_json.organization_identity_confidence,
         issuer_matches_organization_status:
@@ -1202,8 +1116,6 @@ async function persistDocumentArtifacts(input: {
       metadata: mergeRecords(input.runMetadata, {
         extraction_id: extraction.id,
         draft_id: draft.id,
-        accounting_context_required: derived.accountingContext.status !== "not_required",
-        assistant_status: derived.assistantSuggestion.status,
         file_hash: input.fileHash,
         duplicate_document_ids: input.duplicateDocumentIds,
         estimated_cost_usd: input.estimatedCostUsd,
@@ -1217,7 +1129,7 @@ async function persistDocumentArtifacts(input: {
 
   return {
     draftId: draft.id as string,
-    documentStatus: documentStatus as "draft_ready" | "needs_review",
+    documentStatus: "extracted" as const,
   };
 }
 
@@ -1396,7 +1308,9 @@ export async function enqueueDocumentProcessing(
       status: "queued",
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown enqueue error.";
+    const message = buildExtractionEnqueueErrorMessage(
+      error instanceof Error ? error.message : "Unknown enqueue error.",
+    );
 
     await markRunFailed({
       documentId: input.documentId,
@@ -1440,10 +1354,7 @@ export async function processDocumentRunFromInngest(
         documentId: document.id,
         runId: run.id,
         draftId: document.current_draft_id,
-        status:
-          document.status === "draft_ready" || document.status === "needs_review"
-            ? document.status
-            : "needs_review",
+        status: "extracted",
       };
     }
 
@@ -1457,7 +1368,7 @@ export async function processDocumentRunFromInngest(
       };
     }
 
-    const { profileVersion, ruleSnapshot } = await input.step.run(
+    const { ruleSnapshot } = await input.step.run(
       "load-rule-snapshot-context",
       async () => {
         return loadRunRuleSnapshotContext({
@@ -1719,8 +1630,6 @@ export async function processDocumentRunFromInngest(
         runNumber: run!.run_number,
         runMetadata: run!.metadata,
         ruleSnapshotId: run!.organization_rule_snapshot_id ?? ruleSnapshot.id,
-        profileVersion,
-        ruleSnapshot,
         requestedBy: run!.requested_by,
         organizationIdentity,
         openAiFileId: openAiFileId!,

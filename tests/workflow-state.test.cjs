@@ -99,6 +99,38 @@ test("workflow state marks ready classification with learning choice pending", (
   assert.equal(state.canCreateLearningRule, true);
 });
 
+test("workflow state marks extracted drafts as pending assignment when factual steps are ready", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "extracted",
+    postingStatus: "draft",
+    draftStatus: "open",
+    steps: [
+      { step_code: "identity", status: "draft_saved", stale_reason: null },
+      { step_code: "fields", status: "draft_saved", stale_reason: null },
+      { step_code: "amounts", status: "draft_saved", stale_reason: null },
+      { step_code: "operation_context", status: "draft_saved", stale_reason: null },
+    ],
+    derived: buildDerived({
+      journalSuggestion: {
+        ready: false,
+        hasProvisionalAccounts: false,
+      },
+      validation: {
+        canPostProvisional: false,
+        canConfirmFinal: false,
+        blockers: [],
+      },
+    }),
+    latestClassificationRun: null,
+    learningOptionCount: 0,
+  });
+
+  assert.equal(state.queueCode, "pending_assignment");
+  assert.equal(state.classificationStatus, "not_started");
+  assert.equal(state.stepStatuses.classification, "ready");
+  assert.equal(state.canRunClassification, true);
+});
+
 test("workflow state marks reopened documents for manual remap", () => {
   const state = deriveDocumentWorkflowState({
     documentStatus: "classified_with_open_revision",

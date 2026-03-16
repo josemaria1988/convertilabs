@@ -21,7 +21,6 @@ type UploadStatus =
   | "idle"
   | "validating"
   | "uploading"
-  | "queued"
   | "success"
   | "error";
 
@@ -30,38 +29,12 @@ type DocumentUploadDropzoneProps = {
   panelId?: string;
 };
 
-type ProcessingStatusResponse = {
-  documentId: string;
-  runId: string | null;
-  documentStatus: string;
-  runStatus: string | null;
-  providerStatus: string | null;
-  draftId: string | null;
-  reviewUrl: string | null;
-  failureMessage: string | null;
-  updatedAt: string;
-  isTerminal: boolean;
-};
-
 type SelectedUploadFile = {
   file: File;
   validation: ReturnType<typeof validateDocumentUploadCandidate>;
 };
 
-type BatchPollSummary = {
-  timedOut: boolean;
-  terminalCount: number;
-  errorCount: number;
-  lastKnownStatuses: ProcessingStatusResponse[];
-};
-
 const acceptedMimeLabel = allowedDocumentUploadMimeTypes.join(", ");
-
-function wait(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
 
 function buildRejectedFilesMessage(rejectedFiles: Array<{
   name: string;
@@ -96,7 +69,7 @@ function buildBatchFailureMessage(input: {
       .map((message) => message.trim())
       .filter(Boolean),
   )];
-  const parts = ["No pudimos dejar documentos encolados en este lote."];
+  const parts = ["No pudimos cargar documentos en este lote."];
 
   if (normalizedFailures.length > 0) {
     parts.push(normalizedFailures.slice(0, 2).join(" "));
@@ -115,35 +88,14 @@ function buildBatchFailureMessage(input: {
   return parts.join(" ");
 }
 
-function buildBatchQueuedMessage(input: {
-  totalAccepted: number;
-  terminalCount: number;
-  errorCount: number;
-  rejectedCount: number;
-}) {
-  const readyCount = Math.max(0, input.terminalCount - input.errorCount);
-  const summary = [
-    `Lote en proceso: ${input.terminalCount}/${input.totalAccepted} terminado(s).`,
-    `${readyCount} listo(s) y ${input.errorCount} con error.`,
-  ];
-
-  if (input.rejectedCount > 0) {
-    summary.push(`${input.rejectedCount} archivo(s) rechazado(s) en validacion.`);
-  }
-
-  return summary.join(" ");
-}
-
 function buildBatchCompletionMessage(input: {
   totalAccepted: number;
-  queuedCount: number;
+  uploadedCount: number;
   rejectedCount: number;
   uploadErrorCount: number;
-  processingErrorCount: number;
-  timedOut: boolean;
 }) {
   const parts = [
-    `${input.queuedCount}/${input.totalAccepted} archivo(s) aceptado(s) quedaron encolado(s).`,
+    `${input.uploadedCount}/${input.totalAccepted} archivo(s) aceptado(s) quedaron cargado(s) en el bucket privado.`,
   ];
 
   if (input.rejectedCount > 0) {
@@ -154,38 +106,9 @@ function buildBatchCompletionMessage(input: {
     parts.push(`${input.uploadErrorCount} fallaron durante la subida.`);
   }
 
-  if (input.processingErrorCount > 0) {
-    parts.push(`${input.processingErrorCount} terminaron con error en procesamiento.`);
-  }
-
-  if (input.timedOut) {
-    parts.push("El resto sigue en background; refresca el dashboard en unos segundos.");
-  } else {
-    parts.push("Refrescando el dashboard...");
-  }
+  parts.push("Ahora puedes procesarlos desde la lista de documentos.");
 
   return parts.join(" ");
-}
-
-async function fetchProcessingStatus(documentId: string) {
-  const response = await fetch(`/api/v1/documents/${documentId}/processing-status`, {
-    method: "GET",
-    cache: "no-store",
-  });
-  const payload = await response.json() as {
-    data?: ProcessingStatusResponse;
-    error?: {
-      message?: string;
-    };
-  };
-
-  if (!response.ok || !payload.data) {
-    throw new Error(
-      payload.error?.message ?? "No pudimos consultar el estado del documento en este momento.",
-    );
-  }
-
-  return payload.data;
 }
 
 export function DocumentUploadDropzone({
@@ -197,57 +120,6 @@ export function DocumentUploadDropzone({
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState("");
   const [isRefreshing, startTransition] = useTransition();
-
-  async function pollBatchProcessing(
-    documentIds: string[],
-    totalAccepted: number,
-    rejectedCount: number,
-  ): Promise<BatchPollSummary> {
-    const pollStartedAt = Date.now();
-    let lastKnownStatuses: ProcessingStatusResponse[] = [];
-
-    while (Date.now() - pollStartedAt < 120_000) {
-      const results = await Promise.all(documentIds.map((documentId) => fetchProcessingStatus(documentId)));
-
-      lastKnownStatuses = results;
-
-      const terminalCount = results.filter((entry) => entry.isTerminal).length;
-      const errorCount = results.filter((entry) =>
-        entry.documentStatus === "error"
-        || entry.runStatus === "error")
-        .length;
-
-      if (terminalCount === results.length) {
-        return {
-          timedOut: false,
-          terminalCount,
-          errorCount,
-          lastKnownStatuses,
-        };
-      }
-
-      setStatus("queued");
-      setMessage(buildBatchQueuedMessage({
-        totalAccepted,
-        terminalCount,
-        errorCount,
-        rejectedCount,
-      }));
-
-      const elapsedMs = Date.now() - pollStartedAt;
-      await wait(elapsedMs < 30_000 ? 2_000 : 5_000);
-    }
-
-    return {
-      timedOut: true,
-      terminalCount: lastKnownStatuses.filter((entry) => entry.isTerminal).length,
-      errorCount: lastKnownStatuses.filter((entry) =>
-        entry.documentStatus === "error"
-        || entry.runStatus === "error")
-        .length,
-      lastKnownStatuses,
-    };
-  }
 
   async function handleFiles(files: File[]) {
     if (files.length === 0) {
@@ -286,7 +158,7 @@ export function DocumentUploadDropzone({
     }
 
     const supabase = getSupabaseBrowserClient();
-    const queuedDocumentIds: string[] = [];
+    const uploadedDocumentIds: string[] = [];
     const failureMessages: string[] = [];
     let uploadErrorCount = 0;
 
@@ -345,10 +217,10 @@ export function DocumentUploadDropzone({
         continue;
       }
 
-      queuedDocumentIds.push(finalizedUpload.documentId);
+      uploadedDocumentIds.push(finalizedUpload.documentId);
     }
 
-    if (queuedDocumentIds.length === 0) {
+    if (uploadedDocumentIds.length === 0) {
       setStatus("error");
       setMessage(buildBatchFailureMessage({
         failureMessages,
@@ -360,56 +232,19 @@ export function DocumentUploadDropzone({
       return;
     }
 
-    setStatus("queued");
-    setMessage(buildBatchQueuedMessage({
+    setStatus(rejectedFiles.length > 0 || uploadErrorCount > 0 ? "error" : "success");
+    setMessage(buildBatchCompletionMessage({
       totalAccepted: acceptedFiles.length,
-      terminalCount: 0,
-      errorCount: 0,
+      uploadedCount: uploadedDocumentIds.length,
       rejectedCount: rejectedFiles.length,
+      uploadErrorCount,
     }));
-
-    try {
-      const summary = await pollBatchProcessing(
-        queuedDocumentIds,
-        acceptedFiles.length,
-        rejectedFiles.length,
-      );
-      const nextStatus =
-        rejectedFiles.length > 0
-        || uploadErrorCount > 0
-        || summary.errorCount > 0
-          ? "error"
-          : "success";
-
-      setStatus(nextStatus);
-      setMessage(buildBatchCompletionMessage({
-        totalAccepted: acceptedFiles.length,
-        queuedCount: queuedDocumentIds.length,
-        rejectedCount: rejectedFiles.length,
-        uploadErrorCount,
-        processingErrorCount: summary.errorCount,
-        timedOut: summary.timedOut,
-      }));
-      startTransition(() => {
-        router.refresh();
-      });
-    } catch {
-      setStatus("idle");
-      setMessage(buildBatchCompletionMessage({
-        totalAccepted: acceptedFiles.length,
-        queuedCount: queuedDocumentIds.length,
-        rejectedCount: rejectedFiles.length,
-        uploadErrorCount,
-        processingErrorCount: 0,
-        timedOut: true,
-      }));
-      startTransition(() => {
-        router.refresh();
-      });
-    }
+    startTransition(() => {
+      router.refresh();
+    });
   }
 
-  const isBusy = status === "uploading" || status === "queued" || isRefreshing;
+  const isBusy = status === "uploading" || isRefreshing;
 
   return (
     <div
@@ -439,7 +274,7 @@ export function DocumentUploadDropzone({
           <p className="max-w-2xl text-[16px] leading-8 text-[color:var(--color-muted)]">
             Arrastra uno o varios PDF, JPG o PNG o usa el boton para cargarlos al
             bucket privado. Cada archivo valida MIME y tamano, se guarda por
-            separado y se encola de forma individual dentro del lote.
+            separado y queda listo para procesarse despues desde la grilla.
           </p>
         </div>
         <DocumentUploadButton
@@ -470,15 +305,13 @@ export function DocumentUploadDropzone({
           className={`h-full rounded-full transition-all ${
             status === "uploading"
               ? "w-2/3 bg-[color:var(--color-accent)]"
-              : status === "queued"
-                ? "w-5/6 bg-sky-500"
-                : status === "success"
-                  ? "w-full bg-emerald-500"
-                  : status === "error"
-                    ? "w-full bg-rose-500"
-                    : status === "validating"
-                      ? "w-1/3 bg-[color:var(--color-warm)]"
-                      : "w-0"
+              : status === "success"
+                ? "w-full bg-emerald-500"
+                : status === "error"
+                  ? "w-full bg-rose-500"
+                  : status === "validating"
+                    ? "w-1/3 bg-[color:var(--color-warm)]"
+                    : "w-0"
           }`}
         />
       </div>

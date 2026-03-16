@@ -114,6 +114,24 @@ test("workspace documents ignore missing confidence tables on older schemas", as
       };
     }
 
+    if (query.table === "document_processing_runs") {
+      return {
+        data: null,
+        error: {
+          message: "relation \"public.document_processing_runs\" does not exist",
+        },
+      };
+    }
+
+    if (query.table === "document_assignment_runs") {
+      return {
+        data: null,
+        error: {
+          message: "relation \"public.document_assignment_runs\" does not exist",
+        },
+      };
+    }
+
     throw new Error(`Unexpected query: ${query.table}`);
   });
 
