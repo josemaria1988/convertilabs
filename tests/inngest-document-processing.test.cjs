@@ -165,7 +165,7 @@ test("enqueueDocumentProcessing creates a queued run and sends the inngest event
       const supabaseModule = require("@/lib/supabase/server");
       const snapshotsModule = require("@/modules/organizations/rule-snapshots");
       const inngestClientModule = require("@/lib/inngest/client");
-      const processingModule = require("@/modules/documents/processing");
+      const processingModule = loadFresh("@/modules/documents/processing");
       const originalGetClient = supabaseModule.getSupabaseServiceRoleClient;
       const originalMaterialize = snapshotsModule.materializeOrganizationRuleSnapshot;
       const originalSend = inngestClientModule.inngest.send;
@@ -206,7 +206,10 @@ test("enqueueDocumentProcessing creates a queued run and sends the inngest event
                   original_filename: "test.pdf",
                   mime_type: "application/pdf",
                   status: "uploaded",
-                  metadata: {},
+                  metadata: {
+                    processing_error: "fetch failed",
+                    processing_error_stage: "inngest_enqueue",
+                  },
                   current_draft_id: null,
                   current_processing_run_id: null,
                   last_rule_snapshot_id: null,
@@ -303,6 +306,8 @@ test("enqueueDocumentProcessing creates a queued run and sends the inngest event
         assert.equal(sentEvents[0].data.documentId, "doc-1");
         assert.equal(inserts.length, 1);
         assert.equal(updates.length, 1);
+        assert.equal(updates[0].payload.metadata.processing_error, undefined);
+        assert.equal(updates[0].payload.metadata.processing_error_stage, undefined);
       } finally {
         supabaseModule.getSupabaseServiceRoleClient = originalGetClient;
         snapshotsModule.materializeOrganizationRuleSnapshot = originalMaterialize;

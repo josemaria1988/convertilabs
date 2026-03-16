@@ -48,6 +48,10 @@ type DocumentsWorkspaceTableItem = {
   canProcessExtraction: boolean;
   canClassify: boolean;
   hasExtractionInFlight: boolean;
+  nextPrimaryAction: "open_review" | "retry_extraction" | "process_extraction" | null;
+  nextPrimaryActionLabel: string | null;
+  isProcessingStale: boolean;
+  canRetryExtraction: boolean;
 };
 
 type DocumentsWorkspaceTableProps = {
@@ -289,6 +293,79 @@ export function DocumentsWorkspaceTable({
         : [...current, documentId]);
   }
 
+  function renderInlinePrimaryAction(document: DocumentsWorkspaceTableItem) {
+    if (document.nextPrimaryAction === "open_review" && document.processedHref) {
+      return (
+        <LoadingLink
+          href={document.processedHref}
+          pendingLabel="Abriendo..."
+          className="text-[color:var(--color-accent-strong)]"
+        >
+          {document.nextPrimaryActionLabel}
+        </LoadingLink>
+      );
+    }
+
+    if (
+      (document.nextPrimaryAction === "retry_extraction"
+        || document.nextPrimaryAction === "process_extraction")
+      && document.nextPrimaryActionLabel
+    ) {
+      return (
+        <button
+          type="button"
+          disabled={isBusy}
+          className="text-[13px] text-[color:var(--color-accent-strong)] disabled:opacity-60"
+          onClick={() => {
+            void handleProcessOne(document.id);
+          }}
+        >
+          {document.nextPrimaryActionLabel}
+        </button>
+      );
+    }
+
+    return <span>Extraccion en curso</span>;
+  }
+
+  function renderPrimaryActionButton(document: DocumentsWorkspaceTableItem, processBusy: boolean) {
+    if (document.nextPrimaryAction === "open_review" && document.processedHref) {
+      return (
+        <LoadingLink
+          href={document.processedHref}
+          pendingLabel="Abriendo..."
+          className="ui-button ui-button--primary"
+        >
+          {document.nextPrimaryActionLabel ?? "Abrir revision"}
+        </LoadingLink>
+      );
+    }
+
+    if (
+      document.nextPrimaryAction === "retry_extraction"
+      || document.nextPrimaryAction === "process_extraction"
+    ) {
+      return (
+        <button
+          type="button"
+          className="ui-button ui-button--secondary"
+          disabled={isBusy}
+          onClick={() => {
+            void handleProcessOne(document.id);
+          }}
+        >
+          {processBusy
+            ? document.canRetryExtraction
+              ? "Reintentando..."
+              : "Procesando..."
+            : document.nextPrimaryActionLabel ?? "Procesar"}
+        </button>
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div className="ui-panel overflow-hidden p-0">
       <div className="ui-panel-header border-b border-[color:var(--color-border)] px-4 py-3">
@@ -379,17 +456,7 @@ export function DocumentsWorkspaceTable({
                         {document.documentDate ?? document.createdAt}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-[13px] text-[color:var(--color-muted)]">
-                        {document.processedHref ? (
-                          <LoadingLink
-                            href={document.processedHref}
-                            pendingLabel="Abriendo..."
-                            className="text-[color:var(--color-accent-strong)]"
-                          >
-                            Abrir revision
-                          </LoadingLink>
-                        ) : (
-                          <span>Draft pendiente</span>
-                        )}
+                        {renderInlinePrimaryAction(document)}
                         <DocumentOriginalModalTrigger
                           previewUrl={document.previewUrl}
                           mimeType={document.mimeType}
@@ -475,22 +542,11 @@ export function DocumentsWorkspaceTable({
                     </td>
                     <td className="text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        {document.canProcessExtraction ? (
-                          <button
-                            type="button"
-                            className="ui-button ui-button--secondary"
-                            disabled={isBusy}
-                            onClick={() => {
-                              void handleProcessOne(document.id);
-                            }}
-                          >
-                            {processBusy ? "Procesando..." : "Procesar"}
-                          </button>
-                        ) : null}
+                        {renderPrimaryActionButton(document, processBusy)}
                         {document.canClassify ? (
                           <button
                             type="button"
-                            className="ui-button ui-button--primary"
+                            className="ui-button ui-button--ghost"
                             disabled={isBusy}
                             onClick={() => {
                               void handleClassify(document.id);
@@ -498,15 +554,6 @@ export function DocumentsWorkspaceTable({
                           >
                             {classifyBusy ? "Clasificando..." : "Clasificar"}
                           </button>
-                        ) : null}
-                        {document.processedHref ? (
-                          <LoadingLink
-                            href={document.processedHref}
-                            pendingLabel="Abriendo..."
-                            className="ui-button ui-button--ghost"
-                          >
-                            Revision
-                          </LoadingLink>
                         ) : null}
                       </div>
                     </td>

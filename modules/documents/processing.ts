@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getInngestConfigStatus,
   getOpenAIModelConfig,
@@ -157,7 +158,25 @@ type ProcessDocumentRunFromInngestInput = {
   logger?: InngestLoggerLike;
 };
 
-type DocumentProcessingStatusResult = {
+export type DocumentProcessingHealth =
+  | "idle"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stale";
+
+export type DocumentProcessingRecommendedAction =
+  | "process_extraction"
+  | "retry_extraction"
+  | "open_review"
+  | "wait";
+
+export type DocumentProcessingStaleReason =
+  | "queue_stalled"
+  | "provider_submission_stalled"
+  | "provider_poll_stalled";
+
+export type DocumentProcessingStatusResult = {
   documentId: string;
   runId: string | null;
   documentStatus: string;
@@ -168,6 +187,49 @@ type DocumentProcessingStatusResult = {
   failureMessage: string | null;
   updatedAt: string;
   isTerminal: boolean;
+  health: DocumentProcessingHealth;
+  staleReason: DocumentProcessingStaleReason | null;
+  recommendedAction: DocumentProcessingRecommendedAction;
+  retryable: boolean;
+};
+
+type CurrentDocumentProcessingRow = {
+  id: string;
+  organization_id: string;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  current_draft_id: string | null;
+  current_processing_run_id: string | null;
+};
+
+type CurrentProcessingRunStateRow = {
+  id: string;
+  document_id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  openai_file_id: string | null;
+  provider_response_id: string | null;
+  provider_status: string | null;
+  attempt_count: number | null;
+  last_polled_at: string | null;
+  failure_stage: string | null;
+  failure_message: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ReconciledDocumentProcessingRun = {
+  documentId: string;
+  runId: string;
+  staleReason: DocumentProcessingStaleReason;
+  message: string;
+  applied: boolean;
+};
+
+export type ReconcileStaleDocumentProcessingRunsResult = {
+  inspectedCount: number;
+  repairedRuns: ReconciledDocumentProcessingRun[];
 };
 
 const OPENAI_DOCUMENT_PROMPT_VERSION = "2026-03-13";
@@ -177,6 +239,24 @@ const OPENAI_DOCUMENT_STORE_REMOTE = true;
 const OPENAI_POLL_INTERVAL = "10s";
 const OPENAI_MAX_POLL_ATTEMPTS = 60;
 const TERMINAL_RUN_STATUSES = new Set(["completed", "error", "skipped"]);
+const STALE_FAILURE_STAGES = new Set<DocumentProcessingStaleReason>([
+  "queue_stalled",
+  "provider_submission_stalled",
+  "provider_poll_stalled",
+]);
+const QUEUED_RUN_STALE_AFTER_MS = 5 * 60 * 1000;
+const PROVIDER_SUBMISSION_STALE_AFTER_MS = 2 * 60 * 1000;
+const PROVIDER_POLL_STALE_AFTER_MS = 15 * 60 * 1000;
+
+class DocumentProcessingStageError extends Error {
+  stage: string;
+
+  constructor(stage: string, message: string) {
+    super(message);
+    this.name = "DocumentProcessingStageError";
+    this.stage = stage;
+  }
+}
 
 function getDocumentModelCode() {
   return getOpenAIModelConfig().openAiDocumentModel;
@@ -251,6 +331,200 @@ function mergeRecords(
 
     return merged;
   }, {});
+}
+
+function clearDocumentProcessingMetadata(metadata: Record<string, unknown> | null | undefined) {
+  const nextMetadata = {
+    ...(metadata ?? {}),
+  };
+
+  delete nextMetadata.processing_error;
+  delete nextMetadata.processing_error_stage;
+
+  return nextMetadata;
+}
+
+function applyDocumentProcessingMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  patch: Record<string, unknown>,
+) {
+  return {
+    ...clearDocumentProcessingMetadata(metadata),
+    ...patch,
+  };
+}
+
+async function assertSupabaseMutation(
+  resultPromise: PromiseLike<{ error: { message?: string } | null }> | { error: { message?: string } | null },
+  fallbackMessage: string,
+) {
+  const result = await resultPromise;
+
+  if (result.error) {
+    throw new Error(result.error.message ?? fallbackMessage);
+  }
+}
+
+export function isDocumentProcessingStaleReason(
+  value: string | null | undefined,
+): value is DocumentProcessingStaleReason {
+  return value === "queue_stalled"
+    || value === "provider_submission_stalled"
+    || value === "provider_poll_stalled";
+}
+
+function getTimestampMs(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasRunExceededThreshold(
+  value: string | null | undefined,
+  thresholdMs: number,
+  nowMs: number,
+) {
+  const timestampMs = getTimestampMs(value);
+
+  if (timestampMs === null) {
+    return false;
+  }
+
+  return nowMs - timestampMs > thresholdMs;
+}
+
+function resolveStaleProcessingReason(input: {
+  run: CurrentProcessingRunStateRow;
+  now: Date;
+}) {
+  const nowMs = input.now.getTime();
+
+  if (
+    input.run.status === "queued"
+    && !input.run.started_at
+    && hasRunExceededThreshold(input.run.created_at, QUEUED_RUN_STALE_AFTER_MS, nowMs)
+  ) {
+    return "queue_stalled" satisfies DocumentProcessingStaleReason;
+  }
+
+  if (
+    input.run.status === "processing"
+    && !input.run.provider_response_id
+    && !input.run.openai_file_id
+    && Math.max(0, input.run.attempt_count ?? 0) === 0
+    && hasRunExceededThreshold(
+      input.run.started_at ?? input.run.created_at,
+      PROVIDER_SUBMISSION_STALE_AFTER_MS,
+      nowMs,
+    )
+  ) {
+    return "provider_submission_stalled" satisfies DocumentProcessingStaleReason;
+  }
+
+  if (
+    input.run.status === "processing"
+    && (input.run.provider_response_id || input.run.openai_file_id)
+    && hasRunExceededThreshold(
+      input.run.last_polled_at ?? input.run.started_at ?? input.run.created_at,
+      PROVIDER_POLL_STALE_AFTER_MS,
+      nowMs,
+    )
+  ) {
+    return "provider_poll_stalled" satisfies DocumentProcessingStaleReason;
+  }
+
+  return null;
+}
+
+function buildStaleProcessingMessage(reason: DocumentProcessingStaleReason) {
+  switch (reason) {
+    case "queue_stalled":
+      return "La extraccion quedo en cola sin comenzar dentro del tiempo esperado.";
+    case "provider_submission_stalled":
+      return "La extraccion se interrumpio antes de enviar el documento al proveedor.";
+    case "provider_poll_stalled":
+      return "La extraccion no recibio respuesta terminal del proveedor dentro del tiempo esperado.";
+    default:
+      return "La extraccion quedo interrumpida y requiere reintento manual.";
+  }
+}
+
+function resolveDocumentProcessingHealth(input: {
+  documentStatus: string;
+  runStatus: string | null;
+  failureStage: string | null;
+  draftId: string | null;
+  reviewUrl: string | null;
+}) {
+  const staleReason = isDocumentProcessingStaleReason(input.failureStage)
+    ? input.failureStage
+    : null;
+  const hasPersistedDraft = Boolean(input.draftId && input.reviewUrl);
+
+  if (
+    !hasPersistedDraft
+    && documentTerminalStatuses.has(input.documentStatus)
+    && input.documentStatus !== "error"
+  ) {
+    return {
+      health: "failed" as const,
+      staleReason: null,
+      recommendedAction: "retry_extraction" as const,
+      retryable: true,
+    };
+  }
+
+  if (hasPersistedDraft) {
+    return {
+      health: "completed" as const,
+      staleReason,
+      recommendedAction: "open_review" as const,
+      retryable: false,
+    };
+  }
+
+  if (staleReason) {
+    return {
+      health: "stale" as const,
+      staleReason,
+      recommendedAction: "retry_extraction" as const,
+      retryable: true,
+    };
+  }
+
+  if (input.documentStatus === "error" || input.runStatus === "error") {
+    return {
+      health: "failed" as const,
+      staleReason: null,
+      recommendedAction: "retry_extraction" as const,
+      retryable: true,
+    };
+  }
+
+  if (
+    input.documentStatus === "queued"
+    || input.documentStatus === "extracting"
+    || input.documentStatus === "processing"
+    || input.runStatus === "queued"
+    || input.runStatus === "processing"
+  ) {
+    return {
+      health: "running" as const,
+      staleReason: null,
+      recommendedAction: "wait" as const,
+      retryable: false,
+    };
+  }
+
+  return {
+    health: "idle" as const,
+    staleReason: null,
+    recommendedAction: "process_extraction" as const,
+    retryable: true,
+  };
 }
 
 function toStringArray(value: unknown) {
@@ -636,17 +910,20 @@ async function createProcessingRun(input: {
     throw new Error(error?.message ?? "Could not create the processing run.");
   }
 
-  await supabase
-    .from("documents")
-    .update({
-      status: "queued",
-      current_processing_run_id: data.id,
-      last_rule_snapshot_id: input.ruleSnapshotId,
-      metadata: mergeRecords(input.document.metadata, {
-        processing_requested_at: new Date().toISOString(),
-      }),
-    })
-    .eq("id", input.document.id);
+  await assertSupabaseMutation(
+    supabase
+      .from("documents")
+      .update({
+        status: "queued",
+        current_processing_run_id: data.id,
+        last_rule_snapshot_id: input.ruleSnapshotId,
+        metadata: applyDocumentProcessingMetadata(input.document.metadata, {
+          processing_requested_at: new Date().toISOString(),
+        }),
+      })
+      .eq("id", input.document.id),
+    "Could not update the document after queueing the processing run.",
+  );
 
   return data.id as string;
 }
@@ -655,27 +932,37 @@ async function markRunProcessing(input: {
   runId: string;
   documentId: string;
   startedAt: string | null;
+  documentMetadata?: Record<string, unknown> | null;
 }) {
   const supabase = getSupabaseServiceRoleClient();
   const startedAt = input.startedAt ?? new Date().toISOString();
 
-  await supabase
-    .from("document_processing_runs")
-    .update({
-      status: "processing",
-      started_at: startedAt,
-      failure_stage: null,
-      failure_message: null,
-    })
-    .eq("id", input.runId);
+  await assertSupabaseMutation(
+    supabase
+      .from("document_processing_runs")
+      .update({
+        status: "processing",
+        started_at: startedAt,
+        failure_stage: null,
+        failure_message: null,
+      })
+      .eq("id", input.runId),
+    "Could not mark the processing run as active.",
+  );
 
-  await supabase
-    .from("documents")
-    .update({
-      status: "extracting",
-      current_processing_run_id: input.runId,
-    })
-    .eq("id", input.documentId);
+  await assertSupabaseMutation(
+    supabase
+      .from("documents")
+      .update({
+        status: "extracting",
+        current_processing_run_id: input.runId,
+        metadata: applyDocumentProcessingMetadata(input.documentMetadata, {
+          processing_started_at: startedAt,
+        }),
+      })
+      .eq("id", input.documentId),
+    "Could not mark the document as extracting.",
+  );
 }
 
 async function updateRunAfterProviderSubmission(input: {
@@ -690,25 +977,28 @@ async function updateRunAfterProviderSubmission(input: {
 }) {
   const supabase = getSupabaseServiceRoleClient();
 
-  await supabase
-    .from("document_processing_runs")
-    .update({
-      openai_file_id: input.openAiFileId,
-      provider_response_id: input.providerResponseId,
-      provider_status: input.providerStatus,
-      transport_mode: OPENAI_DOCUMENT_TRANSPORT_MODE,
-      store_remote: OPENAI_DOCUMENT_STORE_REMOTE,
-      prompt_version: OPENAI_DOCUMENT_PROMPT_VERSION,
-      schema_version: OPENAI_DOCUMENT_SCHEMA_VERSION,
-      attempt_count: 1,
-      provider_response_json: input.providerResponse,
-      metadata: mergeRecords(input.runMetadata, {
-        file_hash: input.fileHash,
-        duplicate_document_ids: input.duplicateDocumentIds,
-        provider_submitted_at: new Date().toISOString(),
-      }),
-    })
-    .eq("id", input.runId);
+  await assertSupabaseMutation(
+    supabase
+      .from("document_processing_runs")
+      .update({
+        openai_file_id: input.openAiFileId,
+        provider_response_id: input.providerResponseId,
+        provider_status: input.providerStatus,
+        transport_mode: OPENAI_DOCUMENT_TRANSPORT_MODE,
+        store_remote: OPENAI_DOCUMENT_STORE_REMOTE,
+        prompt_version: OPENAI_DOCUMENT_PROMPT_VERSION,
+        schema_version: OPENAI_DOCUMENT_SCHEMA_VERSION,
+        attempt_count: 1,
+        provider_response_json: input.providerResponse,
+        metadata: mergeRecords(input.runMetadata, {
+          file_hash: input.fileHash,
+          duplicate_document_ids: input.duplicateDocumentIds,
+          provider_submitted_at: new Date().toISOString(),
+        }),
+      })
+      .eq("id", input.runId),
+    "Could not persist the provider submission metadata for the processing run.",
+  );
 }
 
 async function updateRunAfterProviderPoll(input: {
@@ -720,15 +1010,18 @@ async function updateRunAfterProviderPoll(input: {
 }) {
   const supabase = getSupabaseServiceRoleClient();
 
-  await supabase
-    .from("document_processing_runs")
-    .update({
-      provider_status: input.providerStatus,
-      provider_response_json: input.providerResponse,
-      attempt_count: input.attemptCount,
-      last_polled_at: input.lastPolledAt,
-    })
-    .eq("id", input.runId);
+  await assertSupabaseMutation(
+    supabase
+      .from("document_processing_runs")
+      .update({
+        provider_status: input.providerStatus,
+        provider_response_json: input.providerResponse,
+        attempt_count: input.attemptCount,
+        last_polled_at: input.lastPolledAt,
+      })
+      .eq("id", input.runId),
+    "Could not persist the latest provider polling state.",
+  );
 }
 
 async function findDuplicateDocumentIds(
@@ -754,13 +1047,16 @@ async function findDuplicateDocumentIds(
 async function markExtractionActive(documentId: string) {
   const supabase = getSupabaseServiceRoleClient();
 
-  await supabase
-    .from("document_extractions")
-    .update({
-      is_active: false,
-    })
-    .eq("document_id", documentId)
-    .eq("is_active", true);
+  await assertSupabaseMutation(
+    supabase
+      .from("document_extractions")
+      .update({
+        is_active: false,
+      })
+      .eq("document_id", documentId)
+      .eq("is_active", true),
+    "Could not deactivate previous extraction artifacts.",
+  );
 }
 
 async function getNextDraftRevisionNumber(documentId: string) {
@@ -1072,7 +1368,7 @@ async function persistDocumentArtifacts(input: {
       last_rule_snapshot_id: input.ruleSnapshotId,
       last_processed_at: new Date().toISOString(),
       file_hash: input.fileHash,
-      metadata: mergeRecords(input.document.metadata, {
+      metadata: applyDocumentProcessingMetadata(input.document.metadata, {
         duplicate_document_ids: input.duplicateDocumentIds,
         duplicate_status: invoiceIdentity.duplicateStatus,
         duplicate_reason: invoiceIdentity.duplicateReason,
@@ -1099,6 +1395,8 @@ async function persistDocumentArtifacts(input: {
     .update({
       status: "completed",
       finished_at: new Date().toISOString(),
+      failure_stage: null,
+      failure_message: null,
       latency_ms: input.latencyMs,
       input_tokens: input.inputTokens,
       output_tokens: input.outputTokens,
@@ -1158,40 +1456,182 @@ async function markRunFailed(input: {
   }
 
   if (input.runId) {
-    await supabase
-      .from("document_processing_runs")
-      .update({
-        status: "error",
-        finished_at: finishedAt,
-        failure_stage: input.failureStage,
-        failure_message: input.message,
-        provider_status: input.providerStatus ?? null,
-        last_polled_at: input.lastPolledAt ?? null,
-        provider_response_json: input.providerResponse ?? {},
-        metadata: mergeRecords(input.runMetadata, {
-          failed_at: finishedAt,
-        }),
-      })
-      .eq("id", input.runId);
+    await assertSupabaseMutation(
+      supabase
+        .from("document_processing_runs")
+        .update({
+          status: "error",
+          finished_at: finishedAt,
+          failure_stage: input.failureStage,
+          failure_message: input.message,
+          provider_status: input.providerStatus ?? null,
+          last_polled_at: input.lastPolledAt ?? null,
+          provider_response_json: input.providerResponse ?? {},
+          metadata: mergeRecords(input.runMetadata, {
+            failed_at: finishedAt,
+          }),
+        })
+        .eq("id", input.runId),
+      "Could not mark the processing run as failed.",
+    );
   }
 
   const documentUpdatePayload = {
     status: "error",
     last_processed_at: finishedAt,
-    metadata: mergeRecords(documentMetadata, {
+    metadata: {
+      ...clearDocumentProcessingMetadata(documentMetadata),
       processing_error: input.message,
       processing_error_stage: input.failureStage,
-    }),
+    },
   } as Record<string, unknown>;
 
   if (input.runId) {
     documentUpdatePayload.current_processing_run_id = input.runId;
   }
 
-  await supabase
+  await assertSupabaseMutation(
+    supabase
+      .from("documents")
+      .update(documentUpdatePayload)
+      .eq("id", input.documentId),
+    "Could not mark the document as failed.",
+  );
+}
+
+export async function reconcileStaleDocumentProcessingRuns(input: {
+  supabase?: SupabaseClient;
+  documentId?: string | null;
+  documentIds?: string[];
+  organizationId?: string | null;
+  dryRun?: boolean;
+  now?: Date;
+} = {}): Promise<ReconcileStaleDocumentProcessingRunsResult> {
+  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  const uniqueDocumentIds = Array.from(new Set((input.documentIds ?? []).filter(Boolean)));
+  let documentQuery = supabase
     .from("documents")
-    .update(documentUpdatePayload)
-    .eq("id", input.documentId);
+    .select("id, organization_id, status, metadata, current_draft_id, current_processing_run_id");
+
+  if (input.documentId) {
+    documentQuery = documentQuery.eq("id", input.documentId);
+  } else if (uniqueDocumentIds.length > 0) {
+    documentQuery = documentQuery.in("id", uniqueDocumentIds);
+  }
+
+  if (input.organizationId) {
+    documentQuery = documentQuery.eq("organization_id", input.organizationId);
+  }
+
+  const { data: documentData, error: documentError } = await documentQuery;
+
+  if (documentError) {
+    throw new Error(documentError.message);
+  }
+
+  const documents = (((documentData as Array<Record<string, unknown>> | null) ?? [])).map((row) => ({
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    status: String(row.status ?? "uploaded"),
+    metadata: asRecord(row.metadata),
+    current_draft_id: typeof row.current_draft_id === "string" ? row.current_draft_id : null,
+    current_processing_run_id:
+      typeof row.current_processing_run_id === "string" ? row.current_processing_run_id : null,
+  })) satisfies CurrentDocumentProcessingRow[];
+  const activeDocuments = documents.filter((document) => Boolean(document.current_processing_run_id));
+  const runIds = activeDocuments
+    .map((document) => document.current_processing_run_id)
+    .filter((value): value is string => typeof value === "string");
+
+  if (runIds.length === 0) {
+    return {
+      inspectedCount: activeDocuments.length,
+      repairedRuns: [],
+    };
+  }
+
+  const { data: runData, error: runError } = await supabase
+    .from("document_processing_runs")
+    .select(
+      "id, document_id, status, started_at, finished_at, openai_file_id, provider_response_id, provider_status, attempt_count, last_polled_at, failure_stage, failure_message, metadata, created_at",
+    )
+    .in("id", runIds);
+
+  if (runError) {
+    throw new Error(runError.message);
+  }
+
+  const runsById = new Map(
+    (((runData as Array<Record<string, unknown>> | null) ?? [])).map((row) => [
+      String(row.id),
+      {
+        id: String(row.id),
+        document_id: String(row.document_id),
+        status: String(row.status ?? "queued"),
+        started_at: typeof row.started_at === "string" ? row.started_at : null,
+        finished_at: typeof row.finished_at === "string" ? row.finished_at : null,
+        openai_file_id: typeof row.openai_file_id === "string" ? row.openai_file_id : null,
+        provider_response_id:
+          typeof row.provider_response_id === "string" ? row.provider_response_id : null,
+        provider_status: typeof row.provider_status === "string" ? row.provider_status : null,
+        attempt_count: typeof row.attempt_count === "number" ? row.attempt_count : null,
+        last_polled_at: typeof row.last_polled_at === "string" ? row.last_polled_at : null,
+        failure_stage: typeof row.failure_stage === "string" ? row.failure_stage : null,
+        failure_message: typeof row.failure_message === "string" ? row.failure_message : null,
+        metadata: asRecord(row.metadata),
+        created_at: String(row.created_at ?? new Date().toISOString()),
+      } satisfies CurrentProcessingRunStateRow,
+    ]),
+  );
+  const now = input.now ?? new Date();
+  const repairedRuns: ReconciledDocumentProcessingRun[] = [];
+
+  for (const document of activeDocuments) {
+    const run = runsById.get(document.current_processing_run_id!);
+
+    if (!run || TERMINAL_RUN_STATUSES.has(run.status)) {
+      continue;
+    }
+
+    const staleReason = resolveStaleProcessingReason({
+      run,
+      now,
+    });
+
+    if (!staleReason) {
+      continue;
+    }
+
+    const message = buildStaleProcessingMessage(staleReason);
+
+    repairedRuns.push({
+      documentId: document.id,
+      runId: run.id,
+      staleReason,
+      message,
+      applied: input.dryRun !== true,
+    });
+
+    if (input.dryRun === true) {
+      continue;
+    }
+
+    await markRunFailed({
+      documentId: document.id,
+      runId: run.id,
+      message,
+      failureStage: staleReason,
+      providerStatus: run.provider_status,
+      lastPolledAt: run.last_polled_at,
+      documentMetadata: document.metadata,
+      runMetadata: run.metadata,
+    });
+  }
+
+  return {
+    inspectedCount: activeDocuments.length,
+    repairedRuns,
+  };
 }
 
 async function downloadDocumentBytes(document: ProcessibleDocumentRow) {
@@ -1393,6 +1833,7 @@ export async function processDocumentRunFromInngest(
         runId: run!.id,
         documentId: document!.id,
         startedAt: run!.started_at,
+        documentMetadata: document!.metadata,
       });
     });
 
@@ -1417,36 +1858,56 @@ export async function processDocumentRunFromInngest(
             computedFileHash,
             document!.id,
           );
-          const uploadedFile = await uploadOpenAIUserDataFile({
-            filename: document!.original_filename,
-            mimeType: document!.mime_type ?? "application/octet-stream",
-            bytes,
-          });
+          let uploadedFile;
+
+          try {
+            uploadedFile = await uploadOpenAIUserDataFile({
+              filename: document!.original_filename,
+              mimeType: document!.mime_type ?? "application/octet-stream",
+              bytes,
+            });
+            openAiFileId = uploadedFile.fileId;
+          } catch (error) {
+            throw new DocumentProcessingStageError(
+              "openai_file_upload",
+              error instanceof Error ? error.message : "OpenAI file upload failed.",
+            );
+          }
+
           const fileKind = document!.mime_type === "application/pdf" ? "pdf" : "image";
-          const backgroundResponse = await createBackgroundStructuredOpenAIResponse({
-            schemaName: "convertilabs_document_intake",
-            schema: documentIntakeJsonSchema,
-            systemPrompt: buildSystemPrompt(ruleSnapshot),
-            userPrompt: buildUserPrompt({
-              originalFilename: document!.original_filename,
-              mimeType: document!.mime_type,
-              organizationIdentityContext: buildOrganizationIdentityPromptContext(
-                organizationIdentity,
-              ),
-            }),
-            fileInput:
-              fileKind === "pdf"
-                ? {
-                    kind: "pdf",
-                    fileId: uploadedFile.fileId,
-                    filename: document!.original_filename,
-                  }
-                : {
-                    kind: "image",
-                    fileId: uploadedFile.fileId,
-                    detail: "high",
-                  },
-          });
+          let backgroundResponse;
+
+          try {
+            backgroundResponse = await createBackgroundStructuredOpenAIResponse({
+              schemaName: "convertilabs_document_intake",
+              schema: documentIntakeJsonSchema,
+              systemPrompt: buildSystemPrompt(ruleSnapshot),
+              userPrompt: buildUserPrompt({
+                originalFilename: document!.original_filename,
+                mimeType: document!.mime_type,
+                organizationIdentityContext: buildOrganizationIdentityPromptContext(
+                  organizationIdentity,
+                ),
+              }),
+              fileInput:
+                fileKind === "pdf"
+                  ? {
+                      kind: "pdf",
+                      fileId: uploadedFile.fileId,
+                      filename: document!.original_filename,
+                    }
+                  : {
+                      kind: "image",
+                      fileId: uploadedFile.fileId,
+                      detail: "high",
+                    },
+            });
+          } catch (error) {
+            throw new DocumentProcessingStageError(
+              "openai_response_create",
+              error instanceof Error ? error.message : "OpenAI response creation failed.",
+            );
+          }
 
           await updateRunAfterProviderSubmission({
             runId: run!.id,
@@ -1523,7 +1984,17 @@ export async function processDocumentRunFromInngest(
       const pollResult = await input.step.run(
         `poll-openai-response-${pollIndex + 1}`,
         async () => {
-          const retrieved = await retrieveOpenAIResponse(providerResponseId!);
+          let retrieved;
+
+          try {
+            retrieved = await retrieveOpenAIResponse(providerResponseId!);
+          } catch (error) {
+            throw new DocumentProcessingStageError(
+              "openai_response_poll",
+              error instanceof Error ? error.message : "OpenAI response polling failed.",
+            );
+          }
+
           const polledAt = new Date().toISOString();
           const nextAttemptCount = attemptCount + 1;
 
@@ -1551,7 +2022,17 @@ export async function processDocumentRunFromInngest(
 
     if (!providerResponse && providerResponseId) {
       const finalPayload = await input.step.run("load-final-openai-response", async () => {
-        const retrieved = await retrieveOpenAIResponse(providerResponseId!);
+        let retrieved;
+
+        try {
+          retrieved = await retrieveOpenAIResponse(providerResponseId!);
+        } catch (error) {
+          throw new DocumentProcessingStageError(
+            "openai_response_poll",
+            error instanceof Error ? error.message : "OpenAI response polling failed.",
+          );
+        }
+
         const polledAt = new Date().toISOString();
         const nextAttemptCount = attemptCount + 1;
 
@@ -1662,6 +2143,10 @@ export async function processDocumentRunFromInngest(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing error.";
+    const failureStage =
+      error instanceof DocumentProcessingStageError
+        ? error.stage
+        : "document_processing";
 
     if (document) {
       await input.step.run("mark-run-failed-after-exception", async () => {
@@ -1669,7 +2154,7 @@ export async function processDocumentRunFromInngest(
           documentId: document!.id,
           runId: run?.id ?? null,
           message,
-          failureStage: "document_processing",
+          failureStage,
           providerStatus,
           providerResponse: providerResponse!,
           lastPolledAt,
@@ -1697,6 +2182,12 @@ export async function loadDocumentProcessingStatus(input: {
   organizationSlug?: string | null;
 }): Promise<DocumentProcessingStatusResult | null> {
   const supabase = getSupabaseServiceRoleClient();
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    documentId: input.documentId,
+  });
+
   const { data: documentData, error: documentError } = await supabase
     .from("documents")
     .select(
@@ -1735,6 +2226,7 @@ export async function loadDocumentProcessingStatus(input: {
     id: string;
     status: string;
     provider_status: string | null;
+    failure_stage: string | null;
     failure_message: string | null;
     finished_at: string | null;
     last_polled_at: string | null;
@@ -1745,7 +2237,7 @@ export async function loadDocumentProcessingStatus(input: {
     const { data, error } = await supabase
       .from("document_processing_runs")
       .select(
-        "id, status, provider_status, failure_message, finished_at, last_polled_at, created_at",
+        "id, status, provider_status, failure_stage, failure_message, finished_at, last_polled_at, created_at",
       )
       .eq("id", documentData.current_processing_run_id)
       .limit(1)
@@ -1760,12 +2252,23 @@ export async function loadDocumentProcessingStatus(input: {
 
   const documentMetadata = asRecord(documentData.metadata);
   const failureMessage = runData?.failure_message ?? asString(documentMetadata.processing_error);
+  const reviewUrl =
+    documentData.current_draft_id && organizationSlug
+      ? `/app/o/${organizationSlug}/documents/${documentData.id}`
+      : null;
   const updatedAt =
     runData?.finished_at
     ?? runData?.last_polled_at
     ?? documentData.last_processed_at
     ?? documentData.updated_at
     ?? documentData.created_at;
+  const healthState = resolveDocumentProcessingHealth({
+    documentStatus: documentData.status,
+    runStatus: runData?.status ?? null,
+    failureStage: runData?.failure_stage ?? asString(documentMetadata.processing_error_stage),
+    draftId: documentData.current_draft_id,
+    reviewUrl,
+  });
 
   return {
     documentId: documentData.id,
@@ -1774,15 +2277,16 @@ export async function loadDocumentProcessingStatus(input: {
     runStatus: runData?.status ?? null,
     providerStatus: runData?.provider_status ?? null,
     draftId: documentData.current_draft_id,
-    reviewUrl:
-      documentData.current_draft_id && organizationSlug
-        ? `/app/o/${organizationSlug}/documents/${documentData.id}`
-        : null,
+    reviewUrl,
     failureMessage,
     updatedAt,
     isTerminal:
       documentTerminalStatuses.has(documentData.status)
       || (runData?.status ? TERMINAL_RUN_STATUSES.has(runData.status) : false),
+    health: healthState.health,
+    staleReason: healthState.staleReason,
+    recommendedAction: healthState.recommendedAction,
+    retryable: healthState.retryable,
   };
 }
 

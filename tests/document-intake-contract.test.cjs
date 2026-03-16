@@ -3,7 +3,37 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   assertDocumentIntakeOutput,
+  documentIntakeJsonSchema,
 } = require("@/modules/ai/document-intake-contract");
+
+function assertStrictObjectRequiredCoverage(schema, path = "root") {
+  if (!schema || typeof schema !== "object") {
+    return;
+  }
+
+  if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
+    const propertyNames = Object.keys(schema.properties);
+    const required = Array.isArray(schema.required) ? schema.required : [];
+
+    assert.deepEqual(
+      [...required].sort(),
+      [...propertyNames].sort(),
+      `${path} must declare every property inside required when using strict JSON schema`,
+    );
+
+    for (const [key, childSchema] of Object.entries(schema.properties)) {
+      assertStrictObjectRequiredCoverage(childSchema, `${path}.${key}`);
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    assertStrictObjectRequiredCoverage(schema.items, `${path}[]`);
+  }
+}
+
+test("document intake json schema keeps strict required coverage for every object", () => {
+  assertStrictObjectRequiredCoverage(documentIntakeJsonSchema);
+});
 
 test("document intake contract accepts the v2 organization-aware payload", () => {
   const payload = {
@@ -43,6 +73,12 @@ test("document intake contract accepts the v2 organization-aware payload", () =>
     facts: {
       issuer_name: "Rontil SAS",
       issuer_tax_id: "21-433455-019",
+      issuer_address_raw: "Av Italia 1234",
+      issuer_department: "Montevideo",
+      issuer_city: "Montevideo",
+      issuer_branch_code: null,
+      merchant_category_hints: ["servicios"],
+      location_extraction_confidence: 0.84,
       receiver_name: "Cliente SA",
       receiver_tax_id: "21-999999-001",
       document_number: "123",

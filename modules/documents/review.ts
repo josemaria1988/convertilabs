@@ -62,6 +62,10 @@ import {
   rebuildMonthlyVatRunFromConfirmations,
 } from "@/modules/tax/vat-runs";
 import { deriveDocumentWorkflowState } from "@/modules/documents/workflow-state";
+import {
+  isDocumentProcessingStaleReason,
+  reconcileStaleDocumentProcessingRuns,
+} from "@/modules/documents/processing";
 
 type OrganizationMemberRole =
   | "owner"
@@ -257,6 +261,10 @@ export type DocumentWorkspaceListItem = {
   canProcessExtraction: boolean;
   canClassify: boolean;
   hasExtractionInFlight: boolean;
+  nextPrimaryAction: "open_review" | "retry_extraction" | "process_extraction" | null;
+  nextPrimaryActionLabel: string | null;
+  isProcessingStale: boolean;
+  canRetryExtraction: boolean;
 };
 
 type DocumentViewModel = {
@@ -388,6 +396,7 @@ export type DocumentReviewPageData = {
   canReopen: boolean;
   canRunClassification: boolean;
   canSaveLearningRule: boolean;
+  classificationActionHint: string;
 };
 
 export type DocumentOriginalPageData = {
@@ -395,6 +404,7 @@ export type DocumentOriginalPageData = {
   organizationSlug: string;
   userRole: OrganizationMemberRole;
   document: DocumentViewModel;
+  recoveryActionLabel: string | null;
 };
 
 export type SaveDraftReviewInput = {
@@ -924,6 +934,28 @@ function buildWorkspaceExtractionState(input: {
   const processingStage = asString(metadata.processing_error_stage)
     ?? input.processingRun?.failure_stage
     ?? null;
+  const isStale = isDocumentProcessingStaleReason(processingStage);
+
+  if (
+    [
+      "extracted",
+      "draft_ready",
+      "needs_review",
+      "classified",
+      "classified_with_open_revision",
+      "approved",
+    ].includes(input.documentStatus)
+    && !input.currentDraftId
+  ) {
+    return {
+      status: "error" as const,
+      label: "Draft faltante",
+      failureMessage: "La extraccion termino sin draft persistido. Reintenta la extraccion.",
+      canProcess: true,
+      inFlight: false,
+      isStale: false,
+    };
+  }
 
   if (uploadError) {
     return {
@@ -932,6 +964,7 @@ function buildWorkspaceExtractionState(input: {
       failureMessage: uploadError,
       canProcess: false,
       inFlight: false,
+      isStale: false,
     };
   }
 
@@ -942,6 +975,7 @@ function buildWorkspaceExtractionState(input: {
       failureMessage: null,
       canProcess: false,
       inFlight: true,
+      isStale: false,
     };
   }
 
@@ -952,6 +986,7 @@ function buildWorkspaceExtractionState(input: {
       failureMessage: null,
       canProcess: false,
       inFlight: true,
+      isStale: false,
     };
   }
 
@@ -970,16 +1005,18 @@ function buildWorkspaceExtractionState(input: {
       failureMessage: null,
       canProcess: false,
       inFlight: false,
+      isStale: false,
     };
   }
 
   if (input.documentStatus === "error" && processingStage) {
     return {
       status: "error" as const,
-      label: "Extraccion fallida",
+      label: isStale ? "Interrumpida" : "Extraccion fallida",
       failureMessage: processingError ?? input.processingRun?.failure_message ?? null,
       canProcess: true,
       inFlight: false,
+      isStale,
     };
   }
 
@@ -990,6 +1027,7 @@ function buildWorkspaceExtractionState(input: {
       failureMessage: processingError,
       canProcess: true,
       inFlight: false,
+      isStale: false,
     };
   }
 
@@ -999,6 +1037,7 @@ function buildWorkspaceExtractionState(input: {
     failureMessage: null,
     canProcess: true,
     inFlight: false,
+    isStale: false,
   };
 }
 
@@ -1066,6 +1105,67 @@ function buildWorkspaceClassificationState(input: {
     failureMessage: null,
     canClassify: false,
   };
+}
+
+function buildWorkspacePrimaryAction(input: {
+  processedHref: string | null;
+  canProcessExtraction: boolean;
+  canRetryExtraction: boolean;
+}) {
+  if (input.processedHref) {
+    return {
+      action: "open_review" as const,
+      label: "Abrir revision",
+    };
+  }
+
+  if (input.canRetryExtraction) {
+    return {
+      action: "retry_extraction" as const,
+      label: "Reintentar extraccion",
+    };
+  }
+
+  if (input.canProcessExtraction) {
+    return {
+      action: "process_extraction" as const,
+      label: "Procesar",
+    };
+  }
+
+  return {
+    action: null,
+    label: null,
+  };
+}
+
+export function buildClassificationActionHint(input: {
+  canRunClassification: boolean;
+  canRunClassificationByRole: boolean;
+  documentStatus: string;
+  workflowState: ReturnType<typeof deriveDocumentWorkflowState>;
+}) {
+  if (!input.canRunClassificationByRole) {
+    return "Tu rol puede revisar el draft, pero no ejecutar clasificacion contable.";
+  }
+
+  if (input.canRunClassification) {
+    return "La clasificacion ya puede ejecutarse desde este draft.";
+  }
+
+  if (input.workflowState.classificationStatus === "completed") {
+    return "La clasificacion ya fue aplicada sobre este draft.";
+  }
+
+  const leadingMessage =
+    input.documentStatus === "extracted"
+      ? input.workflowState.nextRecommendedAction
+      : "No hay una nueva corrida pendiente de clasificacion";
+  const blockingReason = input.workflowState.visibleWarnings[0] ?? null;
+
+  return blockingReason
+    ? `${leadingMessage}. ${blockingReason}`
+    : `${leadingMessage}.`;
 }
 
 function getOperationCategoryOptions(role: DocumentRoleCandidate) {
@@ -1403,6 +1503,12 @@ export async function listOrganizationWorkspaceDocuments(input: {
   organizationSlug: string;
 }) {
   const supabase = getSupabaseServiceRoleClient();
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    organizationId: input.organizationId,
+  });
+
   const primaryResult = await supabase
     .from("documents")
     .select(
@@ -1652,6 +1758,15 @@ export async function listOrganizationWorkspaceDocuments(input: {
         currentDraftId: row.current_draft_id,
         latestAssignmentRun: latestAssignmentRunByDocumentId.get(row.id) ?? null,
       });
+      const canRetryExtraction =
+        extraction.canProcess && (extraction.status === "error" || extraction.isStale);
+      const primaryAction = buildWorkspacePrimaryAction({
+        processedHref: row.current_draft_id
+          ? `/app/o/${input.organizationSlug}/documents/${row.id}`
+          : null,
+        canProcessExtraction: extraction.canProcess,
+        canRetryExtraction,
+      });
 
       return {
         storageStatus: storage.status,
@@ -1666,6 +1781,10 @@ export async function listOrganizationWorkspaceDocuments(input: {
         canProcessExtraction: extraction.canProcess,
         canClassify: classification.canClassify,
         hasExtractionInFlight: extraction.inFlight,
+        nextPrimaryAction: primaryAction.action,
+        nextPrimaryActionLabel: primaryAction.label,
+        isProcessingStale: extraction.isStale,
+        canRetryExtraction,
       };
     })(),
   } satisfies DocumentWorkspaceListItem)));
@@ -1678,13 +1797,28 @@ export async function loadDocumentOriginalPageData(input: {
   userRole: OrganizationMemberRole;
 }) {
   const supabase = getSupabaseServiceRoleClient();
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    documentId: input.documentId,
+  });
+
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+  const recoveryActionLabel =
+    input.userRole !== "viewer"
+    && !document.current_draft_id
+    && !["queued", "extracting", "processing"].includes(document.status)
+      ? document.status === "error"
+        ? "Reintentar extraccion"
+        : "Procesar extraccion"
+      : null;
 
   return {
     organizationId: input.organizationId,
     organizationSlug: input.organizationSlug,
     userRole: input.userRole,
     document: await buildDocumentViewModel(document, input.organizationSlug),
+    recoveryActionLabel,
   } satisfies DocumentOriginalPageData;
 }
 
@@ -1696,6 +1830,12 @@ export async function loadDocumentReviewPageData(input: {
   userRole: OrganizationMemberRole;
 }) {
   const supabase = getSupabaseServiceRoleClient();
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    documentId: input.documentId,
+  });
+
   const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
   const documentViewPromise = buildDocumentViewModel(document, input.organizationSlug);
   const draft = await loadCurrentDraft(supabase, document);
@@ -1774,6 +1914,17 @@ export async function loadDocumentReviewPageData(input: {
     derived,
     latestClassificationRun,
     learningOptionCount: learningSuggestions.options.length,
+  });
+  const canRunClassificationByRole =
+    ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole);
+  const canRunClassification =
+    canRunClassificationByRole
+    && workflowState.canRunClassification;
+  const classificationActionHint = buildClassificationActionHint({
+    canRunClassification,
+    canRunClassificationByRole,
+    documentStatus: document.status,
+    workflowState,
   });
 
   return {
@@ -1879,12 +2030,11 @@ export async function loadDocumentReviewPageData(input: {
     canReopen:
       ["owner", "admin"].includes(input.userRole)
       && (document.status === "classified" || draft.status === "confirmed"),
-    canRunClassification:
-      ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
-      && workflowState.canRunClassification,
+    canRunClassification,
     canSaveLearningRule:
       ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
       && workflowState.canCreateLearningRule,
+    classificationActionHint,
   } satisfies DocumentReviewPageData;
 }
 

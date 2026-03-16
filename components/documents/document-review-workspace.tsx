@@ -753,6 +753,12 @@ export function DocumentReviewWorkspace({
             </div>
           </div>
 
+          {!pageData.canRunClassification ? (
+            <p className="mt-3 text-sm text-[color:var(--color-muted)]">
+              Clasificacion: {pageData.classificationActionHint}
+            </p>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
               <div className="flex items-center justify-between gap-3">

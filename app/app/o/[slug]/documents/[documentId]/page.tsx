@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DocumentReviewWorkspace } from "@/components/documents/document-review-workspace";
+import { DocumentRecoveryActionButton } from "@/components/documents/document-recovery-action-button";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { SectionCard } from "@/components/section-card";
@@ -118,12 +119,20 @@ export default async function DocumentReviewPage({
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <span
-              className="rounded-full border border-dashed border-[color:var(--color-border)] px-4 py-2 text-sm font-semibold text-[color:var(--color-muted)]"
-              aria-disabled="true"
-            >
-              Ver documento procesado
-            </span>
+            {originalPageData.recoveryActionLabel ? (
+              <DocumentRecoveryActionButton
+                slug={slug}
+                documentId={documentId}
+                label={originalPageData.recoveryActionLabel}
+              />
+            ) : (
+              <span
+                className="rounded-full border border-dashed border-[color:var(--color-border)] px-4 py-2 text-sm font-semibold text-[color:var(--color-muted)]"
+                aria-disabled="true"
+              >
+                Ver documento procesado
+              </span>
+            )}
             <DocumentOriginalModalTrigger
               previewUrl={originalPageData.document.previewUrl}
               mimeType={originalPageData.document.mimeType}

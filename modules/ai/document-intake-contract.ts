@@ -108,263 +108,190 @@ function nullableNumberSchema(description: string) {
   };
 }
 
-const organizationMatchSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "status",
-    "strategy",
-    "matched_alias",
-    "normalized_tax_id",
-    "normalized_name",
-    "confidence",
-    "evidence",
-  ],
-  properties: {
-    status: {
-      type: "string",
-      enum: ["matched", "tentative", "not_matched", "ambiguous"],
-    },
-    strategy: {
-      type: "string",
-      enum: ["tax_id", "exact_alias", "token_overlap", "none", "ambiguous"],
-    },
-    matched_alias: nullableStringSchema("Alias used when the organization identity matched."),
-    normalized_tax_id: nullableStringSchema("Normalized tax id compared against the organization."),
-    normalized_name: nullableStringSchema("Normalized party name compared against the organization."),
-    confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-    },
-    evidence: {
-      type: "array",
-      items: {
-        type: "string",
-      },
-    },
-  },
-} as const;
+function strictObjectSchema<const T extends Record<string, unknown>>(properties: T) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
+  } as const;
+}
 
-const certaintyBreakdownSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "extraction_confidence",
-    "organization_identity_confidence",
-    "line_items_confidence",
-    "warning_count",
-    "warning_flags",
-  ],
-  properties: {
-    extraction_confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-    },
-    organization_identity_confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-    },
-    line_items_confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-    },
-    warning_count: {
-      type: "number",
-      minimum: 0,
-    },
-    warning_flags: {
-      type: "array",
-      items: {
-        type: "string",
-      },
+const organizationMatchSchema = strictObjectSchema({
+  status: {
+    type: "string",
+    enum: ["matched", "tentative", "not_matched", "ambiguous"],
+  },
+  strategy: {
+    type: "string",
+    enum: ["tax_id", "exact_alias", "token_overlap", "none", "ambiguous"],
+  },
+  matched_alias: nullableStringSchema("Alias used when the organization identity matched."),
+  normalized_tax_id: nullableStringSchema("Normalized tax id compared against the organization."),
+  normalized_name: nullableStringSchema("Normalized party name compared against the organization."),
+  confidence: {
+    type: "number",
+    minimum: 0,
+    maximum: 1,
+  },
+  evidence: {
+    type: "array",
+    items: {
+      type: "string",
     },
   },
-} as const;
+});
 
-export const documentIntakeJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "extracted_text",
-    "confidence_score",
-    "warnings",
-    "transaction_family_candidate",
-    "document_subtype_candidate",
-    "issuer_matches_organization",
-    "receiver_matches_organization",
-    "certainty_breakdown_json",
-    "document_role_candidate",
-    "document_type_candidate",
-    "operation_category_candidate",
-    "facts",
-    "amount_breakdown",
-    "line_items",
-    "explanations",
-  ],
-  properties: {
-    extracted_text: {
+const certaintyBreakdownSchema = strictObjectSchema({
+  extraction_confidence: {
+    type: "number",
+    minimum: 0,
+    maximum: 1,
+  },
+  organization_identity_confidence: {
+    type: "number",
+    minimum: 0,
+    maximum: 1,
+  },
+  line_items_confidence: {
+    type: "number",
+    minimum: 0,
+    maximum: 1,
+  },
+  warning_count: {
+    type: "number",
+    minimum: 0,
+  },
+  warning_flags: {
+    type: "array",
+    items: {
       type: "string",
-      description: "Readable text extracted or reconstructed from the document.",
-    },
-    confidence_score: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-    },
-    warnings: {
-      type: "array",
-      items: {
-        type: "string",
-      },
-    },
-    transaction_family_candidate: {
-      type: "string",
-      enum: ["purchase", "sale", "other"],
-    },
-    document_subtype_candidate: {
-      type: "string",
-    },
-    issuer_matches_organization: organizationMatchSchema,
-    receiver_matches_organization: organizationMatchSchema,
-    certainty_breakdown_json: certaintyBreakdownSchema,
-    document_role_candidate: {
-      type: "string",
-      enum: ["purchase", "sale", "other"],
-      description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
-    },
-    document_type_candidate: {
-      type: "string",
-      description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
-    },
-    operation_category_candidate: nullableStringSchema(
-      "Suggested purchase or sale category supported by V1.",
-    ),
-    facts: {
-      type: "object",
-      additionalProperties: false,
-      required: [
-        "issuer_name",
-        "issuer_tax_id",
-        "receiver_name",
-        "receiver_tax_id",
-        "document_number",
-        "series",
-        "currency_code",
-        "document_date",
-        "due_date",
-        "subtotal",
-        "tax_amount",
-        "total_amount",
-        "purchase_category_candidate",
-        "sale_category_candidate",
-      ],
-      properties: {
-        issuer_name: nullableStringSchema("Issuer or supplier name."),
-        issuer_tax_id: nullableStringSchema("Issuer RUT or fiscal identifier."),
-        issuer_address_raw: nullableStringSchema(
-          "Full issuer address line when the document contains enough textual evidence.",
-        ),
-        issuer_department: nullableStringSchema(
-          "Uruguay department inferred from issuer address only when evidence is sufficient.",
-        ),
-        issuer_city: nullableStringSchema(
-          "Uruguay city inferred from issuer address only when evidence is sufficient.",
-        ),
-        issuer_branch_code: nullableStringSchema(
-          "Issuer local or branch identifier when the document exposes it.",
-        ),
-        merchant_category_hints: {
-          type: "array",
-          description: "Normalized merchant category hints derived from the merchant name or document text.",
-          items: {
-            type: "string",
-          },
-        },
-        location_extraction_confidence: nullableNumberSchema(
-          "Confidence score for issuer location extraction.",
-        ),
-        receiver_name: nullableStringSchema("Receiver or customer name."),
-        receiver_tax_id: nullableStringSchema("Receiver RUT or fiscal identifier."),
-        document_number: nullableStringSchema("Document number."),
-        series: nullableStringSchema("Document series if present."),
-        currency_code: nullableStringSchema("ISO currency code when detectable."),
-        document_date: nullableStringSchema("Document issue date in YYYY-MM-DD when possible."),
-        due_date: nullableStringSchema("Due date in YYYY-MM-DD when possible."),
-        subtotal: nullableNumberSchema("Subtotal before taxes."),
-        tax_amount: nullableNumberSchema("Primary tax amount detected on the document."),
-        total_amount: nullableNumberSchema("Grand total."),
-        purchase_category_candidate: nullableStringSchema(
-          "Suggested V1 purchase category when the role is purchase.",
-        ),
-        sale_category_candidate: nullableStringSchema(
-          "Suggested V1 sale category when the role is sale.",
-        ),
-      },
-    },
-    amount_breakdown: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["label", "amount", "tax_rate", "tax_code"],
-        properties: {
-          label: {
-            type: "string",
-          },
-          amount: nullableNumberSchema("Detected amount for this component."),
-          tax_rate: nullableNumberSchema("Detected tax rate, for example 22 or 10."),
-          tax_code: nullableStringSchema("Normalized tax code when inferable."),
-        },
-      },
-    },
-    line_items: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "line_number",
-          "concept_code",
-          "concept_description",
-          "quantity",
-          "unit_amount",
-          "net_amount",
-          "tax_rate",
-          "tax_amount",
-          "total_amount",
-        ],
-        properties: {
-          line_number: nullableNumberSchema("Line number when detectable."),
-          concept_code: nullableStringSchema("Vendor or document concept code."),
-          concept_description: nullableStringSchema("Goods or service description."),
-          quantity: nullableNumberSchema("Quantity for the line item."),
-          unit_amount: nullableNumberSchema("Unit amount for the line item."),
-          net_amount: nullableNumberSchema("Net amount before taxes."),
-          tax_rate: nullableNumberSchema("Tax rate for this line item, for example 22 or 10."),
-          tax_amount: nullableNumberSchema("Tax amount for the line item."),
-          total_amount: nullableNumberSchema("Line total including taxes when present."),
-        },
-      },
-    },
-    explanations: {
-      type: "object",
-      additionalProperties: false,
-      required: ["classification", "facts"],
-      properties: {
-        classification: {
-          type: "string",
-        },
-        facts: {
-          type: "string",
-        },
-      },
     },
   },
-} as const;
+});
+
+const factsSchema = strictObjectSchema({
+  issuer_name: nullableStringSchema("Issuer or supplier name."),
+  issuer_tax_id: nullableStringSchema("Issuer RUT or fiscal identifier."),
+  issuer_address_raw: nullableStringSchema(
+    "Full issuer address line when the document contains enough textual evidence.",
+  ),
+  issuer_department: nullableStringSchema(
+    "Uruguay department inferred from issuer address only when evidence is sufficient.",
+  ),
+  issuer_city: nullableStringSchema(
+    "Uruguay city inferred from issuer address only when evidence is sufficient.",
+  ),
+  issuer_branch_code: nullableStringSchema(
+    "Issuer local or branch identifier when the document exposes it.",
+  ),
+  merchant_category_hints: {
+    type: "array",
+    description: "Normalized merchant category hints derived from the merchant name or document text.",
+    items: {
+      type: "string",
+    },
+  },
+  location_extraction_confidence: nullableNumberSchema(
+    "Confidence score for issuer location extraction.",
+  ),
+  receiver_name: nullableStringSchema("Receiver or customer name."),
+  receiver_tax_id: nullableStringSchema("Receiver RUT or fiscal identifier."),
+  document_number: nullableStringSchema("Document number."),
+  series: nullableStringSchema("Document series if present."),
+  currency_code: nullableStringSchema("ISO currency code when detectable."),
+  document_date: nullableStringSchema("Document issue date in YYYY-MM-DD when possible."),
+  due_date: nullableStringSchema("Due date in YYYY-MM-DD when possible."),
+  subtotal: nullableNumberSchema("Subtotal before taxes."),
+  tax_amount: nullableNumberSchema("Primary tax amount detected on the document."),
+  total_amount: nullableNumberSchema("Grand total."),
+  purchase_category_candidate: nullableStringSchema(
+    "Suggested V1 purchase category when the role is purchase.",
+  ),
+  sale_category_candidate: nullableStringSchema(
+    "Suggested V1 sale category when the role is sale.",
+  ),
+});
+
+const amountBreakdownEntrySchema = strictObjectSchema({
+  label: {
+    type: "string",
+  },
+  amount: nullableNumberSchema("Detected amount for this component."),
+  tax_rate: nullableNumberSchema("Detected tax rate, for example 22 or 10."),
+  tax_code: nullableStringSchema("Normalized tax code when inferable."),
+});
+
+const lineItemSchema = strictObjectSchema({
+  line_number: nullableNumberSchema("Line number when detectable."),
+  concept_code: nullableStringSchema("Vendor or document concept code."),
+  concept_description: nullableStringSchema("Goods or service description."),
+  quantity: nullableNumberSchema("Quantity for the line item."),
+  unit_amount: nullableNumberSchema("Unit amount for the line item."),
+  net_amount: nullableNumberSchema("Net amount before taxes."),
+  tax_rate: nullableNumberSchema("Tax rate for this line item, for example 22 or 10."),
+  tax_amount: nullableNumberSchema("Tax amount for the line item."),
+  total_amount: nullableNumberSchema("Line total including taxes when present."),
+});
+
+const explanationsSchema = strictObjectSchema({
+  classification: {
+    type: "string",
+  },
+  facts: {
+    type: "string",
+  },
+});
+
+export const documentIntakeJsonSchema = strictObjectSchema({
+  extracted_text: {
+    type: "string",
+    description: "Readable text extracted or reconstructed from the document.",
+  },
+  confidence_score: {
+    type: "number",
+    minimum: 0,
+    maximum: 1,
+  },
+  warnings: {
+    type: "array",
+    items: {
+      type: "string",
+    },
+  },
+  transaction_family_candidate: {
+    type: "string",
+    enum: ["purchase", "sale", "other"],
+  },
+  document_subtype_candidate: {
+    type: "string",
+  },
+  issuer_matches_organization: organizationMatchSchema,
+  receiver_matches_organization: organizationMatchSchema,
+  certainty_breakdown_json: certaintyBreakdownSchema,
+  document_role_candidate: {
+    type: "string",
+    enum: ["purchase", "sale", "other"],
+    description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
+  },
+  document_type_candidate: {
+    type: "string",
+    description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
+  },
+  operation_category_candidate: nullableStringSchema(
+    "Suggested purchase or sale category supported by V1.",
+  ),
+  facts: factsSchema,
+  amount_breakdown: {
+    type: "array",
+    items: amountBreakdownEntrySchema,
+  },
+  line_items: {
+    type: "array",
+    items: lineItemSchema,
+  },
+  explanations: explanationsSchema,
+});
 
 function isNullableString(value: unknown): value is string | null {
   return typeof value === "string" || value === null;
@@ -376,18 +303,6 @@ function isNullableNumber(value: unknown): value is number | null {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
-}
-
-function isNullableStringOrUndefined(value: unknown): value is string | null | undefined {
-  return value === undefined || isNullableString(value);
-}
-
-function isNullableNumberOrUndefined(value: unknown): value is number | null | undefined {
-  return value === undefined || isNullableNumber(value);
-}
-
-function isStringArrayOrUndefined(value: unknown): value is string[] | undefined {
-  return value === undefined || isStringArray(value);
 }
 
 function isOrganizationMatch(value: unknown): value is DocumentIntakeOrganizationMatch {
@@ -447,12 +362,12 @@ function isDocumentIntakeFactMap(value: unknown): value is DocumentIntakeFactMap
   return (
     isNullableString(facts.issuer_name)
     && isNullableString(facts.issuer_tax_id)
-    && isNullableStringOrUndefined(facts.issuer_address_raw)
-    && isNullableStringOrUndefined(facts.issuer_department)
-    && isNullableStringOrUndefined(facts.issuer_city)
-    && isNullableStringOrUndefined(facts.issuer_branch_code)
-    && isStringArrayOrUndefined(facts.merchant_category_hints)
-    && isNullableNumberOrUndefined(facts.location_extraction_confidence)
+    && isNullableString(facts.issuer_address_raw)
+    && isNullableString(facts.issuer_department)
+    && isNullableString(facts.issuer_city)
+    && isNullableString(facts.issuer_branch_code)
+    && isStringArray(facts.merchant_category_hints)
+    && isNullableNumber(facts.location_extraction_confidence)
     && isNullableString(facts.receiver_name)
     && isNullableString(facts.receiver_tax_id)
     && isNullableString(facts.document_number)
