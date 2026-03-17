@@ -189,6 +189,13 @@ type WorkspaceAssignmentRunRow = {
   response_json: JsonRecord | null;
 };
 
+type WorkspaceDraftAutosaveRow = {
+  draft_id: string;
+  payload_patch_json: JsonRecord | null;
+  saved_by: string | null;
+  saved_at: string;
+};
+
 type ConfirmationRow = {
   id: string;
   confirmation_type: string;
@@ -250,6 +257,7 @@ export type DocumentWorkspaceListItem = {
   certaintyConfidence: number | null;
   duplicateStatus: string | null;
   decisionSource: string | null;
+  manualInterventionBy: string | null;
   storageStatus: "stored" | "upload_error";
   storageStatusLabel: string;
   storageFailureMessage: string | null;
@@ -1155,6 +1163,45 @@ function buildWorkspacePrimaryAction(input: {
   };
 }
 
+function hasManualAccountingIntervention(payload: JsonRecord | null) {
+  const patch = asRecord(payload);
+
+  return Boolean(
+    asString(patch.manualOverrideAccountId)
+    || asString(patch.manualOverrideConceptId)
+    || asString(patch.manualOverrideOperationCategory),
+  );
+}
+
+async function loadProfileDisplayLookup(
+  supabase: SupabaseClient,
+  profileIds: string[],
+) {
+  const uniqueProfileIds = Array.from(
+    new Set(profileIds.filter((value): value is string => typeof value === "string")),
+  );
+
+  if (uniqueProfileIds.length === 0) {
+    return new Map<string, ProfileDisplayRow>();
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .in("id", uniqueProfileIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return new Map(
+    (((data as Array<ProfileDisplayRow & { id: string }> | null) ?? [])).map((profile) => [
+      profile.id,
+      profile,
+    ]),
+  );
+}
+
 export function buildClassificationActionHint(input: {
   canRunClassification: boolean;
   canRunClassificationByRole: boolean;
@@ -1662,7 +1709,13 @@ export async function listOrganizationWorkspaceDocuments(input: {
     }
   }
 
-  const [invoiceIdentityResult, decisionLogsResult, processingRunsResult, assignmentRunsResult] = await Promise.all([
+  const [
+    invoiceIdentityResult,
+    decisionLogsResult,
+    processingRunsResult,
+    assignmentRunsResult,
+    draftAutosavesResult,
+  ] = await Promise.all([
     documentIds.length > 0
       ? supabase
         .from("document_invoice_identities")
@@ -1691,6 +1744,14 @@ export async function listOrganizationWorkspaceDocuments(input: {
         .in("document_id", documentIds)
         .order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
+    draftIds.length > 0
+      ? supabase
+        .from("document_draft_autosaves")
+        .select("draft_id, payload_patch_json, saved_by, saved_at")
+        .in("draft_id", draftIds)
+        .eq("step_code", "accounting_context")
+        .order("saved_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const invoiceIdentityError =
@@ -1713,13 +1774,25 @@ export async function listOrganizationWorkspaceDocuments(input: {
     && !isMissingSupabaseRelationError(assignmentRunsResult.error, "document_assignment_runs")
       ? assignmentRunsResult.error
       : null;
+  const draftAutosavesError =
+    draftAutosavesResult.error
+    && !isMissingSupabaseRelationError(draftAutosavesResult.error, "document_draft_autosaves")
+      ? draftAutosavesResult.error
+      : null;
 
-  if (invoiceIdentityError || decisionLogsError || processingRunsError || assignmentRunsError) {
+  if (
+    invoiceIdentityError
+    || decisionLogsError
+    || processingRunsError
+    || assignmentRunsError
+    || draftAutosavesError
+  ) {
     throw new Error(
       invoiceIdentityError?.message
       ?? decisionLogsError?.message
       ?? processingRunsError?.message
       ?? assignmentRunsError?.message
+      ?? draftAutosavesError?.message
       ?? "No se pudieron cargar indicadores de confianza.",
     );
   }
@@ -1761,6 +1834,25 @@ export async function listOrganizationWorkspaceDocuments(input: {
     }
   }
 
+  const manualInterventionActorIdByDraftId = new Map<string, string | null>();
+
+  for (const row of (((draftAutosavesResult.data as WorkspaceDraftAutosaveRow[] | null) ?? []))) {
+    if (manualInterventionActorIdByDraftId.has(row.draft_id)) {
+      continue;
+    }
+
+    if (hasManualAccountingIntervention(row.payload_patch_json)) {
+      manualInterventionActorIdByDraftId.set(row.draft_id, row.saved_by ?? null);
+    }
+  }
+
+  const manualInterventionProfileLookup = await loadProfileDisplayLookup(
+    supabase,
+    Array.from(manualInterventionActorIdByDraftId.values()).filter(
+      (value): value is string => typeof value === "string",
+    ),
+  );
+
   return Promise.all(rows.map(async (row) => ({
     ...(() => {
       const facts = row.current_draft_id
@@ -1788,6 +1880,15 @@ export async function listOrganizationWorkspaceDocuments(input: {
         certaintyConfidence: decision?.confidence_score ?? null,
         duplicateStatus: duplicateStatusByDocumentId.get(row.id) ?? null,
         decisionSource: decision?.decision_source ?? null,
+        manualInterventionBy:
+          row.current_draft_id && manualInterventionActorIdByDraftId.has(row.current_draft_id)
+            ? (() => {
+                const actorId = manualInterventionActorIdByDraftId.get(row.current_draft_id) ?? null;
+                const profile = actorId ? manualInterventionProfileLookup.get(actorId) : null;
+
+                return profile?.full_name || profile?.email || null;
+              })()
+            : null,
       };
     })(),
     id: row.id,

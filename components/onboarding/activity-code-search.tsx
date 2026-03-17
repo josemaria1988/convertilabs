@@ -245,7 +245,9 @@ export function ActivityCodeSearch({
       <p className="text-sm leading-6 text-[color:var(--color-muted)]">
         {selectedActivity
           ? selectedActivity.requiresRefinement
-            ? `Seleccionaste ${selectedActivity.title}, pero antes de guardar debes refinarla a una subclase oficial.`
+            ? selectedActivity.isLegacySelection
+              ? `Seleccionaste ${selectedActivity.title} con una granularidad historica. Conviene refinarla a una subclase oficial cuando actualices el perfil.`
+              : `Seleccionaste ${selectedActivity.title}, pero antes de guardar debes refinarla a una subclase oficial.`
             : `Seleccionada: ${selectedActivity.title}.`
           : "Busca por codigo, rubro o palabra comun. Si eliges una clase padre, te pediremos refinarla antes de guardar."}
       </p>

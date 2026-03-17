@@ -179,6 +179,12 @@ export function getActivityByCode(code: string | null | undefined) {
     ?? resolveLegacyActivityCode(normalizedCode);
 }
 
+export function isHistoricalProfileCompatibleActivity(
+  activity: ActivityCatalogEntry | null | undefined,
+) {
+  return Boolean(activity && (activity.isSelectable || activity.isLegacySelection));
+}
+
 export function getActivityChildren(
   parentCode: string | null | undefined,
   options?: ActivitySearchOptions,

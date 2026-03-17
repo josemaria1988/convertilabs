@@ -308,6 +308,45 @@ function formatPostingStatus(value: string | null) {
   }
 }
 
+function formatDraftStatus(value: string) {
+  switch (value) {
+    case "confirmed":
+      return "Confirmado";
+    case "ready_for_confirmation":
+      return "Listo para confirmar";
+    case "open":
+      return "Abierto";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function formatNextRecommendedAction(value: string) {
+  switch (value) {
+    case "process_extraction":
+      return "Procesar extraccion";
+    case "retry_extraction":
+      return "Reintentar extraccion";
+    case "open_review":
+      return "Abrir revision";
+    case "wait":
+      return "Esperar";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function formatConfirmationType(value: string | null | undefined) {
+  switch (value) {
+    case "final":
+      return "Confirmacion final";
+    case "reconfirmation":
+      return "Reconfirmacion";
+    default:
+      return value ? value.replace(/_/g, " ") : "Confirmacion";
+  }
+}
+
 function toEditableFacts(facts: DocumentIntakeFactMap) {
   return {
     issuer_name: facts.issuer_name ?? "",
@@ -359,6 +398,13 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   } = props;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const startsConfirmedReview =
+    pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
+  const startsReopenedReview = pageData.document.status === "classified_with_open_revision";
+  const startsWithForcedManualFlow =
+    startsReopenedReview
+    || isManualClassificationRequired(pageData)
+    || isSettlementContextRequired(pageData);
   const [identity, setIdentity] = useState({
     documentRole: pageData.draft.documentRole,
     documentType: pageData.draft.documentType,
@@ -408,10 +454,10 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const [pendingInlineAction, setPendingInlineAction] = useState<"create_account" | null>(null);
   const [duplicateNote, setDuplicateNote] = useState("");
   const [showManualFlow, setShowManualFlow] = useState(
-    isManualClassificationRequired(pageData) || isSettlementContextRequired(pageData),
+    startsConfirmedReview ? false : startsWithForcedManualFlow,
   );
   const [manualStage, setManualStage] = useState<1 | 2>(
-    1,
+    startsReopenedReview ? 2 : 1,
   );
   const [showCreateAccountStage, setShowCreateAccountStage] = useState(false);
 
@@ -444,8 +490,18 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         ?? pageData.derived.settlementContext.settlementEvidenceSource,
     });
     setAvailableAccounts(pageData.accountingOptions.accounts);
-    if (isManualClassificationRequired(pageData) || isSettlementContextRequired(pageData)) {
+    if (pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final") {
+      setShowManualFlow(false);
+      setShowCreateAccountStage(false);
+    } else if (
+      pageData.document.status === "classified_with_open_revision"
+      || isManualClassificationRequired(pageData)
+      || isSettlementContextRequired(pageData)
+    ) {
       setShowManualFlow(true);
+      if (pageData.document.status === "classified_with_open_revision") {
+        setManualStage(2);
+      }
     }
   }, [pageData]);
 
@@ -759,6 +815,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const selectedAccountTypeLabel = selectedAccount
     ? formatAccountTypeLabel(selectedAccount.accountType)
     : null;
+  const isConfirmedReview =
+    pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
+  const latestConfirmation = pageData.confirmations[0] ?? null;
 
   return (
     <div className="space-y-6">
@@ -772,8 +831,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               {pageData.document.originalFilename}
             </h2>
             <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-              Flujo corto: clasificacion automatica, contexto manual si hace falta,
-              asignacion contable y cierre.
+              {isConfirmedReview
+                ? "La revision ya fue confirmada. Debajo ves el resumen final del proceso y el asiento resultante."
+                : "Flujo corto: clasificacion automatica, contexto manual si hace falta, asignacion contable y cierre."}
             </p>
           </div>
           <DocumentOriginalModalTrigger
@@ -810,7 +870,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               {formatPostingStatus(pageData.document.postingStatus)}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              {pageData.workflowState.nextRecommendedAction}
+              {isConfirmedReview
+                ? "Revision cerrada"
+                : formatNextRecommendedAction(pageData.workflowState.nextRecommendedAction)}
             </p>
           </div>
         </div>
@@ -822,7 +884,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         ) : null}
       </section>
 
-      {duplicateStatus !== "clear" ? (
+      {!isConfirmedReview && duplicateStatus !== "clear" ? (
         <section className="panel border-rose-200 bg-rose-50/70 p-6">
           <p className="text-sm font-semibold text-rose-900">
             Posible duplicado: {duplicateStatus.replace(/_/g, " ")}
@@ -875,15 +937,17 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
       <section className="panel p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
-          Etapa inicial
+          {isConfirmedReview ? "Resumen" : "Etapa inicial"}
         </p>
         <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h3 className="text-2xl font-semibold tracking-[-0.05em]">
-              Clasificacion automatica
+              {isConfirmedReview ? "Clasificacion resuelta" : "Clasificacion automatica"}
             </h3>
             <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-              {pageData.classificationActionHint}
+              {isConfirmedReview
+                ? "La clasificacion quedo cerrada como parte de la confirmacion final. Si necesitas cambiar algo, reabre la revision."
+                : pageData.classificationActionHint}
             </p>
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
@@ -892,10 +956,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-            <p className="font-semibold">Cuenta principal sugerida</p>
-            <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
-          </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">
+                {isConfirmedReview ? "Cuenta principal confirmada" : "Cuenta principal sugerida"}
+              </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
+            </div>
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
             <p className="font-semibold">Confianza</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
@@ -915,36 +981,38 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            disabled={!pageData.canRunClassification || isPending}
-            onClick={() => {
-              runSimpleAction("classify", runClassificationAction);
-            }}
-            className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
-          >
-            {pendingAction === "classify" && isPending ? <InlineSpinner /> : null}
-            {classificationRequired ? "Reintentar clasificacion" : "Ejecutar clasificacion"}
-          </button>
-          {!showManualFlow ? (
+        {!isConfirmedReview ? (
+          <div className="mt-5 flex flex-wrap gap-3">
             <button
               type="button"
+              disabled={!pageData.canRunClassification || isPending}
               onClick={() => {
-                setShowManualFlow(true);
-                setManualStage(1);
+                runSimpleAction("classify", runClassificationAction);
               }}
-              className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+              className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
             >
-              {pageData.workflowState.classificationStatus === "completed"
-                ? "Ajustar manualmente"
-                : "Abrir clasificacion manual"}
+              {pendingAction === "classify" && isPending ? <InlineSpinner /> : null}
+              {classificationRequired ? "Reintentar clasificacion" : "Ejecutar clasificacion"}
             </button>
-          ) : null}
-        </div>
+            {!showManualFlow ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualFlow(true);
+                  setManualStage(1);
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+              >
+                {pageData.workflowState.classificationStatus === "completed"
+                  ? "Ajustar manualmente"
+                  : "Abrir clasificacion manual"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
-      {showManualFlow ? (
+      {!isConfirmedReview && showManualFlow ? (
         <section className="panel p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
             Etapa 1
@@ -1281,7 +1349,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
-      {showManualFlow && manualStage >= 2 ? (
+      {!isConfirmedReview && showManualFlow && manualStage >= 2 ? (
         <section className="panel p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
             Etapa 2
@@ -1405,7 +1473,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
-      {showManualFlow && showCreateAccountStage ? (
+      {!isConfirmedReview && showManualFlow && showCreateAccountStage ? (
         <section className="panel p-6">
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Crear cuenta nueva</h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
@@ -1463,44 +1531,114 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
+      {isConfirmedReview ? (
+        <section className="panel p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
+            Resultado final
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
+            Documento confirmado
+          </h3>
+          <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+            Este documento ya fue cerrado contable y fiscalmente para esta revision. Debajo ves el asiento final y el contexto con el que quedo confirmado.
+          </p>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Estado final</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {formatPostingStatus(pageData.document.postingStatus)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Draft {formatDraftStatus(pageData.draft.status)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Ultima confirmacion</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {latestConfirmation ? formatConfirmationType(latestConfirmation.type) : "Confirmacion registrada"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                {latestConfirmation
+                  ? `${formatDate(latestConfirmation.confirmedAt)} por ${latestConfirmation.confirmedBy}`
+                  : "Sin detalle disponible"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Cuenta principal final</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                {primaryAccountUi.label}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <TemplatePreviewCard
+              templateCode={pageData.derived.settlementContext.templateCode}
+              operationKind={pageData.derived.settlementContext.operationKind}
+              explanation={pageData.derived.journalSuggestion.explanation}
+              requiresFollowupSettlement={pageData.derived.settlementContext.requiresFollowupSettlement}
+            />
+            <SettlementMethodCard
+              paymentTerms={pageData.derived.settlementContext.paymentTerms}
+              settlementMethod={pageData.derived.settlementContext.settlementMethod}
+              settlementEvidenceSource={pageData.derived.settlementContext.settlementEvidenceSource}
+              requiresFollowupSettlement={pageData.derived.settlementContext.requiresFollowupSettlement}
+              warning={pageData.derived.settlementContext.warnings[0] ?? null}
+            />
+          </div>
+
+          <div className="mt-5">
+            <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+          </div>
+        </section>
+      ) : null}
+
       <section className="panel p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
-          Cierre
+          {isConfirmedReview ? "Revision cerrada" : "Cierre"}
         </p>
         <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-          Siguiente paso del documento
+          {isConfirmedReview ? "Acciones disponibles" : "Siguiente paso del documento"}
         </h3>
         <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-          Solo cuando la clasificacion queda resuelta seguimos con posteo, confirmacion o reapertura.
+          {isConfirmedReview
+            ? "La revision ya fue confirmada. Si necesitas volver a editar etapas o reasignar cuentas, primero reabre la revision."
+            : "Solo cuando la clasificacion queda resuelta seguimos con posteo, confirmacion o reapertura."}
         </p>
-        {pageData.derived.validation.blockers.length > 0 ? (
+        {!isConfirmedReview && pageData.derived.validation.blockers.length > 0 ? (
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
             {pageData.derived.validation.blockers.join(" ")}
           </div>
         ) : null}
         <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            type="button"
-            disabled={!pageData.canPostProvisional || isPending}
-            onClick={() => {
-              runSimpleAction("post_provisional", postProvisionalDocumentAction);
-            }}
-            className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
-          >
-            {pendingAction === "post_provisional" && isPending ? <InlineSpinner /> : null}
-            Postear provisional
-          </button>
-          <button
-            type="button"
-            disabled={!pageData.canConfirmFinal || isPending}
-            onClick={() => {
-              runConfirmFinal();
-            }}
-            className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
-          >
-            {pendingAction === "confirm_final" && isPending ? <InlineSpinner /> : null}
-            Confirmar final
-          </button>
+          {!isConfirmedReview ? (
+            <>
+              <button
+                type="button"
+                disabled={!pageData.canPostProvisional || isPending}
+                onClick={() => {
+                  runSimpleAction("post_provisional", postProvisionalDocumentAction);
+                }}
+                className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
+              >
+                {pendingAction === "post_provisional" && isPending ? <InlineSpinner /> : null}
+                Postear provisional
+              </button>
+              <button
+                type="button"
+                disabled={!pageData.canConfirmFinal || isPending}
+                onClick={() => {
+                  runConfirmFinal();
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
+              >
+                {pendingAction === "confirm_final" && isPending ? <InlineSpinner /> : null}
+                Confirmar final
+              </button>
+            </>
+          ) : null}
           {pageData.canReopen ? (
             <button
               type="button"

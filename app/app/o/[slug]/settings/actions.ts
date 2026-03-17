@@ -25,7 +25,10 @@ import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accou
 import { buildPresetApplicationComment } from "@/modules/explanations/decision-comment-builder";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildPresetRecommendation } from "@/modules/accounting/presets/recommendation-engine";
-import { getActivityByCode } from "@/modules/organizations/activity-catalog";
+import {
+  getActivityByCode,
+  isHistoricalProfileCompatibleActivity,
+} from "@/modules/organizations/activity-catalog";
 import {
   createOrganizationBusinessProfileVersion,
   recordOrganizationPresetApplication,
@@ -276,7 +279,7 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
     throw new Error("La actividad principal no existe en el catalogo oficial actual.");
   }
 
-  if (!primaryActivity.isSelectable) {
+  if (!isHistoricalProfileCompatibleActivity(primaryActivity)) {
     throw new Error(
       primaryActivity.isLegacySelection
         ? "La actividad principal quedo con una granularidad vieja. Refinala antes de guardar."
@@ -290,13 +293,13 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
 
   const invalidSecondaryActivity = secondaryActivityCodes
     .map((code) => getActivityByCode(code))
-    .find((activity) => !activity || !activity.isSelectable);
+    .find((activity) => !isHistoricalProfileCompatibleActivity(activity));
 
   if (invalidSecondaryActivity === undefined) {
     throw new Error("Las actividades secundarias deben existir en el catalogo oficial.");
   }
 
-  if (invalidSecondaryActivity && !invalidSecondaryActivity.isSelectable) {
+  if (invalidSecondaryActivity && !isHistoricalProfileCompatibleActivity(invalidSecondaryActivity)) {
     throw new Error(
       invalidSecondaryActivity.isLegacySelection
         ? "Tienes una actividad secundaria con granularidad vieja. Refinala antes de guardar."
@@ -411,6 +414,11 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/documents`);
+  revalidatePath(`/app/o/${organization.slug}/imports`);
+
+  if (selectedCompositionResolution.applicationMode === "external_import") {
+    redirect(`/app/o/${organization.slug}/imports?focus=chart_of_accounts_import&from=settings`);
+  }
 }
 
 export async function createOrganizationChartAccountAction(formData: FormData) {

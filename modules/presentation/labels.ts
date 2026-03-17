@@ -431,7 +431,7 @@ export function formatSourceTypeLabel(value: string | null | undefined) {
     case "imported_from_document":
       return "Importado desde documento";
     case "manual_override":
-      return "Override manual";
+      return "Revision manual";
     case "system_generated":
       return "Generado por el sistema";
     default:
@@ -461,7 +461,7 @@ export function formatDecisionSourceLabel(value: string | null | undefined) {
     case "assistant":
       return "Asistente IA";
     case "manual_override":
-      return "Override manual";
+      return "Revision manual";
     case "imported":
       return "Importado";
     default:

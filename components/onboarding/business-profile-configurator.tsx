@@ -110,7 +110,7 @@ function describePlanMode(planSetupMode: PlanSetupMode) {
     case "alternative":
       return "Aplicaremos una alternativa cercana, manteniendo starter accounts y cuentas temporales disponibles.";
     case "external_import":
-      return "La organizacion queda operable con minimo + temporales y podras importar tu plan desde planilla enseguida.";
+      return "La organizacion queda operable con minimo + temporales y, al guardar, te llevamos a Importaciones para subir tu plan desde planilla.";
     case "minimal_temp_only":
       return "Arrancas con una estructura minima, TEMP-* y procesamiento activo sin definir el plan final hoy.";
     case "hybrid_ai_recommended":
@@ -765,6 +765,12 @@ export function BusinessProfileConfigurator({
             {describePlanMode(planSetupMode)}
           </p>
         </div>
+
+        {scope === "settings" && planSetupMode === "external_import" ? (
+          <div className="rounded-2xl border border-[rgba(124,157,255,0.32)] bg-[rgba(124,157,255,0.08)] px-4 py-3 text-sm leading-6 text-sky-50">
+            Al guardar el perfil, abrimos la pantalla de Importaciones para que subas la planilla del plan de cuentas.
+          </div>
+        ) : null}
 
         {fieldErrors?.planSetupMode ? (
           <p className="text-sm text-amber-800">{fieldErrors.planSetupMode}</p>

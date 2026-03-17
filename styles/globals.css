@@ -479,6 +479,7 @@ input[type="checkbox"] {
 
 .ui-button {
   display: inline-flex;
+  cursor: pointer;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -492,7 +493,13 @@ input[type="checkbox"] {
   transition:
     border-color 0.18s ease,
     background-color 0.18s ease,
-    color 0.18s ease;
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.ui-button:hover:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(-1px);
 }
 
 .ui-button--primary {
@@ -501,9 +508,21 @@ input[type="checkbox"] {
   color: white;
 }
 
+.ui-button--primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: rgba(123, 153, 212, 0.34);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 22px rgba(71, 111, 174, 0.26);
+}
+
 .ui-button--secondary {
   background: rgba(72, 82, 102, 0.4);
   color: white;
+}
+
+.ui-button--secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: rgba(124, 157, 255, 0.22);
+  background: rgba(82, 95, 120, 0.6);
+  box-shadow: 0 8px 18px rgba(23, 31, 47, 0.28);
 }
 
 .ui-button--success {
@@ -529,10 +548,30 @@ input[type="checkbox"] {
   color: var(--muted);
 }
 
+.ui-button--ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: rgba(124, 157, 255, 0.22);
+  background: rgba(82, 95, 120, 0.32);
+  color: white;
+  box-shadow: 0 8px 18px rgba(23, 31, 47, 0.22);
+}
+
+.ui-button--success:hover:not(:disabled):not([aria-disabled="true"]),
+.ui-button--warning:hover:not(:disabled):not([aria-disabled="true"]),
+.ui-button--danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: 0 8px 18px rgba(23, 31, 47, 0.22);
+}
+
 .ui-button:disabled,
 .ui-button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.72;
+}
+
+button:not(:disabled),
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled) {
+  cursor: pointer;
 }
 
 .ui-filter,

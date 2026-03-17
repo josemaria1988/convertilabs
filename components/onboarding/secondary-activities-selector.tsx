@@ -37,6 +37,7 @@ export function SecondaryActivitiesSelector({
   const selectedActivities = value
     .map((code) => getActivityByCode(code))
     .filter((activity): activity is NonNullable<typeof activity> => Boolean(activity));
+  const hasLegacySelections = selectedActivities.some((activity) => activity.isLegacySelection);
   const results = useMemo(
     () =>
       searchActivities(query, 8, {
@@ -200,9 +201,15 @@ export function SecondaryActivitiesSelector({
               onClick={() => {
                 onChange(value.filter((code) => code !== activity.code));
               }}
-              className="rounded-full border border-[color:var(--color-border)] bg-white/10 px-3 py-2 text-xs text-white transition hover:bg-white/16"
+              className={`rounded-full border px-3 py-2 text-xs transition ${
+                activity.isLegacySelection
+                  ? "border-amber-300/35 bg-amber-500/12 text-amber-50 hover:bg-amber-500/18"
+                  : "border-[color:var(--color-border)] bg-white/10 text-white hover:bg-white/16"
+              }`}
             >
-              {activity.displayCode} - {activity.title} x
+              {activity.displayCode} - {activity.title}
+              {activity.isLegacySelection ? " (historica)" : ""}
+              {" "}x
             </button>
           ))
         ) : (
@@ -211,6 +218,12 @@ export function SecondaryActivitiesSelector({
           </div>
         )}
       </div>
+
+      {hasLegacySelections ? (
+        <div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-50">
+          Detectamos actividades secundarias historicas. Conviene refinarlas luego a subclases oficiales para dejar el perfil alineado al catalogo vigente.
+        </div>
+      ) : null}
 
       <p className="text-sm leading-6 text-[color:var(--color-muted)]">
         Suma solo actividades recurrentes y materiales. Si una opcion es demasiado amplia, primero refinala a su subclase oficial.

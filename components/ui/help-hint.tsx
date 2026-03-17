@@ -68,6 +68,12 @@ export function HelpHint({
     ? "h-6 w-6 text-[12px]"
     : "h-5 w-5 text-[11px]";
   const shouldShowPreview = mode === "tooltip" ? isHovering || isPinned : isHovering && !isPinned;
+  const triggerClasses =
+    `inline-flex cursor-pointer items-center justify-center rounded-full border font-semibold transition ${sizeClasses} ${buttonClasses}`;
+
+  function togglePinned() {
+    setIsPinned((current) => !current);
+  }
 
   return (
     <span
@@ -80,17 +86,33 @@ export function HelpHint({
         setIsHovering(false);
       }}
     >
-      <button
-        type="button"
+      <span
+        role="button"
+        tabIndex={0}
         aria-label={`Ayuda sobre ${resolvedContent.title}`}
         aria-expanded={isPinned}
-        onClick={() => {
-          setIsPinned((current) => !current);
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
         }}
-        className={`inline-flex items-center justify-center rounded-full border font-semibold transition ${sizeClasses} ${buttonClasses}`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          togglePinned();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          togglePinned();
+        }}
+        className={triggerClasses}
       >
         ?
-      </button>
+      </span>
 
       {shouldShowPreview && !isPinned ? (
         <span className="absolute left-1/2 top-[calc(100%+8px)] z-20 min-w-[220px] max-w-[280px] -translate-x-1/2 rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(20,27,40,0.98)] px-3 py-2 text-xs leading-5 text-[color:var(--color-muted)] shadow-[0_18px_40px_rgba(7,9,14,0.35)]">

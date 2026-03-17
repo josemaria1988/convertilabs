@@ -4,6 +4,7 @@ const { test, assert } = require("./testkit.cjs");
 const {
   getActivityByCode,
   getActivityChildren,
+  isHistoricalProfileCompatibleActivity,
 } = require("@/modules/organizations/activity-catalog");
 const {
   searchActivities,
@@ -28,6 +29,13 @@ test("activity catalog children resolve official subclasses from a parent class"
 
   assert.ok(children.some((entry) => entry.code === "70201"));
   assert.ok(children.some((entry) => entry.code === "70202"));
+});
+
+test("historical profile compatibility accepts refined and legacy activities but rejects coarse current classes", () => {
+  assert.equal(isHistoricalProfileCompatibleActivity(getActivityByCode("47521")), true);
+  assert.equal(isHistoricalProfileCompatibleActivity(getActivityByCode("47520")), true);
+  assert.equal(isHistoricalProfileCompatibleActivity(getActivityByCode("4752")), false);
+  assert.equal(isHistoricalProfileCompatibleActivity(null), false);
 });
 
 test("activity search finds refined subclasses through aliases and descriptions", () => {

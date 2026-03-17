@@ -36,6 +36,7 @@ type DocumentsWorkspaceTableItem = {
   certaintyConfidence: number | null;
   duplicateStatus: string | null;
   decisionSource: string | null;
+  manualInterventionBy: string | null;
   storageStatus: "stored" | "upload_error";
   storageStatusLabel: string;
   storageFailureMessage: string | null;
@@ -143,6 +144,14 @@ function getNoticeClasses(tone: NoticeTone) {
   }
 
   return "border-[color:var(--color-border)] bg-white/5 text-[color:var(--color-muted)]";
+}
+
+function formatDecisionAuditLabel(document: DocumentsWorkspaceTableItem) {
+  if (document.decisionSource === "manual_override") {
+    return `Revision intervenida por: ${document.manualInterventionBy ?? "Usuario del equipo"}`;
+  }
+
+  return formatDecisionSourceLabel(document.decisionSource);
 }
 
 export function DocumentsWorkspaceTable({
@@ -514,7 +523,7 @@ export function DocumentsWorkspaceTable({
                         {getDocumentRoleLabel(document.role)}
                       </span>
                       <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
-                        {formatDecisionSourceLabel(document.decisionSource)}
+                        {formatDecisionAuditLabel(document)}
                       </div>
                       {document.duplicateStatus && document.duplicateStatus !== "clear" ? (
                         <div className="mt-1 text-[13px] text-amber-900">
