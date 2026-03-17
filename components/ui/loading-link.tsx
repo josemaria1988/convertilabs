@@ -1,8 +1,9 @@
 "use client";
 
 import Link, { type LinkProps } from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { MouseEvent, MouseEventHandler, ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
 type LoadingLinkProps = LinkProps & {
@@ -26,6 +27,37 @@ export function LoadingLink({
   ...props
 }: LoadingLinkProps) {
   const [isPending, setIsPending] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentHref = useMemo(() => {
+    const query = searchParams.toString();
+    return `${pathname}${query ? `?${query}` : ""}`;
+  }, [pathname, searchParams]);
+  const targetHref = useMemo(() => {
+    if (typeof props.href === "string") {
+      return props.href;
+    }
+
+    const query = new URLSearchParams();
+
+    for (const [key, rawValue] of Object.entries(props.href.query ?? {})) {
+      const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+      for (const value of values) {
+        if (value !== undefined) {
+          query.append(key, String(value));
+        }
+      }
+    }
+
+    const search = query.toString();
+    const hash = props.href.hash ? `#${props.href.hash}` : "";
+    return `${props.href.pathname ?? ""}${search ? `?${search}` : ""}${hash}`;
+  }, [props.href]);
+
+  useEffect(() => {
+    setIsPending(false);
+  }, [currentHref]);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     onClick?.(event);
@@ -40,6 +72,10 @@ export function LoadingLink({
       || event.altKey
       || target === "_blank"
     ) {
+      return;
+    }
+
+    if (targetHref.replace(/#.*$/, "") === currentHref) {
       return;
     }
 

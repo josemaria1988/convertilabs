@@ -64,7 +64,7 @@ export async function uploadSpreadsheetImportAction(input: {
     mimeType: file.type,
     bytes: await file.arrayBuffer(),
     preferredMode:
-      preferredModeRaw === "interactive" || preferredModeRaw === "batch"
+      preferredModeRaw === "interactive"
         ? preferredModeRaw
         : null,
   });

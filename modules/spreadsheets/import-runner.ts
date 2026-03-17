@@ -1,7 +1,6 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createSpreadsheetBatchSubmission } from "@/modules/spreadsheets/batch";
 import { interpretSpreadsheetPreview } from "@/modules/spreadsheets/interpreter";
 import { parseSpreadsheetFile } from "@/modules/spreadsheets/parser";
 import {
@@ -17,16 +16,12 @@ import type {
   SpreadsheetParseResult,
 } from "@/modules/spreadsheets/types";
 
-export function chooseSpreadsheetImportMode(preview: SpreadsheetParseResult) {
-  if (
-    preview.totalSheets > 4
-    || preview.totalRows > 140
-    || preview.totalCells > 2_500
-    || preview.sheets.some((sheet) => sheet.truncatedForAnalysis)
-  ) {
-    return "batch" satisfies SpreadsheetImportRunMode;
-  }
+const SUPPORT_SPREADSHEET_ROW_LIMIT = 5_000;
 
+export function chooseSpreadsheetImportMode(preview: SpreadsheetParseResult): SpreadsheetImportRunMode {
+  // Auto stays interactive until spreadsheet batch runs can be rehydrated
+  // back into a usable preview automatically.
+  void preview;
   return "interactive" satisfies SpreadsheetImportRunMode;
 }
 
@@ -35,7 +30,8 @@ export function canRetrySpreadsheetImportRun(run: SpreadsheetImportRunRecord) {
 }
 
 export function canCancelSpreadsheetImportRun(run: SpreadsheetImportRunRecord) {
-  return ["preview_ready", "queued", "in_progress"].includes(run.status);
+  return ["preview_ready", "queued", "in_progress"].includes(run.status)
+    || (run.status === "completed" && !run.confirmedAt);
 }
 
 async function completeInteractiveImport(input: {
@@ -73,40 +69,6 @@ async function completeInteractiveImport(input: {
   });
 }
 
-async function queueBatchImport(input: {
-  supabase: SupabaseClient;
-  run: SpreadsheetImportRunRecord;
-  organizationId: string;
-  preview: SpreadsheetParseResult;
-}) {
-  const batch = await createSpreadsheetBatchSubmission({
-    previews: [
-      {
-        customId: input.run.id,
-        preview: input.preview,
-      },
-    ],
-    metadata: {
-      organization_id: input.organizationId,
-      job_type: "spreadsheet_import_backfill",
-    },
-  });
-  const events = appendSpreadsheetStatusEvent(
-    input.run.statusEvents,
-    "queued",
-    `Import enviado a Batch API con batch ${batch.batchId}.`,
-  );
-
-  return updateSpreadsheetImportRun(input.supabase, {
-    organizationId: input.organizationId,
-    runId: input.run.id,
-    status: "queued",
-    batchId: batch.batchId,
-    estimatedCostUsd: batch.estimatedCostUsd,
-    statusEvents: events,
-  });
-}
-
 export async function runSpreadsheetImport(input: {
   supabase: SupabaseClient;
   organizationId: string;
@@ -120,8 +82,9 @@ export async function runSpreadsheetImport(input: {
     fileName: input.fileName,
     mimeType: input.mimeType ?? null,
     bytes: input.bytes,
+    rowLimitForAnalysis: SUPPORT_SPREADSHEET_ROW_LIMIT,
   });
-  const mode = input.preferredMode ?? chooseSpreadsheetImportMode(preview);
+  const mode = chooseSpreadsheetImportMode(preview);
   const initialEvents = [
     {
       code: "preview_ready",
@@ -129,6 +92,15 @@ export async function runSpreadsheetImport(input: {
       createdAt: new Date().toISOString(),
     },
   ];
+
+  if (input.preferredMode === "batch") {
+    initialEvents.push({
+      code: "fallback_interactive",
+      message: "Batch API para planillas de soporte no esta habilitada todavia; se usa interpretacion interactiva.",
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   const run = await createSpreadsheetImportRun(input.supabase, {
     organizationId: input.organizationId,
     fileName: input.fileName,
@@ -145,47 +117,6 @@ export async function runSpreadsheetImport(input: {
       source_type: "spreadsheet_import",
     },
   });
-
-  if (mode === "batch" && process.env.OPENAI_API_KEY) {
-    try {
-      return await queueBatchImport({
-        supabase: input.supabase,
-        run,
-        organizationId: input.organizationId,
-        preview,
-      });
-    } catch (error) {
-      const failedEvents = appendSpreadsheetStatusEvent(
-        run.statusEvents,
-        "failed",
-        error instanceof Error ? error.message : "No se pudo encolar el batch de planillas.",
-      );
-
-      return updateSpreadsheetImportRun(input.supabase, {
-        organizationId: input.organizationId,
-        runId: run.id,
-        status: "failed",
-        warnings: [
-          ...preview.warnings,
-          error instanceof Error ? error.message : "No se pudo encolar el batch de planillas.",
-        ],
-        statusEvents: failedEvents,
-      });
-    }
-  }
-
-  if (mode === "batch" && !process.env.OPENAI_API_KEY) {
-    const events = appendSpreadsheetStatusEvent(
-      run.statusEvents,
-      "fallback_interactive",
-      "No hay OPENAI_API_KEY disponible, se usa interpretacion heuristica interactiva.",
-    );
-    await updateSpreadsheetImportRun(input.supabase, {
-      organizationId: input.organizationId,
-      runId: run.id,
-      statusEvents: events,
-    });
-  }
 
   return completeInteractiveImport({
     supabase: input.supabase,
@@ -215,7 +146,6 @@ export async function retrySpreadsheetImport(input: {
     throw new Error("No existe preview persistido para reintentar la planilla.");
   }
 
-  const mode = input.preferredMode ?? run.runMode;
   const retryCount = run.retryCount + 1;
   const resetEvents = appendSpreadsheetStatusEvent(
     run.statusEvents,
@@ -232,15 +162,6 @@ export async function retrySpreadsheetImport(input: {
     retryCount,
     statusEvents: resetEvents,
   });
-
-  if (mode === "batch" && process.env.OPENAI_API_KEY) {
-    return queueBatchImport({
-      supabase: input.supabase,
-      run: refreshedRun,
-      organizationId: input.organizationId,
-      preview: run.preview,
-    });
-  }
 
   return completeInteractiveImport({
     supabase: input.supabase,

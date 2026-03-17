@@ -32,23 +32,42 @@ export type ChartImportPreview = {
 function normalizeAccountType(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase();
 
-  if (["asset", "activo", "activos", "circulante"].includes(normalized)) {
+  if (
+    ["asset", "activo", "activos", "circulante"].includes(normalized)
+    || normalized.includes("activo")
+  ) {
     return "asset" as const;
   }
 
-  if (["liability", "pasivo", "pasivos", "proveedores"].includes(normalized)) {
+  if (
+    ["liability", "pasivo", "pasivos", "proveedores"].includes(normalized)
+    || normalized.includes("pasivo")
+    || normalized.includes("proveedor")
+  ) {
     return "liability" as const;
   }
 
-  if (["equity", "patrimonio", "capital"].includes(normalized)) {
+  if (
+    ["equity", "patrimonio", "capital"].includes(normalized)
+    || normalized.includes("patrimonio")
+    || normalized.includes("capital")
+  ) {
     return "equity" as const;
   }
 
-  if (["revenue", "ingreso", "ingresos", "venta", "ventas"].includes(normalized)) {
+  if (
+    ["revenue", "ingreso", "ingresos", "venta", "ventas"].includes(normalized)
+    || normalized.includes("ingreso")
+    || normalized.includes("venta")
+  ) {
     return "revenue" as const;
   }
 
-  if (["expense", "gasto", "gastos", "cost", "costo", "costos"].includes(normalized)) {
+  if (
+    ["expense", "gasto", "gastos", "cost", "costo", "costos"].includes(normalized)
+    || normalized.includes("gasto")
+    || normalized.includes("costo")
+  ) {
     return "expense" as const;
   }
 
@@ -61,11 +80,17 @@ function normalizeNormalSide(
 ) {
   const normalized = (value ?? "").trim().toLowerCase();
 
-  if (["debit", "debito", "debe", "deudor"].includes(normalized)) {
+  if (
+    ["debit", "debito", "debe", "deudor", "deudora"].includes(normalized)
+    || normalized.includes("deudor")
+  ) {
     return "debit" as const;
   }
 
-  if (["credit", "credito", "haber", "acreedor"].includes(normalized)) {
+  if (
+    ["credit", "credito", "haber", "acreedor", "acreedora"].includes(normalized)
+    || normalized.includes("acreedor")
+  ) {
     return "credit" as const;
   }
 

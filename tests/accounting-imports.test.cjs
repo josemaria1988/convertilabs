@@ -16,8 +16,8 @@ test("chart import preview normalizes a simple account row", () => {
         {
           code: "6101",
           name: "Gastos administrativos",
-          accountType: "expense",
-          normalSide: null,
+          accountType: "Gastos y costos",
+          normalSide: "deudora",
           isPostable: true,
         },
       ],

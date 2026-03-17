@@ -126,9 +126,19 @@ const journalFieldMatchers: Record<string, string[]> = {
 const chartFieldMatchers: Record<string, string[]> = {
   code: ["codigo", "cuenta", "code"],
   name: ["nombre", "descripcion", "name"],
-  accountType: ["tipo", "account type", "clase"],
-  normalSide: ["saldo normal", "normal side", "naturaleza"],
-  isPostable: ["postable", "postable?", "movimiento", "acepta asiento"],
+  accountType: [
+    "categoria mayor",
+    "categoria_mayor",
+    "rubro 1",
+    "rubro_1",
+    "rubro 2",
+    "rubro_2",
+    "tipo",
+    "account type",
+    "clase",
+  ],
+  normalSide: ["saldo natural", "saldo_natural", "saldo normal", "normal side", "naturaleza"],
+  isPostable: ["tipo registro", "tipo_registro", "postable", "postable?", "movimiento", "acepta asiento"],
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -166,6 +176,52 @@ function parseBooleanLike(value: string | null | undefined) {
   return ["si", "yes", "true", "1", "x"].includes(normalized);
 }
 
+function parsePostableLike(value: string | null | undefined) {
+  const normalized = normalizeText(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    [
+      "si",
+      "yes",
+      "true",
+      "1",
+      "x",
+      "movimiento",
+      "detalle",
+      "detallada",
+      "auxiliar",
+      "imputable",
+      "transaccional",
+      "postable",
+    ].includes(normalized)
+  ) {
+    return true;
+  }
+
+  if (
+    [
+      "no",
+      "false",
+      "0",
+      "titulo",
+      "cabecera",
+      "agrupadora",
+      "agrupador",
+      "acumuladora",
+      "totalizadora",
+      "resumen",
+    ].includes(normalized)
+  ) {
+    return false;
+  }
+
+  return parseBooleanLike(value);
+}
+
 function isSupportedSheetIntent(
   value: SpreadsheetSheetIntent["intent"],
 ): value is SupportedSpreadsheetSheetImportType {
@@ -181,31 +237,67 @@ function isSupportedIntentEntry(
 function mapHeaders(headers: string[], matchers: Record<string, string[]>) {
   return headers.flatMap((header) => {
     const normalizedHeader = normalizeText(header);
-    const field = Object.entries(matchers).find(([, keywords]) =>
-      keywords.some((keyword) => normalizedHeader.includes(normalizeText(keyword))));
+    let bestField: string | null = null;
+    let bestScore = -1;
 
-    return field
+    for (const [field, keywords] of Object.entries(matchers)) {
+      for (const keyword of keywords) {
+        const normalizedKeyword = normalizeText(keyword);
+
+        if (!normalizedKeyword || !normalizedHeader.includes(normalizedKeyword)) {
+          continue;
+        }
+
+        if (normalizedKeyword.length > bestScore) {
+          bestField = field;
+          bestScore = normalizedKeyword.length;
+        }
+      }
+    }
+
+    return bestField
       ? [{
           sourceHeader: header,
-          targetField: field[0],
+          targetField: bestField,
         }]
       : [];
   });
 }
 
-function sheetNarrative(sheet: SpreadsheetSheetPreview) {
+function isGenericSheetName(value: string) {
+  const normalized = value.trim();
+  return /^sheet\d*$/i.test(normalized) || /^hoja\d*$/i.test(normalized);
+}
+
+function sheetNarrative(
+  sheet: SpreadsheetSheetPreview,
+  context?: {
+    fileName?: string | null;
+    totalSheets?: number;
+  },
+) {
   const headerText = sheet.headers.map((header) => normalizeText(header)).join(" ");
   const sampleText = sheet.previewRows
     .flat()
     .map((value) => normalizeText(value))
     .join(" ");
   const titleText = normalizeText(sheet.sheetName);
+  const fileText =
+    context?.fileName && (context.totalSheets === 1 || isGenericSheetName(sheet.sheetName))
+      ? normalizeText(context.fileName)
+      : "";
 
-  return [titleText, headerText, sampleText].join(" ").trim();
+  return [titleText, fileText, headerText, sampleText].join(" ").trim();
 }
 
-function inferSheetIntent(sheet: SpreadsheetSheetPreview): SpreadsheetSheetIntent {
-  const narrative = sheetNarrative(sheet);
+function inferSheetIntent(
+  sheet: SpreadsheetSheetPreview,
+  context?: {
+    fileName?: string | null;
+    totalSheets?: number;
+  },
+): SpreadsheetSheetIntent {
+  const narrative = sheetNarrative(sheet, context);
   const vatScore = scoreKeywords(narrative, [
     "iva",
     "debito",
@@ -227,7 +319,16 @@ function inferSheetIntent(sheet: SpreadsheetSheetPreview): SpreadsheetSheetInten
   ]);
   const chartScore = scoreKeywords(narrative, [
     "plan de cuentas",
+    "plan cuentas",
     "codigo",
+    "codigo padre",
+    "nombre padre",
+    "ruta contable",
+    "saldo natural",
+    "tipo registro",
+    "codigo externo",
+    "categoria mayor",
+    "rubro",
     "cuenta",
     "saldo normal",
     "postable",
@@ -403,7 +504,7 @@ function buildChartCanonical(input: {
           name: String(row.name ?? "Cuenta importada"),
           accountType: row.accountType ? String(row.accountType) : null,
           normalSide: row.normalSide ? String(row.normalSide) : null,
-          isPostable: parseBooleanLike(String(row.isPostable ?? "")),
+          isPostable: parsePostableLike(String(row.isPostable ?? "")),
         }));
     });
 
@@ -541,7 +642,10 @@ function buildHeuristicInterpretation(input: {
   organizationId?: string | null;
   preview: SpreadsheetParseResult;
 }) {
-  const sheetIntents = input.preview.sheets.map((sheet) => inferSheetIntent(sheet));
+  const sheetIntents = input.preview.sheets.map((sheet) => inferSheetIntent(sheet, {
+    fileName: input.preview.fileName,
+    totalSheets: input.preview.totalSheets,
+  }));
   const supportedIntents = sheetIntents.filter(isSupportedIntentEntry);
   const distinctTypes = Array.from(
     new Set(supportedIntents.map((intent) => intent.intent)),

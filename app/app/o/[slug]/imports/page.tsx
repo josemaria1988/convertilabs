@@ -155,9 +155,41 @@ function renderCanonicalSummary(
   }
 
   if (canonical.importType === "chart_of_accounts_import") {
+    const previewAccounts = canonical.accounts.slice(0, 12);
+
     return (
-      <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
-        Cuentas detectadas: {canonical.accounts.length}
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
+          Cuentas detectadas: {canonical.accounts.length}
+        </div>
+
+        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+          <p className="font-semibold">Vista previa del plan</p>
+          <div className="mt-3 space-y-2">
+            {previewAccounts.map((account, index) => (
+              <div
+                key={`${account.code}-${index}`}
+                className="rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium">{account.code || "Sin codigo"}</span>
+                  <span className="text-[13px] text-[color:var(--color-muted)]">
+                    {account.isPostable ? "Movimiento" : "No postable"}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                  {account.name || "Cuenta importada"}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {canonical.accounts.length > previewAccounts.length ? (
+            <p className="mt-3 text-[13px] text-[color:var(--color-muted)]">
+              + {canonical.accounts.length - previewAccounts.length} cuenta(s) mas en esta vista previa.
+            </p>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -304,7 +336,6 @@ export default async function OrganizationImportsPage({
               >
                 <option value="auto">Modo auto</option>
                 <option value="interactive">Interactivo</option>
-                <option value="batch">Lote</option>
               </select>
               <SubmitButton pendingLabel="Analizando..." className="ui-button ui-button--primary">
                 Analizar planilla

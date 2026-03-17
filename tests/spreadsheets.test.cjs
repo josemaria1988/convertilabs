@@ -221,7 +221,7 @@ test("spreadsheet interpreter marks mixed imports and ignores irrelevant sheets"
   assert.match(interpreted.warnings.join(" "), /ignoro/i);
 });
 
-test("spreadsheet runner switches to batch mode for large previews", () => {
+test("spreadsheet runner keeps support imports interactive in auto mode", () => {
   const preview = parseSpreadsheetFile({
     fileName: "big.csv",
     mimeType: "text/csv",
@@ -232,13 +232,49 @@ test("spreadsheet runner switches to batch mode for large previews", () => {
     ),
   });
 
-  assert.equal(chooseSpreadsheetImportMode(preview), "batch");
+  assert.equal(chooseSpreadsheetImportMode(preview), "interactive");
+});
+
+test("spreadsheet interpreter recognizes Zeta-like chart of accounts layouts heuristically", async () => {
+  const csv = [
+    "orden,fila_origen,codigo,nombre,codigo_padre,nombre_padre,nivel,categoria_mayor,rubro_1,rubro_2,ruta_contable,tipo_registro,saldo_natural,politica_moneda,politica_centro_costos,permite_dif_cambio,codigo_externo,revision",
+    "1,1,1101,Caja,,Activo,1,Activo corriente,,,1 > 1101,movimiento,deudora,UYU,no,no,EXT-1101,v1",
+    "2,2,2101,Proveedores,,Pasivo,1,Pasivo corriente,,,2 > 2101,titulo,acreedora,UYU,no,no,EXT-2101,v1",
+  ].join("\n");
+
+  const preview = parseSpreadsheetFile({
+    fileName: "RONTIL-plan-cuentas-convertilabs-import.csv",
+    mimeType: "text/csv",
+    bytes: Buffer.from(csv, "utf8"),
+    rowLimitForAnalysis: 5_000,
+  });
+
+  const interpreted = await interpretSpreadsheetPreview({
+    organizationId: "org-1",
+    preview,
+    provider: "heuristic",
+  });
+
+  assert.equal(interpreted.importType, "chart_of_accounts_import");
+  assert.equal(interpreted.canonical.importType, "chart_of_accounts_import");
+  assert.equal(interpreted.canonical.accounts.length, 2);
+  assert.equal(interpreted.canonical.accounts[0].isPostable, true);
+  assert.equal(interpreted.canonical.accounts[1].isPostable, false);
 });
 
 test("spreadsheet run helpers expose cancel and retry states cleanly", () => {
   assert.equal(canCancelSpreadsheetImportRun({
     status: "queued",
+    confirmedAt: null,
   }), true);
+  assert.equal(canCancelSpreadsheetImportRun({
+    status: "completed",
+    confirmedAt: null,
+  }), true);
+  assert.equal(canCancelSpreadsheetImportRun({
+    status: "completed",
+    confirmedAt: "2026-03-17T15:00:00Z",
+  }), false);
   assert.equal(canRetrySpreadsheetImportRun({
     status: "failed",
   }), true);

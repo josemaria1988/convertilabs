@@ -24,6 +24,7 @@ export async function importChartOfAccountsSpreadsheetDirect(input: {
     fileName: input.fileName,
     mimeType: input.mimeType ?? null,
     bytes: input.bytes,
+    rowLimitForAnalysis: 5_000,
   });
   const interpretation = await interpretSpreadsheetPreview({
     organizationId: input.organizationId,
