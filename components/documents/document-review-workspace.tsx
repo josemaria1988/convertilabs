@@ -125,18 +125,88 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
   return new Intl.DateTimeFormat("es-UY", {
     dateStyle: "medium",
     timeStyle: value.includes("T") ? "short" : undefined,
-  }).format(new Date(value));
+  }).format(parsed);
 }
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = "UYU") {
   return new Intl.NumberFormat("es-UY", {
     style: "currency",
-    currency: "UYU",
+    currency,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatFxRate(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("es-UY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
+function getVisibleFxDisplay(input: {
+  currencyCode: string | null | undefined;
+  fxRate: number | null | undefined;
+  fxRateSource: string | null | undefined;
+  fxRateDate: string | null | undefined;
+  fxBcuValue: number | null | undefined;
+  fxBlockingReasons: string[];
+  overrideReason: string | null | undefined;
+}) {
+  const currencyCode = input.currencyCode?.trim().toUpperCase() || "UYU";
+
+  if (currencyCode === "UYU") {
+    return {
+      valueText: "0",
+      detailText: "Factura en pesos uruguayos. No requiere cotizacion BCU.",
+      helperText: "No se aplica conversion porque el documento ya esta expresado en UYU.",
+    };
+  }
+
+  if (input.fxRateSource === "document_default" && input.fxBlockingReasons.length > 0) {
+    return {
+      valueText: "pendiente",
+      detailText: input.fxBlockingReasons[0],
+      helperText: "Se recalcula con el ultimo cierre habil previo del BCU.",
+    };
+  }
+
+  const visibleRate =
+    typeof input.fxBcuValue === "number" && Number.isFinite(input.fxBcuValue) && input.fxBcuValue > 0
+      ? input.fxBcuValue
+      : input.fxRate;
+
+  if (input.fxRateSource === "manual_override") {
+    return {
+      valueText: formatFxRate(visibleRate),
+      detailText: input.overrideReason
+        ? `Tipo de cambio manual auditado. Motivo: ${input.overrideReason}`
+        : "Tipo de cambio manual auditado.",
+      helperText: input.fxRateDate
+        ? `Fecha de referencia: ${formatDate(input.fxRateDate)}`
+        : "Fecha de referencia pendiente.",
+    };
+  }
+
+  return {
+    valueText: formatFxRate(visibleRate),
+    detailText: input.fxRateDate
+      ? `Cotizacion BCU del cierre habil del ${formatDate(input.fxRateDate)}.`
+      : "Cotizacion BCU aplicada segun el ultimo cierre habil previo.",
+    helperText: "Se usa para valuar la factura y los impuestos en pesos uruguayos.",
+  };
 }
 
 function getStepClasses(status: string) {
@@ -421,6 +491,28 @@ export function DocumentReviewWorkspace({
     ?? pageData.learningSuggestions.suggestedConceptName
     ?? "",
   );
+  const visibleFx = getVisibleFxDisplay({
+    currencyCode:
+      pageData.derived.monetarySnapshot?.currencyCode
+      ?? pageData.draft.facts.currency_code
+      ?? pageData.derived.journalSuggestion.currencyCode,
+    fxRate: pageData.derived.journalSuggestion.fxRate,
+    fxRateSource:
+      pageData.derived.monetarySnapshot?.fx.source
+      ?? pageData.derived.journalSuggestion.fxRateSource,
+    fxRateDate:
+      pageData.derived.journalSuggestion.fxRateBcuDateUsed
+      ?? pageData.derived.journalSuggestion.fxRateDate
+      ?? pageData.derived.monetarySnapshot?.fx.bcuDateUsed
+      ?? pageData.derived.monetarySnapshot?.fx.documentDate
+      ?? null,
+    fxBcuValue:
+      pageData.derived.journalSuggestion.fxRateBcuValue
+      ?? pageData.derived.monetarySnapshot?.fx.bcuValue
+      ?? null,
+    fxBlockingReasons: pageData.derived.monetarySnapshot?.fx.blockingReasons ?? [],
+    overrideReason: pageData.derived.monetarySnapshot?.fx.overrideReason ?? null,
+  });
 
   useEffect(() => {
     setIdentity({
@@ -1681,7 +1773,11 @@ export function DocumentReviewWorkspace({
                 {pageData.derived.monetarySnapshot?.currencyCode ?? pageData.derived.journalSuggestion.currencyCode}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                Total original: {formatMoney(pageData.derived.monetarySnapshot?.totalAmountOriginal ?? 0)}
+                Total original: {formatMoney(
+                  pageData.derived.monetarySnapshot?.totalAmountOriginal ?? 0,
+                  pageData.derived.monetarySnapshot?.currencyCode
+                    ?? pageData.derived.journalSuggestion.currencyCode,
+                )}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
                 Total UYU: {formatMoney(pageData.derived.monetarySnapshot?.totalAmountUyu ?? pageData.derived.taxTreatment.totalAmountUyu)}
@@ -1693,14 +1789,12 @@ export function DocumentReviewWorkspace({
                 {pageData.derived.monetarySnapshot?.fx.policyCode ?? "dgi_previous_business_day_interbank"}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                TC aplicado: {pageData.derived.journalSuggestion.fxRate}
+                TC aplicado: {visibleFx.valueText}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                BCU: {pageData.derived.journalSuggestion.fxRateBcuValue ?? "--"}
-                {pageData.derived.journalSuggestion.fxRateBcuDateUsed
-                  ? ` / ${pageData.derived.journalSuggestion.fxRateBcuDateUsed}`
-                  : ""}
+                {visibleFx.detailText}
               </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.helperText}</p>
             </div>
           </div>
         </article>
@@ -1763,11 +1857,9 @@ export function DocumentReviewWorkspace({
               Moneda: {pageData.derived.journalSuggestion.currencyCode} / funcional {pageData.derived.journalSuggestion.functionalCurrencyCode}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              FX: {pageData.derived.journalSuggestion.fxRate} ({pageData.derived.journalSuggestion.fxRateSource})
-              {pageData.derived.journalSuggestion.fxRateDate
-                ? ` / ${pageData.derived.journalSuggestion.fxRateDate}`
-                : ""}
+              FX: {visibleFx.valueText} ({pageData.derived.journalSuggestion.fxRateSource})
             </p>
+            <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.detailText}</p>
             <p className="mt-1 text-[color:var(--color-muted)]">
               Balance funcional: {formatMoney(pageData.derived.journalSuggestion.functionalTotalDebit)} / {formatMoney(pageData.derived.journalSuggestion.functionalTotalCredit)}
             </p>

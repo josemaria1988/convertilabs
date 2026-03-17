@@ -256,10 +256,16 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
   return new Intl.DateTimeFormat("es-UY", {
     dateStyle: "medium",
     timeStyle: value.includes("T") ? "short" : undefined,
-  }).format(new Date(value));
+  }).format(parsed);
 }
 
 function formatMoney(value: number | null | undefined, currency = "UYU") {
@@ -280,6 +286,70 @@ function formatPercentage(value: number | null | undefined) {
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+function formatFxRate(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "--";
+  }
+
+  return new Intl.NumberFormat("es-UY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
+function getVisibleFxDisplay(input: {
+  currencyCode: string | null | undefined;
+  fxRate: number | null | undefined;
+  fxRateSource: string | null | undefined;
+  fxRateDate: string | null | undefined;
+  fxBcuValue: number | null | undefined;
+  fxBlockingReasons: string[];
+  overrideReason: string | null | undefined;
+}) {
+  const currencyCode = input.currencyCode?.trim().toUpperCase() || "UYU";
+
+  if (currencyCode === "UYU") {
+    return {
+      valueText: "0",
+      detailText: "Factura en pesos uruguayos. No requiere cotizacion BCU.",
+      helperText: "No se aplica conversion porque el documento ya esta expresado en UYU.",
+    };
+  }
+
+  if (input.fxRateSource === "document_default" && input.fxBlockingReasons.length > 0) {
+    return {
+      valueText: "pendiente",
+      detailText: input.fxBlockingReasons[0],
+      helperText: "Se recalcula al guardar, usando el ultimo cierre habil previo del BCU.",
+    };
+  }
+
+  const visibleRate =
+    typeof input.fxBcuValue === "number" && Number.isFinite(input.fxBcuValue) && input.fxBcuValue > 0
+      ? input.fxBcuValue
+      : input.fxRate;
+
+  if (input.fxRateSource === "manual_override") {
+    return {
+      valueText: formatFxRate(visibleRate),
+      detailText: input.overrideReason
+        ? `Tipo de cambio manual auditado. Motivo: ${input.overrideReason}`
+        : "Tipo de cambio manual auditado.",
+      helperText: input.fxRateDate
+        ? `Fecha de referencia: ${formatDate(input.fxRateDate)}`
+        : "Fecha de referencia pendiente.",
+    };
+  }
+
+  return {
+    valueText: formatFxRate(visibleRate),
+    detailText: input.fxRateDate
+      ? `Cotizacion BCU del cierre habil del ${formatDate(input.fxRateDate)}.`
+      : "Cotizacion BCU aplicada segun el ultimo cierre habil previo.",
+    helperText: "Se usa para valuar la factura y los impuestos en pesos uruguayos.",
+  };
 }
 
 function formatClassificationStatus(value: string) {
@@ -806,12 +876,42 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     : pageData.derived.appliedRule.accountCode || pageData.derived.appliedRule.accountName
       ? `${pageData.derived.appliedRule.accountCode ?? "--"} - ${pageData.derived.appliedRule.accountName ?? "Cuenta sugerida"}`
       : "Sin cuenta sugerida";
-  const totalLabel = typeof pageData.draft.facts.total_amount === "number"
+  const editableTotalAmount = parseOptionalNumber(facts.total_amount);
+  const totalLabel = editableTotalAmount !== null
     ? formatMoney(
-      pageData.draft.facts.total_amount,
-      pageData.draft.facts.currency_code ?? "UYU",
+      editableTotalAmount,
+      pageData.draft.facts.currency_code
+        ?? pageData.derived.monetarySnapshot?.currencyCode
+        ?? "UYU",
     )
-    : formatMoney(pageData.derived.taxTreatment.totalAmountUyu);
+    : typeof pageData.draft.facts.total_amount === "number"
+      ? formatMoney(
+        pageData.draft.facts.total_amount,
+        pageData.draft.facts.currency_code ?? "UYU",
+      )
+      : formatMoney(pageData.derived.taxTreatment.totalAmountUyu);
+  const visibleFx = getVisibleFxDisplay({
+    currencyCode:
+      pageData.derived.monetarySnapshot?.currencyCode
+      ?? pageData.draft.facts.currency_code
+      ?? pageData.derived.journalSuggestion.currencyCode,
+    fxRate: pageData.derived.journalSuggestion.fxRate,
+    fxRateSource:
+      pageData.derived.monetarySnapshot?.fx.source
+      ?? pageData.derived.journalSuggestion.fxRateSource,
+    fxRateDate:
+      pageData.derived.journalSuggestion.fxRateBcuDateUsed
+      ?? pageData.derived.journalSuggestion.fxRateDate
+      ?? pageData.derived.monetarySnapshot?.fx.bcuDateUsed
+      ?? pageData.derived.monetarySnapshot?.fx.documentDate
+      ?? null,
+    fxBcuValue:
+      pageData.derived.journalSuggestion.fxRateBcuValue
+      ?? pageData.derived.monetarySnapshot?.fx.bcuValue
+      ?? null,
+    fxBlockingReasons: pageData.derived.monetarySnapshot?.fx.blockingReasons ?? [],
+    overrideReason: pageData.derived.monetarySnapshot?.fx.overrideReason ?? null,
+  });
   const selectedAccountTypeLabel = selectedAccount
     ? formatAccountTypeLabel(selectedAccount.accountType)
     : null;
@@ -861,8 +961,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             <p className="font-semibold">Monto</p>
             <p className="mt-2 text-[color:var(--color-muted)]">{totalLabel}</p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              Fecha {formatDate(pageData.document.documentDate)}
+              Fecha {formatDate(facts.document_date || pageData.document.documentDate)}
             </p>
+            <p className="mt-1 text-[color:var(--color-muted)]">
+              Tipo de cambio: {visibleFx.valueText}
+            </p>
+            <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.detailText}</p>
           </div>
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
             <p className="font-semibold">Posteo</p>
@@ -1329,6 +1433,20 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
                 />
               </label>
+            </div>
+            <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Valuacion fiscal del monto</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Tipo de cambio: {visibleFx.valueText}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.detailText}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.helperText}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Total valorizado en UYU: {formatMoney(pageData.derived.monetarySnapshot?.totalAmountUyu ?? pageData.derived.taxTreatment.totalAmountUyu)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Si cambias la fecha del documento, este dato se recalcula al guardar los datos extraidos.
+              </p>
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
