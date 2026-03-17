@@ -89,6 +89,22 @@ function buildCapabilityItems(input: {
       ],
     },
     {
+      code: "cfe-email",
+      title: "Email de eFacturas",
+      area: "Configuracion",
+      summary:
+        "Permite conectar la casilla desde la que una persona recibe los CFE de la organizacion y asignarle un alias seguro de ingreso a Convertilabs.",
+      usage:
+        "Usalo para que cada usuario configure su propio correo de CFEs dentro de la organizacion y pueda reenviar automaticamente las facturas electronicas al sistema.",
+      actions: [
+        {
+          href: `/app/o/${input.slug}/settings`,
+          label: "Conectar email CFE",
+          pendingLabel: "Abriendo email CFE...",
+        },
+      ],
+    },
+    {
       code: "support-spreadsheets",
       title: "Planillas de soporte",
       area: "Soporte",

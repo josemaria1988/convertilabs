@@ -37,6 +37,7 @@ import {
   activateOrganizationProfileVersion,
   updateOrganizationBasics,
 } from "@/modules/organizations/settings";
+import { upsertUserOrganizationCfeEmailConnection } from "@/modules/integrations/cfe-email-settings";
 import {
   importChartOfAccountsSpreadsheetDirect,
   runSpreadsheetImport,
@@ -167,6 +168,12 @@ function assertOrganizationManagerRole(role: string) {
   }
 }
 
+function assertOrganizationCfeEmailRole(role: string) {
+  if (role === "viewer") {
+    throw new Error("Tu rol no puede conectar un email de eFacturas.");
+  }
+}
+
 function parseStringArray(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || value.trim().length === 0) {
     return [];
@@ -256,6 +263,28 @@ export async function updateOrganizationBasicsAction(formData: FormData) {
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/documents`);
+}
+
+export async function upsertOrganizationCfeEmailConnectionAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationCfeEmailRole(organization.role);
+
+  if (!authState.user?.id) {
+    throw new Error("No encontramos una sesion valida para guardar la conexion de eFacturas.");
+  }
+
+  await upsertUserOrganizationCfeEmailConnection({
+    organizationId: organization.id,
+    userId: authState.user.id,
+    actorId: authState.user.id,
+    connectionLabel: String(formData.get("connectionLabel") ?? ""),
+    mailboxEmail: String(formData.get("mailboxEmail") ?? ""),
+    isActive: formData.get("isActive") === "on",
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
 }
 
 export async function updateOrganizationBusinessProfileAction(formData: FormData) {

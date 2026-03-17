@@ -186,11 +186,11 @@ export default async function OrganizationDocumentsPage({
                     Ingreso documental
                   </h2>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                    La carga solo guarda el archivo en el bucket privado. La extraccion
-                    se dispara despues desde la bandeja operativa.
+                    Puedes cargar archivos sueltos o carpetas completas. Si activas el
+                    modo masivo, la extraccion se encola automaticamente despues de subir.
                   </p>
                 </div>
-                <span className="status-pill status-pill--info">Flujo separado</span>
+                <span className="status-pill status-pill--info">Ingreso masivo</span>
               </div>
               <DocumentUploadDropzone slug={organization.slug} />
             </div>

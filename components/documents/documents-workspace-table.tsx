@@ -6,6 +6,7 @@ import {
   enqueueDocumentExtractionAction,
   enqueueSelectedDocumentExtractionsAction,
   runDocumentClassificationFromListAction,
+  runSelectedDocumentClassificationFromListAction,
 } from "@/app/app/o/[slug]/documents/actions";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { LoadingLink } from "@/components/ui/loading-link";
@@ -166,10 +167,18 @@ export function DocumentsWorkspaceTable({
   const processableIds = documents
     .filter((document) => document.canProcessExtraction)
     .map((document) => document.id);
+  const classifiableIds = documents
+    .filter((document) => document.canClassify)
+    .map((document) => document.id);
+  const bulkSelectableIds = documents
+    .filter((document) => document.canProcessExtraction || document.canClassify)
+    .map((document) => document.id);
   const hasExtractionInFlight = documents.some((document) => document.hasExtractionInFlight);
   const selectedProcessableIds = selectedIds.filter((id) => processableIds.includes(id));
-  const allProcessableSelected =
-    processableIds.length > 0 && selectedProcessableIds.length === processableIds.length;
+  const selectedClassifiableIds = selectedIds.filter((id) => classifiableIds.includes(id));
+  const allBulkSelectableSelected =
+    bulkSelectableIds.length > 0
+    && selectedIds.filter((id) => bulkSelectableIds.includes(id)).length === bulkSelectableIds.length;
   const isBusy = busyAction !== null || isPending;
 
   useEffect(() => {
@@ -256,6 +265,44 @@ export function DocumentsWorkspaceTable({
     }
   }
 
+  async function handleClassifySelected() {
+    if (selectedClassifiableIds.length === 0) {
+      setNotice({
+        tone: "error",
+        message: "Selecciona al menos un documento listo para clasificar.",
+      });
+      return;
+    }
+
+    setBusyAction("classify:selected");
+
+    try {
+      const result = await runSelectedDocumentClassificationFromListAction({
+        slug,
+        documentIds: selectedClassifiableIds,
+      });
+
+      setNotice({
+        tone: result.ok ? "success" : "error",
+        message: result.message,
+      });
+
+      if (result.completedCount > 0) {
+        setSelectedIds((current) => current.filter((id) => !selectedClassifiableIds.includes(id)));
+      }
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "No pudimos clasificar la seleccion.",
+      });
+    } finally {
+      setBusyAction(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+  }
+
   async function handleClassify(documentId: string) {
     setBusyAction(`classify:${documentId}`);
 
@@ -282,13 +329,13 @@ export function DocumentsWorkspaceTable({
     }
   }
 
-  function toggleAllProcessable() {
-    if (allProcessableSelected) {
-      setSelectedIds((current) => current.filter((id) => !processableIds.includes(id)));
+  function toggleAllBulkSelectable() {
+    if (allBulkSelectableSelected) {
+      setSelectedIds((current) => current.filter((id) => !bulkSelectableIds.includes(id)));
       return;
     }
 
-    setSelectedIds((current) => Array.from(new Set([...current, ...processableIds])));
+    setSelectedIds((current) => Array.from(new Set([...current, ...bulkSelectableIds])));
   }
 
   function toggleRow(documentId: string, enabled: boolean) {
@@ -381,13 +428,23 @@ export function DocumentsWorkspaceTable({
         <div>
           <h2 className="text-[16px] font-semibold text-white">Bandeja operativa</h2>
           <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-            Carga, extraccion y clasificacion ahora viven en etapas separadas.
+            Selecciona varios documentos para extraer o clasificar en lote desde la misma bandeja.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {hasExtractionInFlight ? (
             <span className="status-pill status-pill--warning">Auto-refresco activo</span>
           ) : null}
+          <button
+            type="button"
+            className="ui-button ui-button--secondary"
+            disabled={selectedClassifiableIds.length === 0 || isBusy}
+            onClick={() => {
+              void handleClassifySelected();
+            }}
+          >
+            {busyAction === "classify:selected" ? "Clasificando..." : "Clasificar seleccionados"}
+          </button>
           <button
             type="button"
             className="ui-button ui-button--secondary"
@@ -422,10 +479,10 @@ export function DocumentsWorkspaceTable({
                   <input
                     type="checkbox"
                     className="h-4 w-4 rounded border-white/20 bg-transparent"
-                    checked={allProcessableSelected}
-                    disabled={processableIds.length === 0 || isBusy}
-                    onChange={toggleAllProcessable}
-                    aria-label="Seleccionar documentos procesables"
+                    checked={allBulkSelectableSelected}
+                    disabled={bulkSelectableIds.length === 0 || isBusy}
+                    onChange={toggleAllBulkSelectable}
+                    aria-label="Seleccionar documentos accionables"
                   />
                 </th>
                 <th>Archivo</th>
@@ -442,6 +499,7 @@ export function DocumentsWorkspaceTable({
                 const isSelected = selectedIds.includes(document.id);
                 const processBusy = busyAction === `process:${document.id}`;
                 const classifyBusy = busyAction === `classify:${document.id}`;
+                const canSelect = document.canProcessExtraction || document.canClassify;
 
                 return (
                   <tr key={document.id}>
@@ -450,9 +508,9 @@ export function DocumentsWorkspaceTable({
                         type="checkbox"
                         className="h-4 w-4 rounded border-white/20 bg-transparent"
                         checked={isSelected}
-                        disabled={!document.canProcessExtraction || isBusy}
+                        disabled={!canSelect || isBusy}
                         onChange={() => {
-                          toggleRow(document.id, document.canProcessExtraction);
+                          toggleRow(document.id, canSelect);
                         }}
                         aria-label={`Seleccionar ${document.originalFilename}`}
                       />

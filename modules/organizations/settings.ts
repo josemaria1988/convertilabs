@@ -3,6 +3,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { isMissingSupabaseColumnError } from "@/lib/supabase/schema-compat";
+import {
+  loadUserOrganizationCfeEmailConnection,
+  type UserOrganizationCfeEmailConnection,
+} from "@/modules/integrations/cfe-email-settings";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type ProfileVersionRow = {
@@ -60,6 +64,7 @@ export type OrganizationSettingsData = {
   profileHistory: ProfileVersionRow[];
   activeRuleSnapshot: RuleSnapshotRow | null;
   ruleSnapshotHistory: RuleSnapshotRow[];
+  currentUserCfeEmailConnection: UserOrganizationCfeEmailConnection | null;
 };
 
 function asRecord(value: unknown) {
@@ -132,9 +137,12 @@ async function loadOrganizationRow(
   };
 }
 
-export async function loadOrganizationSettingsData(organizationId: string) {
+export async function loadOrganizationSettingsData(
+  organizationId: string,
+  userId?: string | null,
+) {
   const supabase = getSupabaseServiceRoleClient();
-  const [organization, profileResult, snapshotResult] = await Promise.all([
+  const [organization, profileResult, snapshotResult, currentUserCfeEmailConnection] = await Promise.all([
     loadOrganizationRow(supabase, organizationId),
     supabase
       .from("organization_profile_versions")
@@ -152,6 +160,10 @@ export async function loadOrganizationSettingsData(organizationId: string) {
       .eq("organization_id", organizationId)
       .order("version_number", { ascending: false })
       .limit(12),
+    loadUserOrganizationCfeEmailConnection(supabase, {
+      organizationId,
+      userId,
+    }),
   ]);
 
   if (profileResult.error) {
@@ -178,6 +190,7 @@ export async function loadOrganizationSettingsData(organizationId: string) {
     activeRuleSnapshot:
       ruleSnapshotHistory.find((snapshot) => snapshot.status === "active") ?? null,
     ruleSnapshotHistory,
+    currentUserCfeEmailConnection,
   } satisfies OrganizationSettingsData;
 }
 

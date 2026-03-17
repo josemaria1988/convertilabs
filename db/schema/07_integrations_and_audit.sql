@@ -95,6 +95,32 @@ create table if not exists public.webhook_subscriptions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.organization_cfe_email_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  connection_label text not null default 'Casilla principal de eFacturas',
+  mailbox_email text not null,
+  mailbox_email_normalized text not null,
+  inbound_address text not null,
+  ingestion_mode text not null default 'forwarding_alias',
+  status text not null default 'pending_forwarding',
+  is_active boolean not null default true,
+  last_inbound_email_at timestamptz,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, user_id),
+  unique (mailbox_email_normalized),
+  unique (inbound_address)
+);
+
+create index if not exists idx_org_cfe_email_connections_org_user
+  on public.organization_cfe_email_connections (organization_id, user_id);
+
+create index if not exists idx_org_cfe_email_connections_org_active
+  on public.organization_cfe_email_connections (organization_id, is_active, updated_at desc);
+
 create table if not exists public.audit_log (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references public.organizations(id) on delete cascade,

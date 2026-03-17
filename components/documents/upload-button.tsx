@@ -13,6 +13,7 @@ type DocumentUploadButtonProps = {
   disabled?: boolean;
   isLoading?: boolean;
   multiple?: boolean;
+  directory?: boolean;
   className?: string;
   onFilesSelected: (files: File[]) => void;
 };
@@ -23,11 +24,18 @@ export function DocumentUploadButton({
   disabled,
   isLoading,
   multiple = true,
+  directory = false,
   className,
   onFilesSelected,
 }: DocumentUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputId = useId();
+  const directoryProps = directory
+    ? ({
+        webkitdirectory: "",
+        directory: "",
+      } as Record<string, string>)
+    : {};
 
   return (
     <>
@@ -38,6 +46,7 @@ export function DocumentUploadButton({
         accept={accept}
         multiple={multiple}
         className="hidden"
+        {...directoryProps}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
 

@@ -241,6 +241,80 @@ export async function runDocumentClassificationFromListAction(input: {
   };
 }
 
+export async function runSelectedDocumentClassificationFromListAction(input: {
+  slug: string;
+  documentIds: string[];
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+
+  if (!canRunClassification(organization.role)) {
+    return {
+      ok: false,
+      completedCount: 0,
+      failedCount: input.documentIds.length,
+      message: "Tu rol no puede ejecutar clasificacion contable.",
+    };
+  }
+
+  const uniqueDocumentIds = Array.from(new Set(input.documentIds.filter(Boolean)));
+
+  if (uniqueDocumentIds.length === 0) {
+    return {
+      ok: false,
+      completedCount: 0,
+      failedCount: 0,
+      message: "Selecciona al menos un documento listo para clasificar.",
+    };
+  }
+
+  const allowedDocumentIds = await filterOrganizationDocumentIds(organization.id, uniqueDocumentIds);
+
+  if (allowedDocumentIds.length === 0) {
+    return {
+      ok: false,
+      completedCount: 0,
+      failedCount: uniqueDocumentIds.length,
+      message: "No encontramos documentos validos de esta organizacion para clasificar.",
+    };
+  }
+
+  const results = await Promise.all(allowedDocumentIds.map((documentId) =>
+    runDocumentClassification({
+      organizationId: organization.id,
+      documentId,
+      actorId: authState.user?.id ?? null,
+    })));
+  const completedCount = results.filter((result) => result.ok).length;
+  const failedMessages = results
+    .filter((result) => !result.ok)
+    .map((result) => result.message)
+    .filter(Boolean);
+  const failedCount = uniqueDocumentIds.length - completedCount;
+
+  revalidateDocumentSurfaces(input.slug);
+
+  if (completedCount === 0) {
+    return {
+      ok: false,
+      completedCount,
+      failedCount,
+      message: failedMessages[0] ?? "No pudimos clasificar los documentos seleccionados.",
+    };
+  }
+
+  const failureSuffix =
+    failedCount > 0
+      ? ` ${failedCount} documento(s) no pudieron clasificarse.${failedMessages[0] ? ` ${failedMessages[0]}` : ""}`
+      : "";
+
+  return {
+    ok: failedCount === 0,
+    completedCount,
+    failedCount,
+    message: `${completedCount}/${uniqueDocumentIds.length} documento(s) quedaron clasificados.${failureSuffix}`.trim(),
+  };
+}
+
 export async function prepareDocumentUploadAction(
   input: PrepareDocumentUploadInput,
 ): Promise<PrepareDocumentUploadSuccess | UploadActionError> {

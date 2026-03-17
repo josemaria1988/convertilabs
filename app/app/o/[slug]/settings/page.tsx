@@ -23,6 +23,7 @@ import { loadOrganizationBusinessProfileData } from "@/modules/organizations/bus
 import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadOrganizationSettingsData } from "@/modules/organizations/settings";
+import { formatCfeEmailConnectionStatusLabel } from "@/modules/integrations/cfe-email-settings";
 import {
   supportedCfeStatuses,
   supportedDgiGroups,
@@ -40,6 +41,7 @@ import {
   applyOrganizationChartPresetAction,
   createOrganizationChartAccountAction,
   importOrganizationChartSpreadsheetAction,
+  upsertOrganizationCfeEmailConnectionAction,
   updateOrganizationBasicsAction,
   updateOrganizationChartAccountAction,
 } from "./actions";
@@ -72,7 +74,7 @@ export default async function OrganizationSettingsPage({
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const featureFlags = getOrganizationFeatureFlags();
   const [settings, chart, businessProfile] = await Promise.all([
-    loadOrganizationSettingsData(organization.id),
+    loadOrganizationSettingsData(organization.id, authState.user?.id ?? null),
     loadOrganizationChartManagementData(organization.id),
     loadOrganizationBusinessProfileData(organization.id),
   ]);
@@ -262,6 +264,107 @@ export default async function OrganizationSettingsPage({
                 Guardar datos base
               </SubmitButton>
             </form>
+          </ExpandableSectionCard>
+
+          <ExpandableSectionCard
+            title="Conectar email de eFacturas"
+            description="Usa esta conexion para recibir en el sistema directamente los CFE de esta organizacion desde la casilla que cada usuario opera."
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+                <p className="font-semibold text-white">Conexion personal dentro de la organizacion</p>
+                <p className="mt-2">
+                  Cada usuario puede registrar su propia casilla de CFE para esta organizacion.
+                  La casilla queda aislada por organizacion y no puede compartirse con otra empresa.
+                </p>
+                <p className="mt-2">
+                  Metodo inicial recomendado: reenvio automatico desde tu email de CFE hacia un alias
+                  seguro generado por Convertilabs.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                  <p className="font-semibold">Estado actual</p>
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    {settings.currentUserCfeEmailConnection
+                      ? formatCfeEmailConnectionStatusLabel(
+                        settings.currentUserCfeEmailConnection.status,
+                      )
+                      : "Sin conexion guardada"}
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    Casilla: {settings.currentUserCfeEmailConnection?.mailboxEmail ?? "Sin definir"}
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    Alias de ingreso: {settings.currentUserCfeEmailConnection?.inboundAddress ?? "Se genera al guardar"}
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    Usuario: {authState.user?.email ?? "Sesion autenticada"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                  <p className="font-semibold">Como usarlo</p>
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    1. Guarda tu casilla de CFE.
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    2. Configura un reenvio automatico desde ese correo hacia el alias de ingreso.
+                  </p>
+                  <p className="mt-1 text-[color:var(--color-muted)]">
+                    3. Los CFEs reenviados quedaran asociados a esta organizacion y a tu conexion.
+                  </p>
+                </div>
+              </div>
+
+              <form action={upsertOrganizationCfeEmailConnectionAction} className="space-y-4">
+                <input type="hidden" name="slug" value={organization.slug} />
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium">Nombre de la conexion</span>
+                    <input
+                      name="connectionLabel"
+                      defaultValue={settings.currentUserCfeEmailConnection?.connectionLabel ?? "Casilla principal de eFacturas"}
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium">Email de eFacturas</span>
+                    <input
+                      type="email"
+                      name="mailboxEmail"
+                      defaultValue={settings.currentUserCfeEmailConnection?.mailboxEmail ?? authState.user?.email ?? ""}
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                      placeholder="facturas@tuempresa.com.uy"
+                    />
+                  </label>
+                </div>
+
+                <label className="inline-flex items-center gap-3 text-sm text-[color:var(--color-muted)]">
+                  <input
+                    type="checkbox"
+                    name="isActive"
+                    defaultChecked={settings.currentUserCfeEmailConnection?.isActive ?? true}
+                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  />
+                  <span>Dejar esta conexion activa para recibir CFE en esta organizacion</span>
+                </label>
+
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  Alias de ingreso seguro: {settings.currentUserCfeEmailConnection?.inboundAddress ?? "Se genera automaticamente al guardar la conexion por primera vez."}
+                </div>
+
+                <SubmitButton
+                  pendingLabel="Guardando conexion..."
+                  className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
+                >
+                  Guardar conexion de eFacturas
+                </SubmitButton>
+              </form>
+            </div>
           </ExpandableSectionCard>
 
           {featureFlags.onboardingActivityBasedPresetsEnabled ? (
