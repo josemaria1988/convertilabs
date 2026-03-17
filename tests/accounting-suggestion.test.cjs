@@ -9,6 +9,9 @@ const {
   buildAccountingDraftArtifacts,
 } = require("@/modules/accounting/suggestion-engine");
 const {
+  buildAccountingImpactPreview,
+} = require("@/modules/accounting/accounting-impact-preview");
+const {
   buildAccountingLearningSuggestions: buildLearningSuggestions,
 } = require("@/modules/accounting/learning-suggestions");
 
@@ -765,4 +768,60 @@ test("journal suggestion blocks when a required VAT system account is missing", 
 
   assert.equal(derived.journalSuggestion.ready, false);
   assert.match(derived.validation.blockers.join(" "), /input_vat_account/i);
+});
+
+test("accounting impact preview explains when the selected main account is incompatible", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...seed.accountingContext,
+      manualOverrideAccountId: "acct-cash",
+      operationKind: "sale_invoice",
+      paymentTerms: "cash",
+      settlementMethod: "cash",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...seed.facts,
+      issuer_name: "Mi empresa SAS",
+      issuer_tax_id: "215556660011",
+      receiver_name: "Cliente SA",
+      receiver_tax_id: "21677899001",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+  }));
+
+  const preview = buildAccountingImpactPreview({
+    journalSuggestion: derived.journalSuggestion,
+    taxTreatment: derived.taxTreatment,
+    appliedRule: derived.appliedRule,
+    settlementContext: derived.settlementContext,
+  });
+
+  assert.equal(preview.summary.mainAccount, "1110 - Caja");
+  assert.match(
+    preview.missingItems.join(" "),
+    /cuenta principal de ingresos para esta venta/i,
+  );
 });

@@ -142,9 +142,9 @@ const organizationMatchSchema = strictObjectSchema({
     type: "string",
     enum: ["tax_id", "exact_alias", "token_overlap", "none", "ambiguous"],
   },
-  matched_alias: nullableStringSchema("Alias used when the organization identity matched."),
-  normalized_tax_id: nullableStringSchema("Normalized tax id compared against the organization."),
-  normalized_name: nullableStringSchema("Normalized party name compared against the organization."),
+  matched_alias: nullableStringSchema("Alias usado cuando la identidad de la organizacion coincide."),
+  normalized_tax_id: nullableStringSchema("RUT normalizado comparado contra la organizacion."),
+  normalized_name: nullableStringSchema("Nombre normalizado de la contraparte comparado contra la organizacion."),
   confidence: {
     type: "number",
     minimum: 0,
@@ -187,45 +187,45 @@ const certaintyBreakdownSchema = strictObjectSchema({
 });
 
 const factsSchema = strictObjectSchema({
-  issuer_name: nullableStringSchema("Issuer or supplier name."),
-  issuer_tax_id: nullableStringSchema("Issuer RUT or fiscal identifier."),
+  issuer_name: nullableStringSchema("Nombre del emisor o proveedor."),
+  issuer_tax_id: nullableStringSchema("RUT o identificador fiscal del emisor."),
   issuer_address_raw: nullableStringSchema(
-    "Full issuer address line when the document contains enough textual evidence.",
+    "Direccion completa del emisor cuando el documento tiene evidencia textual suficiente.",
   ),
   issuer_department: nullableStringSchema(
-    "Uruguay department inferred from issuer address only when evidence is sufficient.",
+    "Departamento de Uruguay inferido desde la direccion del emisor solo cuando la evidencia es suficiente.",
   ),
   issuer_city: nullableStringSchema(
-    "Uruguay city inferred from issuer address only when evidence is sufficient.",
+    "Ciudad de Uruguay inferida desde la direccion del emisor solo cuando la evidencia es suficiente.",
   ),
   issuer_branch_code: nullableStringSchema(
-    "Issuer local or branch identifier when the document exposes it.",
+    "Codigo de local o sucursal del emisor cuando el documento lo expone.",
   ),
   merchant_category_hints: {
     type: "array",
-    description: "Normalized merchant category hints derived from the merchant name or document text.",
+    description: "Pistas normalizadas de rubro comercial derivadas del nombre del comercio o del texto del documento.",
     items: {
       type: "string",
     },
   },
   location_extraction_confidence: nullableNumberSchema(
-    "Confidence score for issuer location extraction.",
+    "Puntaje de confianza para la extraccion de ubicacion del emisor.",
   ),
-  receiver_name: nullableStringSchema("Receiver or customer name."),
-  receiver_tax_id: nullableStringSchema("Receiver RUT or fiscal identifier."),
-  document_number: nullableStringSchema("Document number."),
-  series: nullableStringSchema("Document series if present."),
-  currency_code: nullableStringSchema("ISO currency code when detectable."),
-  document_date: nullableStringSchema("Document issue date in YYYY-MM-DD when possible."),
-  due_date: nullableStringSchema("Due date in YYYY-MM-DD when possible."),
-  subtotal: nullableNumberSchema("Subtotal before taxes."),
-  tax_amount: nullableNumberSchema("Primary tax amount detected on the document."),
-  total_amount: nullableNumberSchema("Grand total."),
+  receiver_name: nullableStringSchema("Nombre del receptor o cliente."),
+  receiver_tax_id: nullableStringSchema("RUT o identificador fiscal del receptor."),
+  document_number: nullableStringSchema("Numero del documento."),
+  series: nullableStringSchema("Serie del documento si aparece."),
+  currency_code: nullableStringSchema("Codigo ISO de moneda cuando sea detectable."),
+  document_date: nullableStringSchema("Fecha de emision del documento en YYYY-MM-DD cuando sea posible."),
+  due_date: nullableStringSchema("Fecha de vencimiento en YYYY-MM-DD cuando sea posible."),
+  subtotal: nullableNumberSchema("Subtotal antes de impuestos."),
+  tax_amount: nullableNumberSchema("Monto principal de impuestos detectado en el documento."),
+  total_amount: nullableNumberSchema("Total general."),
   purchase_category_candidate: nullableStringSchema(
-    "Suggested V1 purchase category when the role is purchase.",
+    "Categoria V1 sugerida para compras cuando el rol documental sea compra.",
   ),
   sale_category_candidate: nullableStringSchema(
-    "Suggested V1 sale category when the role is sale.",
+    "Categoria V1 sugerida para ventas cuando el rol documental sea venta.",
   ),
 });
 
@@ -233,21 +233,21 @@ const amountBreakdownEntrySchema = strictObjectSchema({
   label: {
     type: "string",
   },
-  amount: nullableNumberSchema("Detected amount for this component."),
-  tax_rate: nullableNumberSchema("Detected tax rate, for example 22 or 10."),
-  tax_code: nullableStringSchema("Normalized tax code when inferable."),
+  amount: nullableNumberSchema("Monto detectado para este componente."),
+  tax_rate: nullableNumberSchema("Tasa de impuesto detectada, por ejemplo 22 o 10."),
+  tax_code: nullableStringSchema("Codigo fiscal normalizado cuando sea inferible."),
 });
 
 const lineItemSchema = strictObjectSchema({
-  line_number: nullableNumberSchema("Line number when detectable."),
-  concept_code: nullableStringSchema("Vendor or document concept code."),
-  concept_description: nullableStringSchema("Goods or service description."),
-  quantity: nullableNumberSchema("Quantity for the line item."),
-  unit_amount: nullableNumberSchema("Unit amount for the line item."),
-  net_amount: nullableNumberSchema("Net amount before taxes."),
-  tax_rate: nullableNumberSchema("Tax rate for this line item, for example 22 or 10."),
-  tax_amount: nullableNumberSchema("Tax amount for the line item."),
-  total_amount: nullableNumberSchema("Line total including taxes when present."),
+  line_number: nullableNumberSchema("Numero de linea cuando sea detectable."),
+  concept_code: nullableStringSchema("Codigo de concepto del proveedor o del documento."),
+  concept_description: nullableStringSchema("Descripcion del bien o servicio."),
+  quantity: nullableNumberSchema("Cantidad de la linea."),
+  unit_amount: nullableNumberSchema("Importe unitario de la linea."),
+  net_amount: nullableNumberSchema("Importe neto antes de impuestos."),
+  tax_rate: nullableNumberSchema("Tasa de impuesto de la linea, por ejemplo 22 o 10."),
+  tax_amount: nullableNumberSchema("Monto de impuesto de la linea."),
+  total_amount: nullableNumberSchema("Total de la linea incluyendo impuestos cuando figure."),
 });
 
 const explanationsSchema = strictObjectSchema({
@@ -262,7 +262,7 @@ const explanationsSchema = strictObjectSchema({
 export const documentIntakeJsonSchema = strictObjectSchema({
   extracted_text: {
     type: "string",
-    description: "Readable text extracted or reconstructed from the document.",
+    description: "Texto legible extraido o reconstruido desde el documento.",
   },
   confidence_score: {
     type: "number",
@@ -288,14 +288,14 @@ export const documentIntakeJsonSchema = strictObjectSchema({
   document_role_candidate: {
     type: "string",
     enum: ["purchase", "sale", "other"],
-    description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
+    description: "Alias legado que se mantiene por compatibilidad con borradores persistidos.",
   },
   document_type_candidate: {
     type: "string",
-    description: "Deprecated alias kept for backwards compatibility with persisted drafts.",
+    description: "Alias legado que se mantiene por compatibilidad con borradores persistidos.",
   },
   operation_category_candidate: nullableStringSchema(
-    "Suggested purchase or sale category supported by V1.",
+    "Categoria sugerida de compra o venta soportada por V1.",
   ),
   facts: factsSchema,
   amount_breakdown: {
@@ -510,6 +510,6 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
 
 export function assertDocumentIntakeOutput(value: unknown): asserts value is DocumentIntakeOutput {
   if (!isDocumentIntakeOutput(value)) {
-    throw new Error("The OpenAI document intake response did not match the expected schema.");
+    throw new Error("La respuesta de ingesta documental de OpenAI no coincide con el esquema esperado.");
   }
 }

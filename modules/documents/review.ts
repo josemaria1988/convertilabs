@@ -352,6 +352,8 @@ export type DocumentReviewPageData = {
       id: string;
       code: string;
       name: string;
+      accountType: string;
+      isProvisional: boolean;
     }>;
     concepts: Array<{
       id: string;
@@ -2068,6 +2070,8 @@ export async function loadDocumentReviewPageData(input: {
         id: account.id,
         code: account.code,
         name: account.name,
+        accountType: account.account_type,
+        isProvisional: account.is_provisional,
       })),
       concepts: accountingState.runtimeContext.concepts.map((concept) => ({
         id: concept.id,
@@ -2143,6 +2147,8 @@ export async function createDocumentReviewOverrideAccount(input: {
       id: account.id,
       code: account.code,
       name: account.name,
+      accountType: account.account_type,
+      isProvisional: account.is_provisional,
     },
   };
 }

@@ -17,6 +17,10 @@ import {
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import {
+  formatAccountTypeLabel,
+  formatSettlementEvidenceSourceLabel,
+} from "@/modules/presentation/labels";
 
 type StepCode =
   | "identity"
@@ -84,6 +88,8 @@ type CreateReviewAccountAction = (input: {
     id: string;
     code: string;
     name: string;
+    accountType: string;
+    isProvisional: boolean;
   } | null;
 }>;
 
@@ -118,6 +124,8 @@ export type DocumentReviewWorkspaceProps = {
   reopenDocumentAction: ReviewSimpleAction;
 };
 
+type ReviewAccountOption = DocumentReviewPageData["accountingOptions"]["accounts"][number];
+
 type SectionStatusMap = {
   manualStage1: string;
   accounting: string;
@@ -143,8 +151,8 @@ const operationKindOptions = [
   { value: "purchase_invoice", label: "Factura de compra" },
   { value: "customer_receipt", label: "Cobranza / recibo" },
   { value: "supplier_payment", label: "Pago a proveedor" },
-  { value: "sale_credit_note", label: "NC venta" },
-  { value: "purchase_credit_note", label: "NC compra" },
+  { value: "sale_credit_note", label: "Nota de credito de venta" },
+  { value: "purchase_credit_note", label: "Nota de credito de compra" },
 ] as const;
 
 const paymentTermsOptions = [
@@ -154,12 +162,94 @@ const paymentTermsOptions = [
 ] as const;
 
 const settlementMethodOptions = [
-  { value: "cash", label: "Caja" },
-  { value: "bank_transfer", label: "Banco" },
+  { value: "cash", label: "Caja o efectivo" },
+  { value: "bank_transfer", label: "Banco o transferencia" },
   { value: "card", label: "Tarjeta" },
   { value: "check", label: "Cheque" },
   { value: "unknown", label: "No lo se todavia" },
 ] as const;
+
+function normalizeAccountType(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function isAccountCompatibleWithPrimaryRole(
+  account: Pick<ReviewAccountOption, "accountType">,
+  primaryRole: string | null,
+) {
+  const accountType = normalizeAccountType(account.accountType);
+
+  switch (primaryRole) {
+    case "revenue_account":
+      return accountType === "revenue" || accountType === "income";
+    case "expense_account":
+      return accountType === "expense";
+    case "inventory_account":
+    case "fixed_asset_account":
+      return accountType === "asset";
+    default:
+      return true;
+  }
+}
+
+function getPrimaryAccountUiCopy(input: {
+  primaryRole: string | null;
+  documentRole: DocumentRoleCandidate;
+}) {
+  switch (input.primaryRole) {
+    case "revenue_account":
+      return {
+        label: "Cuenta principal de ingresos",
+        helper:
+          "Usa esta cuenta para explicar que se vendio. No elijas caja, banco, clientes ni IVA.",
+        emptyState:
+          "No hay cuentas de ingresos disponibles. Puedes crear una cuenta nueva de ingresos si hace falta.",
+        visibleTypesLabel: "Se muestran solo cuentas de ingresos.",
+        createKindLabel: "ingreso",
+      };
+    case "expense_account":
+      return {
+        label: "Cuenta principal de gastos",
+        helper:
+          "Usa esta cuenta para explicar que se compro o gasto. No elijas banco, proveedores ni IVA.",
+        emptyState:
+          "No hay cuentas de gastos disponibles. Puedes crear una cuenta nueva de gastos si hace falta.",
+        visibleTypesLabel: "Se muestran solo cuentas de gastos.",
+        createKindLabel: "gasto",
+      };
+    case "inventory_account":
+      return {
+        label: "Cuenta principal de inventario",
+        helper:
+          "Usa esta cuenta cuando el documento corresponde a mercaderia o inventario.",
+        emptyState:
+          "No hay cuentas de inventario o activo disponibles. Puedes crear una si hace falta.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles.",
+        createKindLabel: "activo",
+      };
+    case "fixed_asset_account":
+      return {
+        label: "Cuenta principal de activo",
+        helper:
+          "Usa esta cuenta cuando el documento corresponde a un activo o bien de uso.",
+        emptyState:
+          "No hay cuentas de activo disponibles. Puedes crear una si hace falta.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles.",
+        createKindLabel: "activo",
+      };
+    default:
+      return {
+        label: "Cuenta principal",
+        helper:
+          input.documentRole === "other"
+            ? "Solo completa esta cuenta si el documento necesita una clasificacion manual especial."
+            : "Usa esta cuenta para clasificar el concepto principal del documento.",
+        emptyState: "No hay cuentas disponibles para esta seleccion.",
+        visibleTypesLabel: "Se muestran las cuentas disponibles para este caso.",
+        createKindLabel: input.documentRole === "sale" ? "ingreso" : "gasto",
+      };
+  }
+}
 
 function formatDate(value: string | null) {
   if (!value) {
@@ -485,6 +575,18 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   }
 
   function runSaveAccounting() {
+    if (selectedAccountIncompatible && selectedAccount && selectedAccountTypeLabel) {
+      const message =
+        `La cuenta elegida (${selectedAccountLabel}) es de tipo ${selectedAccountTypeLabel.toLowerCase()} `
+        + `y no sirve como ${primaryAccountUi.label.toLowerCase()}.`;
+      setSectionStatus((current) => ({
+        ...current,
+        accounting: message,
+      }));
+      setActionMessage(message);
+      return;
+    }
+
     setSectionStatus((current) => ({
       ...current,
       accounting: "Guardando asignacion...",
@@ -629,8 +731,19 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
   const classificationRequired = isManualClassificationRequired(pageData);
   const duplicateStatus = pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear";
+  const primaryAccountRole = pageData.derived.settlementContext.primaryAccountRole ?? null;
+  const primaryAccountUi = getPrimaryAccountUiCopy({
+    primaryRole: primaryAccountRole,
+    documentRole: pageData.draft.documentRole,
+  });
+  const compatibleAccounts = availableAccounts.filter((account) =>
+    isAccountCompatibleWithPrimaryRole(account, primaryAccountRole),
+  );
   const selectedAccount = availableAccounts.find((account) =>
     account.id === accountingContext.manualOverrideAccountId
+  );
+  const selectedAccountIncompatible = Boolean(
+    selectedAccount && !isAccountCompatibleWithPrimaryRole(selectedAccount, primaryAccountRole),
   );
   const selectedAccountLabel = selectedAccount
     ? `${selectedAccount.code} - ${selectedAccount.name}`
@@ -643,12 +756,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       pageData.draft.facts.currency_code ?? "UYU",
     )
     : formatMoney(pageData.derived.taxTreatment.totalAmountUyu);
-  const reviewAccountKindLabel =
-    pageData.draft.documentRole === "sale"
-      ? "ingreso"
-      : pageData.draft.documentRole === "purchase"
-        ? "gasto"
-        : "uso manual";
+  const selectedAccountTypeLabel = selectedAccount
+    ? formatAccountTypeLabel(selectedAccount.accountType)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -840,10 +950,10 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             Etapa 1
           </p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-            Operacion y settlement
+            Operacion y cobro/pago
           </h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            Primero definimos la operacion, si es contado o credito y, cuando hace falta, el medio de settlement.
+            Primero definimos la operacion, si es contado o credito y, cuando hace falta, el medio real de cobro o pago.
           </p>
 
           <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -946,7 +1056,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </label>
             {accountingContext.paymentTerms !== "credit" ? (
               <label className="space-y-2 text-sm">
-                <span className="font-medium">Settlement</span>
+                <span className="font-medium">Medio de cobro/pago</span>
                 <select
                   value={accountingContext.settlementMethod}
                   onChange={(event) => {
@@ -972,13 +1082,13 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </label>
             ) : (
               <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/50 px-4 py-3 text-sm text-[color:var(--color-muted)]">
-                En credito el medio real de cobro/pago se registra despues.
+                En operaciones a credito, el medio real de cobro o pago se registra despues.
               </div>
             )}
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
               <p className="font-medium">Fuente de evidencia</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
-                {(accountingContext.settlementEvidenceSource || "none").replace(/_/g, " ")}
+                {formatSettlementEvidenceSourceLabel(accountingContext.settlementEvidenceSource || "none")}
               </p>
             </div>
           </div>
@@ -1177,7 +1287,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             Etapa 2
           </p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-            Cuenta principal y preview
+            Cuenta principal y vista previa
           </h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
             La cuenta principal alimenta la plantilla. El asiento completo se genera abajo con multiples lineas.
@@ -1201,14 +1311,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Cuenta principal sugerida</p>
+              <p className="font-semibold">Cuenta principal actual</p>
               <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
-                {pageData.derived.journalSuggestion.explanation}
+                {primaryAccountUi.helper}
               </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{primaryAccountUi.visibleTypesLabel}</p>
             </div>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Cuenta principal</span>
+            <div className="space-y-2 text-sm">
+              <span className="font-medium">{primaryAccountUi.label}</span>
               <select
                 value={accountingContext.manualOverrideAccountId}
                 onChange={(event) => {
@@ -1220,13 +1331,31 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
               >
                 <option value="">Usar sugerencia actual</option>
-                {availableAccounts.map((account) => (
+                {selectedAccountIncompatible && selectedAccount ? (
+                  <option value={selectedAccount.id}>
+                    Cuenta incompatible: {selectedAccount.code} - {selectedAccount.name}
+                  </option>
+                ) : null}
+                {compatibleAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.code} - {account.name}
+                    {account.isProvisional ? " (provisoria)" : ""}
                   </option>
                 ))}
               </select>
-            </label>
+              <p className="text-[color:var(--color-muted)]">{primaryAccountUi.helper}</p>
+              {selectedAccountIncompatible && selectedAccountTypeLabel ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  La cuenta elegida actualmente ({selectedAccountLabel}) es de tipo {selectedAccountTypeLabel.toLowerCase()}
+                  {" "}y no puede usarse como {primaryAccountUi.label.toLowerCase()}.
+                </div>
+              ) : null}
+              {compatibleAccounts.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  {primaryAccountUi.emptyState}
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-5">
@@ -1307,7 +1436,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </label>
           </div>
           <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            La cuenta se crea como cuenta postable de {reviewAccountKindLabel} y se usa solo en esta revision.
+            La cuenta se crea como cuenta postable de {primaryAccountUi.createKindLabel} y se usa solo en esta revision.
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
             <button

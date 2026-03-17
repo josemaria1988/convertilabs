@@ -1,9 +1,11 @@
 import type {
+  AccountRoleCode,
   DocumentSettlementContext,
   ResolvedAccountingRule,
   ReviewJournalSuggestion,
   VatEngineResult,
 } from "@/modules/accounting/types";
+import { formatAccountRoleCodeLabel } from "@/modules/presentation/labels";
 
 export type AccountingImpactPreview = {
   ready: boolean;
@@ -44,6 +46,63 @@ export type AccountingImpactPreview = {
   warnings: string[];
 };
 
+function formatMissingRoleMessage(roleCode: AccountRoleCode) {
+  switch (roleCode) {
+    case "revenue_account":
+      return "Falta elegir una cuenta principal de ingresos para esta venta.";
+    case "expense_account":
+      return "Falta elegir una cuenta principal de gastos para esta compra.";
+    case "inventory_account":
+      return "Falta elegir una cuenta principal de inventario.";
+    case "fixed_asset_account":
+      return "Falta elegir una cuenta principal de activo.";
+    case "output_vat_account":
+      return "Falta resolver la cuenta de IVA ventas.";
+    case "input_vat_account":
+      return "Falta resolver la cuenta de IVA compras.";
+    case "accounts_receivable_account":
+      return "Falta resolver la cuenta de clientes.";
+    case "accounts_payable_account":
+      return "Falta resolver la cuenta de proveedores.";
+    case "cash_account":
+      return "Falta resolver la cuenta de caja para el cobro o pago.";
+    case "bank_account":
+      return "Falta resolver la cuenta bancaria para el cobro o pago.";
+    case "card_clearing_account":
+      return "Falta resolver la cuenta de tarjetas a cobrar.";
+    case "check_clearing_account":
+      return "Falta resolver la cuenta de cheques.";
+    case "cash_sales_unidentified_account":
+      return "Falta resolver la cuenta provisoria para cobros contado a identificar.";
+    case "cash_purchases_unidentified_account":
+      return "Falta resolver la cuenta provisoria para pagos contado a identificar.";
+    case "bank_fees_account":
+      return "Falta resolver la cuenta de comisiones o gastos bancarios.";
+    case "fx_difference_account":
+      return "Falta resolver la cuenta de diferencias de cambio.";
+    default:
+      return `Falta resolver ${formatAccountRoleCodeLabel(roleCode).toLowerCase()}.`;
+  }
+}
+
+function formatJournalBlockingReason(reason: string) {
+  const roleMatch = reason.match(/^Falta resolver la cuenta para el rol ([a-z_]+)\.$/i);
+
+  if (roleMatch) {
+    return formatMissingRoleMessage(roleMatch[1] as AccountRoleCode);
+  }
+
+  if (reason === "La suma del settlement mixto debe coincidir con el total del documento.") {
+    return "La distribucion del cobro o pago mixto debe sumar exactamente el total del documento.";
+  }
+
+  return reason;
+}
+
+function unique(values: string[]) {
+  return values.filter((value, index, array) => array.indexOf(value) === index);
+}
+
 export function buildAccountingImpactPreview(input: {
   journalSuggestion: ReviewJournalSuggestion;
   taxTreatment: VatEngineResult;
@@ -60,16 +119,19 @@ export function buildAccountingImpactPreview(input: {
   const counterpartyLine =
     input.journalSuggestion.lines.find((line) => line.linePurpose === "settlement")
     ?? null;
-  const missingItems = [
-    input.journalSuggestion.ready ? null : "Falta un asiento contable utilizable.",
+  const journalMissingItems = input.journalSuggestion.ready
+    ? []
+    : input.journalSuggestion.blockingReasons.map((reason) => formatJournalBlockingReason(reason));
+  const missingItems = unique([
+    ...journalMissingItems,
     input.taxTreatment.ready ? null : "Falta un tratamiento IVA listo para operar.",
-    input.settlementContext.templateCode ? null : "Falta una plantilla contable resoluble.",
-    input.settlementContext.primaryAccountRole && input.appliedRule.accountId
+    input.settlementContext.templateCode
       ? null
-      : input.settlementContext.primaryAccountRole
-        ? "Falta una cuenta principal aprobable."
-        : null,
-  ].filter((value): value is string => Boolean(value));
+      : "Falta terminar de definir la operacion para elegir una plantilla contable.",
+    !input.journalSuggestion.ready && journalMissingItems.length === 0
+      ? "Todavia no se pudo armar un asiento contable valido."
+      : null,
+  ].filter((value): value is string => Boolean(value)));
   const warnings = [
     ...input.settlementContext.warnings,
     ...input.taxTreatment.warnings,
@@ -92,6 +154,8 @@ export function buildAccountingImpactPreview(input: {
       mainAccount:
         mainLine && mainLine.accountCode && mainLine.accountName
           ? `${mainLine.accountCode} - ${mainLine.accountName}`
+          : input.appliedRule.accountCode && input.appliedRule.accountName
+            ? `${input.appliedRule.accountCode} - ${input.appliedRule.accountName}`
           : null,
       vatAccount:
         vatLine && vatLine.accountCode && vatLine.accountName

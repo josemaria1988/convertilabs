@@ -3,6 +3,16 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  formatOperationKindLabel,
+  formatPaymentTermsLabel,
+  formatPostingStatusLabel,
+  formatPostingTemplateCodeLabel,
+  formatRuleScopeLabel,
+  formatSettlementEvidenceSourceLabel,
+  formatSettlementMethodLabel,
+  formatSettlementStatusLabel,
+} from "@/modules/presentation/labels";
 import { buildPersistableConceptLines } from "@/modules/accounting/concept-resolution";
 import {
   buildAccountingDecisionLog,
@@ -65,6 +75,19 @@ function mapAssignmentRun(row: AssignmentRunRow): DocumentAssignmentRunRecord {
   };
 }
 
+function formatAssistantStatusLabel(value: string) {
+  switch (value) {
+    case "not_requested":
+      return "No solicitada";
+    case "completed":
+      return "Completada";
+    case "failed":
+      return "Fallida";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
 function buildClassificationRequestPayload(input: {
   organizationId: string;
   documentId: string;
@@ -84,6 +107,15 @@ function buildClassificationRequestPayload(input: {
     amount_breakdown_count: input.amountBreakdownCount,
     line_items_count: input.lineItemsCount,
     rerun_assistant: input.rerunAssistant,
+    resumen: {
+      organizacion: input.organizationId,
+      documento: input.documentId,
+      borrador: input.draftId,
+      categoria_operativa: input.operationCategory ?? "Sin definir",
+      cantidad_componentes_monto: input.amountBreakdownCount,
+      cantidad_lineas: input.lineItemsCount,
+      reejecutar_ia: input.rerunAssistant ? "Si" : "No",
+    },
   };
 }
 
@@ -91,36 +123,84 @@ function buildClassificationResponsePayload(derived: DerivedDraftArtifacts) {
   return {
     settlement: {
       operation_kind: derived.settlementContext.operationKind,
+      operation_kind_label: formatOperationKindLabel(derived.settlementContext.operationKind),
       payment_terms: derived.settlementContext.paymentTerms,
+      payment_terms_label: formatPaymentTermsLabel(derived.settlementContext.paymentTerms),
       settlement_method: derived.settlementContext.settlementMethod,
+      settlement_method_label: formatSettlementMethodLabel(derived.settlementContext.settlementMethod),
       settlement_status: derived.settlementContext.settlementStatus,
+      settlement_status_label: formatSettlementStatusLabel(derived.settlementContext.settlementStatus),
       settlement_evidence_source: derived.settlementContext.settlementEvidenceSource,
+      settlement_evidence_source_label: formatSettlementEvidenceSourceLabel(
+        derived.settlementContext.settlementEvidenceSource,
+      ),
       requires_followup_settlement: derived.settlementContext.requiresFollowupSettlement,
       blockers: derived.settlementContext.blockers,
       warnings: derived.settlementContext.warnings,
+      resumen: {
+        operacion: formatOperationKindLabel(derived.settlementContext.operationKind),
+        condicion: formatPaymentTermsLabel(derived.settlementContext.paymentTerms),
+        medio_cobro_pago: formatSettlementMethodLabel(derived.settlementContext.settlementMethod),
+        estado: formatSettlementStatusLabel(derived.settlementContext.settlementStatus),
+        fuente_evidencia: formatSettlementEvidenceSourceLabel(
+          derived.settlementContext.settlementEvidenceSource,
+        ),
+      },
     },
     applied_rule: {
       rule_id: derived.appliedRule.ruleId,
       scope: derived.appliedRule.scope,
+      scope_label: formatRuleScopeLabel(derived.appliedRule.scope),
       account_id: derived.appliedRule.accountId,
       account_code: derived.appliedRule.accountCode,
       account_name: derived.appliedRule.accountName,
+      account_label:
+        derived.appliedRule.accountCode && derived.appliedRule.accountName
+          ? `${derived.appliedRule.accountCode} - ${derived.appliedRule.accountName}`
+          : "Sin cuenta asignada",
       provenance: derived.appliedRule.provenance,
       priority: derived.appliedRule.priority,
       template_code: derived.appliedRule.templateCode,
+      template_code_label: formatPostingTemplateCodeLabel(derived.appliedRule.templateCode),
       tax_profile_code: derived.appliedRule.taxProfileCode,
       operation_category: derived.appliedRule.operationCategory,
     },
     assistant: {
       status: derived.assistantSuggestion.status,
+      status_label: formatAssistantStatusLabel(derived.assistantSuggestion.status),
       confidence: derived.assistantSuggestion.confidence,
       rationale: derived.assistantSuggestion.rationale,
       review_flags: derived.assistantSuggestion.reviewFlags,
+      resumen: {
+        estado: formatAssistantStatusLabel(derived.assistantSuggestion.status),
+        confianza:
+          derived.assistantSuggestion.confidence !== null
+            ? `${Math.round(derived.assistantSuggestion.confidence * 100)}%`
+            : "Sin dato",
+        bloquear_confirmacion: derived.assistantSuggestion.shouldBlockConfirmation ? "Si" : "No",
+      },
     },
     validation: derived.validation,
+    validation_labels: {
+      puede_confirmar: derived.validation.canConfirm ? "Si" : "No",
+      puede_postear_provisional: derived.validation.canPostProvisional ? "Si" : "No",
+      puede_confirmar_final: derived.validation.canConfirmFinal ? "Si" : "No",
+      estado_posteo: formatPostingStatusLabel(derived.validation.postingStatus),
+    },
     journal_ready: derived.journalSuggestion.ready,
     tax_ready: derived.taxTreatment.ready,
     generated_preview_lines: derived.journalSuggestion.lines,
+    resumen: {
+      plantilla_contable: formatPostingTemplateCodeLabel(
+        derived.journalSuggestion.templateCode ?? derived.appliedRule.templateCode,
+      ),
+      cuenta_principal:
+        derived.appliedRule.accountCode && derived.appliedRule.accountName
+          ? `${derived.appliedRule.accountCode} - ${derived.appliedRule.accountName}`
+          : "Sin cuenta principal",
+      estado_asiento: derived.journalSuggestion.ready ? "Listo para revisar" : "Incompleto",
+      estado_fiscal: derived.taxTreatment.ready ? "Listo para revisar" : "Pendiente",
+    },
   };
 }
 

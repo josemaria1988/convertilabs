@@ -420,7 +420,7 @@ function buildInvoiceLines(input: {
 
   return finalizeJournalSuggestion({
     lines,
-    explanation: `Plantilla ${input.settlementContext.templateCode} resuelta con roles contables y preview multi-linea.`,
+    explanation: "La plantilla contable quedo resuelta y el asiento ya se puede revisar linea por linea.",
     blockingReasons: [],
     monetary,
     postingMode: hasProvisionalAccounts ? "provisional" : "final",

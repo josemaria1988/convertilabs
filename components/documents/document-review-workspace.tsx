@@ -17,6 +17,16 @@ import {
 } from "@/components/ui/button-styles";
 import { HelpHint } from "@/components/ui/help-hint";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import {
+  formatDecisionRunTypeLabel,
+  formatDecisionSourceLabel,
+  formatLifecycleStatusLabel,
+  formatPostingModeLabel,
+  formatPostingTemplateCodeLabel,
+  formatRuleScopeLabel,
+  formatVatBucketLabel,
+  formatVatDeductibilityStatusLabel,
+} from "@/modules/presentation/labels";
 
 type StepCode =
   | "identity"
@@ -67,6 +77,8 @@ type CreateReviewAccountAction = (input: {
     id: string;
     code: string;
     name: string;
+    accountType: string;
+    isProvisional: boolean;
   } | null;
 }>;
 
@@ -152,8 +164,19 @@ function getCertaintyClasses(level: "green" | "yellow" | "red") {
   return "bg-rose-100 text-rose-900";
 }
 
+function formatCertaintyLevel(level: "green" | "yellow" | "red") {
+  switch (level) {
+    case "green":
+      return "Verde";
+    case "yellow":
+      return "Amarillo";
+    default:
+      return "Rojo";
+  }
+}
+
 function formatDecisionSource(value: string) {
-  return value.replace(/_/g, " ");
+  return formatDecisionSourceLabel(value);
 }
 
 function formatPostingStatus(value: string | null) {
@@ -203,11 +226,39 @@ function formatClassificationStatus(value: string) {
     case "failed":
       return "Fallida";
     case "stale":
-      return "Stale";
+      return "Vencida";
     case "needs_context":
       return "Falta contexto";
     default:
       return "Pendiente";
+  }
+}
+
+function formatRecommendedAction(value: string) {
+  switch (value) {
+    case "process_extraction":
+      return "Procesar extraccion";
+    case "retry_extraction":
+      return "Reintentar extraccion";
+    case "open_review":
+      return "Abrir revision";
+    case "wait":
+      return "Esperar";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
+function formatVendorResolutionStatus(value: string) {
+  switch (value) {
+    case "matched":
+      return "Resuelto";
+    case "unresolved":
+      return "Sin resolver";
+    case "ambiguous":
+      return "Ambiguo";
+    default:
+      return value.replace(/_/g, " ");
   }
 }
 
@@ -764,7 +815,7 @@ export function DocumentReviewWorkspace({
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold">Semaforo</p>
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCertaintyClasses(pageData.certaintySummary.level)}`}>
-                  {pageData.certaintySummary.level}
+                  {formatCertaintyLevel(pageData.certaintySummary.level)}
                 </span>
               </div>
               <p className="mt-2 text-[color:var(--color-muted)]">
@@ -773,7 +824,7 @@ export function DocumentReviewWorkspace({
                   : "Sin score"}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                Warnings: {pageData.certaintySummary.warningCount}
+                Observaciones: {pageData.certaintySummary.warningCount}
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
@@ -786,7 +837,7 @@ export function DocumentReviewWorkspace({
               <p className="font-semibold">Revision activa</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.revision
-                  ? `${pageData.revision.revision_number} / ${pageData.revision.status}`
+                  ? `${pageData.revision.revision_number} / ${formatLifecycleStatusLabel(pageData.revision.status)}`
                   : "Sin revision"}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
@@ -799,7 +850,7 @@ export function DocumentReviewWorkspace({
                 {formatWorkflowQueue(pageData.workflowState.queueCode)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                Siguiente: {pageData.workflowState.nextRecommendedAction}
+                Siguiente: {formatRecommendedAction(pageData.workflowState.nextRecommendedAction)}
               </p>
             </div>
           </div>
@@ -828,9 +879,9 @@ export function DocumentReviewWorkspace({
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
-              <p className="font-semibold">Modelo / provider</p>
+              <p className="font-semibold">Modelo / proveedor</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
-                {pageData.latestClassificationRun?.providerCode ?? pageData.derived.assistantSuggestion.providerCode ?? "sin provider"}
+                {pageData.latestClassificationRun?.providerCode ?? pageData.derived.assistantSuggestion.providerCode ?? "sin proveedor"}
                 {" / "}
                 {pageData.latestClassificationRun?.modelCode ?? pageData.derived.assistantSuggestion.modelCode ?? "sin modelo"}
               </p>
@@ -881,9 +932,9 @@ export function DocumentReviewWorkspace({
                 }}
                 className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
               >
-                <option value="purchase">purchase</option>
-                <option value="sale">sale</option>
-                <option value="other">other</option>
+                <option value="purchase">Compra</option>
+                <option value="sale">Venta</option>
+                <option value="other">Otro</option>
               </select>
             </label>
 
@@ -1328,7 +1379,7 @@ export function DocumentReviewWorkspace({
           <div className="mb-4">
             <h3 className="text-2xl font-semibold tracking-[-0.05em]">Lineas y conceptos</h3>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
-              El intake intenta extraer articulos o servicios. Si no puede, el draft cae a `amount_breakdown` como degradacion controlada.
+              La ingesta intenta extraer articulos o servicios. Si no puede, el borrador cae a `amount_breakdown` como degradacion controlada.
             </p>
           </div>
 
@@ -1395,7 +1446,7 @@ export function DocumentReviewWorkspace({
           <div className="mb-4">
             <h3 className="text-2xl font-semibold tracking-[-0.05em]">Texto extraido</h3>
             <p className="text-sm leading-7 text-[color:var(--color-muted)]">
-              Transparencia del intake estructurado que sale de OpenAI y queda congelado en el draft.
+              Transparencia de la ingesta estructurada que sale de OpenAI y queda congelada en el borrador.
             </p>
           </div>
           <pre className="max-h-[420px] overflow-auto rounded-3xl border border-[color:var(--color-border)] bg-white/75 p-5 text-xs leading-6 text-[color:var(--color-muted)]">
@@ -1539,7 +1590,7 @@ export function DocumentReviewWorkspace({
                 IVA UYU: {formatMoney(pageData.derived.taxTreatment.taxAmountUyu)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                Bucket: {pageData.derived.taxTreatment.vatBucket ?? "manual"}
+                Tratamiento: {formatVatBucketLabel(pageData.derived.taxTreatment.vatBucket)}
               </p>
             </div>
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
@@ -1547,7 +1598,7 @@ export function DocumentReviewWorkspace({
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.ruleSnapshot
                   ? `v${pageData.ruleSnapshot.versionNumber} - ${pageData.ruleSnapshot.legalEntityType} / ${pageData.ruleSnapshot.taxRegimeCode} / IVA ${pageData.ruleSnapshot.vatRegime}`
-                  : "Sin snapshot"}
+                  : "Sin instantanea"}
               </p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {pageData.derived.taxTreatment.normativeSummary}
@@ -1565,7 +1616,7 @@ export function DocumentReviewWorkspace({
                 Categoria: {pageData.derived.taxTreatment.vatCreditCategory}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
-                Deducibilidad: {pageData.derived.taxTreatment.vatDeductibilityStatus}
+                Deducibilidad: {formatVatDeductibilityStatusLabel(pageData.derived.taxTreatment.vatDeductibilityStatus)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
                 IVA deducible UYU: {formatMoney(pageData.derived.taxTreatment.vatDeductibleTaxAmountUyu)}
@@ -1660,10 +1711,10 @@ export function DocumentReviewWorkspace({
             {pageData.derived.journalSuggestion.explanation}
           </p>
           <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-            Precedencia aplicada: {pageData.derived.appliedRule.scope} / {pageData.derived.appliedRule.provenance}
+            Precedencia aplicada: {formatRuleScopeLabel(pageData.derived.appliedRule.scope)} / {pageData.derived.appliedRule.provenance.replace(/_/g, " ")}
           </p>
           <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-            Modo de posteo: {pageData.derived.journalSuggestion.postingMode} / Template: {pageData.derived.journalSuggestion.templateCode ?? "sin template"}
+            Modo de posteo: {formatPostingModeLabel(pageData.derived.journalSuggestion.postingMode)} / Plantilla: {formatPostingTemplateCodeLabel(pageData.derived.journalSuggestion.templateCode)}
           </p>
 
           <div className="mt-4 overflow-x-auto">
@@ -1808,9 +1859,9 @@ export function DocumentReviewWorkspace({
         <article className="panel p-6">
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Confianza y trazabilidad</h3>
           <div className="mt-4 space-y-3 text-sm leading-7 text-[color:var(--color-muted)]">
-            <p>Processing run: {pageData.processingRun ? `${pageData.processingRun.provider_code}:${pageData.processingRun.model_code ?? "sin modelo"}` : "sin run"}</p>
+            <p>Corrida de procesamiento: {pageData.processingRun ? `${pageData.processingRun.provider_code}:${pageData.processingRun.model_code ?? "sin modelo"}` : "sin corrida"}</p>
             <p>Instantanea: {pageData.ruleSnapshot ? pageData.ruleSnapshot.id : "sin instantanea"}</p>
-            <p>Vendor: {pageData.derived.vendorResolution.vendorName ?? pageData.derived.vendorResolution.status}</p>
+            <p>Proveedor: {pageData.derived.vendorResolution.vendorName ?? formatVendorResolutionStatus(pageData.derived.vendorResolution.status)}</p>
             <p>Conceptos: {pageData.derived.conceptResolution.primaryConceptLabels.join(", ") || "sin conceptos normalizados"}</p>
             <p>Confirmaciones: {pageData.confirmations.length}</p>
             <p>Creado: {formatDate(pageData.document.createdAt)}</p>
@@ -1825,7 +1876,7 @@ export function DocumentReviewWorkspace({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{log.runType}</p>
+                      <p className="font-semibold">{formatDecisionRunTypeLabel(log.runType)}</p>
                       <p className="text-[color:var(--color-muted)]">
                         {formatDecisionSource(log.decisionSource)}
                         {log.confidenceScore !== null
@@ -1834,7 +1885,7 @@ export function DocumentReviewWorkspace({
                       </p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getCertaintyClasses(log.certaintyLevel)}`}>
-                      {log.certaintyLevel}
+                      {formatCertaintyLevel(log.certaintyLevel)}
                     </span>
                   </div>
                   {log.rationaleText ? (
@@ -1842,7 +1893,7 @@ export function DocumentReviewWorkspace({
                   ) : null}
                   {log.warnings.length > 0 ? (
                     <p className="mt-2 text-amber-900">
-                      Warnings: {log.warnings.join(" ")}
+                      Observaciones: {log.warnings.join(" ")}
                     </p>
                   ) : null}
                   {log.metadata?.rule_id ? (

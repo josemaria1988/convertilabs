@@ -3,6 +3,17 @@ import type { DocumentIntakeOutput } from "@/modules/ai/document-intake-contract
 import type { DerivedDraftArtifacts, ResolvedAccountingRule } from "@/modules/accounting/types";
 import type { TransactionFamilyResolution } from "@/modules/accounting/transaction-family-resolution";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  formatDecisionSourceLabel,
+  formatDocumentRoleLabel,
+  formatDuplicateStatusLabel,
+  formatOperationKindLabel,
+  formatOrganizationMatchStatusLabel,
+  formatPaymentTermsLabel,
+  formatPostingTemplateCodeLabel,
+  formatRuleScopeLabel,
+  formatSettlementMethodLabel,
+} from "@/modules/presentation/labels";
 
 export type AIDecisionSource =
   | "deterministic_rule"
@@ -106,12 +117,31 @@ export function buildDocumentIntakeDecisionLog(input: {
       receiver_matches_organization: input.structuredOutput.receiver_matches_organization,
       transaction_family_resolution: input.transactionFamilyResolution,
       certainty_breakdown: input.structuredOutput.certainty_breakdown_json,
+      resumen: {
+        emisor_organizacion: formatOrganizationMatchStatusLabel(
+          input.structuredOutput.issuer_matches_organization.status,
+        ),
+        receptor_organizacion: formatOrganizationMatchStatusLabel(
+          input.structuredOutput.receiver_matches_organization.status,
+        ),
+        rol_documental: formatDocumentRoleLabel(input.transactionFamilyResolution.documentRole),
+        tipo_documental: input.transactionFamilyResolution.documentSubtype,
+      },
     },
     rationale_text: input.structuredOutput.explanations.classification,
     warnings_json: warnings,
     metadata_json: {
       document_role: input.transactionFamilyResolution.documentRole,
       document_subtype: input.transactionFamilyResolution.documentSubtype,
+      resumen: {
+        fuente_decision: formatDecisionSourceLabel(
+          input.transactionFamilyResolution.source === "model_fallback"
+            ? "assistant"
+            : "deterministic_rule",
+        ),
+        rol_documental: formatDocumentRoleLabel(input.transactionFamilyResolution.documentRole),
+        tipo_documental: input.transactionFamilyResolution.documentSubtype,
+      },
     },
   } satisfies AIDecisionLogInsert;
 }
@@ -195,6 +225,18 @@ export function buildAccountingDecisionLog(input: {
       concept_resolution: input.derived.conceptResolution,
       invoice_identity: input.derived.invoiceIdentity,
       settlement_context: settlementContext,
+      resumen: {
+        cuenta_aplicada:
+          input.derived.appliedRule.accountCode && input.derived.appliedRule.accountName
+            ? `${input.derived.appliedRule.accountCode} - ${input.derived.appliedRule.accountName}`
+            : "Sin cuenta asignada",
+        alcance_regla: formatRuleScopeLabel(input.derived.appliedRule.scope),
+        plantilla: formatPostingTemplateCodeLabel(input.derived.journalSuggestion.templateCode),
+        operacion: formatOperationKindLabel(settlementContext.operationKind),
+        condicion: formatPaymentTermsLabel(settlementContext.paymentTerms),
+        medio_cobro_pago: formatSettlementMethodLabel(settlementContext.settlementMethod),
+        estado_duplicado: formatDuplicateStatusLabel(input.derived.invoiceIdentity?.duplicateStatus),
+      },
     },
     rationale_text:
       input.derived.assistantSuggestion.rationale
@@ -209,6 +251,14 @@ export function buildAccountingDecisionLog(input: {
       operation_kind: settlementContext.operationKind,
       payment_terms: settlementContext.paymentTerms,
       settlement_method: settlementContext.settlementMethod,
+      resumen: {
+        fuente_decision: formatDecisionSourceLabel(decisionSource),
+        alcance_regla: formatRuleScopeLabel(input.derived.appliedRule.scope),
+        plantilla: formatPostingTemplateCodeLabel(input.derived.journalSuggestion.templateCode),
+        operacion: formatOperationKindLabel(settlementContext.operationKind),
+        condicion: formatPaymentTermsLabel(settlementContext.paymentTerms),
+        medio_cobro_pago: formatSettlementMethodLabel(settlementContext.settlementMethod),
+      },
     },
   } satisfies AIDecisionLogInsert;
 }

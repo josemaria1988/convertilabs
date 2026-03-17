@@ -182,6 +182,77 @@ test("starter accounting setup falls back to legacy chart insert payload when st
   );
 });
 
+test("starter accounting setup tolerates duplicate key races by reloading seeded codes", async () => {
+  const state = {
+    accounts: [],
+    insertPayloads: [],
+  };
+  const duplicateKeyError = {
+    code: "23505",
+    message: "duplicate key value violates unique constraint \"chart_of_accounts_organization_id_code_key\"",
+  };
+
+  const supabase = {
+    from(table) {
+      assert.equal(table, "chart_of_accounts");
+
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq() {
+          return builder;
+        },
+        then(resolve) {
+          resolve({
+            data: state.accounts,
+            error: null,
+          });
+        },
+        insert(payload) {
+          state.insertPayloads.push(payload);
+
+          if (state.insertPayloads.length === 1) {
+            state.accounts.push(...payload.map((row) => ({
+              code: row.code,
+              account_type: row.account_type,
+              is_postable: row.is_postable,
+              is_active: true,
+              metadata: row.metadata,
+            })));
+
+            return Promise.resolve({
+              error: duplicateKeyError,
+            });
+          }
+
+          state.accounts.push(...payload.map((row) => ({
+            code: row.code,
+            account_type: row.account_type,
+            is_postable: row.is_postable,
+            is_active: true,
+            metadata: row.metadata,
+          })));
+
+          return Promise.resolve({
+            error: null,
+          });
+        },
+      };
+
+      return builder;
+    },
+  };
+
+  const seeded = await ensureStarterAccountingSetup(supabase, {
+    organizationId: "org-1",
+    actorId: "user-1",
+  });
+
+  assert.equal(seeded.insertedCount, 0);
+  assert.equal(state.insertPayloads.length, 1);
+});
+
 test("starter chart skips synthetic revenue and expense when organization already has postable ones", () => {
   const payload = buildStarterChartAccountPayload({
     organizationId: "org-1",
@@ -205,4 +276,25 @@ test("starter chart skips synthetic revenue and expense when organization alread
   assert.equal(payload.some((row) => row.code === "GEN-SALE"), false);
   assert.equal(payload.some((row) => row.code === "GEN-EXP"), false);
   assert.equal(payload.some((row) => row.code === "SYS-AR"), true);
+});
+
+test("starter chart payload avoids reinserting codes that already exist as inactive", () => {
+  const payload = buildStarterChartAccountPayload({
+    organizationId: "org-1",
+    actorId: null,
+    existingAccounts: [
+      {
+        code: "SYS-CASH",
+        account_type: "asset",
+        is_postable: true,
+        is_active: false,
+        metadata: {
+          system_role: "cash_account",
+        },
+      },
+    ],
+  });
+
+  assert.equal(payload.some((row) => row.code === "SYS-CASH"), false);
+  assert.equal(payload.some((row) => row.code === "SYS-BANK"), true);
 });

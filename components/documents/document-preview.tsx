@@ -29,7 +29,7 @@ export function DocumentPreview({
               : "rounded-3xl border border-dashed border-[color:var(--color-border)] bg-white/55 px-6 py-16"
         }`}
       >
-        No pudimos generar un preview firmado para este archivo.
+        No pudimos generar una vista previa firmada para este archivo.
       </div>
     );
   }

@@ -2,6 +2,16 @@
 
 import { useState } from "react";
 import type { AccountingImpactPreview as AccountingImpactPreviewModel } from "@/modules/accounting/accounting-impact-preview";
+import {
+  formatAccountRoleCodeLabel,
+  formatOperationKindLabel,
+  formatPaymentTermsLabel,
+  formatPostingTemplateCodeLabel,
+  formatSettlementMethodLabel,
+  formatSettlementStatusLabel,
+  formatVatBucketLabel,
+  formatVatDeductibilityStatusLabel,
+} from "@/modules/presentation/labels";
 
 type AccountingImpactPreviewProps = {
   preview: AccountingImpactPreviewModel;
@@ -10,8 +20,8 @@ type AccountingImpactPreviewProps = {
 const tabs = [
   { key: "journal", label: "Asiento" },
   { key: "vat", label: "IVA" },
-  { key: "open_items", label: "Open items" },
-  { key: "warnings", label: "Warnings" },
+  { key: "open_items", label: "Saldos abiertos" },
+  { key: "warnings", label: "Observaciones" },
 ] as const;
 
 function formatMoney(value: number) {
@@ -20,6 +30,19 @@ function formatMoney(value: number) {
     currency: "UYU",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatLinePurpose(value: string | null) {
+  switch (value) {
+    case "main":
+      return "Linea principal";
+    case "tax":
+      return "Linea de impuesto";
+    case "settlement":
+      return "Linea de cobro o pago";
+    default:
+      return "Linea contable";
+  }
 }
 
 export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProps) {
@@ -31,7 +54,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
         <div>
           <h3 className="text-xl font-semibold tracking-[-0.04em]">Impacto contable y fiscal</h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            Preview previo al posteo, separado de la confirmacion final.
+            Vista previa antes del posteo, separada de la confirmacion final.
           </p>
         </div>
         <span className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${
@@ -45,26 +68,29 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
-          <p className="font-semibold">Template</p>
+          <p className="font-semibold">Plantilla contable</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
-            {preview.summary.templateCode ?? "Pendiente"}
+            {formatPostingTemplateCodeLabel(preview.summary.templateCode)}
           </p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            {preview.summary.operationKind ?? "Operacion sin definir"}
+            {formatOperationKindLabel(preview.summary.operationKind)}
           </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
-          <p className="font-semibold">Settlement</p>
+          <p className="font-semibold">Cobro o pago</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
-            {preview.summary.paymentTerms} / {preview.summary.settlementMethod}
+            {formatPaymentTermsLabel(preview.summary.paymentTerms)} / {formatSettlementMethodLabel(preview.summary.settlementMethod)}
           </p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            {preview.summary.settlementStatus}
+            {formatSettlementStatusLabel(preview.summary.settlementStatus)}
           </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
           <p className="font-semibold">Cuenta principal</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.mainAccount ?? "Pendiente"}</p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            Uso: explica el ingreso o gasto principal del documento.
+          </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
           <p className="font-semibold">Cuenta IVA</p>
@@ -75,8 +101,8 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.counterpartyAccount ?? "Pendiente"}</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
             {preview.summary.requiresFollowupSettlement
-              ? "Requiere follow-up settlement"
-              : "Sin follow-up pendiente"}
+              ? "Requiere registrar un movimiento posterior"
+              : "No tiene movimiento posterior pendiente"}
           </p>
         </div>
       </div>
@@ -112,7 +138,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
                 <div>
                   <p className="font-medium">{line.accountCode} - {line.accountName}</p>
                   <p className="text-[color:var(--color-muted)]">
-                    {(line.roleCode ?? "sin_rol").replace(/_/g, " ")} / {line.provenance}
+                    {formatAccountRoleCodeLabel(line.roleCode)} · {formatLinePurpose(line.linePurpose)}
                   </p>
                   {line.isProvisional ? (
                     <p className="text-amber-900">Cuenta provisional</p>
@@ -134,23 +160,23 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
       {activeTab === "vat" ? (
         <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
           <p className="font-semibold">{preview.vat.label}</p>
-          <p className="mt-2 text-[color:var(--color-muted)]">Bucket: {preview.vat.bucket ?? "manual"}</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">Tratamiento: {formatVatBucketLabel(preview.vat.bucket)}</p>
           <p className="mt-1 text-[color:var(--color-muted)]">IVA: {formatMoney(preview.vat.taxAmount)}</p>
           <p className="mt-1 text-[color:var(--color-muted)]">IVA UYU: {formatMoney(preview.vat.taxAmountUyu)}</p>
-          <p className="mt-1 text-[color:var(--color-muted)]">Deducibilidad: {preview.vat.deductibilityStatus}</p>
+          <p className="mt-1 text-[color:var(--color-muted)]">Deducibilidad: {formatVatDeductibilityStatusLabel(preview.vat.deductibilityStatus)}</p>
         </div>
       ) : null}
 
       {activeTab === "open_items" ? (
         <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
-          <p className="font-semibold">{preview.openItems.expected ? "Se esperan open items" : "Sin open items claros"}</p>
+          <p className="font-semibold">{preview.openItems.expected ? "Se espera un saldo abierto" : "No se espera un saldo abierto"}</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.openItems.reason}</p>
         </div>
       ) : null}
 
       {activeTab === "warnings" ? (
         <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm text-[color:var(--color-muted)]">
-          {preview.warnings.length > 0 ? preview.warnings.join(" ") : "Sin warnings adicionales."}
+          {preview.warnings.length > 0 ? preview.warnings.join(" ") : "Sin observaciones adicionales."}
         </div>
       ) : null}
     </article>

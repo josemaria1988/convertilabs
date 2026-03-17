@@ -244,11 +244,11 @@ export async function deriveDocumentAccountingState(input: {
       priorApprovedExamples,
       fiscalProfileSummary: {
         organizationSummary: input.profile
-          ? `${input.profile.countryCode} / ${input.profile.legalEntityType} / ${input.profile.taxRegimeCode}`
+          ? `Pais ${input.profile.countryCode}, tipo legal ${input.profile.legalEntityType}, regimen ${input.profile.taxRegimeCode}`
           : "Sin perfil fiscal activo",
         ruleSnapshotSummary: input.ruleSnapshot
-          ? `v${input.ruleSnapshot.versionNumber} desde ${input.ruleSnapshot.effectiveFrom}`
-          : "Sin snapshot activo",
+          ? `Version ${input.ruleSnapshot.versionNumber} vigente desde ${input.ruleSnapshot.effectiveFrom}`
+          : "Sin instantanea normativa activa",
       },
     });
   }

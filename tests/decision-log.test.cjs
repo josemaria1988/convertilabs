@@ -97,6 +97,8 @@ test("document intake decision log marks deterministic organization identity as 
 
   assert.equal(result.decision_source, "deterministic_rule");
   assert.equal(result.certainty_level, "green");
+  assert.equal(result.metadata_json.resumen.rol_documental, "Venta");
+  assert.equal(result.evidence_json.resumen.emisor_organizacion, "Coincidencia confirmada");
 });
 
 test("accounting decision log surfaces manual overrides and rule metadata", () => {
@@ -232,6 +234,8 @@ test("accounting decision log surfaces manual overrides and rule metadata", () =
 
   assert.equal(result.decision_source, "manual_override");
   assert.equal(result.metadata_json.rule_created_at, "2026-03-14T10:00:00Z");
+  assert.equal(result.metadata_json.resumen.fuente_decision, "Override manual");
+  assert.equal(result.evidence_json.resumen.alcance_regla, "Override del documento");
 });
 
 test("schema compat recognizes missing ai_decision_logs relation errors", () => {

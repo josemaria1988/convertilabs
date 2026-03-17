@@ -318,14 +318,14 @@ export function matchOrganizationIdentity(input: {
 export function buildOrganizationIdentityPromptContext(identity: OrganizationIdentityProfile) {
   const aliasLine = identity.aliases.length > 0
     ? identity.aliases.map((alias) => alias.value).join(" | ")
-    : "Sin aliases adicionales.";
+    : "Sin alias adicionales.";
 
   return [
-    `Organization legal name: ${identity.legalName ?? "unknown"}.`,
-    `Organization tax id raw: ${identity.taxId ?? "unknown"}.`,
-    `Organization tax id normalized: ${identity.taxIdNormalized ?? "unknown"}.`,
-    `Accepted organization aliases: ${aliasLine}.`,
-    "When evaluating issuer_matches_organization and receiver_matches_organization, compare names using aliases and normalized RUT first.",
+    `Nombre legal de la organizacion: ${identity.legalName ?? "sin dato"}.`,
+    `RUT original de la organizacion: ${identity.taxId ?? "sin dato"}.`,
+    `RUT normalizado de la organizacion: ${identity.taxIdNormalized ?? "sin dato"}.`,
+    `Alias aceptados de la organizacion: ${aliasLine}.`,
+    "Al evaluar issuer_matches_organization y receiver_matches_organization, prioriza el RUT normalizado y luego los alias de nombre.",
   ].join("\n");
 }
 
@@ -352,7 +352,7 @@ export async function loadOrganizationIdentityProfile(
     ]);
 
   if (organizationError || !organization) {
-    throw new Error(organizationError?.message ?? "Organization not found for identity matching.");
+    throw new Error(organizationError?.message ?? "No se encontro la organizacion para resolver la identidad.");
   }
 
   if (profileError) {

@@ -22,6 +22,7 @@ type ExistingStarterAccountRow = {
   code: string;
   account_type: string;
   is_postable: boolean;
+  is_active?: boolean;
   metadata: Record<string, unknown> | null;
 };
 
@@ -169,6 +170,14 @@ function getStarterRole(metadata: Record<string, unknown> | null | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function isActiveStarterAccount(account: ExistingStarterAccountRow) {
+  return account.is_active !== false;
+}
+
+function normalizeAccountCode(code: string | null | undefined) {
+  return code?.trim().toUpperCase() ?? "";
+}
+
 export function buildStarterChartAccountPayload(input: {
   organizationId: string;
   actorId: string | null;
@@ -177,32 +186,33 @@ export function buildStarterChartAccountPayload(input: {
 }) {
   const existingCodes = new Set(
     input.existingAccounts
-      .map((account) => account.code?.trim())
+      .map((account) => normalizeAccountCode(account.code))
       .filter((value): value is string => Boolean(value)),
   );
   const existingSystemRoles = new Set(
     input.existingAccounts
-      .filter((account) => account.is_postable)
+      .filter((account) => account.is_postable && isActiveStarterAccount(account))
       .map((account) => getSystemRole(account.metadata))
       .filter((value): value is string => Boolean(value)),
   );
   const hasRevenueAccount = input.existingAccounts.some(
-    (account) => account.is_postable && account.account_type === "revenue",
+    (account) => account.is_postable && isActiveStarterAccount(account) && account.account_type === "revenue",
   );
   const hasExpenseAccount = input.existingAccounts.some(
-    (account) => account.is_postable && account.account_type === "expense",
+    (account) => account.is_postable && isActiveStarterAccount(account) && account.account_type === "expense",
   );
   const existingStarterRoles = new Set(
     input.existingAccounts
+      .filter((account) => isActiveStarterAccount(account))
       .map((account) => getStarterRole(account.metadata))
       .filter((value): value is string => Boolean(value)),
   );
 
   const starterPayload = starterAccountDefinitions
     .filter((definition) => {
-      if (existingCodes.has(definition.code)) {
-        return false;
-      }
+       if (existingCodes.has(normalizeAccountCode(definition.code))) {
+         return false;
+       }
 
       if (definition.systemRole && existingSystemRoles.has(definition.systemRole)) {
         return false;
@@ -266,7 +276,36 @@ export function buildStarterChartAccountPayload(input: {
     ],
   });
 
-  return [...starterPayload, ...presetPayload];
+   return [...starterPayload, ...presetPayload].filter((row, index, array) => {
+     const normalizedCode = normalizeAccountCode(row.code);
+
+     return array.findIndex((candidate) => normalizeAccountCode(candidate.code) === normalizedCode) === index;
+   });
+}
+
+function isDuplicateChartAccountCodeError(error: { code?: string | null; message?: string | null } | null | undefined) {
+  if (!error) {
+    return false;
+  }
+
+  return error.code === "23505"
+    || (error.message ?? "").includes("chart_of_accounts_organization_id_code_key");
+}
+
+async function loadExistingStarterAccounts(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("chart_of_accounts")
+    .select("code, account_type, is_postable, is_active, metadata")
+    .eq("organization_id", organizationId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data as ExistingStarterAccountRow[] | null) ?? []);
 }
 
 export async function ensureStarterAccountingSetup(
@@ -277,18 +316,8 @@ export async function ensureStarterAccountingSetup(
     presetCode?: ChartPresetCode | null;
   },
 ) {
-  const { data, error } = await supabase
-    .from("chart_of_accounts")
-    .select("code, account_type, is_postable, metadata")
-    .eq("organization_id", input.organizationId)
-    .eq("is_active", true);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const existingAccounts = ((data as ExistingStarterAccountRow[] | null) ?? []);
-  const payload = buildStarterChartAccountPayload({
+  const existingAccounts = await loadExistingStarterAccounts(supabase, input.organizationId);
+  let payload = buildStarterChartAccountPayload({
     organizationId: input.organizationId,
     actorId: input.actorId,
     existingAccounts,
@@ -302,7 +331,28 @@ export async function ensureStarterAccountingSetup(
     };
   }
 
-  const { error: insertError } = await insertChartAccountsWithCompat(supabase, payload);
+  let { error: insertError } = await insertChartAccountsWithCompat(supabase, payload);
+
+  if (isDuplicateChartAccountCodeError(insertError)) {
+    const refreshedAccounts = await loadExistingStarterAccounts(supabase, input.organizationId);
+
+    payload = buildStarterChartAccountPayload({
+      organizationId: input.organizationId,
+      actorId: input.actorId,
+      existingAccounts: refreshedAccounts,
+      presetCode: input.presetCode ?? null,
+    });
+
+    if (payload.length === 0) {
+      return {
+        insertedCount: 0,
+        insertedCodes: [],
+      };
+    }
+
+    const retryResult = await insertChartAccountsWithCompat(supabase, payload);
+    insertError = retryResult.error;
+  }
 
   if (insertError) {
     throw new Error(insertError.message);

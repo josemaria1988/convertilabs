@@ -266,15 +266,15 @@ function buildSystemPrompt(ruleSnapshot: {
   prompt_summary: string;
 }) {
   return [
-    "You are the Convertilabs document intake model for Uruguay.",
-    "Extract structured facts from a single business document.",
-    "Use only the organization profile and summarized rules provided below.",
-    "Treat organization identity as first-class evidence before suggesting the transaction family.",
-    "Do not invent legal certainty or missing amounts.",
-    "If a material fact is missing or ambiguous, include a warning.",
-    "Never return prose outside the JSON schema.",
+    "Sos el modelo de ingesta documental de Convertilabs para Uruguay.",
+    "Extrae hechos estructurados de un unico documento comercial.",
+    "Usa solo el perfil de la organizacion y el resumen normativo provisto abajo.",
+    "Trata la identidad de la organizacion como evidencia prioritaria antes de sugerir la familia transaccional.",
+    "No inventes certeza legal ni montos faltantes.",
+    "Si un dato material falta o es ambiguo, agregalo en warnings.",
+    "No devuelvas prosa fuera del esquema JSON.",
     "",
-    "Relevant organization rule snapshot:",
+    "Resumen normativo relevante de la organizacion:",
     ruleSnapshot.prompt_summary,
   ].join("\n");
 }
@@ -285,15 +285,17 @@ function buildUserPrompt(input: {
   organizationIdentityContext: string;
 }) {
   return [
-    `Analyze the attached file: ${input.originalFilename}.`,
-    `MIME type: ${input.mimeType ?? "unknown"}.`,
-    "Classify it as purchase, sale, or other.",
-    "Return both transaction_family_candidate/document_subtype_candidate and their legacy aliases document_role_candidate/document_type_candidate with the same value.",
-    "Use line_items as the preferred structured signal when the document supports it.",
-    "Extract core fields, totals, tax hints, line items, and the closest V1 category candidate.",
-    "Organization identity context:",
+    `Analiza el archivo adjunto: ${input.originalFilename}.`,
+    `Tipo MIME: ${input.mimeType ?? "sin dato"}.`,
+    "Clasificalo como purchase (compra), sale (venta) u other (otro), segun corresponda al esquema.",
+    "Devuelve transaction_family_candidate y document_subtype_candidate, y tambien sus alias legados document_role_candidate y document_type_candidate con el mismo valor.",
+    "Usa line_items como senal estructurada preferente cuando el documento lo permita.",
+    "Extrae campos base, totales, indicios fiscales, line_items y la categoria candidata mas cercana de V1.",
+    "Si detectas evidencia de contado o credito, completa paymentTerms con cash, credit o unknown.",
+    "Si detectas el medio explicito de cobro o pago, completa settlementMethodExplicit y settlementMethodEvidenceText.",
+    "Contexto de identidad de la organizacion:",
     input.organizationIdentityContext,
-    "If the document is not clear enough, lower confidence and add warnings.",
+    "Si el documento no es suficientemente claro, baja el confidence_score y agrega warnings.",
   ].join(" ");
 }
 
@@ -907,7 +909,7 @@ async function createProcessingRun(input: {
     .single();
 
   if (error || !data?.id) {
-    throw new Error(error?.message ?? "Could not create the processing run.");
+    throw new Error(error?.message ?? "No se pudo crear la corrida de procesamiento.");
   }
 
   await assertSupabaseMutation(
@@ -922,7 +924,7 @@ async function createProcessingRun(input: {
         }),
       })
       .eq("id", input.document.id),
-    "Could not update the document after queueing the processing run.",
+    "No se pudo actualizar el documento despues de encolar la corrida de procesamiento.",
   );
 
   return data.id as string;
@@ -947,7 +949,7 @@ async function markRunProcessing(input: {
         failure_message: null,
       })
       .eq("id", input.runId),
-    "Could not mark the processing run as active.",
+    "No se pudo marcar la corrida de procesamiento como activa.",
   );
 
   await assertSupabaseMutation(
@@ -961,7 +963,7 @@ async function markRunProcessing(input: {
         }),
       })
       .eq("id", input.documentId),
-    "Could not mark the document as extracting.",
+    "No se pudo marcar el documento como en extraccion.",
   );
 }
 
@@ -997,7 +999,7 @@ async function updateRunAfterProviderSubmission(input: {
         }),
       })
       .eq("id", input.runId),
-    "Could not persist the provider submission metadata for the processing run.",
+    "No se pudo guardar la metadata de envio al proveedor para la corrida de procesamiento.",
   );
 }
 
@@ -1020,7 +1022,7 @@ async function updateRunAfterProviderPoll(input: {
         last_polled_at: input.lastPolledAt,
       })
       .eq("id", input.runId),
-    "Could not persist the latest provider polling state.",
+    "No se pudo guardar el ultimo estado de consulta al proveedor.",
   );
 }
 
@@ -1055,7 +1057,7 @@ async function markExtractionActive(documentId: string) {
       })
       .eq("document_id", documentId)
       .eq("is_active", true),
-    "Could not deactivate previous extraction artifacts.",
+    "No se pudieron desactivar los artefactos previos de extraccion.",
   );
 }
 
@@ -1159,7 +1161,7 @@ async function persistDocumentArtifacts(input: {
     .single();
 
   if (extractionError || !extraction?.id) {
-    throw new Error(extractionError?.message ?? "Could not persist the extraction artifact.");
+    throw new Error(extractionError?.message ?? "No se pudo guardar el artefacto de extraccion.");
   }
 
   const factCandidates = Object.entries(input.structuredOutput.facts).map(
@@ -1290,7 +1292,7 @@ async function persistDocumentArtifacts(input: {
     .single();
 
   if (draftError || !draft?.id) {
-    throw new Error(draftError?.message ?? "Could not persist the draft.");
+    throw new Error(draftError?.message ?? "No se pudo guardar el borrador.");
   }
 
   await upsertDocumentInvoiceIdentity(supabase, {
@@ -1472,7 +1474,7 @@ async function markRunFailed(input: {
           }),
         })
         .eq("id", input.runId),
-      "Could not mark the processing run as failed.",
+      "No se pudo marcar la corrida de procesamiento como fallida.",
     );
   }
 
@@ -1495,7 +1497,7 @@ async function markRunFailed(input: {
       .from("documents")
       .update(documentUpdatePayload)
       .eq("id", input.documentId),
-    "Could not mark the document as failed.",
+    "No se pudo marcar el documento como fallido.",
   );
 }
 
@@ -1641,7 +1643,7 @@ async function downloadDocumentBytes(document: ProcessibleDocumentRow) {
     .download(document.storage_path);
 
   if (downloadError || !fileBlob) {
-    throw new Error(downloadError?.message ?? "Could not download the private file.");
+    throw new Error(downloadError?.message ?? "No se pudo descargar el archivo privado.");
   }
 
   return fileBlob.arrayBuffer();
@@ -1658,7 +1660,7 @@ async function cleanupOpenAIFileBestEffort(
   try {
     await deleteOpenAIFile(fileId);
   } catch (error) {
-    logger?.warn?.("Failed to delete OpenAI file after document processing.", {
+    logger?.warn?.("No se pudo eliminar el archivo de OpenAI despues del procesamiento documental.", {
       fileId,
       error: error instanceof Error ? error.message : "unknown_error",
     });
@@ -1695,7 +1697,7 @@ export async function enqueueDocumentProcessing(
     }
 
     if (!getInngestConfigStatus().configured) {
-      const message = "Inngest is not configured for this environment.";
+      const message = "Inngest no esta configurado en este entorno.";
 
       await markRunFailed({
         documentId: input.documentId,
@@ -1749,7 +1751,7 @@ export async function enqueueDocumentProcessing(
     };
   } catch (error) {
     const message = buildExtractionEnqueueErrorMessage(
-      error instanceof Error ? error.message : "Unknown enqueue error.",
+      error instanceof Error ? error.message : "Error desconocido al encolar la extraccion.",
     );
 
     await markRunFailed({
@@ -1870,7 +1872,7 @@ export async function processDocumentRunFromInngest(
           } catch (error) {
             throw new DocumentProcessingStageError(
               "openai_file_upload",
-              error instanceof Error ? error.message : "OpenAI file upload failed.",
+              error instanceof Error ? error.message : "Fallo la carga del archivo a OpenAI.",
             );
           }
 
@@ -1905,7 +1907,7 @@ export async function processDocumentRunFromInngest(
           } catch (error) {
             throw new DocumentProcessingStageError(
               "openai_response_create",
-              error instanceof Error ? error.message : "OpenAI response creation failed.",
+              error instanceof Error ? error.message : "Fallo la creacion de la respuesta en OpenAI.",
             );
           }
 
@@ -1991,7 +1993,7 @@ export async function processDocumentRunFromInngest(
           } catch (error) {
             throw new DocumentProcessingStageError(
               "openai_response_poll",
-              error instanceof Error ? error.message : "OpenAI response polling failed.",
+              error instanceof Error ? error.message : "Fallo la consulta del estado de la respuesta en OpenAI.",
             );
           }
 
@@ -2029,7 +2031,7 @@ export async function processDocumentRunFromInngest(
         } catch (error) {
           throw new DocumentProcessingStageError(
             "openai_response_poll",
-            error instanceof Error ? error.message : "OpenAI response polling failed.",
+            error instanceof Error ? error.message : "Fallo la consulta del estado de la respuesta en OpenAI.",
           );
         }
 
@@ -2058,13 +2060,13 @@ export async function processDocumentRunFromInngest(
     }
 
     if (!providerStatus || isOpenAIBackgroundResponsePending(providerStatus)) {
-      throw new Error("OpenAI background processing timed out before reaching a terminal state.");
+      throw new Error("El procesamiento asincrono de OpenAI supero el tiempo esperado antes de llegar a un estado terminal.");
     }
 
     if (providerStatus !== "completed" || !providerResponse) {
       const message = providerResponse
         ? getOpenAIBackgroundResponseError(providerResponse)
-        : "OpenAI background response did not produce a terminal payload.";
+        : "La respuesta asincrona de OpenAI no produjo un payload terminal.";
 
       await input.step.run("mark-run-failed-after-openai", async () => {
         await markRunFailed({
@@ -2142,7 +2144,7 @@ export async function processDocumentRunFromInngest(
       status: persisted.documentStatus,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown processing error.";
+    const message = error instanceof Error ? error.message : "Error desconocido durante el procesamiento.";
     const failureStage =
       error instanceof DocumentProcessingStageError
         ? error.stage
