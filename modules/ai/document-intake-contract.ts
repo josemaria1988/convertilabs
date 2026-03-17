@@ -73,6 +73,16 @@ export type DocumentIntakeLineItem = {
   total_amount: number | null;
 };
 
+export type DocumentIntakePaymentTerms = "cash" | "credit" | "unknown";
+
+export type DocumentIntakeSettlementMethod =
+  | "cash"
+  | "bank_transfer"
+  | "card"
+  | "check"
+  | "mixed"
+  | "unknown";
+
 export type DocumentIntakeOutput = {
   extracted_text: string;
   confidence_score: number;
@@ -88,6 +98,12 @@ export type DocumentIntakeOutput = {
   facts: DocumentIntakeFactMap;
   amount_breakdown: DocumentIntakeAmountBreakdown[];
   line_items: DocumentIntakeLineItem[];
+  paymentTerms?: DocumentIntakePaymentTerms;
+  settlementMethodExplicit?: DocumentIntakeSettlementMethod;
+  settlementMethodEvidenceText?: string | null;
+  hasReceiptLanguage?: boolean;
+  hasCardVoucherLanguage?: boolean;
+  hasBankTransferReference?: boolean;
   explanations: {
     classification: string;
     facts: string;
@@ -455,6 +471,37 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
     && output.amount_breakdown.every((entry) => isAmountBreakdown(entry))
     && Array.isArray(output.line_items)
     && output.line_items.every((entry) => isLineItem(entry))
+    && (
+      output.paymentTerms === undefined
+      || output.paymentTerms === "cash"
+      || output.paymentTerms === "credit"
+      || output.paymentTerms === "unknown"
+    )
+    && (
+      output.settlementMethodExplicit === undefined
+      || output.settlementMethodExplicit === "cash"
+      || output.settlementMethodExplicit === "bank_transfer"
+      || output.settlementMethodExplicit === "card"
+      || output.settlementMethodExplicit === "check"
+      || output.settlementMethodExplicit === "mixed"
+      || output.settlementMethodExplicit === "unknown"
+    )
+    && (
+      output.settlementMethodEvidenceText === undefined
+      || isNullableString(output.settlementMethodEvidenceText)
+    )
+    && (
+      output.hasReceiptLanguage === undefined
+      || typeof output.hasReceiptLanguage === "boolean"
+    )
+    && (
+      output.hasCardVoucherLanguage === undefined
+      || typeof output.hasCardVoucherLanguage === "boolean"
+    )
+    && (
+      output.hasBankTransferReference === undefined
+      || typeof output.hasBankTransferReference === "boolean"
+    )
     && explanations !== null
     && typeof explanations.classification === "string"
     && typeof explanations.facts === "string"

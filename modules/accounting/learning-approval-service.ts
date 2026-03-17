@@ -74,6 +74,9 @@ export async function approveDocumentLearning(input: {
     accountId: derived.appliedRule.accountId,
     operationCategory: derived.appliedRule.operationCategory ?? context.operationCategory,
     linkedOperationType: derived.appliedRule.linkedOperationType,
+    operationKind: derived.settlementContext.operationKind,
+    paymentTerms: derived.settlementContext.paymentTerms,
+    settlementMethod: derived.settlementContext.settlementMethod,
     vatProfileJson: {
       treatment_code: derived.taxTreatment.treatmentCode,
       vat_bucket: derived.taxTreatment.vatBucket,

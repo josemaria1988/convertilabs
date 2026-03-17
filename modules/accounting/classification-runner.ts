@@ -89,6 +89,16 @@ function buildClassificationRequestPayload(input: {
 
 function buildClassificationResponsePayload(derived: DerivedDraftArtifacts) {
   return {
+    settlement: {
+      operation_kind: derived.settlementContext.operationKind,
+      payment_terms: derived.settlementContext.paymentTerms,
+      settlement_method: derived.settlementContext.settlementMethod,
+      settlement_status: derived.settlementContext.settlementStatus,
+      settlement_evidence_source: derived.settlementContext.settlementEvidenceSource,
+      requires_followup_settlement: derived.settlementContext.requiresFollowupSettlement,
+      blockers: derived.settlementContext.blockers,
+      warnings: derived.settlementContext.warnings,
+    },
     applied_rule: {
       rule_id: derived.appliedRule.ruleId,
       scope: derived.appliedRule.scope,
@@ -110,6 +120,7 @@ function buildClassificationResponsePayload(derived: DerivedDraftArtifacts) {
     validation: derived.validation,
     journal_ready: derived.journalSuggestion.ready,
     tax_ready: derived.taxTreatment.ready,
+    generated_preview_lines: derived.journalSuggestion.lines,
   };
 }
 

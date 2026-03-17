@@ -45,6 +45,7 @@ import {
   type ApprovalLearningInput,
   type DerivedDraftArtifacts,
   type JsonRecord,
+  type SettlementAllocation,
 } from "@/modules/accounting";
 import {
   isMissingDocumentStep5ColumnError,
@@ -429,6 +430,19 @@ export type SaveDraftReviewInput = {
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
       learnedConceptName?: string | null;
+      operationKind?: string | null;
+      paymentTerms?: "cash" | "credit" | "unknown" | null;
+      settlementMethod?: "cash" | "bank_transfer" | "card" | "check" | "mixed" | "unknown" | null;
+      settlementEvidenceSource?:
+        | "invoice_document"
+        | "receipt_document"
+        | "bank_statement"
+        | "card_settlement_document"
+        | "user_input"
+        | "imported_erp"
+        | "none"
+        | null;
+      settlementAllocations?: SettlementAllocation[] | null;
     };
   };
 };
@@ -1230,6 +1244,28 @@ function mergeFacts(
 }
 
 function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
+  const nextSettlementAllocations = Array.isArray(input.accountingContext?.settlementAllocations)
+    ? input.accountingContext.settlementAllocations
+      .filter((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return false;
+        }
+
+        return (
+          (entry.method === "cash"
+            || entry.method === "bank_transfer"
+            || entry.method === "card"
+            || entry.method === "check")
+          && typeof entry.amount === "number"
+          && Number.isFinite(entry.amount)
+          && entry.amount > 0
+        );
+      })
+      .map((entry) => ({
+        method: entry.method,
+        amount: Math.round(entry.amount * 100) / 100,
+      }))
+    : null;
   const nextFacts = input.facts
     ? Object.fromEntries(
         Object.entries(input.facts).map(([key, value]) => {
@@ -1291,6 +1327,36 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
             typeof input.accountingContext.learnedConceptName === "string"
               ? input.accountingContext.learnedConceptName.trim() || null
               : input.accountingContext.learnedConceptName ?? null,
+          operationKind:
+            typeof input.accountingContext.operationKind === "string"
+              ? input.accountingContext.operationKind.trim() || null
+              : input.accountingContext.operationKind ?? null,
+          paymentTerms:
+            input.accountingContext.paymentTerms === "cash"
+            || input.accountingContext.paymentTerms === "credit"
+            || input.accountingContext.paymentTerms === "unknown"
+              ? input.accountingContext.paymentTerms
+              : null,
+          settlementMethod:
+            input.accountingContext.settlementMethod === "cash"
+            || input.accountingContext.settlementMethod === "bank_transfer"
+            || input.accountingContext.settlementMethod === "card"
+            || input.accountingContext.settlementMethod === "check"
+            || input.accountingContext.settlementMethod === "mixed"
+            || input.accountingContext.settlementMethod === "unknown"
+              ? input.accountingContext.settlementMethod
+              : null,
+          settlementEvidenceSource:
+            input.accountingContext.settlementEvidenceSource === "invoice_document"
+            || input.accountingContext.settlementEvidenceSource === "receipt_document"
+            || input.accountingContext.settlementEvidenceSource === "bank_statement"
+            || input.accountingContext.settlementEvidenceSource === "card_settlement_document"
+            || input.accountingContext.settlementEvidenceSource === "user_input"
+            || input.accountingContext.settlementEvidenceSource === "imported_erp"
+            || input.accountingContext.settlementEvidenceSource === "none"
+              ? input.accountingContext.settlementEvidenceSource
+              : null,
+          settlementAllocations: nextSettlementAllocations,
         }
       : undefined,
   };
@@ -1325,6 +1391,17 @@ function mergeStoredAccountingContext(
             ?? asString(currentStructured.manual_override_operation_category),
           learned_concept_name:
             patch.learnedConceptName ?? asString(currentStructured.learned_concept_name),
+          operation_kind:
+            patch.operationKind ?? asString(currentStructured.operation_kind),
+          payment_terms:
+            patch.paymentTerms ?? asString(currentStructured.payment_terms),
+          settlement_method:
+            patch.settlementMethod ?? asString(currentStructured.settlement_method),
+          settlement_evidence_source:
+            patch.settlementEvidenceSource
+            ?? asString(currentStructured.settlement_evidence_source),
+          settlement_allocations:
+            patch.settlementAllocations ?? currentStructured.settlement_allocations ?? [],
         }
       : {}),
   };
@@ -1905,6 +1982,7 @@ export async function loadDocumentReviewPageData(input: {
     journalSuggestion: derived.journalSuggestion,
     taxTreatment: derived.taxTreatment,
     appliedRule: derived.appliedRule,
+    settlementContext: derived.settlementContext,
   });
   const workflowState = deriveDocumentWorkflowState({
     documentStatus: document.status,
@@ -2361,6 +2439,9 @@ async function postDocumentReviewInternal(input: {
       accountId: derived.appliedRule.accountId,
       operationCategory: derived.appliedRule.operationCategory ?? operationCategory,
       linkedOperationType: derived.appliedRule.linkedOperationType,
+      operationKind: derived.settlementContext.operationKind,
+      paymentTerms: derived.settlementContext.paymentTerms,
+      settlementMethod: derived.settlementContext.settlementMethod,
       vatProfileJson: {
         treatment_code: derived.taxTreatment.treatmentCode,
         vat_bucket: derived.taxTreatment.vatBucket,
@@ -2381,6 +2462,10 @@ async function postDocumentReviewInternal(input: {
     documentId: document.id,
     documentRole: draft.document_role,
     documentType: draft.document_type,
+    settlementContext: {
+      operationKind: derived.settlementContext.operationKind,
+      openItemKind: derived.settlementContext.openItemKind,
+    },
     documentDate:
       facts.document_date ?? document.document_date ?? new Date().toISOString().slice(0, 10),
     dueDate: facts.due_date,

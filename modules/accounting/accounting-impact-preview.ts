@@ -1,4 +1,5 @@
 import type {
+  DocumentSettlementContext,
   ResolvedAccountingRule,
   ReviewJournalSuggestion,
   VatEngineResult,
@@ -8,6 +9,12 @@ export type AccountingImpactPreview = {
   ready: boolean;
   missingItems: string[];
   summary: {
+    templateCode: string | null;
+    operationKind: string | null;
+    paymentTerms: string;
+    settlementMethod: string;
+    settlementStatus: string;
+    requiresFollowupSettlement: boolean;
     mainAccount: string | null;
     vatAccount: string | null;
     counterpartyAccount: string | null;
@@ -41,24 +48,30 @@ export function buildAccountingImpactPreview(input: {
   journalSuggestion: ReviewJournalSuggestion;
   taxTreatment: VatEngineResult;
   appliedRule: ResolvedAccountingRule;
+  settlementContext: DocumentSettlementContext;
 }) {
   const mainLine =
-    input.journalSuggestion.lines.find((line) => line.taxTag === "vat_purchase_base")
-    ?? input.journalSuggestion.lines.find((line) => line.taxTag === "vat_sale_base")
+    input.journalSuggestion.lines.find((line) => line.linePurpose === "main")
     ?? input.journalSuggestion.lines[0]
     ?? null;
   const vatLine = input.journalSuggestion.lines.find((line) =>
-    typeof line.taxTag === "string" && line.taxTag.includes("vat"),
+    line.linePurpose === "tax" || (typeof line.taxTag === "string" && line.taxTag.includes("vat")),
   ) ?? null;
   const counterpartyLine =
-    input.journalSuggestion.lines.find((line) => !line.taxTag && line.lineNumber !== mainLine?.lineNumber)
+    input.journalSuggestion.lines.find((line) => line.linePurpose === "settlement")
     ?? null;
   const missingItems = [
     input.journalSuggestion.ready ? null : "Falta un asiento contable utilizable.",
     input.taxTreatment.ready ? null : "Falta un tratamiento IVA listo para operar.",
-    input.appliedRule.accountId ? null : "Falta una cuenta principal aprobable.",
+    input.settlementContext.templateCode ? null : "Falta una plantilla contable resoluble.",
+    input.settlementContext.primaryAccountRole && input.appliedRule.accountId
+      ? null
+      : input.settlementContext.primaryAccountRole
+        ? "Falta una cuenta principal aprobable."
+        : null,
   ].filter((value): value is string => Boolean(value));
   const warnings = [
+    ...input.settlementContext.warnings,
     ...input.taxTreatment.warnings,
     ...input.journalSuggestion.blockingReasons,
     ...(input.journalSuggestion.hasProvisionalAccounts
@@ -70,6 +83,12 @@ export function buildAccountingImpactPreview(input: {
     ready: missingItems.length === 0,
     missingItems,
     summary: {
+      templateCode: input.settlementContext.templateCode,
+      operationKind: input.settlementContext.operationKind,
+      paymentTerms: input.settlementContext.paymentTerms,
+      settlementMethod: input.settlementContext.settlementMethod,
+      settlementStatus: input.settlementContext.settlementStatus,
+      requiresFollowupSettlement: input.settlementContext.requiresFollowupSettlement,
       mainAccount:
         mainLine && mainLine.accountCode && mainLine.accountName
           ? `${mainLine.accountCode} - ${mainLine.accountName}`
@@ -102,10 +121,10 @@ export function buildAccountingImpactPreview(input: {
       deductibilityStatus: input.taxTreatment.vatDeductibilityStatus,
     },
     openItems: {
-      expected: Boolean(counterpartyLine),
-      reason: counterpartyLine
-        ? "El asiento ya incluye una contraparte que puede alimentar seguimiento de saldo."
-        : "No se detecto una contraparte clara para open items.",
+      expected: Boolean(input.settlementContext.openItemKind),
+      reason: input.settlementContext.openItemKind
+        ? `El documento abre o mueve un saldo tipo ${input.settlementContext.openItemKind}.`
+        : "No se espera un open item en este template.",
     },
     warnings,
   } satisfies AccountingImpactPreview;

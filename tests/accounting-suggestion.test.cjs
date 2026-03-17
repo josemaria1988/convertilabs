@@ -78,6 +78,54 @@ function buildBaseContext(overrides = {}) {
         system_role: "vat_output_payable",
       },
     }),
+    buildAccount({
+      id: "acct-cash",
+      code: "1110",
+      name: "Caja",
+      account_type: "asset",
+      metadata: {
+        system_role: "cash_account",
+      },
+    }),
+    buildAccount({
+      id: "acct-bank",
+      code: "1120",
+      name: "Banco",
+      account_type: "asset",
+      metadata: {
+        system_role: "bank_account",
+      },
+    }),
+    buildAccount({
+      id: "acct-card-clearing",
+      code: "1130",
+      name: "Tarjetas a cobrar",
+      account_type: "asset",
+      metadata: {
+        system_role: "card_clearing_account",
+      },
+    }),
+    buildAccount({
+      id: "acct-sale-unknown",
+      code: "TEMP-SALE-CLEAR",
+      name: "Cobros contado a identificar",
+      account_type: "asset",
+      is_provisional: true,
+      metadata: {
+        system_role: "cash_sales_unidentified_account",
+      },
+    }),
+    buildAccount({
+      id: "acct-purchase-unknown",
+      code: "TEMP-PUR-CLEAR",
+      name: "Pagos contado a identificar",
+      account_type: "liability",
+      normal_side: "credit",
+      is_provisional: true,
+      metadata: {
+        system_role: "cash_purchases_unidentified_account",
+      },
+    }),
   ];
 
   return {
@@ -209,6 +257,11 @@ function buildBaseContext(overrides = {}) {
       manualOverrideConceptId: null,
       manualOverrideOperationCategory: null,
       learnedConceptName: null,
+      operationKind: "purchase_invoice",
+      paymentTerms: "credit",
+      settlementMethod: "unknown",
+      settlementEvidenceSource: "none",
+      settlementAllocations: [],
       shouldBlockConfirmation: false,
       canRunAssistant: false,
       blockingReasons: [],
@@ -463,12 +516,110 @@ test("purchase artifacts build a balanced journal from organization accounts and
   assert.equal(derived.validation.canConfirm, true);
   assert.equal(derived.journalSuggestion.ready, true);
   assert.equal(derived.journalSuggestion.isBalanced, true);
+  assert.equal(derived.journalSuggestion.templateCode, "purchase_local_credit");
   assert.equal(derived.journalSuggestion.totalDebit, 122);
   assert.equal(derived.journalSuggestion.totalCredit, 122);
+  assert.deepEqual(
+    derived.journalSuggestion.lines.map((line) => line.roleCode),
+    ["expense_account", "input_vat_account", "accounts_payable_account"],
+  );
   assert.deepEqual(
     derived.journalSuggestion.lines.map((line) => line.taxTag),
     ["vat_purchase_base", "vat_input_creditable", null],
   );
+});
+
+test("sale cash with card uses card clearing and leaves follow-up settlement pending", () => {
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...buildBaseContext().accountingContext,
+      operationKind: "sale_invoice",
+      paymentTerms: "cash",
+      settlementMethod: "card",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...buildBaseContext().facts,
+      receiver_name: "Cliente SA",
+      receiver_tax_id: "21677899001",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+  }));
+
+  assert.equal(derived.journalSuggestion.templateCode, "card_sale_clearing");
+  assert.equal(derived.journalSuggestion.ready, true);
+  assert.equal(derived.journalSuggestion.settlementStatus, "pending_followup_event");
+  assert.equal(derived.validation.canConfirm, true);
+  assert.deepEqual(
+    derived.journalSuggestion.lines.map((line) => line.roleCode),
+    ["card_clearing_account", "revenue_account", "output_vat_account"],
+  );
+});
+
+test("sale cash unknown falls back to provisional clearing without blocking provisional flow", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...seed.accountingContext,
+      operationKind: "sale_invoice",
+      paymentTerms: "cash",
+      settlementMethod: "unknown",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...seed.facts,
+      receiver_name: "Cliente SA",
+      receiver_tax_id: "21677899001",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+  }));
+
+  assert.equal(derived.journalSuggestion.templateCode, "sale_cash_unknown_clearing");
+  assert.equal(derived.journalSuggestion.hasProvisionalAccounts, true);
+  assert.equal(derived.validation.canPostProvisional, true);
+  assert.equal(derived.validation.canConfirmFinal, false);
 });
 
 test("assistant output can unblock a new concept once context was provided", () => {
@@ -613,5 +764,5 @@ test("journal suggestion blocks when a required VAT system account is missing", 
   }));
 
   assert.equal(derived.journalSuggestion.ready, false);
-  assert.match(derived.validation.blockers.join(" "), /vat_input_creditable/i);
+  assert.match(derived.validation.blockers.join(" "), /input_vat_account/i);
 });

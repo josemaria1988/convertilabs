@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DocumentReviewWorkspace } from "@/components/documents/document-review-workspace";
+import { DocumentReviewStagedWorkspace } from "@/components/documents/document-review-staged-workspace";
 import { DocumentRecoveryActionButton } from "@/components/documents/document-recovery-action-button";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
@@ -159,10 +159,10 @@ export default async function DocumentReviewPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Revision documental"
-      description="Cada documento abre sobre su draft persistido, con snapshot congelado de reglas, sugerencia IVA, sugerencia contable y confirmacion final unica."
+      description="La revision avanza por etapas: clasificacion automatica, contexto manual solo si hace falta, asignacion contable y cierre."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
-      <DocumentReviewWorkspace
+      <DocumentReviewStagedWorkspace
         pageData={pageData}
         saveDraftReviewAction={async (input) => {
           "use server";

@@ -16,7 +16,7 @@ test("starter chart payload includes minimal system and generic accounts for emp
     existingAccounts: [],
   });
 
-  assert.equal(payload.length, 11);
+  assert.equal(payload.length, 18);
   assert.deepEqual(
     payload.map((row) => row.code),
     [
@@ -24,6 +24,13 @@ test("starter chart payload includes minimal system and generic accounts for emp
       "SYS-AP",
       "SYS-VAT-IN",
       "SYS-VAT-OUT",
+      "SYS-CASH",
+      "SYS-BANK",
+      "SYS-CARD-CL",
+      "SYS-CHECK-CL",
+      "TEMP-SALE-CLEAR",
+      "TEMP-PUR-CLEAR",
+      "SYS-BANK-FEE",
       "GEN-SALE",
       "GEN-EXP",
       "TEMP-EXP",
@@ -98,7 +105,7 @@ test("starter accounting setup inserts only missing accounts", async () => {
     actorId: "user-1",
   });
 
-  assert.equal(seeded.insertedCount, 11);
+  assert.equal(seeded.insertedCount, 18);
   assert.equal(state.inserts.length, 1);
   assert.equal(repeated.insertedCount, 0);
 });
@@ -161,7 +168,7 @@ test("starter accounting setup falls back to legacy chart insert payload when st
     actorId: "user-1",
   });
 
-  assert.equal(seeded.insertedCount, 11);
+  assert.equal(seeded.insertedCount, 18);
   assert.equal(state.insertPayloads.length, 2);
   assert.equal("source" in state.insertPayloads[0][0], true);
   assert.equal("source" in state.insertPayloads[1][0], false);

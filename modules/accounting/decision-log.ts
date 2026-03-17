@@ -154,6 +154,12 @@ export function buildAccountingDecisionLog(input: {
   responseId?: string | null;
   derived: DerivedDraftArtifacts;
 }) {
+  const settlementContext = input.derived.settlementContext ?? {
+    operationKind: null,
+    paymentTerms: "unknown",
+    settlementMethod: "unknown",
+    settlementStatus: "not_applicable",
+  };
   const decisionSource = resolveDecisionSourceFromAppliedRule({
     appliedRule: input.derived.appliedRule,
     derived: input.derived,
@@ -188,6 +194,7 @@ export function buildAccountingDecisionLog(input: {
       vendor_resolution: input.derived.vendorResolution,
       concept_resolution: input.derived.conceptResolution,
       invoice_identity: input.derived.invoiceIdentity,
+      settlement_context: settlementContext,
     },
     rationale_text:
       input.derived.assistantSuggestion.rationale
@@ -198,6 +205,10 @@ export function buildAccountingDecisionLog(input: {
       journal_balance: input.derived.journalSuggestion.isBalanced,
       rule_id: input.derived.appliedRule.ruleId,
       rule_created_at: input.derived.appliedRule.createdAt,
+      template_code: input.derived.journalSuggestion.templateCode,
+      operation_kind: settlementContext.operationKind,
+      payment_terms: settlementContext.paymentTerms,
+      settlement_method: settlementContext.settlementMethod,
     },
   } satisfies AIDecisionLogInsert;
 }

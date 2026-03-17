@@ -59,6 +59,77 @@ export type JournalPostingMode =
   | "provisional"
   | "final";
 
+export type OperationKind =
+  | "sale_invoice"
+  | "purchase_invoice"
+  | "customer_receipt"
+  | "supplier_payment"
+  | "sale_credit_note"
+  | "purchase_credit_note"
+  | "card_settlement"
+  | "bank_transfer_settlement"
+  | "manual_settlement_adjustment";
+
+export type PaymentTerms = "cash" | "credit" | "unknown";
+
+export type SettlementMethod =
+  | "cash"
+  | "bank_transfer"
+  | "card"
+  | "check"
+  | "mixed"
+  | "unknown";
+
+export type SettlementEvidenceSource =
+  | "invoice_document"
+  | "receipt_document"
+  | "bank_statement"
+  | "card_settlement_document"
+  | "user_input"
+  | "imported_erp"
+  | "none";
+
+export type SettlementStatus =
+  | "not_applicable"
+  | "settled_on_document"
+  | "open_receivable"
+  | "open_payable"
+  | "pending_resolution"
+  | "pending_followup_event"
+  | "resolved";
+
+export type PostingTemplateCode =
+  | "sale_local_cash"
+  | "sale_local_credit"
+  | "purchase_local_cash"
+  | "purchase_local_credit"
+  | "customer_collection"
+  | "supplier_payment"
+  | "sale_cash_unknown_clearing"
+  | "purchase_cash_unknown_clearing"
+  | "card_sale_clearing"
+  | "card_settlement"
+  | "sale_export_cash"
+  | "sale_export_credit";
+
+export type AccountRoleCode =
+  | "revenue_account"
+  | "expense_account"
+  | "inventory_account"
+  | "fixed_asset_account"
+  | "output_vat_account"
+  | "input_vat_account"
+  | "accounts_receivable_account"
+  | "accounts_payable_account"
+  | "cash_account"
+  | "bank_account"
+  | "card_clearing_account"
+  | "check_clearing_account"
+  | "cash_sales_unidentified_account"
+  | "cash_purchases_unidentified_account"
+  | "bank_fees_account"
+  | "fx_difference_account";
+
 export type DraftBlockerFamily =
   | "documental"
   | "fiscal"
@@ -81,6 +152,11 @@ export type ReviewJournalLine = {
   fxRate: number;
   provenance: string;
   taxTag: string | null;
+  roleCode: AccountRoleCode | null;
+  linePurpose: string | null;
+  taxComponent: string | null;
+  settlementComponent: string | null;
+  isProvisional: boolean;
 };
 
 export type ReviewJournalSuggestion = {
@@ -100,8 +176,13 @@ export type ReviewJournalSuggestion = {
   fxRateBcuValue: number | null;
   fxRateBcuDateUsed: string | null;
   fxRateBcuSeries: string | null;
-  templateCode: string | null;
+  templateCode: PostingTemplateCode | null;
   taxProfileCode: string | null;
+  operationKind: OperationKind | null;
+  paymentTerms: PaymentTerms;
+  settlementMethod: SettlementMethod;
+  settlementStatus: SettlementStatus;
+  requiresFollowupSettlement: boolean;
   explanation: string;
   lines: ReviewJournalLine[];
   blockingReasons: string[];
@@ -376,7 +457,10 @@ export type AccountingContextReasonCode =
   | "low_confidence"
   | "location_outlier"
   | "travel_pattern"
-  | "sensitive_merchant_far_from_base";
+  | "sensitive_merchant_far_from_base"
+  | "operation_kind_missing"
+  | "payment_terms_missing"
+  | "settlement_allocations_missing";
 
 export type AccountingContextStatus =
   | "not_required"
@@ -411,6 +495,16 @@ export type AccountingContextSaveInput = {
   manualOverrideConceptId: string | null;
   manualOverrideOperationCategory: string | null;
   learnedConceptName: string | null;
+  operationKind: OperationKind | null;
+  paymentTerms: PaymentTerms | null;
+  settlementMethod: SettlementMethod | null;
+  settlementEvidenceSource: SettlementEvidenceSource | null;
+  settlementAllocations: SettlementAllocation[];
+};
+
+export type SettlementAllocation = {
+  method: Exclude<SettlementMethod, "mixed" | "unknown">;
+  amount: number;
 };
 
 export type AccountingContextResolution = {
@@ -429,6 +523,11 @@ export type AccountingContextResolution = {
   manualOverrideConceptId: string | null;
   manualOverrideOperationCategory: string | null;
   learnedConceptName: string | null;
+  operationKind: OperationKind | null;
+  paymentTerms: PaymentTerms;
+  settlementMethod: SettlementMethod;
+  settlementEvidenceSource: SettlementEvidenceSource;
+  settlementAllocations: SettlementAllocation[];
   shouldBlockConfirmation: boolean;
   canRunAssistant: boolean;
   blockingReasons: string[];
@@ -542,6 +641,22 @@ export type DraftValidation = {
   }>;
 };
 
+export type DocumentSettlementContext = {
+  operationKind: OperationKind | null;
+  paymentTerms: PaymentTerms;
+  settlementMethod: SettlementMethod;
+  settlementEvidenceSource: SettlementEvidenceSource;
+  settlementStatus: SettlementStatus;
+  settlementAllocations: SettlementAllocation[];
+  counterpartyRole: "customer" | "supplier" | null;
+  templateCode: PostingTemplateCode | null;
+  requiresFollowupSettlement: boolean;
+  primaryAccountRole: AccountRoleCode | null;
+  openItemKind: "receivable" | "payable" | "clearing" | null;
+  blockers: string[];
+  warnings: string[];
+};
+
 export type DerivedDraftArtifacts = {
   monetarySnapshot: DocumentMonetarySnapshot | null;
   taxTreatment: VatEngineResult;
@@ -552,6 +667,7 @@ export type DerivedDraftArtifacts = {
   accountingContext: AccountingContextResolution;
   assistantSuggestion: AccountingAssistantResult;
   appliedRule: ResolvedAccountingRule;
+  settlementContext: DocumentSettlementContext;
   validation: DraftValidation;
 };
 

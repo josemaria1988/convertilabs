@@ -45,6 +45,24 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+          <p className="font-semibold">Template</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">
+            {preview.summary.templateCode ?? "Pendiente"}
+          </p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            {preview.summary.operationKind ?? "Operacion sin definir"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+          <p className="font-semibold">Settlement</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">
+            {preview.summary.paymentTerms} / {preview.summary.settlementMethod}
+          </p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            {preview.summary.settlementStatus}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
           <p className="font-semibold">Cuenta principal</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.mainAccount ?? "Pendiente"}</p>
         </div>
@@ -55,6 +73,11 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
           <p className="font-semibold">Contraparte</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.counterpartyAccount ?? "Pendiente"}</p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            {preview.summary.requiresFollowupSettlement
+              ? "Requiere follow-up settlement"
+              : "Sin follow-up pendiente"}
+          </p>
         </div>
       </div>
 
@@ -88,11 +111,16 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium">{line.accountCode} - {line.accountName}</p>
-                  <p className="text-[color:var(--color-muted)]">{line.provenance}</p>
+                  <p className="text-[color:var(--color-muted)]">
+                    {(line.roleCode ?? "sin_rol").replace(/_/g, " ")} / {line.provenance}
+                  </p>
+                  {line.isProvisional ? (
+                    <p className="text-amber-900">Cuenta provisional</p>
+                  ) : null}
                 </div>
                 <div className="text-right">
-                  <p>{line.debit ? formatMoney(line.debit) : "-"}</p>
-                  <p>{line.credit ? formatMoney(line.credit) : "-"}</p>
+                  <p>Debe: {line.debit ? formatMoney(line.debit) : "-"}</p>
+                  <p>Haber: {line.credit ? formatMoney(line.credit) : "-"}</p>
                 </div>
               </div>
             </div>

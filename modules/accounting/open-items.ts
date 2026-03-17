@@ -92,6 +92,7 @@ export function buildOpenItemMutationPlan(input: {
   documentId: string;
   documentRole: "purchase" | "sale" | "other";
   documentType: string | null;
+  openItemKind?: "receivable" | "payable" | "clearing" | null;
   counterpartyType: OpenItemCounterpartyType;
   counterpartyId: string | null;
   journalEntryId: string | null;
@@ -123,7 +124,9 @@ export function buildOpenItemMutationPlan(input: {
     fx_rate_source: input.fxRateSource,
     functional_currency_code: input.functionalCurrencyCode,
     journal_entry_id: input.journalEntryId,
-    metadata: {},
+    metadata: {
+      kind: input.openItemKind ?? null,
+    },
   };
 
   if (subtypeKind === "invoice") {
@@ -209,6 +212,7 @@ export function buildOpenItemMutationPlan(input: {
             outstanding_amount: roundCurrency(-remainingAmount),
             status: "open" as const,
             metadata: {
+              kind: input.openItemKind ?? null,
               residual_credit_balance: true,
             },
           },
@@ -387,6 +391,10 @@ export async function syncApprovedDocumentOpenItems(input: {
   documentId: string;
   documentRole: "purchase" | "sale" | "other";
   documentType: string | null;
+  settlementContext?: {
+    operationKind: string | null;
+    openItemKind: "receivable" | "payable" | "clearing" | null;
+  } | null;
   documentDate: string | null;
   dueDate: string | null;
   currencyCode: string | null;
@@ -434,10 +442,18 @@ export async function syncApprovedDocumentOpenItems(input: {
           name: input.receiverName,
           taxId: input.receiverTaxId,
         });
+  const operationKind = input.settlementContext?.operationKind ?? null;
+  const requestedOpenItemKind = input.settlementContext?.openItemKind ?? null;
+  const isSettlementDocument =
+    operationKind === "customer_receipt" || operationKind === "supplier_payment";
+
+  if (!requestedOpenItemKind && !isSettlementDocument) {
+    return;
+  }
 
   const { data: openItemRows, error: openItemsError } = await input.supabase
     .from("ledger_open_items")
-    .select("id, issue_date, outstanding_amount, settled_amount, status")
+    .select("id, issue_date, outstanding_amount, settled_amount, status, metadata")
     .eq("organization_id", input.organizationId)
     .eq("counterparty_type", counterpartyType)
     .eq("counterparty_id", counterpartyId)
@@ -449,11 +465,34 @@ export async function syncApprovedDocumentOpenItems(input: {
     throw new Error(openItemsError.message);
   }
 
+  const existingItems = ((openItemRows as Array<ExistingOpenItem & {
+    metadata?: Record<string, unknown> | null;
+  }> | null) ?? []).filter((item) => {
+    const metadataKind =
+      typeof item.metadata?.kind === "string"
+        ? item.metadata.kind
+        : null;
+
+    if (isSettlementDocument) {
+      return metadataKind === (input.documentRole === "sale" ? "receivable" : "payable");
+    }
+
+    return true;
+  });
+
+  const effectiveDocumentType =
+    operationKind === "customer_receipt"
+      ? "receipt"
+      : operationKind === "supplier_payment"
+        ? "payment_support"
+        : input.documentType;
+
   const plan = buildOpenItemMutationPlan({
     organizationId: input.organizationId,
     documentId: input.documentId,
     documentRole: input.documentRole,
-    documentType: input.documentType,
+    documentType: effectiveDocumentType,
+    openItemKind: requestedOpenItemKind,
     counterpartyType,
     counterpartyId,
     journalEntryId: input.journalEntryId,
@@ -465,7 +504,7 @@ export async function syncApprovedDocumentOpenItems(input: {
     fxRateDate,
     fxRateSource,
     totalAmount: input.totalAmount,
-    existingOpenItems: ((openItemRows as ExistingOpenItem[] | null) ?? []),
+    existingOpenItems: existingItems,
   });
 
   if (plan.createOpenItems.length > 0) {

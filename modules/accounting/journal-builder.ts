@@ -1,8 +1,13 @@
 import { roundCurrency } from "@/modules/accounting/normalization";
 import type {
+  AccountRoleCode,
+  OperationKind,
+  PaymentTerms,
   PostableAccountRecord,
   ReviewJournalLine,
   ReviewJournalSuggestion,
+  SettlementMethod,
+  SettlementStatus,
 } from "@/modules/accounting/types";
 
 export type JournalMonetaryContext = {
@@ -73,6 +78,11 @@ export function buildJournalLine(input: {
   provenance: string;
   taxTag: string | null;
   monetary: JournalMonetaryContext;
+  roleCode?: AccountRoleCode | null;
+  linePurpose?: string | null;
+  taxComponent?: string | null;
+  settlementComponent?: string | null;
+  isProvisional?: boolean;
 }) {
   return {
     lineNumber: input.lineNumber,
@@ -87,6 +97,11 @@ export function buildJournalLine(input: {
     fxRate: input.monetary.fxRate,
     provenance: input.provenance,
     taxTag: input.taxTag,
+    roleCode: input.roleCode ?? null,
+    linePurpose: input.linePurpose ?? null,
+    taxComponent: input.taxComponent ?? null,
+    settlementComponent: input.settlementComponent ?? null,
+    isProvisional: input.isProvisional ?? false,
   } satisfies ReviewJournalLine;
 }
 
@@ -96,8 +111,13 @@ export function buildBlockedJournalSuggestion(input: {
   monetary: JournalMonetaryContext;
   postingMode?: "provisional" | "final";
   hasProvisionalAccounts?: boolean;
-  templateCode?: string | null;
+  templateCode?: ReviewJournalSuggestion["templateCode"];
   taxProfileCode?: string | null;
+  operationKind?: OperationKind | null;
+  paymentTerms?: PaymentTerms;
+  settlementMethod?: SettlementMethod;
+  settlementStatus?: SettlementStatus;
+  requiresFollowupSettlement?: boolean;
 }) {
   return {
     ready: false,
@@ -118,6 +138,11 @@ export function buildBlockedJournalSuggestion(input: {
     fxRateBcuSeries: input.monetary.fxRateBcuSeries,
     templateCode: input.templateCode ?? null,
     taxProfileCode: input.taxProfileCode ?? null,
+    operationKind: input.operationKind ?? null,
+    paymentTerms: input.paymentTerms ?? "unknown",
+    settlementMethod: input.settlementMethod ?? "unknown",
+    settlementStatus: input.settlementStatus ?? "not_applicable",
+    requiresFollowupSettlement: input.requiresFollowupSettlement ?? false,
     explanation: input.explanation,
     lines: [],
     blockingReasons: input.blockingReasons,
@@ -131,8 +156,13 @@ export function finalizeJournalSuggestion(input: {
   monetary: JournalMonetaryContext;
   postingMode?: "provisional" | "final";
   hasProvisionalAccounts?: boolean;
-  templateCode?: string | null;
+  templateCode?: ReviewJournalSuggestion["templateCode"];
   taxProfileCode?: string | null;
+  operationKind?: OperationKind | null;
+  paymentTerms?: PaymentTerms;
+  settlementMethod?: SettlementMethod;
+  settlementStatus?: SettlementStatus;
+  requiresFollowupSettlement?: boolean;
 }) {
   const totalDebit = roundCurrency(input.lines.reduce((sum, line) => sum + line.debit, 0));
   const totalCredit = roundCurrency(input.lines.reduce((sum, line) => sum + line.credit, 0));
@@ -162,6 +192,11 @@ export function finalizeJournalSuggestion(input: {
     fxRateBcuSeries: input.monetary.fxRateBcuSeries,
     templateCode: input.templateCode ?? null,
     taxProfileCode: input.taxProfileCode ?? null,
+    operationKind: input.operationKind ?? null,
+    paymentTerms: input.paymentTerms ?? "unknown",
+    settlementMethod: input.settlementMethod ?? "unknown",
+    settlementStatus: input.settlementStatus ?? "not_applicable",
+    requiresFollowupSettlement: input.requiresFollowupSettlement ?? false,
     explanation: input.explanation,
     lines: input.lines,
     blockingReasons: input.blockingReasons,

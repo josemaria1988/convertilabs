@@ -1226,6 +1226,11 @@ export async function persistApprovedAccountingArtifacts(
       fx_rate: line.fxRate,
       functional_debit: line.functionalDebit,
       functional_credit: line.functionalCredit,
+      role_code: line.roleCode,
+      line_purpose: line.linePurpose,
+      tax_component: line.taxComponent,
+      settlement_component: line.settlementComponent,
+      is_provisional: line.isProvisional,
     },
   })).filter((line) => Boolean(line.account_id));
 
@@ -1249,8 +1254,8 @@ export async function persistApprovedAccountingArtifacts(
     }))
     .map((line) => line.accountCode);
   const description = missingCodes.length > 0
-    ? `${input.derived.journalSuggestion.explanation} Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
-    : input.derived.journalSuggestion.explanation;
+    ? `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}. Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
+    : `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}.`;
   const journalEntryId = await upsertJournalEntryWithCompat(supabase, {
     organizationId: input.organizationId,
     documentId: input.documentId,
@@ -1317,6 +1322,11 @@ export async function persistApprovedAccountingArtifacts(
       ),
       metadata: {
         provenance: entry.line.provenance,
+        role_code: entry.line.roleCode,
+        line_purpose: entry.line.linePurpose,
+        tax_component: entry.line.taxComponent,
+        settlement_component: entry.line.settlementComponent,
+        is_provisional: entry.line.isProvisional,
       },
     }));
 
@@ -1436,6 +1446,9 @@ export async function createRuleFromApproval(
     accountId: string | null;
     operationCategory: string | null;
     linkedOperationType: string | null;
+    operationKind?: string | null;
+    paymentTerms?: string | null;
+    settlementMethod?: string | null;
     vatProfileJson: Record<string, unknown>;
     taxProfileCode?: string | null;
     templateCode?: string | null;
@@ -1534,6 +1547,9 @@ export async function createRuleFromApproval(
       approved_by: input.actorId,
       metadata: {
         rationale: input.rationale,
+        operation_kind: input.operationKind ?? null,
+        payment_terms: input.paymentTerms ?? null,
+        settlement_method: input.settlementMethod ?? null,
       },
     })
     .select("id")
@@ -1573,6 +1589,9 @@ export async function createRuleFromApproval(
       concept_id: conceptId,
       account_id: input.accountId,
       operation_category: input.operationCategory,
+      operation_kind: input.operationKind ?? null,
+      payment_terms: input.paymentTerms ?? null,
+      settlement_method: input.settlementMethod ?? null,
     },
     metadata: {
       document_id: input.documentId,
