@@ -825,3 +825,84 @@ test("accounting impact preview explains when the selected main account is incom
     /cuenta principal de ingresos para esta venta/i,
   );
 });
+
+test("foreign currency documents block confirmation when fiscal FX from BCU is unresolved", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    facts: {
+      ...seed.facts,
+      currency_code: "USD",
+      document_date: "2026-03-17",
+      subtotal: 100,
+      tax_amount: 22,
+      total_amount: 122,
+    },
+    monetarySnapshot: {
+      currencyCode: "USD",
+      netAmountOriginal: 100,
+      taxAmountOriginal: 22,
+      totalAmountOriginal: 122,
+      netAmountUyu: 100,
+      taxAmountUyu: 22,
+      totalAmountUyu: 122,
+      fx: {
+        policyCode: "dgi_previous_business_day_interbank",
+        currencyCode: "USD",
+        functionalCurrencyCode: "UYU",
+        source: "document_default",
+        rate: 1,
+        bcuValue: null,
+        bcuDateUsed: null,
+        bcuSeries: null,
+        documentValue: null,
+        documentDate: "2026-03-17",
+        overrideReason: null,
+        warnings: [],
+        blockingReasons: ["No se pudo resolver el tipo de cambio fiscal BCU."],
+      },
+    },
+  }));
+
+  assert.equal(derived.validation.canPostProvisional, false);
+  assert.equal(derived.validation.canConfirmFinal, false);
+  assert.match(derived.validation.blockers.join(" "), /tipo de cambio fiscal bcu/i);
+});
+
+test("journal suggestion uses the BCU date actually applied instead of the document date", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    facts: {
+      ...seed.facts,
+      currency_code: "USD",
+      document_date: "2026-03-17",
+    },
+    monetarySnapshot: {
+      currencyCode: "USD",
+      netAmountOriginal: 100,
+      taxAmountOriginal: 22,
+      totalAmountOriginal: 122,
+      netAmountUyu: 4410,
+      taxAmountUyu: 970.2,
+      totalAmountUyu: 5380.2,
+      fx: {
+        policyCode: "dgi_previous_business_day_interbank",
+        currencyCode: "USD",
+        functionalCurrencyCode: "UYU",
+        source: "bcu",
+        rate: 44.1,
+        bcuValue: 44.1,
+        bcuDateUsed: "2026-03-14",
+        bcuSeries: "2224",
+        documentValue: null,
+        documentDate: "2026-03-17",
+        overrideReason: null,
+        warnings: [],
+        blockingReasons: [],
+      },
+    },
+  }));
+
+  assert.equal(derived.journalSuggestion.fxRate, 44.1);
+  assert.equal(derived.journalSuggestion.fxRateDate, "2026-03-14");
+  assert.equal(derived.journalSuggestion.fxRateBcuDateUsed, "2026-03-14");
+});

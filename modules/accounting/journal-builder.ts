@@ -53,7 +53,7 @@ export function buildJournalMonetaryContext(input: {
     currencyCode,
     functionalCurrencyCode,
     fxRate,
-    fxRateDate: input.documentDate ?? null,
+    fxRateDate: input.fxRateBcuDateUsed ?? input.documentDate ?? null,
     fxRateSource:
       input.fxRateSource?.trim()
       || (currencyCode === functionalCurrencyCode ? "same_currency" : "document_default"),

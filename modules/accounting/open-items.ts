@@ -398,6 +398,10 @@ export async function syncApprovedDocumentOpenItems(input: {
   documentDate: string | null;
   dueDate: string | null;
   currencyCode: string | null;
+  functionalCurrencyCode: string | null;
+  fxRate: number | null;
+  fxRateDate: string | null;
+  fxRateSource: string | null;
   totalAmount: number | null;
   vendorId: string | null;
   issuerName: string | null;
@@ -418,14 +422,21 @@ export async function syncApprovedDocumentOpenItems(input: {
     return;
   }
 
-  const functionalCurrencyCode = await loadOrganizationBaseCurrency(
-    input.supabase,
-    input.organizationId,
-  );
+  const functionalCurrencyCode =
+    input.functionalCurrencyCode?.trim().toUpperCase()
+    || await loadOrganizationBaseCurrency(
+      input.supabase,
+      input.organizationId,
+    );
   const currencyCode = input.currencyCode?.trim().toUpperCase() || functionalCurrencyCode;
-  const fxRate = 1;
-  const fxRateDate = input.documentDate ?? null;
-  const fxRateSource = currencyCode === functionalCurrencyCode ? "same_currency" : "document_default";
+  const fxRate =
+    typeof input.fxRate === "number" && Number.isFinite(input.fxRate) && input.fxRate > 0
+      ? input.fxRate
+      : 1;
+  const fxRateDate = input.fxRateDate ?? input.documentDate ?? null;
+  const fxRateSource =
+    input.fxRateSource?.trim()
+    || (currencyCode === functionalCurrencyCode ? "same_currency" : "document_default");
   const counterpartyType = input.documentRole === "purchase" ? "vendor" : "customer";
   const counterpartyId =
     counterpartyType === "vendor"

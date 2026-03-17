@@ -250,6 +250,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     accounts: input.accounts,
   });
   const blockers = [
+    ...(input.monetarySnapshot?.fx.blockingReasons ?? []),
     ...input.vendorResolution.blockingReasons,
     ...(isInvoiceOperation(settlementContext.operationKind)
       ? (input.invoiceIdentity?.blockingReasons ?? [])

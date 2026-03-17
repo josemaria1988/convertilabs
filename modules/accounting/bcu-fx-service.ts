@@ -1,4 +1,5 @@
 const DEFAULT_BCU_HANDLER_URL = "https://www.bcu.gub.uy/_layouts/15/BCU.Cotizaciones/handler/CotizacionesHandler.ashx?op=getcotizaciones";
+const DEFAULT_BCU_LOOKBACK_DAYS = 10;
 
 export type BcuResolvedFxRate = {
   currencyCode: string;
@@ -36,6 +37,10 @@ function subtractDays(date: string, days: number) {
   const base = new Date(`${date}T00:00:00Z`);
   base.setUTCDate(base.getUTCDate() - days);
   return base.toISOString().slice(0, 10);
+}
+
+function isEarlierDate(left: string, right: string) {
+  return left.localeCompare(right) < 0;
 }
 
 function asRecord(value: unknown) {
@@ -156,9 +161,12 @@ async function fetchViaConfiguredProxy(input: {
   documentDate: string;
   fetchImpl: typeof fetch;
 }) {
+  const previousCalendarDate = subtractDays(input.documentDate, 1);
   const url = new URL(input.endpoint);
   url.searchParams.set("currency_code", input.currencyCode);
   url.searchParams.set("document_date", input.documentDate);
+  url.searchParams.set("previous_business_day_before", input.documentDate);
+  url.searchParams.set("lookup_start_date", previousCalendarDate);
   const response = await input.fetchImpl(url.toString(), {
     method: "GET",
     headers: {
@@ -177,6 +185,10 @@ async function fetchViaConfiguredProxy(input: {
 
   if (!rate || !dateUsed) {
     throw new Error("El proxy BCU no devolvio rate/date validos.");
+  }
+
+  if (!isEarlierDate(dateUsed, input.documentDate)) {
+    throw new Error("El proxy BCU devolvio una fecha que no es cierre previo al documento.");
   }
 
   return {
@@ -202,7 +214,7 @@ async function fetchViaDefaultHandler(input: {
     throw new Error(`No hay serie BCU configurada para ${input.currencyCode}.`);
   }
 
-  for (let offset = 0; offset < 7; offset += 1) {
+  for (let offset = 1; offset <= DEFAULT_BCU_LOOKBACK_DAYS; offset += 1) {
     const candidateDate = subtractDays(input.documentDate, offset);
     const body = {
       Monedas: [{ Val: series.value, Text: series.label }],
@@ -242,7 +254,7 @@ async function fetchViaDefaultHandler(input: {
     }
   }
 
-  throw new Error("No se encontro cotizacion BCU disponible para la fecha requerida.");
+  throw new Error("No se encontro cotizacion BCU disponible en el cierre habil previo requerido.");
 }
 
 export async function resolveBcuFiscalFxRate(input: {

@@ -3,6 +3,7 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   buildOpenItemMutationPlan,
+  syncApprovedDocumentOpenItems,
 } = require("@/modules/accounting/open-items");
 
 test("open items create AP rows for purchase invoices", () => {
@@ -150,4 +151,72 @@ test("open items preserve residual credit balances when settlement exceeds outst
   assert.equal(result.updateOpenItems[0].outstanding_amount, 0);
   assert.equal(result.createOpenItems.length, 1);
   assert.equal(result.createOpenItems[0].outstanding_amount, -20);
+});
+
+test("open items persist the fiscal FX resolved for foreign currency documents", async () => {
+  const insertedOpenItems = [];
+  const supabase = {
+    from(table) {
+      if (table === "ledger_open_items") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          in() {
+            return this;
+          },
+          neq() {
+            return this;
+          },
+          order: async () => ({
+            data: [],
+            error: null,
+          }),
+          insert: async (payload) => {
+            insertedOpenItems.push(...payload);
+            return { error: null };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  await syncApprovedDocumentOpenItems({
+    supabase,
+    organizationId: "org-1",
+    documentId: "doc-usd-1",
+    documentRole: "purchase",
+    documentType: "purchase_invoice",
+    settlementContext: {
+      operationKind: "purchase_invoice",
+      openItemKind: "payable",
+    },
+    documentDate: "2026-03-17",
+    dueDate: "2026-03-30",
+    currencyCode: "USD",
+    functionalCurrencyCode: "UYU",
+    fxRate: 44.1,
+    fxRateDate: "2026-03-16",
+    fxRateSource: "bcu",
+    totalAmount: 500,
+    vendorId: "vendor-1",
+    issuerName: "Proveedor exterior",
+    issuerTaxId: "219999999999",
+    receiverName: null,
+    receiverTaxId: null,
+    journalEntryId: "je-usd-1",
+  });
+
+  assert.equal(insertedOpenItems.length, 1);
+  assert.equal(insertedOpenItems[0].currency_code, "USD");
+  assert.equal(insertedOpenItems[0].functional_currency_code, "UYU");
+  assert.equal(insertedOpenItems[0].fx_rate, 44.1);
+  assert.equal(insertedOpenItems[0].fx_rate_date, "2026-03-16");
+  assert.equal(insertedOpenItems[0].fx_rate_source, "bcu");
+  assert.equal(insertedOpenItems[0].functional_amount, 22050);
 });
