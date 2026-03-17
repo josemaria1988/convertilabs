@@ -8,7 +8,6 @@ import {
   prepareDocumentUploadAction,
 } from "@/app/app/o/[slug]/documents/actions";
 import { DocumentUploadButton } from "@/components/documents/upload-button";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   allowedDocumentUploadMimeTypes,
   documentsStorageBucket,
@@ -111,6 +110,54 @@ function buildBatchCompletionMessage(input: {
   return parts.join(" ");
 }
 
+async function uploadFileToSignedUrl(input: {
+  signedUploadUrl: string;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append("cacheControl", "3600");
+  formData.append("", input.file, input.file.name);
+
+  const response = await fetch(input.signedUploadUrl, {
+    method: "PUT",
+    body: formData,
+    headers: {
+      "x-upsert": "false",
+    },
+  });
+
+  if (response.ok) {
+    return {
+      ok: true as const,
+    };
+  }
+
+  const responseText = await response.text();
+
+  try {
+    const payload = JSON.parse(responseText) as {
+      message?: string;
+      error?: string | { message?: string };
+    };
+    const parsedMessage =
+      payload.message
+      ?? (typeof payload.error === "string"
+        ? payload.error
+        : payload.error?.message)
+      ?? response.statusText;
+
+    return {
+      ok: false as const,
+      message: parsedMessage || "No se pudo cargar el archivo al bucket privado.",
+    };
+  } catch {
+    return {
+      ok: false as const,
+      message: responseText.trim() || response.statusText || "No se pudo cargar el archivo al bucket privado.",
+    };
+  }
+}
+
 export function DocumentUploadDropzone({
   slug,
   panelId = "document-upload-panel",
@@ -157,7 +204,6 @@ export function DocumentUploadDropzone({
       return;
     }
 
-    const supabase = getSupabaseBrowserClient();
     const uploadedDocumentIds: string[] = [];
     const failureMessages: string[] = [];
     let uploadErrorCount = 0;
@@ -183,25 +229,18 @@ export function DocumentUploadDropzone({
         continue;
       }
 
-      const { error: uploadError } = await supabase.storage
-        .from(preparedUpload.storageBucket)
-        .uploadToSignedUrl(
-          preparedUpload.storagePath,
-          preparedUpload.uploadToken,
-          file,
-          {
-            contentType: file.type,
-            upsert: false,
-          },
-        );
+      const uploadResult = await uploadFileToSignedUrl({
+        signedUploadUrl: preparedUpload.signedUploadUrl,
+        file,
+      });
 
-      if (uploadError) {
+      if (!uploadResult.ok) {
         uploadErrorCount += 1;
-        failureMessages.push(uploadError.message);
+        failureMessages.push(uploadResult.message);
         await failDocumentUploadAction({
           slug,
           documentId: preparedUpload.documentId,
-          errorMessage: uploadError.message,
+          errorMessage: uploadResult.message,
         });
         continue;
       }
