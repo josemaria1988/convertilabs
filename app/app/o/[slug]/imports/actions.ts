@@ -27,6 +27,7 @@ import {
 
 function buildPaths(slug: string) {
   return {
+    documents: `/app/o/${slug}/documents`,
     imports: `/app/o/${slug}/imports`,
     tax: `/app/o/${slug}/tax`,
   };
@@ -201,11 +202,12 @@ export async function createImportOperationAction(input: {
     paymentDate: String(input.formData.get("paymentDate") ?? "").trim() || null,
   });
 
+  revalidatePath(buildPaths(input.slug).documents);
   revalidatePath(buildPaths(input.slug).imports);
 
   return {
     ok: true,
-    message: `Operacion de importacion creada (${operationId}).`,
+    message: `Operacion internacional creada (${operationId}).`,
   };
 }
 
@@ -230,12 +232,13 @@ export async function attachDocumentToImportOperationAction(input: {
     documentId,
   });
 
+  revalidatePath(buildPaths(input.slug).documents);
   revalidatePath(buildPaths(input.slug).imports);
   revalidatePath(buildPaths(input.slug).tax);
 
   return {
     ok: true,
-    message: "Documento vinculado a la operacion de importacion.",
+    message: "Documento vinculado a la operacion internacional.",
   };
 }
 
@@ -281,6 +284,7 @@ export async function updateImportOperationStatusAction(input: {
     }
   }
 
+  revalidatePath(buildPaths(input.slug).documents);
   revalidatePath(buildPaths(input.slug).imports);
   revalidatePath(buildPaths(input.slug).tax);
 

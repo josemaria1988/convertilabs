@@ -178,7 +178,7 @@ export function validateOrganizationOnboardingInput(
         .map((code) => getActivityByCode(code))
         .find((activity) => !activity || !activity.isSelectable);
 
-      if (invalidSecondaryActivity === undefined) {
+      if (invalidSecondaryActivity === null) {
         errors.secondaryActivityCodes = "Las actividades secundarias deben ser subclases oficiales o casos especiales validos.";
       } else if (invalidSecondaryActivity && !invalidSecondaryActivity.isSelectable) {
         errors.secondaryActivityCodes = invalidSecondaryActivity.isLegacySelection

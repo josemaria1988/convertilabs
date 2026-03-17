@@ -100,6 +100,136 @@ test("spreadsheet run listing returns empty when history table is missing", asyn
   assert.deepEqual(runs, []);
 });
 
+test("spreadsheet import run persistence stores empty result payloads without violating not-null columns", async () => {
+  const { createSpreadsheetImportRun } = require("@/modules/spreadsheets");
+  const supabase = createSupabaseStub((query) => {
+    assert.equal(query.table, "organization_spreadsheet_import_runs");
+    assert.equal(query.mutation, "insert");
+    assert.deepEqual(query.payload.result_json, {});
+    assert.equal(query.payload.preview_json.fileName, "plan.csv");
+
+    return {
+      data: {
+        id: "run-1",
+        organization_id: query.payload.organization_id,
+        source_document_id: null,
+        file_name: query.payload.file_name,
+        file_kind: query.payload.file_kind,
+        import_type: query.payload.import_type,
+        run_mode: query.payload.run_mode,
+        status: query.payload.status,
+        provider_code: null,
+        model_code: null,
+        prompt_version: null,
+        schema_version: null,
+        batch_id: null,
+        response_id: null,
+        estimated_cost_usd: null,
+        warnings_json: query.payload.warnings_json,
+        preview_json: query.payload.preview_json,
+        result_json: query.payload.result_json,
+        detected_mapping_json: query.payload.detected_mapping_json,
+        status_events_json: query.payload.status_events_json,
+        retry_count: 0,
+        confirmed_at: null,
+        confirmed_by: null,
+        metadata_json: query.payload.metadata_json,
+        created_at: "2026-03-17T15:00:00Z",
+        updated_at: "2026-03-17T15:00:00Z",
+      },
+      error: null,
+    };
+  });
+
+  const run = await createSpreadsheetImportRun(supabase, {
+    organizationId: "org-1",
+    fileName: "plan.csv",
+    fileKind: "csv",
+    importType: "unsupported",
+    runMode: "interactive",
+    status: "preview_ready",
+    preview: {
+      fileName: "plan.csv",
+      mimeType: "text/csv",
+      fileKind: "csv",
+      sizeBytes: 12,
+      totalSheets: 1,
+      totalRows: 1,
+      totalCells: 3,
+      warnings: [],
+      sheets: [],
+      metadata: { parserVariant: "csv" },
+    },
+    result: null,
+    warnings: [],
+  });
+
+  assert.equal(run.result, null);
+  assert.equal(run.preview.fileName, "plan.csv");
+});
+
+test("spreadsheet import run updates reset result payloads to empty objects and still hydrate as null", async () => {
+  const { updateSpreadsheetImportRun } = require("@/modules/spreadsheets");
+  const supabase = createSupabaseStub((query) => {
+    assert.equal(query.table, "organization_spreadsheet_import_runs");
+    assert.equal(query.mutation, "update");
+    assert.deepEqual(query.payload.result_json, {});
+
+    return {
+      data: {
+        id: "run-1",
+        organization_id: "org-1",
+        source_document_id: null,
+        file_name: "plan.csv",
+        file_kind: "csv",
+        import_type: "unsupported",
+        run_mode: "interactive",
+        status: "preview_ready",
+        provider_code: null,
+        model_code: null,
+        prompt_version: null,
+        schema_version: null,
+        batch_id: null,
+        response_id: null,
+        estimated_cost_usd: null,
+        warnings_json: [],
+        preview_json: {
+          fileName: "plan.csv",
+          mimeType: "text/csv",
+          fileKind: "csv",
+          sizeBytes: 12,
+          totalSheets: 1,
+          totalRows: 1,
+          totalCells: 3,
+          warnings: [],
+          sheets: [],
+          metadata: { parserVariant: "csv" },
+        },
+        result_json: query.payload.result_json,
+        detected_mapping_json: {},
+        status_events_json: [],
+        retry_count: 1,
+        confirmed_at: null,
+        confirmed_by: null,
+        metadata_json: {},
+        created_at: "2026-03-17T15:00:00Z",
+        updated_at: "2026-03-17T15:01:00Z",
+      },
+      error: null,
+    };
+  });
+
+  const run = await updateSpreadsheetImportRun(supabase, {
+    organizationId: "org-1",
+    runId: "run-1",
+    result: null,
+    retryCount: 1,
+  });
+
+  assert.equal(run.result, null);
+  assert.equal(run.retryCount, 1);
+});
+
 test("direct chart spreadsheet import persists accounts without history table support", async () => {
   const { importChartOfAccountsSpreadsheetDirect } = require("@/modules/spreadsheets");
   const insertedPayloads = [];

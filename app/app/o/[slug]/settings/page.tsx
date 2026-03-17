@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
+import { SettingsCapabilitiesList } from "@/components/settings/settings-capabilities-list";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
@@ -178,6 +179,17 @@ export default async function OrganizationSettingsPage({
           <p className="metric-card__hint">Listas para exportacion ERP.</p>
         </article>
       </section>
+
+      <ExpandableSectionCard
+        title="Mapa de configuracion actual"
+        description="Resumen de donde vive cada capacidad del sistema hoy, separado entre configuracion, soporte, documentos y salidas contables."
+        defaultOpen
+      >
+        <SettingsCapabilitiesList
+          slug={organization.slug}
+          showBusinessProfile={featureFlags.onboardingActivityBasedPresetsEnabled}
+        />
+      </ExpandableSectionCard>
 
       <div className="grid items-start gap-4 xl:grid-cols-2">
         <div className="contents">
@@ -911,16 +923,16 @@ export default async function OrganizationSettingsPage({
       </ExpandableSectionCard>
 
       <ExpandableSectionCard
-        title="Herramientas de soporte"
-        description="Imports, historicos y bridge de exportacion siguen disponibles para el MVP, pero quedan fuera del flujo principal de documentos, decision contable e IVA."
+        title="Atajos de soporte y salidas"
+        description="Accesos rapidos para importar o exportar el plan, revisar planillas auxiliares y saltar al carril documental correcto sin mezclar operatoria economica con soporte."
       >
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-4">
           <form action={importOrganizationChartSpreadsheetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
             <input type="hidden" name="slug" value={organization.slug} />
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-white">Importacion rapida de plan</p>
+              <p className="text-sm font-semibold text-white">Importacion rapida de plan de cuentas</p>
               <p className="text-sm text-[color:var(--color-muted)]">
-                Sube una planilla y te redirigimos al workspace de soporte para revisar solo la seccion contable detectada.
+                Sube una planilla y te redirigimos a la corrida enfocada para revisar el plan detectado antes de aplicarlo.
               </p>
             </div>
             <input
@@ -939,18 +951,18 @@ export default async function OrganizationSettingsPage({
 
           <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
             <div className="space-y-1">
-              <p className="font-semibold text-white">Imports e historicos</p>
+              <p className="font-semibold text-white">Planillas de soporte e historicos</p>
               <p>
-                Usa estas vistas cuando necesites cargar historicos IVA, lotes mixtos o revisar previews canonicos fuera del loop principal.
+                Usa estas vistas cuando necesites cargar historicos IVA, lotes mixtos o revisar vistas previas canonicas fuera del loop principal.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <LoadingLink
                 href={`/app/o/${organization.slug}/imports?focus=chart_of_accounts_import`}
-                pendingLabel="Abriendo importaciones..."
+                pendingLabel="Abriendo planillas..."
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
               >
-                Importaciones avanzadas
+                Abrir planillas
               </LoadingLink>
               <LoadingLink
                 href={`/app/o/${organization.slug}/imports?focus=historical_vat_import`}
@@ -958,6 +970,24 @@ export default async function OrganizationSettingsPage({
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
               >
                 Historicos IVA
+              </LoadingLink>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+            <div className="space-y-1">
+              <p className="font-semibold text-white">Operaciones internacionales</p>
+              <p>
+                DUA, proveedor exterior y tributos asociados ahora viven dentro de Documentos porque forman parte del mismo evento economico revisable.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <LoadingLink
+                href={`/app/o/${organization.slug}/documents?tab=international`}
+                pendingLabel="Abriendo operaciones..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Abrir operaciones
               </LoadingLink>
             </div>
           </div>

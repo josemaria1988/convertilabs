@@ -295,7 +295,7 @@ export async function updateOrganizationBusinessProfileAction(formData: FormData
     .map((code) => getActivityByCode(code))
     .find((activity) => !isHistoricalProfileCompatibleActivity(activity));
 
-  if (invalidSecondaryActivity === undefined) {
+  if (invalidSecondaryActivity === null) {
     throw new Error("Las actividades secundarias deben existir en el catalogo oficial.");
   }
 

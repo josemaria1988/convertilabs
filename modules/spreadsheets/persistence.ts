@@ -19,6 +19,11 @@ function asRecord(value: unknown) {
     : {};
 }
 
+function asNullableRecord(value: unknown) {
+  const record = asRecord(value);
+  return Object.keys(record).length > 0 ? record : null;
+}
+
 function asString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -100,8 +105,8 @@ function mapRunRow(row: Record<string, unknown>) {
         ? row.estimated_cost_usd
         : null,
     warnings: asStringArray(row.warnings_json),
-    preview: row.preview_json ? row.preview_json as SpreadsheetParseResult : null,
-    result: row.result_json ? row.result_json as SpreadsheetInterpretationResult : null,
+    preview: asNullableRecord(row.preview_json) as SpreadsheetParseResult | null,
+    result: asNullableRecord(row.result_json) as SpreadsheetInterpretationResult | null,
     detectedMapping: asRecord(row.detected_mapping_json),
     statusEvents: asStatusEvents(row.status_events_json),
     retryCount:
@@ -173,8 +178,8 @@ export async function createSpreadsheetImportRun(
     response_id: input.responseId ?? null,
     estimated_cost_usd: input.estimatedCostUsd ?? null,
     warnings_json: input.warnings,
-    preview_json: input.preview,
-    result_json: input.result,
+    preview_json: input.preview ?? {},
+    result_json: input.result ?? {},
     detected_mapping_json: input.detectedMapping ?? {},
     status_events_json: input.statusEvents ?? [],
     retry_count: input.retryCount ?? 0,
@@ -233,7 +238,7 @@ export async function updateSpreadsheetImportRun(
   }
 
   if (input.result !== undefined) {
-    patch.result_json = input.result;
+    patch.result_json = input.result ?? {};
   }
 
   if (input.warnings) {

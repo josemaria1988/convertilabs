@@ -200,10 +200,10 @@ export function BusinessProfileSettings({
           <div className="flex flex-wrap gap-3 md:col-span-2 xl:col-span-1">
             <LoadingLink
               href={`/app/o/${slug}/imports?focus=chart_of_accounts_import`}
-              pendingLabel="Abriendo importaciones..."
+              pendingLabel="Abriendo planillas..."
               className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
             >
-              Abrir importaciones avanzadas
+              Abrir planillas de soporte
             </LoadingLink>
           </div>
         </aside>

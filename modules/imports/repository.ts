@@ -56,7 +56,7 @@ export async function createImportOperation(
     .single();
 
   if (error || !data?.id) {
-    throw new Error(error?.message ?? "No se pudo crear la operacion de importacion.");
+    throw new Error(error?.message ?? "No se pudo crear la operacion internacional.");
   }
 
   return data.id as string;
@@ -286,7 +286,7 @@ export async function listOrganizationImportOperations(
   ]);
 
   if (linkedDocumentsResult.error || taxLinesResult.error) {
-    throw new Error(linkedDocumentsResult.error?.message ?? taxLinesResult.error?.message ?? "No se pudieron cargar las operaciones de importacion.");
+    throw new Error(linkedDocumentsResult.error?.message ?? taxLinesResult.error?.message ?? "No se pudieron cargar las operaciones internacionales.");
   }
 
   const linkedDocumentsByOperationId = new Map<string, ImportOperationListItem["linkedDocuments"]>();
