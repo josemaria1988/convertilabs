@@ -11,5 +11,6 @@ export const marketingNav: NavItem[] = [
 export const workspaceNav: NavItem[] = [
   { href: "/documents", label: "Documentos", description: "Captura y validacion" },
   { href: "/tax", label: "Impuestos", description: "Calendario y cierres" },
+  { href: "/chart-map", label: "Mapa contable", description: "Arbol e impacto" },
   { href: "/settings", label: "Configuracion", description: "Configuracion" },
 ];

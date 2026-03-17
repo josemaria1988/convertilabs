@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/button-styles";
 import { HelpHint } from "@/components/ui/help-hint";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { LoadingLink } from "@/components/ui/loading-link";
 import {
   formatDecisionRunTypeLabel,
   formatDecisionSourceLabel,
@@ -1873,6 +1874,16 @@ export function DocumentReviewWorkspace({
         <RuleApplicationCard explanation={pageData.ruleExplanation} />
 
         <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+
+        <div className="flex flex-wrap gap-3">
+          <LoadingLink
+            href={`/app/o/${pageData.organizationSlug}/chart-map?mode=document&documentId=${pageData.document.id}${pageData.derived.appliedRule.accountId ? `&accountId=${pageData.derived.appliedRule.accountId}` : ""}`}
+            pendingLabel="Abriendo mapa..."
+            className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+          >
+            Ver en mapa contable
+          </LoadingLink>
+        </div>
 
         <article className="panel p-6">
           <h3 className="text-2xl font-semibold tracking-[-0.05em]">Guardar criterio para futuras facturas</h3>

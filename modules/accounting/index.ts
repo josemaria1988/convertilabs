@@ -2,6 +2,7 @@ export * from "@/modules/accounting/assistant";
 export * from "@/modules/accounting/accounting-impact-preview";
 export * from "@/modules/accounting/account-role-resolver";
 export * from "@/modules/accounting/chart-import";
+export * from "@/modules/accounting/chart-map";
 export * from "@/modules/accounting/classification-runner";
 export * from "@/modules/accounting/concept-resolution";
 export * from "@/modules/accounting/decision-log";

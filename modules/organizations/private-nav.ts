@@ -1,6 +1,7 @@
 export type OrganizationPrivateSection =
   | "documents"
   | "tax"
+  | "chart-map"
   | "settings";
 
 export function buildOrganizationPrivateNavItems(
@@ -19,6 +20,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Impuestos",
       description: "IVA mensual, lifecycle y conciliacion",
       current: currentSection === "tax",
+    },
+    {
+      href: `/app/o/${organizationSlug}/chart-map`,
+      label: "Mapa contable",
+      description: "Arbol, impacto y documentos reales",
+      current: currentSection === "chart-map",
     },
     {
       href: `/app/o/${organizationSlug}/settings`,

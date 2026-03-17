@@ -102,6 +102,28 @@ function SettingsIcon({ className }: IconProps) {
   );
 }
 
+function ChartMapIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="6" cy="7" r="2.2" />
+      <circle cx="18" cy="6" r="2.2" />
+      <circle cx="12" cy="17" r="2.2" />
+      <path d="M8 7h7.7" />
+      <path d="M7.4 8.8 10.6 15" />
+      <path d="M16.6 7.8 13.4 15" />
+    </svg>
+  );
+}
+
 function CaretIcon({ className }: IconProps) {
   return (
     <svg
@@ -121,6 +143,8 @@ function getNavIcon(label: string) {
       return DocumentIcon;
     case "Impuestos":
       return TaxIcon;
+    case "Mapa contable":
+      return ChartMapIcon;
     case "Configuracion":
       return SettingsIcon;
     default:

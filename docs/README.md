@@ -27,6 +27,7 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - [01-identity/auth-tenancy-and-memberships.md](./01-identity/auth-tenancy-and-memberships.md)
 - [02-organization/business-profile-onboarding-and-settings.md](./02-organization/business-profile-onboarding-and-settings.md)
 - [03-accounting/chart-presets-and-plan-management.md](./03-accounting/chart-presets-and-plan-management.md)
+- [03-accounting/accounting-map-impact-graph.md](./03-accounting/accounting-map-impact-graph.md)
 - [03-accounting/hybrid-ai-preset-recommendation.md](./03-accounting/hybrid-ai-preset-recommendation.md)
 - [04-documents/01-document-intake-and-processing.md](./04-documents/01-document-intake-and-processing.md)
 - [04-documents/02-document-review-classification-and-posting.md](./04-documents/02-document-review-classification-and-posting.md)

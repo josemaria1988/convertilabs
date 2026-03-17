@@ -17,6 +17,7 @@ import {
   buttonSecondaryChromeClassName,
 } from "@/components/ui/button-styles";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import { LoadingLink } from "@/components/ui/loading-link";
 import {
   formatAccountTypeLabel,
   formatSettlementEvidenceSourceLabel,
@@ -1546,6 +1547,16 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
           <div className="mt-5">
             <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <LoadingLink
+              href={`/app/o/${pageData.organizationSlug}/chart-map?mode=document&documentId=${pageData.document.id}${pageData.derived.appliedRule.accountId ? `&accountId=${pageData.derived.appliedRule.accountId}` : ""}`}
+              pendingLabel="Abriendo mapa..."
+              className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+            >
+              Ver en mapa contable
+            </LoadingLink>
           </div>
 
           {sectionStatus.accounting ? (
