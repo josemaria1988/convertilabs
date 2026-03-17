@@ -528,10 +528,14 @@ export function DocumentsWorkspaceTable({
                           previewUrl={document.previewUrl}
                           mimeType={document.mimeType}
                           originalFilename={document.originalFilename}
-                          triggerLabel="Ver original"
+                          triggerLabel={document.previewUrl ? "Ver original" : "Ver detalle"}
                           triggerClassName="text-[13px] text-[color:var(--color-accent-strong)]"
                           modalTitle={document.originalFilename}
-                          modalDescription="Archivo original cargado al bucket privado."
+                          modalDescription={
+                            document.previewUrl
+                              ? "Archivo original cargado al bucket privado."
+                              : "Documento creado desde importacion estructurada. No tiene archivo binario original dentro del bucket."
+                          }
                         />
                       </div>
                     </td>

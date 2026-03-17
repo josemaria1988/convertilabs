@@ -118,7 +118,7 @@ export default async function OrganizationDocumentsPage({
               href="#document-upload-panel"
               className="ui-button ui-button--secondary"
             >
-              Cargar documentos
+              Cargar o importar
             </Link>
           ) : (
             <LoadingLink
@@ -186,11 +186,12 @@ export default async function OrganizationDocumentsPage({
                     Ingreso documental
                   </h2>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                    Puedes cargar archivos sueltos o carpetas completas. Si activas el
-                    modo masivo, la extraccion se encola automaticamente despues de subir.
+                    Sube comprobantes originales cuando necesites conservar el archivo firmado
+                    y usa planillas mensuales para crear lotes de compras o ventas desde ERPs legacy
+                    sin mezclar ese flujo con operaciones internacionales.
                   </p>
                 </div>
-                <span className="status-pill status-pill--info">Ingreso masivo</span>
+                <span className="status-pill status-pill--info">Originales + planilla mensual</span>
               </div>
               <DocumentUploadDropzone slug={organization.slug} />
             </div>

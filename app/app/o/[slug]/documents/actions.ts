@@ -5,6 +5,10 @@ import { getSupabaseServerClient, getSupabaseServiceRoleClient } from "@/lib/sup
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { runDocumentClassification } from "@/modules/accounting/classification-runner";
 import { enqueueDocumentProcessing } from "@/modules/documents/processing";
+import {
+  importDocumentsFromSpreadsheet,
+  type DocumentSpreadsheetLedgerKind,
+} from "@/modules/documents/spreadsheet-batch-import";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 
 function buildPaths(slug: string, documentId?: string) {
@@ -29,6 +33,22 @@ function revalidateDocumentSurfaces(slug: string, documentId?: string) {
   if (paths.review) {
     revalidatePath(paths.review);
   }
+}
+
+function isAcceptedSpreadsheetFile(fileName: string, mimeType: string) {
+  const normalizedName = fileName.toLowerCase();
+  const normalizedMime = mimeType.toLowerCase();
+
+  return (
+    normalizedName.endsWith(".csv")
+    || normalizedName.endsWith(".tsv")
+    || normalizedName.endsWith(".xlsx")
+    || normalizedName.endsWith(".xls")
+    || normalizedMime.includes("text/csv")
+    || normalizedMime.includes("tab-separated")
+    || normalizedMime.includes("spreadsheetml.sheet")
+    || normalizedMime.includes("ms-excel")
+  );
 }
 
 type PrepareDocumentUploadInput = {
@@ -430,4 +450,97 @@ export async function failDocumentUploadAction(
   return {
     ok: true,
   };
+}
+
+export async function importDocumentSpreadsheetBatchAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const ledgerKindValue = String(formData.get("ledgerKind") ?? "purchase");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  if (!canRunExtraction(organization.role)) {
+    return {
+      ok: false,
+      importedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      message: "Tu rol no puede importar documentos desde planilla.",
+    };
+  }
+
+  const spreadsheet = formData.get("spreadsheet");
+
+  if (!(spreadsheet instanceof File) || spreadsheet.size === 0) {
+    return {
+      ok: false,
+      importedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      message: "Selecciona una planilla mensual valida antes de importar.",
+    };
+  }
+
+  if (!isAcceptedSpreadsheetFile(spreadsheet.name, spreadsheet.type)) {
+    return {
+      ok: false,
+      importedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      message: "La importacion mensual admite .csv, .tsv, .xlsx y .xls en variantes compatibles.",
+    };
+  }
+
+  const ledgerKind: DocumentSpreadsheetLedgerKind =
+    ledgerKindValue === "sale" ? "sale" : "purchase";
+  const supabase = getSupabaseServiceRoleClient();
+
+  try {
+    const result = await importDocumentsFromSpreadsheet({
+      supabase,
+      organizationId: organization.id,
+      actorId: authState.user?.id ?? null,
+      fileName: spreadsheet.name,
+      mimeType: spreadsheet.type,
+      bytes: await spreadsheet.arrayBuffer(),
+      ledgerKind,
+      provider: "auto",
+    });
+
+    revalidateDocumentSurfaces(slug);
+
+    const parts = [
+      `${result.importedCount} documento(s) quedaron creados desde la planilla mensual de ${ledgerKind === "purchase" ? "compras" : "ventas"}.`,
+    ];
+
+    if (result.skippedRows.length > 0) {
+      parts.push(`${result.skippedRows.length} fila(s) se omitieron por datos insuficientes.`);
+    }
+
+    if (result.failedRows.length > 0) {
+      parts.push(`${result.failedRows.length} fila(s) fallaron al persistirse.`);
+    }
+
+    if (result.warnings.length > 0) {
+      parts.push(result.warnings[0] ?? "");
+    } else {
+      parts.push("Quedaron listas para clasificacion contable desde la bandeja.");
+    }
+
+    return {
+      ok: result.importedCount > 0 && result.failedRows.length === 0,
+      importedCount: result.importedCount,
+      skippedCount: result.skippedRows.length,
+      failedCount: result.failedRows.length,
+      message: parts.filter(Boolean).join(" "),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      importedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      message: error instanceof Error
+        ? error.message
+        : "No se pudo importar la planilla mensual como documentos.",
+    };
+  }
 }

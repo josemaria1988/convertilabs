@@ -907,6 +907,12 @@ async function loadConfirmations(
 }
 
 async function buildPreviewUrl(document: DocumentRow) {
+  const metadata = asRecord(document.metadata);
+
+  if (metadata.synthetic_preview === true) {
+    return null;
+  }
+
   const supabase = getSupabaseServiceRoleClient();
   const { data, error } = await supabase.storage
     .from(document.storage_bucket)
@@ -1910,7 +1916,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
       mime_type: row.mime_type,
       document_date: row.document_date,
       created_at: row.created_at,
-      metadata: null,
+      metadata: row.metadata,
       current_draft_id: row.current_draft_id,
       current_processing_run_id: null,
       last_rule_snapshot_id: null,

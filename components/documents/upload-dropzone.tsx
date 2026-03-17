@@ -6,6 +6,7 @@ import {
   enqueueSelectedDocumentExtractionsAction,
   failDocumentUploadAction,
   finalizeDocumentUploadAction,
+  importDocumentSpreadsheetBatchAction,
   prepareDocumentUploadAction,
 } from "@/app/app/o/[slug]/documents/actions";
 import { DocumentUploadButton } from "@/components/documents/upload-button";
@@ -29,12 +30,31 @@ type DocumentUploadDropzoneProps = {
   panelId?: string;
 };
 
+type SpreadsheetLedgerKind = "purchase" | "sale";
+
 type SelectedUploadFile = {
   file: File;
   validation: ReturnType<typeof validateDocumentUploadCandidate>;
 };
 
 const acceptedMimeLabel = allowedDocumentUploadMimeTypes.join(", ");
+const acceptedSpreadsheetLabel = ".csv,.tsv,.xlsx,.xls";
+
+function isAcceptedSpreadsheetFile(file: File) {
+  const normalizedName = file.name.toLowerCase();
+  const normalizedMime = file.type.toLowerCase();
+
+  return (
+    normalizedName.endsWith(".csv")
+    || normalizedName.endsWith(".tsv")
+    || normalizedName.endsWith(".xlsx")
+    || normalizedName.endsWith(".xls")
+    || normalizedMime.includes("text/csv")
+    || normalizedMime.includes("tab-separated")
+    || normalizedMime.includes("spreadsheetml.sheet")
+    || normalizedMime.includes("ms-excel")
+  );
+}
 
 function buildRejectedFilesMessage(rejectedFiles: Array<{
   name: string;
@@ -182,6 +202,9 @@ export function DocumentUploadDropzone({
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState("");
+  const [spreadsheetStatus, setSpreadsheetStatus] = useState<UploadStatus>("idle");
+  const [spreadsheetMessage, setSpreadsheetMessage] = useState("");
+  const [spreadsheetLedgerKind, setSpreadsheetLedgerKind] = useState<SpreadsheetLedgerKind>("purchase");
   const [autoProcessAfterUpload, setAutoProcessAfterUpload] = useState(true);
   const [isRefreshing, startTransition] = useTransition();
 
@@ -330,7 +353,52 @@ export function DocumentUploadDropzone({
     });
   }
 
-  const isBusy = status === "uploading" || isRefreshing;
+  async function handleSpreadsheetFiles(files: File[]) {
+    const file = files[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!isAcceptedSpreadsheetFile(file)) {
+      setSpreadsheetStatus("error");
+      setSpreadsheetMessage("Selecciona una planilla mensual en formato .csv, .tsv, .xlsx o .xls.");
+      return;
+    }
+
+    setSpreadsheetStatus("uploading");
+    setSpreadsheetMessage(`Analizando ${file.name} y estructurando los comprobantes para ${spreadsheetLedgerKind === "purchase" ? "compras" : "ventas"}...`);
+
+    const formData = new FormData();
+    formData.append("slug", slug);
+    formData.append("ledgerKind", spreadsheetLedgerKind);
+    formData.append("spreadsheet", file, file.name);
+
+    try {
+      const result = await importDocumentSpreadsheetBatchAction(formData);
+
+      setSpreadsheetStatus(
+        result.ok || (result.importedCount > 0 && result.failedCount === 0)
+          ? "success"
+          : "error",
+      );
+      setSpreadsheetMessage(result.message);
+    } catch (error) {
+      setSpreadsheetStatus("error");
+      setSpreadsheetMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo importar la planilla mensual como lote documental.",
+      );
+    } finally {
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+  }
+
+  const isBusy = status === "uploading" || status === "validating" || isRefreshing;
+  const isSpreadsheetBusy = spreadsheetStatus === "uploading" || isRefreshing;
 
   return (
     <div
@@ -354,99 +422,185 @@ export function DocumentUploadDropzone({
         void handleFiles(Array.from(event.dataTransfer.files ?? []));
       }}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-3">
-          <p className="text-[16px] font-semibold text-white">Cargar documentos</p>
-          <p className="max-w-2xl text-[16px] leading-8 text-[color:var(--color-muted)]">
-            Arrastra uno o varios PDF, JPG o PNG, carga una carpeta completa o usa
-            los botones para ingreso masivo al bucket privado. Cada archivo valida
-            MIME y tamano, se guarda por separado y puede encolarse automaticamente
-            para extraccion.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <DocumentUploadButton
-            label={isBusy ? "Procesando..." : "Seleccionar archivos"}
-            accept={acceptedMimeLabel}
-            disabled={isBusy}
-            isLoading={isBusy}
-            onFilesSelected={(selectedFiles) => {
-              void handleFiles(selectedFiles);
-            }}
-          />
-          <DocumentUploadButton
-            label={isBusy ? "Procesando..." : "Cargar carpeta"}
-            accept={acceptedMimeLabel}
-            disabled={isBusy}
-            directory
-            className="ui-button ui-button--secondary"
-            onFilesSelected={(selectedFiles) => {
-              void handleFiles(selectedFiles);
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-3 rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[14px] text-[color:var(--color-muted)]">
-        <label className="inline-flex cursor-pointer items-center gap-3">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-white/20 bg-transparent"
-            checked={autoProcessAfterUpload}
-            onChange={(event) => {
-              setAutoProcessAfterUpload(event.target.checked);
-            }}
-            disabled={isBusy}
-          />
-          <span className="text-white">Encolar extraccion automaticamente despues de subir</span>
-        </label>
-        <span className="text-[color:var(--color-muted)]">
-          Recomendado para lotes grandes de Rontil.
-        </span>
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-          MIME: PDF, JPG, PNG
-        </div>
-        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-          Limite por archivo: {formatUploadSize(maxDocumentUploadBytes)}
-        </div>
-        <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-          Bucket: {documentsStorageBucket}
-        </div>
-      </div>
-
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/8">
-        <div
-          className={`h-full rounded-full transition-all ${
-            status === "uploading"
-              ? "w-2/3 bg-[color:var(--color-accent)]"
-              : status === "success"
-                ? "w-full bg-emerald-500"
-                : status === "error"
-                  ? "w-full bg-rose-500"
-                  : status === "validating"
-                    ? "w-1/3 bg-[color:var(--color-warm)]"
-                    : "w-0"
-          }`}
-        />
-      </div>
-
-      <div aria-live="polite" className="mt-4 min-h-6">
-        {message ? (
-          <div
-            className={`rounded-[1rem] border px-4 py-3 text-[16px] leading-7 ${
-              status === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                : status === "error"
-                  ? "border-amber-200 bg-amber-50 text-amber-950"
-                  : "border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] text-[color:var(--color-muted)]"
-            }`}
-          >
-            {message}
+      <div className="space-y-6">
+        <section>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <p className="text-[16px] font-semibold text-white">Documentos originales</p>
+              <p className="max-w-2xl text-[16px] leading-8 text-[color:var(--color-muted)]">
+                Arrastra o selecciona PDF, JPG o PNG cuando quieras conservar el comprobante
+                original dentro del bucket privado. Cada archivo valida MIME y tamano, se
+                guarda por separado y puede encolarse automaticamente para extraccion.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <DocumentUploadButton
+                label={isBusy ? "Procesando..." : "Seleccionar archivos"}
+                accept={acceptedMimeLabel}
+                disabled={isBusy}
+                isLoading={isBusy}
+                onFilesSelected={(selectedFiles) => {
+                  void handleFiles(selectedFiles);
+                }}
+              />
+            </div>
           </div>
-        ) : null}
+
+          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[14px] text-[color:var(--color-muted)]">
+            <label className="inline-flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/20 bg-transparent"
+                checked={autoProcessAfterUpload}
+                onChange={(event) => {
+                  setAutoProcessAfterUpload(event.target.checked);
+                }}
+                disabled={isBusy}
+              />
+              <span className="text-white">Encolar extraccion automaticamente despues de subir</span>
+            </label>
+            <span className="text-[color:var(--color-muted)]">
+              Ideal para PDFs o imagenes que luego quieras revisar uno a uno.
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              MIME: PDF, JPG, PNG
+            </div>
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              Limite por archivo: {formatUploadSize(maxDocumentUploadBytes)}
+            </div>
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              Bucket: {documentsStorageBucket}
+            </div>
+          </div>
+
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/8">
+            <div
+              className={`h-full rounded-full transition-all ${
+                status === "uploading"
+                  ? "w-2/3 bg-[color:var(--color-accent)]"
+                  : status === "success"
+                    ? "w-full bg-emerald-500"
+                    : status === "error"
+                      ? "w-full bg-rose-500"
+                      : status === "validating"
+                        ? "w-1/3 bg-[color:var(--color-warm)]"
+                        : "w-0"
+              }`}
+            />
+          </div>
+
+          <div aria-live="polite" className="mt-4 min-h-6">
+            {message ? (
+              <div
+                className={`rounded-[1rem] border px-4 py-3 text-[16px] leading-7 ${
+                  status === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                    : status === "error"
+                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                      : "border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] text-[color:var(--color-muted)]"
+                }`}
+              >
+                {message}
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="border-t border-[color:var(--color-border)] pt-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <p className="text-[16px] font-semibold text-white">Planilla mensual para ingreso masivo</p>
+              <p className="max-w-3xl text-[16px] leading-8 text-[color:var(--color-muted)]">
+                Usa una exportacion mensual de compras o ventas desde tu ERP legacy.
+                La IA interpreta encabezados y filas de ejemplo, devuelve el formato
+                estructurado que Convertilabs necesita y crea cada fila como documento
+                listo para clasificacion.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="min-w-[220px]">
+                <span className="mb-2 block text-[13px] font-medium uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                  Importar como
+                </span>
+                <select
+                  className="min-h-[48px] w-full rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 text-[15px] text-white outline-none transition focus:border-[color:var(--color-accent)]"
+                  value={spreadsheetLedgerKind}
+                  disabled={isSpreadsheetBusy}
+                  onChange={(event) => {
+                    setSpreadsheetLedgerKind(event.target.value === "sale" ? "sale" : "purchase");
+                  }}
+                >
+                  <option value="purchase">Compras del periodo</option>
+                  <option value="sale">Ventas del periodo</option>
+                </select>
+              </label>
+              <DocumentUploadButton
+                label={isSpreadsheetBusy ? "Importando..." : "Seleccionar planilla"}
+                accept={acceptedSpreadsheetLabel}
+                multiple={false}
+                disabled={isSpreadsheetBusy}
+                isLoading={isSpreadsheetBusy}
+                className="ui-button ui-button--secondary"
+                onFilesSelected={(selectedFiles) => {
+                  void handleSpreadsheetFiles(selectedFiles);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              Formatos: CSV, TSV, XLSX, XLS
+            </div>
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              Uso: compras o ventas de un periodo mensual
+            </div>
+            <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
+              Salida: documentos extraidos listos para clasificar
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-4 text-[15px] leading-7 text-[color:var(--color-muted)]">
+            Columnas tipicas que la IA suele reconocer:
+            <span className="ml-2 text-white">Fecha, Tipo, Comprobante, N°, Proveedor o Cliente, Moneda, Total, Saldo.</span>
+            <span className="mt-2 block">
+              Si el ERP trae otros nombres o cambia el orden, la interpretacion intenta adaptarse sin pedirte una plantilla fija.
+            </span>
+          </div>
+
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/8">
+            <div
+              className={`h-full rounded-full transition-all ${
+                spreadsheetStatus === "uploading"
+                  ? "w-2/3 bg-[color:var(--color-accent)]"
+                  : spreadsheetStatus === "success"
+                    ? "w-full bg-emerald-500"
+                    : spreadsheetStatus === "error"
+                      ? "w-full bg-rose-500"
+                      : "w-0"
+              }`}
+            />
+          </div>
+
+          <div aria-live="polite" className="mt-4 min-h-6">
+            {spreadsheetMessage ? (
+              <div
+                className={`rounded-[1rem] border px-4 py-3 text-[16px] leading-7 ${
+                  spreadsheetStatus === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                    : spreadsheetStatus === "error"
+                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                      : "border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] text-[color:var(--color-muted)]"
+                }`}
+              >
+                {spreadsheetMessage}
+              </div>
+            ) : null}
+          </div>
+        </section>
       </div>
     </div>
   );
