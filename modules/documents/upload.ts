@@ -1,4 +1,5 @@
 export const documentsStorageBucket = "documents-private";
+export const documentSpreadsheetImportsStorageBucket = "document-spreadsheets-private";
 export const maxDocumentUploadBytes = 20 * 1024 * 1024;
 export const allowedDocumentUploadMimeTypes = [
   "application/pdf",

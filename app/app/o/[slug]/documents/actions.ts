@@ -6,9 +6,15 @@ import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { runDocumentClassification } from "@/modules/accounting/classification-runner";
 import { enqueueDocumentProcessing } from "@/modules/documents/processing";
 import {
-  importDocumentsFromSpreadsheet,
   type DocumentSpreadsheetLedgerKind,
 } from "@/modules/documents/spreadsheet-batch-import";
+import { enqueueDocumentSpreadsheetImport } from "@/modules/documents/spreadsheet-import-background";
+import {
+  formatDocumentSpreadsheetImportStatusMessage,
+  isDocumentSpreadsheetImportType,
+  summarizeDocumentSpreadsheetImportRun,
+} from "@/modules/documents/spreadsheet-import-runs";
+import { loadSpreadsheetImportRun } from "@/modules/spreadsheets";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 
 function buildPaths(slug: string, documentId?: string) {
@@ -491,56 +497,47 @@ export async function importDocumentSpreadsheetBatchAction(formData: FormData) {
 
   const ledgerKind: DocumentSpreadsheetLedgerKind =
     ledgerKindValue === "sale" ? "sale" : "purchase";
+  const result = await enqueueDocumentSpreadsheetImport({
+    organizationId: organization.id,
+    actorId: authState.user?.id ?? null,
+    file: spreadsheet,
+    ledgerKind,
+  });
+
+  revalidateDocumentSurfaces(slug);
+
+  return {
+    ok: result.ok,
+    runId: result.runId,
+    importableRowsDetected: result.importableRowsDetected,
+    message: result.message,
+  };
+}
+
+export async function loadDocumentSpreadsheetImportStatusesAction(input: {
+  slug: string;
+  runIds: string[];
+}) {
+  const { organization } = await requireOrganizationDashboardPage(input.slug);
   const supabase = getSupabaseServiceRoleClient();
+  const uniqueRunIds = Array.from(new Set(input.runIds.filter(Boolean))).slice(0, 12);
 
-  try {
-    const result = await importDocumentsFromSpreadsheet({
-      supabase,
-      organizationId: organization.id,
-      actorId: authState.user?.id ?? null,
-      fileName: spreadsheet.name,
-      mimeType: spreadsheet.type,
-      bytes: await spreadsheet.arrayBuffer(),
-      ledgerKind,
-      provider: "auto",
-    });
-
-    revalidateDocumentSurfaces(slug);
-
-    const parts = [
-      `${result.importedCount} documento(s) quedaron creados desde la planilla mensual de ${ledgerKind === "purchase" ? "compras" : "ventas"}.`,
-    ];
-
-    if (result.skippedRows.length > 0) {
-      parts.push(`${result.skippedRows.length} fila(s) se omitieron por datos insuficientes.`);
-    }
-
-    if (result.failedRows.length > 0) {
-      parts.push(`${result.failedRows.length} fila(s) fallaron al persistirse.`);
-    }
-
-    if (result.warnings.length > 0) {
-      parts.push(result.warnings[0] ?? "");
-    } else {
-      parts.push("Quedaron listas para clasificacion contable desde la bandeja.");
-    }
-
-    return {
-      ok: result.importedCount > 0 && result.failedRows.length === 0,
-      importedCount: result.importedCount,
-      skippedCount: result.skippedRows.length,
-      failedCount: result.failedRows.length,
-      message: parts.filter(Boolean).join(" "),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      importedCount: 0,
-      skippedCount: 0,
-      failedCount: 0,
-      message: error instanceof Error
-        ? error.message
-        : "No se pudo importar la planilla mensual como documentos.",
-    };
+  if (uniqueRunIds.length === 0) {
+    return [];
   }
+
+  const runs = await Promise.all(uniqueRunIds.map((runId) =>
+    loadSpreadsheetImportRun(supabase, organization.id, runId)));
+
+  return runs
+    .filter((run): run is NonNullable<typeof run> => Boolean(run))
+    .filter((run) => isDocumentSpreadsheetImportType(run.importType))
+    .map((run) => {
+      const summary = summarizeDocumentSpreadsheetImportRun(run);
+
+      return {
+        ...summary,
+        message: formatDocumentSpreadsheetImportStatusMessage(summary),
+      };
+    });
 }

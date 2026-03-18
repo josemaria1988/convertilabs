@@ -11,9 +11,18 @@ export type DocumentProcessRequestedEventData = {
   triggeredBy: "upload" | "manual_retry" | "reprocess_after_profile_change";
 };
 
+export type DocumentSpreadsheetImportRequestedEventData = {
+  runId: string;
+  organizationId: string;
+  requestedBy: string | null;
+};
+
 export type ConvertilabsEvents = {
   "documents/process.requested": {
     data: DocumentProcessRequestedEventData;
+  };
+  "documents/spreadsheet-import.requested": {
+    data: DocumentSpreadsheetImportRequestedEventData;
   };
 };
 

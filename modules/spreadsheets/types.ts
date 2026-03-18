@@ -9,12 +9,13 @@ export type SpreadsheetImportType =
   | "historical_vat_liquidation"
   | "journal_template_import"
   | "chart_of_accounts_import"
+  | "document_batch_import"
   | "mixed"
   | "unsupported";
 
 export type SupportedSpreadsheetSheetImportType = Exclude<
   SpreadsheetImportType,
-  "mixed" | "unsupported"
+  "document_batch_import" | "mixed" | "unsupported"
 >;
 
 export type SpreadsheetImportRunMode =

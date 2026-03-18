@@ -1,14 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   enqueueSelectedDocumentExtractionsAction,
   failDocumentUploadAction,
   finalizeDocumentUploadAction,
   importDocumentSpreadsheetBatchAction,
+  loadDocumentSpreadsheetImportStatusesAction,
   prepareDocumentUploadAction,
 } from "@/app/app/o/[slug]/documents/actions";
+import {
+  forgetPendingDocumentSpreadsheetImportRun,
+  readLatestPendingDocumentSpreadsheetImportRunId,
+  rememberPendingDocumentSpreadsheetImportRun,
+} from "@/components/documents/document-spreadsheet-import-tracker";
 import { DocumentUploadButton } from "@/components/documents/upload-button";
 import {
   allowedDocumentUploadMimeTypes,
@@ -31,6 +37,8 @@ type DocumentUploadDropzoneProps = {
 };
 
 type SpreadsheetLedgerKind = "purchase" | "sale";
+type DocumentSpreadsheetImportStatus =
+  Awaited<ReturnType<typeof loadDocumentSpreadsheetImportStatusesAction>>[number];
 
 type SelectedUploadFile = {
   file: File;
@@ -204,9 +212,82 @@ export function DocumentUploadDropzone({
   const [message, setMessage] = useState("");
   const [spreadsheetStatus, setSpreadsheetStatus] = useState<UploadStatus>("idle");
   const [spreadsheetMessage, setSpreadsheetMessage] = useState("");
+  const [activeSpreadsheetRunId, setActiveSpreadsheetRunId] = useState<string | null>(null);
+  const [spreadsheetProgressPercent, setSpreadsheetProgressPercent] = useState(0);
   const [spreadsheetLedgerKind, setSpreadsheetLedgerKind] = useState<SpreadsheetLedgerKind>("purchase");
   const [autoProcessAfterUpload, setAutoProcessAfterUpload] = useState(true);
   const [isRefreshing, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (activeSpreadsheetRunId) {
+      return;
+    }
+
+    const latestRunId = readLatestPendingDocumentSpreadsheetImportRunId(slug);
+
+    if (!latestRunId) {
+      return;
+    }
+
+    setActiveSpreadsheetRunId(latestRunId);
+    setSpreadsheetStatus("uploading");
+    setSpreadsheetMessage("Retomando el seguimiento de una importacion en segundo plano...");
+  }, [activeSpreadsheetRunId, slug]);
+
+  useEffect(() => {
+    if (!activeSpreadsheetRunId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function pollActiveSpreadsheetRun() {
+      const runId = activeSpreadsheetRunId;
+
+      if (!runId) {
+        return;
+      }
+
+      const statuses = await loadDocumentSpreadsheetImportStatusesAction({
+        slug,
+        runIds: [runId],
+      });
+
+      if (cancelled || statuses.length === 0) {
+        return;
+      }
+
+      const runStatus = statuses[0] as DocumentSpreadsheetImportStatus;
+      setSpreadsheetProgressPercent(runStatus.progress.percent);
+      setSpreadsheetMessage(runStatus.message);
+
+      if (runStatus.isTerminal) {
+        forgetPendingDocumentSpreadsheetImportRun(slug, runStatus.runId);
+        setSpreadsheetStatus(
+          runStatus.status === "failed" || runStatus.progress.failedCount > 0
+            ? "error"
+            : "success",
+        );
+        setActiveSpreadsheetRunId(null);
+        startTransition(() => {
+          router.refresh();
+        });
+        return;
+      }
+
+      setSpreadsheetStatus("uploading");
+    }
+
+    void pollActiveSpreadsheetRun();
+    const intervalId = window.setInterval(() => {
+      void pollActiveSpreadsheetRun();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeSpreadsheetRunId, router, slug, startTransition]);
 
   async function handleFiles(files: File[]) {
     if (files.length === 0) {
@@ -366,8 +447,9 @@ export function DocumentUploadDropzone({
       return;
     }
 
+    setSpreadsheetProgressPercent(5);
     setSpreadsheetStatus("uploading");
-    setSpreadsheetMessage(`Analizando ${file.name} y estructurando los comprobantes para ${spreadsheetLedgerKind === "purchase" ? "compras" : "ventas"}...`);
+    setSpreadsheetMessage(`Revisando ${file.name} para validar el limite del flujo estandar de ${spreadsheetLedgerKind === "purchase" ? "compras" : "ventas"}...`);
 
     const formData = new FormData();
     formData.append("slug", slug);
@@ -377,28 +459,30 @@ export function DocumentUploadDropzone({
     try {
       const result = await importDocumentSpreadsheetBatchAction(formData);
 
-      setSpreadsheetStatus(
-        result.ok || (result.importedCount > 0 && result.failedCount === 0)
-          ? "success"
-          : "error",
-      );
       setSpreadsheetMessage(result.message);
+      setSpreadsheetProgressPercent(result.ok ? 10 : 100);
+
+      if (!result.ok || !result.runId) {
+        setSpreadsheetStatus("error");
+        return;
+      }
+
+      rememberPendingDocumentSpreadsheetImportRun(slug, result.runId);
+      setActiveSpreadsheetRunId(result.runId);
+      setSpreadsheetStatus("uploading");
     } catch (error) {
       setSpreadsheetStatus("error");
+      setSpreadsheetProgressPercent(100);
       setSpreadsheetMessage(
         error instanceof Error
           ? error.message
           : "No se pudo importar la planilla mensual como lote documental.",
       );
-    } finally {
-      startTransition(() => {
-        router.refresh();
-      });
     }
   }
 
   const isBusy = status === "uploading" || status === "validating" || isRefreshing;
-  const isSpreadsheetBusy = spreadsheetStatus === "uploading" || isRefreshing;
+  const isSpreadsheetBusy = spreadsheetStatus === "uploading";
 
   return (
     <div
@@ -512,12 +596,12 @@ export function DocumentUploadDropzone({
         <section className="border-t border-[color:var(--color-border)] pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
-              <p className="text-[16px] font-semibold text-white">Planilla mensual para ingreso masivo</p>
+              <p className="text-[16px] font-semibold text-white">Planilla para ingreso masivo en segundo plano</p>
               <p className="max-w-3xl text-[16px] leading-8 text-[color:var(--color-muted)]">
-                Usa una exportacion mensual de compras o ventas desde tu ERP legacy.
-                La IA interpreta encabezados y filas de ejemplo, devuelve el formato
-                estructurado que Convertilabs necesita y crea cada fila como documento
-                listo para clasificacion.
+                Usa una exportacion de compras o ventas desde tu ERP legacy.
+                El sistema valida primero el lote, rechaza archivos que superen el
+                limite estandar de 300 filas y, si pasa el control, lo procesa en
+                background con avance visible por bloques.
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-3">
@@ -538,7 +622,7 @@ export function DocumentUploadDropzone({
                 </select>
               </label>
               <DocumentUploadButton
-                label={isSpreadsheetBusy ? "Importando..." : "Seleccionar planilla"}
+                label={isSpreadsheetBusy ? "Procesando en segundo plano..." : "Seleccionar planilla"}
                 accept={acceptedSpreadsheetLabel}
                 multiple={false}
                 disabled={isSpreadsheetBusy}
@@ -556,10 +640,10 @@ export function DocumentUploadDropzone({
               Formatos: CSV, TSV, XLSX, XLS
             </div>
             <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-              Uso: compras o ventas de un periodo mensual
+              Flujo estandar: maximo 300 filas por archivo
             </div>
             <div className="rounded-[1rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] px-4 py-3 text-[16px] text-[color:var(--color-muted)]">
-              Salida: documentos extraidos listos para clasificar
+              Salida: documentos listos para clasificar
             </div>
           </div>
 
@@ -567,20 +651,26 @@ export function DocumentUploadDropzone({
             Columnas tipicas que la IA suele reconocer:
             <span className="ml-2 text-white">Fecha, Tipo, Comprobante, N°, Proveedor o Cliente, Moneda, Total, Saldo.</span>
             <span className="mt-2 block">
-              Si el ERP trae otros nombres o cambia el orden, la interpretacion intenta adaptarse sin pedirte una plantilla fija.
+              Si el ERP trae otros nombres o cambia el orden, la interpretacion intenta adaptarse sin pedirte una plantilla fija. El control inicial se hace sin gastar IA para evitar corridas demasiado grandes.
             </span>
           </div>
 
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/8">
             <div
+              style={{
+                width:
+                  spreadsheetStatus === "idle"
+                    ? "0%"
+                    : `${Math.max(0, Math.min(100, spreadsheetProgressPercent))}%`,
+              }}
               className={`h-full rounded-full transition-all ${
                 spreadsheetStatus === "uploading"
-                  ? "w-2/3 bg-[color:var(--color-accent)]"
+                  ? "bg-[color:var(--color-accent)]"
                   : spreadsheetStatus === "success"
-                    ? "w-full bg-emerald-500"
+                    ? "bg-emerald-500"
                     : spreadsheetStatus === "error"
-                      ? "w-full bg-rose-500"
-                      : "w-0"
+                      ? "bg-rose-500"
+                      : "bg-transparent"
               }`}
             />
           </div>

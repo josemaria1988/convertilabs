@@ -3,6 +3,7 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   extractDocumentSpreadsheetRows,
+  preflightDocumentSpreadsheetImport,
 } = require("@/modules/documents/spreadsheet-batch-import");
 const openAiResponses = require("@/lib/llm/openai-responses");
 
@@ -88,6 +89,32 @@ test("document spreadsheet import accepts Excel serial dates and numeric ids in 
   assert.equal(result.rows[0].facts.document_number, "3550");
   assert.equal(result.rows[1].facts.document_date, "2026-02-28");
   assert.equal(result.rows[1].facts.document_number, "4936316");
+});
+
+test("document spreadsheet preflight counts candidate rows without calling OpenAI", async () => {
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "test-key";
+
+  try {
+    const rows = [
+      "Fecha\tTipo\tComprobante\tNÃ‚Â°\tProveedor\tMoneda\tTotal\tSaldo",
+      ...Array.from({ length: 301 }, (_, index) =>
+        `16/03/26\tCompra Contado\tCompra Contado Gastos\t${1000 + index}\tProveedor ${index + 1}\t$\t${100 + index}\t0`),
+    ];
+
+    const result = await preflightDocumentSpreadsheetImport({
+      fileName: "compras-preflight.tsv",
+      mimeType: "text/tab-separated-values",
+      bytes: Buffer.from(rows.join("\n"), "utf8"),
+      ledgerKind: "purchase",
+    });
+
+    assert.equal(result.importableRowsDetected, 301);
+    assert.equal(result.totalRowsDetected, 301);
+    assert.equal(result.sheetName, "Sheet1");
+  } finally {
+    process.env.OPENAI_API_KEY = originalApiKey;
+  }
 });
 
 test("document spreadsheet import lets OpenAI normalize raw spreadsheet values before creating documents", async () => {

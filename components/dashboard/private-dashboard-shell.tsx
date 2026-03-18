@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { AccountMenu } from "@/components/dashboard/account-menu";
+import { DocumentSpreadsheetImportNotifier } from "@/components/documents/document-spreadsheet-import-notifier";
 import { LoadingLink } from "@/components/ui/loading-link";
 
 export type PrivateDashboardNavItem = {
@@ -189,6 +190,7 @@ export function PrivateDashboardShell({
 
   return (
     <div className="app-shell">
+      <DocumentSpreadsheetImportNotifier slug={organizationSlug} />
       <aside className="app-sidebar">
         <div className="app-sidebar-panel">
           <div className="app-sidebar-brand">

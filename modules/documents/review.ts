@@ -277,6 +277,22 @@ export type DocumentWorkspaceListItem = {
   canRetryExtraction: boolean;
 };
 
+export type DocumentWorkspaceDirectionFilter = "all" | "purchase" | "sale";
+
+export type DocumentWorkspaceSortOrder = "date_desc" | "date_asc";
+
+export type PaginatedDocumentWorkspaceListResult = {
+  items: DocumentWorkspaceListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+  directionFilter: DocumentWorkspaceDirectionFilter;
+  sortOrder: DocumentWorkspaceSortOrder;
+};
+
 type DocumentViewModel = {
   id: string;
   status: string;
@@ -1633,46 +1649,42 @@ async function persistDraftArtifacts(
   });
 }
 
-export async function listOrganizationWorkspaceDocuments(input: {
-  organizationId: string;
-  organizationSlug: string;
-}) {
-  const supabase = getSupabaseServiceRoleClient();
+const DEFAULT_DOCUMENT_WORKSPACE_PAGE_SIZE = 30;
 
-  await reconcileStaleDocumentProcessingRuns({
-    supabase,
-    organizationId: input.organizationId,
-  });
-
-  const primaryResult = await supabase
-    .from("documents")
-    .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-    )
-    .eq("organization_id", input.organizationId)
-    .order("created_at", { ascending: false })
-    .limit(30);
-  let data = primaryResult.data as unknown;
-  let error = primaryResult.error;
-
-  if (error && isMissingDocumentStep5ColumnError(error)) {
-    const legacyResult = await supabase
-      .from("documents")
-      .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-      )
-      .eq("organization_id", input.organizationId)
-      .order("created_at", { ascending: false })
-      .limit(30);
-    data = legacyResult.data as unknown;
-    error = legacyResult.error;
+function normalizeDocumentWorkspacePage(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 1;
   }
 
-  if (error) {
-    throw new Error(error.message);
+  return Math.max(1, Math.floor(value));
+}
+
+function normalizeDocumentWorkspacePageSize(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_DOCUMENT_WORKSPACE_PAGE_SIZE;
   }
 
-  const rows = (((data as Array<Record<string, unknown>> | null) ?? [])).map((row) => ({
+  return Math.max(1, Math.min(100, Math.floor(value)));
+}
+
+function normalizeDocumentWorkspaceDirectionFilter(
+  value: string | null | undefined,
+): DocumentWorkspaceDirectionFilter {
+  if (value === "purchase" || value === "sale") {
+    return value;
+  }
+
+  return "all";
+}
+
+function normalizeDocumentWorkspaceSortOrder(
+  value: string | null | undefined,
+): DocumentWorkspaceSortOrder {
+  return value === "date_asc" ? "date_asc" : "date_desc";
+}
+
+function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | undefined) {
+  return (((data as Array<Record<string, unknown>> | null) ?? [])).map((row) => ({
     id: String(row.id),
     direction: row.direction as DocumentDirection,
     document_type: typeof row.document_type === "string" ? row.document_type : null,
@@ -1691,6 +1703,15 @@ export async function listOrganizationWorkspaceDocuments(input: {
     last_processed_at: typeof row.last_processed_at === "string" ? row.last_processed_at : null,
     metadata: asRecord(row.metadata),
   })) satisfies DocumentListRow[];
+}
+
+async function buildOrganizationWorkspaceDocumentList(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  organizationSlug: string;
+  rows: DocumentListRow[];
+}) {
+  const { supabase, rows } = input;
   const documentIds = rows.map((row) => row.id);
   const processingRunIds = rows
     .map((row) => row.current_processing_run_id)
@@ -1978,6 +1999,159 @@ export async function listOrganizationWorkspaceDocuments(input: {
       };
     })(),
   } satisfies DocumentWorkspaceListItem)));
+}
+
+export async function listOrganizationWorkspaceDocuments(input: {
+  organizationId: string;
+  organizationSlug: string;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    organizationId: input.organizationId,
+  });
+
+  const primaryResult = await supabase
+    .from("documents")
+    .select(
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+    )
+    .eq("organization_id", input.organizationId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingDocumentStep5ColumnError(error)) {
+    const legacyResult = await supabase
+      .from("documents")
+      .select(
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      )
+      .eq("organization_id", input.organizationId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
+
+  return buildOrganizationWorkspaceDocumentList({
+    supabase,
+    organizationId: input.organizationId,
+    organizationSlug: input.organizationSlug,
+    rows,
+  });
+}
+
+export async function listPaginatedOrganizationWorkspaceDocuments(input: {
+  organizationId: string;
+  organizationSlug: string;
+  page?: number | null;
+  pageSize?: number | null;
+  directionFilter?: DocumentWorkspaceDirectionFilter | null;
+  sortOrder?: DocumentWorkspaceSortOrder | null;
+}): Promise<PaginatedDocumentWorkspaceListResult> {
+  const supabase = getSupabaseServiceRoleClient();
+  const requestedPage = normalizeDocumentWorkspacePage(input.page);
+  const pageSize = normalizeDocumentWorkspacePageSize(input.pageSize);
+  const directionFilter = normalizeDocumentWorkspaceDirectionFilter(input.directionFilter);
+  const sortOrder = normalizeDocumentWorkspaceSortOrder(input.sortOrder);
+  const sortAscending = sortOrder === "date_asc";
+
+  await reconcileStaleDocumentProcessingRuns({
+    supabase,
+    organizationId: input.organizationId,
+  });
+
+  let countQuery = supabase
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", input.organizationId);
+
+  if (directionFilter !== "all") {
+    countQuery = countQuery.eq("direction", directionFilter);
+  }
+
+  const countResult = await countQuery;
+
+  if (countResult.error) {
+    throw new Error(countResult.error.message);
+  }
+
+  const totalItems = countResult.count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const page = totalItems === 0 ? 1 : Math.min(requestedPage, totalPages);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let primaryQuery = supabase
+    .from("documents")
+    .select(
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+    )
+    .eq("organization_id", input.organizationId);
+
+  if (directionFilter !== "all") {
+    primaryQuery = primaryQuery.eq("direction", directionFilter);
+  }
+
+  const primaryResult = await primaryQuery
+    .order("document_date", { ascending: sortAscending, nullsFirst: false })
+    .order("created_at", { ascending: sortAscending })
+    .range(from, to);
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingDocumentStep5ColumnError(error)) {
+    let legacyQuery = supabase
+      .from("documents")
+      .select(
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      )
+      .eq("organization_id", input.organizationId);
+
+    if (directionFilter !== "all") {
+      legacyQuery = legacyQuery.eq("direction", directionFilter);
+    }
+
+    const legacyResult = await legacyQuery
+      .order("document_date", { ascending: sortAscending, nullsFirst: false })
+      .order("created_at", { ascending: sortAscending })
+      .range(from, to);
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
+  const items = await buildOrganizationWorkspaceDocumentList({
+    supabase,
+    organizationId: input.organizationId,
+    organizationSlug: input.organizationSlug,
+    rows,
+  });
+
+  return {
+    items,
+    page,
+    pageSize,
+    totalItems,
+    totalPages,
+    hasPreviousPage: page > 1,
+    hasNextPage: page < totalPages,
+    directionFilter,
+    sortOrder,
+  };
 }
 
 export async function loadDocumentOriginalPageData(input: {

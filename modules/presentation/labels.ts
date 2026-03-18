@@ -463,6 +463,8 @@ export function formatSpreadsheetImportTypeLabel(value: string | null | undefine
       return "Plantillas contables";
     case "chart_of_accounts_import":
       return "Plan de cuentas";
+    case "document_batch_import":
+      return "Importacion documental";
     case "mixed":
       return "Mixto";
     case "unsupported":

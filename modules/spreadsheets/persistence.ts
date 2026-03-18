@@ -60,6 +60,7 @@ function asSpreadsheetImportType(value: unknown): SpreadsheetImportType {
     case "historical_vat_liquidation":
     case "journal_template_import":
     case "chart_of_accounts_import":
+    case "document_batch_import":
     case "mixed":
       return value;
     default:

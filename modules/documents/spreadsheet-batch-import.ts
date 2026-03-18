@@ -68,6 +68,17 @@ export type DocumentSpreadsheetBatchImportResult = DocumentSpreadsheetExtraction
   importedDocumentIds: string[];
 };
 
+export type DocumentSpreadsheetPreflightResult = {
+  fileName: string;
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+  sheetName: string;
+  totalRowsDetected: number;
+  importableRowsDetected: number;
+  skippedRowsDetected: number;
+  warnings: string[];
+  detectedHeaders: Record<string, string>;
+};
+
 type ColumnKey =
   | "documentDate"
   | "documentTypeLabel"
@@ -1786,6 +1797,64 @@ async function resolveDocumentSpreadsheetRows(input: {
   } satisfies DocumentSpreadsheetRowsNormalizationResult;
 }
 
+export async function preflightDocumentSpreadsheetImport(input: {
+  fileName: string;
+  mimeType: string | null;
+  bytes: ArrayBuffer | Uint8Array;
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+}) {
+  const preview = buildDocumentImportPreview(
+    parseSpreadsheetFile({
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      bytes: input.bytes,
+      rowLimitForAnalysis: 5000,
+    }),
+    input.ledgerKind,
+  );
+  const mapping = await resolveDocumentSpreadsheetMapping({
+    preview,
+    ledgerKind: input.ledgerKind,
+    provider: "heuristic",
+  });
+  const selectedSheet = mapping.selectedSheet;
+
+  if (!selectedSheet || selectedSheet.score < 6) {
+    throw new Error(
+      `No encontramos una hoja compatible con ${input.ledgerKind === "purchase" ? "compras" : "ventas"} en la planilla. Revisa que incluya fecha, contraparte y total.`,
+    );
+  }
+
+  const rawRows = buildRawDocumentSpreadsheetRows({
+    selectedSheet,
+  });
+  const totalRowsDetected = rawRows.filter((row) => !isBlankDocumentSpreadsheetRow(row)).length;
+  const warnings = [...new Set([
+    ...preview.warnings,
+    ...mapping.warnings,
+  ])];
+
+  if (selectedSheet.sheet.truncatedForAnalysis) {
+    warnings.push(
+      "La planilla supera el tramo recomendado para este flujo estandar. Divide el archivo y vuelve a intentar.",
+    );
+  }
+
+  return {
+    fileName: input.fileName,
+    ledgerKind: input.ledgerKind,
+    sheetName: selectedSheet.sheet.sheetName,
+    totalRowsDetected,
+    importableRowsDetected: totalRowsDetected,
+    skippedRowsDetected: 0,
+    warnings,
+    detectedHeaders: Object.fromEntries(
+      Object.entries(selectedSheet.detectedHeaders)
+        .filter(([, value]) => typeof value === "string"),
+    ),
+  } satisfies DocumentSpreadsheetPreflightResult;
+}
+
 export async function extractDocumentSpreadsheetRows(input: {
   fileName: string;
   mimeType: string | null;
@@ -1856,7 +1925,7 @@ export async function extractDocumentSpreadsheetRows(input: {
   } satisfies DocumentSpreadsheetExtractionResult;
 }
 
-async function importSpreadsheetRow(input: {
+export async function persistDocumentSpreadsheetImportRow(input: {
   supabase: SupabaseClient;
   organizationId: string;
   actorId: string | null;
@@ -2065,7 +2134,7 @@ export async function importDocumentsFromSpreadsheet(input: {
 
   for (const row of extracted.rows) {
     try {
-      const documentId = await importSpreadsheetRow({
+      const documentId = await persistDocumentSpreadsheetImportRow({
         supabase: input.supabase,
         organizationId: input.organizationId,
         actorId: input.actorId,
