@@ -1,8 +1,10 @@
 import { normalizeTextToken } from "@/modules/accounting/normalization";
 import type {
+  AccountRoleBindingRecord,
   AccountRoleCode,
   PostableAccountRecord,
   ResolvedAccountingRule,
+  SettlementMethod,
 } from "@/modules/accounting/types";
 
 export type ResolvedAccountRole = {
@@ -65,6 +67,48 @@ function findAccountBySystemRole(
 
     return Boolean(systemRole && aliases.includes(systemRole));
   }) ?? null;
+}
+
+function findAccountByBinding(input: {
+  accounts: PostableAccountRecord[];
+  bindings: AccountRoleBindingRecord[];
+  roleCode: AccountRoleCode;
+  documentRole?: string | null;
+  currencyCode?: string | null;
+  settlementMethod?: SettlementMethod | null;
+}) {
+  const currencyCode = input.currencyCode?.trim().toUpperCase() ?? null;
+  const candidates = input.bindings
+    .filter((binding) =>
+      binding.is_active
+      && binding.role_code === input.roleCode
+      && (binding.document_role === null || binding.document_role === input.documentRole)
+      && (
+        binding.currency_code === null
+        || binding.currency_code.trim().toUpperCase() === currencyCode
+      )
+      && (
+        binding.settlement_method === null
+        || binding.settlement_method === input.settlementMethod
+      ))
+    .map((binding) => ({
+      binding,
+      account: findAccountById(input.accounts, binding.account_id),
+      score:
+        binding.priority
+        + (binding.document_role === input.documentRole ? 40 : 0)
+        + (
+          binding.currency_code !== null
+          && binding.currency_code.trim().toUpperCase() === currencyCode
+            ? 20
+            : 0
+        )
+        + (binding.settlement_method === input.settlementMethod ? 10 : 0),
+    }))
+    .filter((candidate) => candidate.account !== null)
+    .sort((left, right) => right.score - left.score);
+
+  return candidates[0] ?? null;
 }
 
 function matchesHeuristic(
@@ -168,6 +212,10 @@ export function resolveAccountRole(input: {
   roleCode: AccountRoleCode;
   accounts: PostableAccountRecord[];
   appliedRule: ResolvedAccountingRule;
+  bindings?: AccountRoleBindingRecord[];
+  documentRole?: string | null;
+  currencyCode?: string | null;
+  settlementMethod?: SettlementMethod | null;
 }) {
   const fromPrimary = resolveFromPrimaryAccount(input);
 
@@ -179,6 +227,26 @@ export function resolveAccountRole(input: {
       accountName: fromPrimary.name,
       isProvisional: isProvisionalAccount(fromPrimary),
       provenance: input.appliedRule.provenance,
+    } satisfies ResolvedAccountRole;
+  }
+
+  const fromBinding = findAccountByBinding({
+    accounts: input.accounts,
+    bindings: input.bindings ?? [],
+    roleCode: input.roleCode,
+    documentRole: input.documentRole ?? null,
+    currencyCode: input.currencyCode ?? null,
+    settlementMethod: input.settlementMethod ?? null,
+  });
+
+  if (fromBinding?.account) {
+    return {
+      roleCode: input.roleCode,
+      accountId: fromBinding.account.id,
+      accountCode: fromBinding.account.code,
+      accountName: fromBinding.account.name,
+      isProvisional: isProvisionalAccount(fromBinding.account),
+      provenance: `binding:${fromBinding.binding.binding_key}`,
     } satisfies ResolvedAccountRole;
   }
 

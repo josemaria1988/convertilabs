@@ -140,6 +140,57 @@ export function buildSourceEventPayload(input: AccountingArtifactsPersistenceInp
   };
 }
 
+export function buildEconomicEventHash(input: AccountingArtifactsPersistenceInput) {
+  return computeKernelHash({
+    document_role: input.documentRole,
+    document_type: input.documentType,
+    facts: {
+      issuer_tax_id: input.facts.issuer_tax_id,
+      receiver_tax_id: input.facts.receiver_tax_id,
+      document_number: input.facts.document_number,
+      series: input.facts.series,
+      currency_code: input.facts.currency_code,
+      document_date: input.facts.document_date,
+      due_date: input.facts.due_date,
+      subtotal: roundCurrency(input.facts.subtotal ?? 0),
+      tax_amount: roundCurrency(input.facts.tax_amount ?? 0),
+      total_amount: roundCurrency(input.facts.total_amount ?? 0),
+      purchase_category_candidate: input.facts.purchase_category_candidate,
+      sale_category_candidate: input.facts.sale_category_candidate,
+    },
+    amount_breakdown: input.amountBreakdown.map((entry) => ({
+      label: entry.label,
+      amount: roundCurrency(entry.amount ?? 0),
+      tax_rate: entry.tax_rate ?? null,
+      tax_code: entry.tax_code ?? null,
+    })),
+    line_items: input.lineItems.map((entry) => ({
+      line_number: entry.line_number ?? null,
+      concept_code: entry.concept_code ?? null,
+      concept_description: entry.concept_description ?? null,
+      quantity: entry.quantity ?? null,
+      unit_amount: roundCurrency(entry.unit_amount ?? 0),
+      net_amount: roundCurrency(entry.net_amount ?? 0),
+      tax_rate: entry.tax_rate ?? null,
+      tax_amount: roundCurrency(entry.tax_amount ?? 0),
+      total_amount: roundCurrency(entry.total_amount ?? 0),
+    })),
+    settlement_context: {
+      operation_kind: input.derived.settlementContext.operationKind,
+      payment_terms: input.derived.settlementContext.paymentTerms,
+      settlement_method: input.derived.settlementContext.settlementMethod,
+      settlement_status: input.derived.settlementContext.settlementStatus,
+      settlement_allocations: input.derived.settlementContext.settlementAllocations.map((entry) => ({
+        method: entry.method,
+        amount: roundCurrency(entry.amount),
+      })),
+      counterparty_role: input.derived.settlementContext.counterpartyRole,
+      open_item_kind: input.derived.settlementContext.openItemKind,
+      requires_followup_settlement: input.derived.settlementContext.requiresFollowupSettlement,
+    },
+  });
+}
+
 export function buildSourceEventFactsPayload(input: AccountingArtifactsPersistenceInput) {
   const sourceEventPayload = buildSourceEventPayload(input);
 
@@ -161,6 +212,7 @@ export function buildSourceEventFactsPayload(input: AccountingArtifactsPersisten
       lineItems: input.lineItems,
       revisionNumber: input.revisionNumber,
     }),
+    economic_hash: buildEconomicEventHash(input),
     source_binary_hash: sourceEventPayload.binary_hash,
   };
 }
@@ -171,28 +223,21 @@ export function buildPostingProposalPayload(input: {
   accountingSnapshotFingerprint: string | null;
   sourceEventFactsVersionNo: number;
   proposalVersionNo: number;
+  economicHash: string;
+  postingHash: string;
 }) {
   const { artifacts } = input;
-  const proposalHash = computeKernelHash({
-    source_event_facts_version_no: input.sourceEventFactsVersionNo,
-    accounting_snapshot_fingerprint: input.accountingSnapshotFingerprint,
-    journal: artifacts.derived.journalSuggestion,
-    tax_treatment: artifacts.derived.taxTreatment,
-    applied_rule: {
-      rule_id: artifacts.derived.appliedRule.ruleId,
-      scope: artifacts.derived.appliedRule.scope,
-      priority: artifacts.derived.appliedRule.priority,
-      provenance: artifacts.derived.appliedRule.provenance,
-    },
-  });
 
   return {
     source_event_facts_version_no: input.sourceEventFactsVersionNo,
     accounting_snapshot_id: input.accountingSnapshotId,
+    accounting_snapshot_fingerprint: input.accountingSnapshotFingerprint,
     proposal_version_no: input.proposalVersionNo,
     status: "confirmed",
     posting_mode: artifacts.derived.journalSuggestion.postingMode,
-    proposal_hash: proposalHash,
+    proposal_hash: input.postingHash,
+    economic_hash: input.economicHash,
+    confirmability_status: "confirmable",
     explanation: artifacts.derived.journalSuggestion.explanation,
     journal_preview_json: {
       journal_suggestion: artifacts.derived.journalSuggestion,
@@ -212,7 +257,9 @@ export function buildPostingProposalPayload(input: {
       payment_terms: artifacts.derived.settlementContext.paymentTerms,
       settlement_method: artifacts.derived.settlementContext.settlementMethod,
       requires_followup_settlement: artifacts.derived.settlementContext.requiresFollowupSettlement,
-      source_hash: proposalHash,
+      economic_hash: input.economicHash,
+      posting_hash: input.postingHash,
+      accounting_snapshot_fingerprint: input.accountingSnapshotFingerprint,
     },
   };
 }
@@ -247,13 +294,19 @@ export function buildPostingProposalLinePayloads(input: AccountingArtifactsPersi
   }));
 }
 
-export function buildJournalEntrySourceHash(input: AccountingArtifactsPersistenceInput) {
+export function buildJournalPostingHash(input: AccountingArtifactsPersistenceInput) {
   return computeKernelHash({
-    documentId: input.documentId,
-    revisionNumber: input.revisionNumber,
     postingMode: input.derived.journalSuggestion.postingMode,
     entryDate: input.documentDate,
-    reference: input.reference,
+    currencyCode: input.currencyCode ?? "UYU",
+    functionalCurrencyCode: input.derived.journalSuggestion.functionalCurrencyCode,
+    fxRate: input.derived.journalSuggestion.fxRate,
+    settlementContext: {
+      operationKind: input.derived.settlementContext.operationKind,
+      paymentTerms: input.derived.settlementContext.paymentTerms,
+      settlementMethod: input.derived.settlementContext.settlementMethod,
+      settlementStatus: input.derived.settlementContext.settlementStatus,
+    },
     journalLines: input.derived.journalSuggestion.lines.map((line) => ({
       lineNumber: line.lineNumber,
       accountId: line.accountId,
@@ -264,8 +317,17 @@ export function buildJournalEntrySourceHash(input: AccountingArtifactsPersistenc
       functionalCredit: roundCurrency(line.functionalCredit),
       currencyCode: line.currencyCode,
       fxRate: line.fxRate,
+      taxTag: line.taxTag,
+      roleCode: line.roleCode,
+      linePurpose: line.linePurpose,
+      taxComponent: line.taxComponent,
+      settlementComponent: line.settlementComponent,
     })),
   });
+}
+
+export function buildJournalEntrySourceHash(input: AccountingArtifactsPersistenceInput) {
+  return buildJournalPostingHash(input);
 }
 
 export function buildReversalJournalEntry(input: {
@@ -382,6 +444,15 @@ export function buildReversalJournalEntry(input: {
       immutable_at: new Date().toISOString(),
       reverses_journal_entry_id: input.originalJournalEntryId,
       source_hash: computeKernelHash({
+        reversal_of_journal_entry_id: input.originalJournalEntryId,
+        lines: reversedLines.map((line) => ({
+          line_no: line.line_no,
+          account_id: line.account_id,
+          debit: line.debit,
+          credit: line.credit,
+        })),
+      }),
+      economic_hash: computeKernelHash({
         reversal_of_journal_entry_id: input.originalJournalEntryId,
         lines: reversedLines.map((line) => ({
           line_no: line.line_no,

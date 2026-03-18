@@ -4,6 +4,7 @@ import {
   isMissingSupabaseRelationError,
 } from "@/lib/supabase/schema-compat";
 import {
+  buildEconomicEventHash,
   buildJournalEntrySourceHash,
   buildPostingProposalLinePayloads,
   buildPostingProposalPayload,
@@ -29,6 +30,7 @@ import {
 } from "@/modules/accounting/step5-schema-compat";
 import { pickSuspiciousInvoiceDuplicateDocumentId } from "@/modules/accounting/invoice-identity";
 import type {
+  AccountRoleBindingRecord,
   AccountingArtifactsPersistenceInput,
   AccountingArtifactsPersistenceResult,
   AccountingContextResolution,
@@ -129,6 +131,22 @@ type AccountingRuleRow = {
   is_active: boolean;
   metadata: Record<string, unknown> | null;
   created_at: string;
+};
+
+type AccountRoleBindingRow = {
+  id: string;
+  organization_id: string;
+  binding_key: string;
+  role_code: string;
+  account_id: string;
+  document_role: string | null;
+  currency_code: string | null;
+  settlement_method: string | null;
+  priority: number | null;
+  source: string | null;
+  is_active: boolean | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
 };
 
 function asArray<T>(value: T[] | null | undefined) {
@@ -380,6 +398,46 @@ export async function loadOrganizationPostableAccounts(
   });
 }
 
+export async function loadOrganizationAccountRoleBindings(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("account_role_bindings")
+    .select(
+      "id, organization_id, binding_key, role_code, account_id, document_role, currency_code, settlement_method, priority, source, is_active, metadata, created_at",
+    )
+    .eq("organization_id", organizationId)
+    .eq("is_active", true)
+    .order("priority", { ascending: false })
+    .order("binding_key", { ascending: true });
+
+  if (error && isMissingSupabaseRelationError(error, "account_role_bindings")) {
+    return [] satisfies AccountRoleBindingRecord[];
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return asArray(data as AccountRoleBindingRow[] | null).map((row) => ({
+    id: row.id,
+    organization_id: row.organization_id,
+    binding_key: row.binding_key,
+    role_code: row.role_code as AccountRoleBindingRecord["role_code"],
+    account_id: row.account_id,
+    document_role: (asString(row.document_role) as AccountRoleBindingRecord["document_role"]) ?? null,
+    currency_code: normalizeCurrencyCode(asString(row.currency_code)),
+    settlement_method:
+      (asString(row.settlement_method) as AccountRoleBindingRecord["settlement_method"]) ?? null,
+    priority: asNumber(row.priority) ?? 0,
+    source: asString(row.source) ?? "manual",
+    is_active: asBoolean(row.is_active) ?? true,
+    metadata: asRecord(row.metadata),
+    created_at: asString(row.created_at) ?? undefined,
+  })) satisfies AccountRoleBindingRecord[];
+}
+
 export function buildReviewOverrideAccountPayload(input: {
   organizationId: string;
   actorId: string | null;
@@ -615,11 +673,12 @@ export async function loadAccountingRuntimeContext(
     actorId: actorId ?? null,
   });
 
-  const [vendors, concepts, conceptAliases, accounts, activeRules] = await Promise.all([
+  const [vendors, concepts, conceptAliases, accounts, accountRoleBindings, activeRules] = await Promise.all([
     loadOrganizationVendors(supabase, organizationId),
     loadOrganizationConcepts(supabase, organizationId, documentRole),
     loadOrganizationConceptAliases(supabase, organizationId),
     loadOrganizationPostableAccounts(supabase, organizationId),
+    loadOrganizationAccountRoleBindings(supabase, organizationId),
     loadActiveAccountingRules(supabase, organizationId, documentRole),
   ]);
 
@@ -628,6 +687,7 @@ export async function loadAccountingRuntimeContext(
     concepts,
     conceptAliases,
     accounts,
+    accountRoleBindings,
     activeRules,
   } satisfies AccountingRuntimeContext;
 }
@@ -1282,7 +1342,10 @@ async function materializeOrganizationAccountingSnapshot(
   },
 ) {
   const settings = await loadAccountingSettingsWithFallback(supabase, input.organizationId);
-  const accounts = await loadOrganizationChartAccounts(supabase, input.organizationId);
+  const [accounts, accountRoleBindings] = await Promise.all([
+    loadOrganizationChartAccounts(supabase, input.organizationId),
+    loadOrganizationAccountRoleBindings(supabase, input.organizationId),
+  ]);
   const snapshotJson = {
     settings: {
       functional_currency_code: settings.functionalCurrencyCode,
@@ -1308,6 +1371,21 @@ async function materializeOrganizationAccountingSnapshot(
         presentation_code: account.presentation_code ?? null,
         source_channel: account.source_channel ?? null,
         source_provider: account.source_provider ?? null,
+      })),
+    account_role_bindings: accountRoleBindings
+      .sort((left, right) =>
+        left.binding_key.localeCompare(right.binding_key)
+        || right.priority - left.priority)
+      .map((binding) => ({
+        id: binding.id,
+        binding_key: binding.binding_key,
+        role_code: binding.role_code,
+        account_id: binding.account_id,
+        document_role: binding.document_role,
+        currency_code: binding.currency_code,
+        settlement_method: binding.settlement_method,
+        priority: binding.priority,
+        source: binding.source,
       })),
   };
   const fingerprint = computeKernelHash(snapshotJson);
@@ -1538,12 +1616,16 @@ async function createPostingProposalWithCompat(
     throw new Error(versionResult.error.message);
   }
 
+  const economicHash = buildEconomicEventHash(input.artifacts);
+  const postingHash = buildJournalEntrySourceHash(input.artifacts);
   const proposalPayload = buildPostingProposalPayload({
     artifacts: input.artifacts,
     accountingSnapshotId: input.accountingSnapshotId,
     accountingSnapshotFingerprint: input.accountingSnapshotFingerprint,
     sourceEventFactsVersionNo: input.artifacts.revisionNumber,
     proposalVersionNo: (asNumber(versionResult.data?.proposal_version_no) ?? 0) + 1,
+    economicHash,
+    postingHash,
   });
   const result = await supabase
     .from("posting_proposals")
@@ -1557,7 +1639,7 @@ async function createPostingProposalWithCompat(
       confirmed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .select("id")
+    .select("id, proposal_hash, economic_hash")
     .limit(1)
     .single();
 
@@ -1569,7 +1651,85 @@ async function createPostingProposalWithCompat(
     throw new Error(result.error?.message ?? "No se pudo crear la posting proposal.");
   }
 
-  return result.data.id as string;
+  return {
+    id: result.data.id as string,
+    proposalHash: asString(result.data.proposal_hash) ?? postingHash,
+    economicHash: asString(result.data.economic_hash) ?? economicHash,
+    accountingSnapshotFingerprint: input.accountingSnapshotFingerprint,
+  };
+}
+
+async function invalidateSupersededPostingProposalsWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    sourceEventId: string | null;
+    currentProposalId: string | null;
+    reason: string;
+  },
+) {
+  if (!input.sourceEventId || !input.currentProposalId) {
+    return;
+  }
+
+  const result = await supabase
+    .from("posting_proposals")
+    .update({
+      confirmability_status: "superseded",
+      invalidated_at: new Date().toISOString(),
+      invalidated_reason: input.reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", input.organizationId)
+    .eq("source_event_id", input.sourceEventId)
+    .neq("id", input.currentProposalId)
+    .in("confirmability_status", ["confirmable", "stale_snapshot"]);
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "posting_proposals")) {
+    return;
+  }
+
+  if (result.error && isMissingSupabaseColumnError(result.error, "posting_proposals")) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+}
+
+async function markPostingProposalMaterializedWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    proposalId: string | null;
+    journalEntryId: string;
+  },
+) {
+  if (!input.proposalId) {
+    return;
+  }
+
+  const result = await supabase
+    .from("posting_proposals")
+    .update({
+      confirmability_status: "materialized",
+      materialized_journal_entry_id: input.journalEntryId,
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.proposalId);
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "posting_proposals")) {
+    return;
+  }
+
+  if (result.error && isMissingSupabaseColumnError(result.error, "posting_proposals")) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
 }
 
 async function insertPostingProposalLinesWithCompat(
@@ -1653,12 +1813,12 @@ async function loadLatestActiveJournalEntryForDocument(
   let result = await supabase
     .from("journal_entries")
     .select(
-      "id, organization_id, source_document_id, source_suggestion_id, fiscal_period_id, journal_type_id, auxiliary_book_id, source_channel, source_system, source_event_id, posting_proposal_id, accounting_snapshot_id, posting_mode, currency_code, fx_rate, fx_rate_date, fx_rate_source, fx_rate_bcu_value, fx_rate_bcu_date_used, functional_currency_code, functional_currency, reference, description, source_hash",
+      "id, organization_id, source_document_id, source_suggestion_id, fiscal_period_id, journal_type_id, auxiliary_book_id, source_channel, source_system, source_event_id, posting_proposal_id, accounting_snapshot_id, posting_mode, currency_code, fx_rate, fx_rate_date, fx_rate_source, fx_rate_bcu_value, fx_rate_bcu_date_used, functional_currency_code, functional_currency, reference, description, source_hash, economic_hash, immutable_at, status",
     )
     .eq("organization_id", input.organizationId)
     .eq("source_document_id", input.documentId)
     .is("reverses_journal_entry_id", null)
-    .neq("status", "void")
+    .in("status", ["posted", "exported"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -1671,7 +1831,7 @@ async function loadLatestActiveJournalEntryForDocument(
       )
       .eq("organization_id", input.organizationId)
       .eq("source_document_id", input.documentId)
-      .neq("status", "void")
+      .in("status", ["posted", "exported"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -1800,6 +1960,38 @@ async function insertJournalEntryWithCompat(
   return insertResult.data.id as string;
 }
 
+async function finalizeJournalEntryWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    journalEntryId: string;
+    payload: Record<string, unknown>;
+  },
+) {
+  let updateResult = await supabase
+    .from("journal_entries")
+    .update(input.payload)
+    .eq("id", input.journalEntryId)
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (updateResult.error && isMissingJournalEntryStep5ColumnError(updateResult.error)) {
+    updateResult = await supabase
+      .from("journal_entries")
+      .update(omitJournalEntryStep5Columns(input.payload))
+      .eq("id", input.journalEntryId)
+      .select("id")
+      .limit(1)
+      .single();
+  }
+
+  if (updateResult.error || !updateResult.data?.id) {
+    throw new Error(updateResult.error?.message ?? "No se pudo finalizar el journal entry.");
+  }
+
+  return updateResult.data.id as string;
+}
+
 async function insertJournalEntryLinesWithCompat(
   supabase: SupabaseClient,
   linePayload: Array<Record<string, unknown>>,
@@ -1918,6 +2110,11 @@ export async function persistApprovedAccountingArtifacts(
       accountCode: line.accountCode,
     }))
     .map((line) => line.accountCode);
+  if (missingCodes.length > 0) {
+    throw new Error(
+      `No se puede postear el documento porque faltan cuentas activas en el plan: ${missingCodes.join(", ")}.`,
+    );
+  }
   const description = missingCodes.length > 0
     ? `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}. Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
     : `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}.`;
@@ -1932,13 +2129,14 @@ export async function persistApprovedAccountingArtifacts(
     actorId: input.actorId,
     ruleSnapshotId: input.ruleSnapshotId,
   });
-  const postingProposalId = await createPostingProposalWithCompat(supabase, {
+  const postingProposal = await createPostingProposalWithCompat(supabase, {
     artifacts: input,
     sourceEventId,
     sourceEventFactsId,
     accountingSnapshotId: accountingSnapshot.id,
     accountingSnapshotFingerprint: accountingSnapshot.fingerprint,
   });
+  const postingProposalId = postingProposal?.id ?? null;
 
   await insertPostingProposalLinesWithCompat(supabase, input, postingProposalId);
   await insertPostingDecisionLogWithCompat(supabase, {
@@ -1947,13 +2145,20 @@ export async function persistApprovedAccountingArtifacts(
     sourceEventFactsId,
     postingProposalId,
   });
+  await invalidateSupersededPostingProposalsWithCompat(supabase, {
+    organizationId: input.organizationId,
+    sourceEventId,
+    currentProposalId: postingProposalId,
+    reason: "superseded_by_new_proposal",
+  });
 
   const fiscalPeriodId = await ensureFiscalPeriodForDate(supabase, {
     organizationId: input.organizationId,
     documentDate: input.documentDate,
     actorId: input.actorId,
   });
-  const sourceHash = buildJournalEntrySourceHash(input);
+  const sourceHash = postingProposal?.proposalHash ?? buildJournalEntrySourceHash(input);
+  const economicHash = postingProposal?.economicHash ?? buildEconomicEventHash(input);
   const latestActiveEntry = await loadLatestActiveJournalEntryForDocument(supabase, {
     organizationId: input.organizationId,
     documentId: input.documentId,
@@ -1961,6 +2166,11 @@ export async function persistApprovedAccountingArtifacts(
   let reversalJournalEntryId: string | null = null;
 
   if (asString(latestActiveEntry?.source_hash) === sourceHash && asString(latestActiveEntry?.id)) {
+    await markPostingProposalMaterializedWithCompat(supabase, {
+      proposalId: postingProposalId,
+      journalEntryId: asString(latestActiveEntry?.id) as string,
+    });
+
     return {
       suggestionId: suggestion.id as string,
       journalEntryId: asString(latestActiveEntry?.id) as string,
@@ -2020,9 +2230,11 @@ export async function persistApprovedAccountingArtifacts(
       originalJournalEntryId: latestActiveEntry.id as string,
       actorId: input.actorId,
     });
-    reversalJournalEntryId = await insertJournalEntryWithCompat(supabase, {
+    const reversalDraftId = await insertJournalEntryWithCompat(supabase, {
       payload: {
         ...reversal.header,
+        status: "draft",
+        immutable_at: null,
         created_at: now,
         updated_at: now,
       },
@@ -2030,17 +2242,25 @@ export async function persistApprovedAccountingArtifacts(
     await insertJournalEntryLinesWithCompat(
       supabase,
       reversal.lines.map((line) => ({
-        journal_entry_id: reversalJournalEntryId,
+        journal_entry_id: reversalDraftId,
         ...line,
       })),
     );
+    reversalJournalEntryId = await finalizeJournalEntryWithCompat(supabase, {
+      journalEntryId: reversalDraftId,
+      payload: {
+        status: "posted",
+        immutable_at: now,
+        updated_at: now,
+      },
+    });
     await markJournalEntryReversedByWithCompat(supabase, {
       originalJournalEntryId: latestActiveEntry.id as string,
       reversalJournalEntryId,
     });
   }
 
-  const journalEntryId = await insertJournalEntryWithCompat(supabase, {
+  const journalEntryDraftId = await insertJournalEntryWithCompat(supabase, {
     payload: {
       organization_id: input.organizationId,
       source_document_id: input.documentId,
@@ -2052,7 +2272,7 @@ export async function persistApprovedAccountingArtifacts(
       posting_proposal_id: postingProposalId,
       accounting_snapshot_id: accountingSnapshot.id,
       entry_date: input.documentDate,
-      status: "posted",
+      status: "draft",
       posting_mode: input.derived.journalSuggestion.postingMode,
       currency_code: input.currencyCode ?? "UYU",
       fx_rate: input.derived.journalSuggestion.fxRate,
@@ -2073,11 +2293,12 @@ export async function persistApprovedAccountingArtifacts(
       functional_total_credit: input.derived.journalSuggestion.functionalTotalCredit,
       first_seen_at: now,
       last_seen_at: now,
-      immutable_at: now,
       legacy_immutable: false,
       adjusts_journal_entry_id: asString(latestActiveEntry?.id),
       source_hash: sourceHash,
+      economic_hash: economicHash,
       created_by: input.actorId,
+      created_at: now,
       updated_at: now,
     },
   });
@@ -2093,7 +2314,7 @@ export async function persistApprovedAccountingArtifacts(
     }))
     .filter((entry) => entry.account !== null)
     .map((entry) => ({
-      journal_entry_id: journalEntryId,
+      journal_entry_id: journalEntryDraftId,
       line_no: entry.line.lineNumber,
       account_id: entry.account?.id,
       debit: roundCurrency(entry.line.debit),
@@ -2122,7 +2343,7 @@ export async function persistApprovedAccountingArtifacts(
       tax_component: entry.line.taxComponent,
       settlement_component: entry.line.settlementComponent,
       source_hash: computeKernelHash({
-        journal_entry_id: journalEntryId,
+        journal_entry_id: journalEntryDraftId,
         line_no: entry.line.lineNumber,
         account_id: entry.account?.id,
         debit: roundCurrency(entry.line.debit),
@@ -2144,6 +2365,18 @@ export async function persistApprovedAccountingArtifacts(
     }));
 
   await insertJournalEntryLinesWithCompat(supabase, linePayload);
+  const journalEntryId = await finalizeJournalEntryWithCompat(supabase, {
+    journalEntryId: journalEntryDraftId,
+    payload: {
+      status: "posted",
+      immutable_at: now,
+      updated_at: now,
+    },
+  });
+  await markPostingProposalMaterializedWithCompat(supabase, {
+    proposalId: postingProposalId,
+    journalEntryId,
+  });
 
   return {
     suggestionId: suggestion.id as string,

@@ -178,6 +178,85 @@ create table if not exists public.accounting_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.account_role_bindings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  binding_key text not null,
+  role_code text not null,
+  account_id uuid not null references public.chart_of_accounts(id) on delete cascade,
+  document_role public.document_direction,
+  currency_code text references public.currencies(code),
+  settlement_method text,
+  priority integer not null default 0,
+  source text not null default 'manual',
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, binding_key)
+);
+
+create index if not exists idx_account_role_bindings_org_role
+  on public.account_role_bindings (organization_id, role_code, is_active, priority desc);
+
+create index if not exists idx_account_role_bindings_org_account
+  on public.account_role_bindings (organization_id, account_id);
+
+insert into public.account_role_bindings (
+  organization_id,
+  binding_key,
+  role_code,
+  account_id,
+  currency_code,
+  priority,
+  source,
+  metadata
+)
+select
+  coa.organization_id,
+  coalesce(
+    nullif(coa.metadata ->> 'semantic_key', ''),
+    format('%s:%s', mapped.role_code, coa.code)
+  ),
+  mapped.role_code,
+  coa.id,
+  coa.currency_code,
+  100,
+  'system_role_backfill',
+  jsonb_build_object(
+    'backfilled_from_system_role',
+    coa.metadata ->> 'system_role'
+  )
+from public.chart_of_accounts as coa
+cross join lateral (
+  values
+    (case when coa.metadata ->> 'system_role' in ('revenue_account') then 'revenue_account' end),
+    (case when coa.metadata ->> 'system_role' in ('expense_account') then 'expense_account' end),
+    (case when coa.metadata ->> 'system_role' in ('inventory_account') then 'inventory_account' end),
+    (case when coa.metadata ->> 'system_role' in ('fixed_asset_account') then 'fixed_asset_account' end),
+    (case when coa.metadata ->> 'system_role' in ('output_vat_account', 'vat_output_payable') then 'output_vat_account' end),
+    (case when coa.metadata ->> 'system_role' in ('input_vat_account', 'vat_input_creditable') then 'input_vat_account' end),
+    (case when coa.metadata ->> 'system_role' in ('accounts_receivable_account', 'accounts_receivable') then 'accounts_receivable_account' end),
+    (case when coa.metadata ->> 'system_role' in ('accounts_payable_account', 'accounts_payable') then 'accounts_payable_account' end),
+    (case when coa.metadata ->> 'system_role' in ('cash_account') then 'cash_account' end),
+    (case when coa.metadata ->> 'system_role' in ('bank_account') then 'bank_account' end),
+    (case when coa.metadata ->> 'system_role' in ('card_clearing_account') then 'card_clearing_account' end),
+    (case when coa.metadata ->> 'system_role' in ('check_clearing_account') then 'check_clearing_account' end),
+    (case when coa.metadata ->> 'system_role' in ('cash_sales_unidentified_account') then 'cash_sales_unidentified_account' end),
+    (case when coa.metadata ->> 'system_role' in ('cash_purchases_unidentified_account') then 'cash_purchases_unidentified_account' end),
+    (case when coa.metadata ->> 'system_role' in ('bank_fees_account') then 'bank_fees_account' end),
+    (case when coa.metadata ->> 'system_role' in ('fx_difference_account') then 'fx_difference_account' end)
+) as mapped(role_code)
+where mapped.role_code is not null
+on conflict (organization_id, binding_key) do update
+set
+  role_code = excluded.role_code,
+  account_id = excluded.account_id,
+  currency_code = excluded.currency_code,
+  priority = excluded.priority,
+  metadata = public.account_role_bindings.metadata || excluded.metadata,
+  updated_at = now();
+
 create table if not exists public.vendors (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

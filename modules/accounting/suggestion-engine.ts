@@ -248,6 +248,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     taxTreatment,
     appliedRule,
     accounts: input.accounts,
+    accountRoleBindings: input.accountRoleBindings,
   });
   const blockers = [
     ...(input.monetarySnapshot?.fx.blockingReasons ?? []),

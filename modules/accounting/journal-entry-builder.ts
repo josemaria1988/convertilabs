@@ -7,6 +7,7 @@ import {
 import { roundCurrency } from "@/modules/accounting/normalization";
 import { resolveAccountRole, type ResolvedAccountRole } from "@/modules/accounting/account-role-resolver";
 import type {
+  AccountRoleBindingRecord,
   AccountRoleCode,
   DerivedDraftArtifacts,
   DocumentIntakeFactMap,
@@ -154,7 +155,11 @@ function resolveRequiredRoles(input: {
 function resolveRoleMap(input: {
   requiredRoles: AccountRoleCode[];
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
   appliedRule: ResolvedAccountingRule;
+  documentRole: DocumentRoleCandidate;
+  currencyCode: string;
+  settlementMethod: SettlementMethod;
 }) {
   const roleMap = new Map<AccountRoleCode, ResolvedAccountRole>();
 
@@ -163,6 +168,10 @@ function resolveRoleMap(input: {
       roleCode,
       accounts: input.accounts,
       appliedRule: input.appliedRule,
+      bindings: input.accountRoleBindings,
+      documentRole: input.documentRole,
+      currencyCode: input.currencyCode,
+      settlementMethod: input.settlementMethod,
     }));
   }
 
@@ -209,6 +218,7 @@ function buildInvoiceLines(input: {
   taxTreatment: VatEngineResult;
   appliedRule: ResolvedAccountingRule;
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
 }) {
   const totalAmount = resolveDocumentTotal({
     facts: input.facts,
@@ -233,7 +243,11 @@ function buildInvoiceLines(input: {
   const roleMap = resolveRoleMap({
     requiredRoles,
     accounts: input.accounts,
+    accountRoleBindings: input.accountRoleBindings,
     appliedRule: input.appliedRule,
+    documentRole: input.documentRole,
+    currencyCode: monetary.currencyCode,
+    settlementMethod: input.settlementContext.settlementMethod,
   });
   const blockers = [
     ...input.settlementContext.blockers,
@@ -443,6 +457,7 @@ export function buildJournalEntryPreview(input: {
   taxTreatment: VatEngineResult;
   appliedRule: ResolvedAccountingRule;
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
 }) {
   return buildInvoiceLines(input);
 }
@@ -452,6 +467,7 @@ export function applyJournalPreviewToDerived(input: {
   documentRole: DocumentRoleCandidate;
   facts: DocumentIntakeFactMap;
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
 }) {
   return buildJournalEntryPreview({
     documentRole: input.documentRole,
@@ -461,5 +477,6 @@ export function applyJournalPreviewToDerived(input: {
     taxTreatment: input.derived.taxTreatment,
     appliedRule: input.derived.appliedRule,
     accounts: input.accounts,
+    accountRoleBindings: input.accountRoleBindings,
   });
 }

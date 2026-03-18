@@ -2,10 +2,16 @@
 const { test, assert } = require("./testkit.cjs");
 
 const {
+  buildEconomicEventHash,
   buildReversalJournalEntry,
+  buildJournalEntrySourceHash,
+  buildSourceEventFactsPayload,
   buildSourceEventPayload,
   buildTrialBalance,
 } = require("@/modules/accounting/kernel");
+const {
+  resolveAccountRole,
+} = require("@/modules/accounting/account-role-resolver");
 
 function buildArtifactsInput(overrides = {}) {
   return {
@@ -227,6 +233,130 @@ test("source event payload keeps stable binary hash and deterministic payload ha
   assert.equal(second.binary_hash, "bin-hash-001");
   assert.equal(first.payload_hash, second.payload_hash);
   assert.notEqual(first.payload_hash, changedFacts.payload_hash);
+});
+
+test("economic hash ignores documental noise but reacts to posting facts", () => {
+  const baseline = buildArtifactsInput();
+  const sameEconomics = buildArtifactsInput({
+    revisionNumber: 2,
+    reference: "A-001-999",
+    originalFilename: "invoice-renamed.pdf",
+  });
+  const differentEconomics = buildArtifactsInput({
+    facts: {
+      ...buildArtifactsInput().facts,
+      total_amount: 130,
+    },
+  });
+  const baselineFacts = buildSourceEventFactsPayload(baseline);
+  const sameEconomicsFacts = buildSourceEventFactsPayload(sameEconomics);
+
+  assert.notEqual(baselineFacts.payload_hash, sameEconomicsFacts.payload_hash);
+  assert.equal(buildEconomicEventHash(baseline), buildEconomicEventHash(sameEconomics));
+  assert.notEqual(buildEconomicEventHash(baseline), buildEconomicEventHash(differentEconomics));
+});
+
+test("posting hash stays stable across revision noise and changes when journal semantics change", () => {
+  const baseline = buildArtifactsInput();
+  const samePosting = buildArtifactsInput({
+    revisionNumber: 2,
+    reference: "A-001-999",
+  });
+  const changedPosting = buildArtifactsInput({
+    derived: {
+      ...buildArtifactsInput().derived,
+      journalSuggestion: {
+        ...buildArtifactsInput().derived.journalSuggestion,
+        totalDebit: 130,
+        totalCredit: 130,
+        functionalTotalDebit: 5330,
+        functionalTotalCredit: 5330,
+        lines: [
+          {
+            ...buildArtifactsInput().derived.journalSuggestion.lines[0],
+            debit: 108,
+            functionalDebit: 4428,
+          },
+          ...buildArtifactsInput().derived.journalSuggestion.lines.slice(1, 2),
+          {
+            ...buildArtifactsInput().derived.journalSuggestion.lines[2],
+            credit: 130,
+            functionalCredit: 5330,
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(buildJournalEntrySourceHash(baseline), buildJournalEntrySourceHash(samePosting));
+  assert.notEqual(buildJournalEntrySourceHash(baseline), buildJournalEntrySourceHash(changedPosting));
+});
+
+test("account role bindings take precedence over heuristic resolution", () => {
+  const resolved = resolveAccountRole({
+    roleCode: "cash_account",
+    appliedRule: {
+      ruleId: "rule-1",
+      scope: "concept_global",
+      accountId: "acct-expense",
+      accountCode: "5.1.01",
+      accountName: "Compras",
+      accountIsProvisional: false,
+      status: "approved",
+      vatProfileJson: null,
+      taxProfileCode: null,
+      operationCategory: null,
+      linkedOperationType: null,
+      templateCode: null,
+      provenance: "rule_engine",
+      priority: 800,
+      source: "manual",
+      createdAt: null,
+    },
+    accounts: [
+      {
+        id: "acct-cash",
+        organization_id: "org-1",
+        code: "1.1.01",
+        name: "Caja",
+        account_type: "asset",
+        normal_side: "debit",
+        is_postable: true,
+        is_provisional: false,
+        source: "manual",
+        external_code: null,
+        statement_section: null,
+        nature_tag: null,
+        function_tag: null,
+        cashflow_tag: null,
+        tax_profile_hint: null,
+        currency_policy: "mono_currency",
+        metadata: {},
+      },
+    ],
+    bindings: [
+      {
+        id: "binding-1",
+        organization_id: "org-1",
+        binding_key: "cash.main",
+        role_code: "cash_account",
+        account_id: "acct-cash",
+        document_role: null,
+        currency_code: null,
+        settlement_method: "cash",
+        priority: 100,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    documentRole: "sale",
+    currencyCode: "UYU",
+    settlementMethod: "cash",
+  });
+
+  assert.equal(resolved.accountId, "acct-cash");
+  assert.equal(resolved.provenance, "binding:cash.main");
 });
 
 test("reversal journal entry swaps sides and preserves lineage metadata", () => {

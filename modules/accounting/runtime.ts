@@ -288,6 +288,7 @@ export async function deriveDocumentAccountingState(input: {
       : accountingContext,
     assistantSuggestion,
     accounts: runtimeContext.accounts,
+    accountRoleBindings: runtimeContext.accountRoleBindings,
     activeRules: runtimeContext.activeRules,
   });
 

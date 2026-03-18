@@ -130,6 +130,22 @@ export type AccountRoleCode =
   | "bank_fees_account"
   | "fx_difference_account";
 
+export type AccountRoleBindingRecord = {
+  id: string;
+  organization_id: string;
+  binding_key: string;
+  role_code: AccountRoleCode;
+  account_id: string;
+  document_role: DocumentRoleCandidate | null;
+  currency_code: string | null;
+  settlement_method: SettlementMethod | null;
+  priority: number;
+  source: string;
+  is_active: boolean;
+  metadata: JsonRecord | null;
+  created_at?: string;
+};
+
 export type DraftBlockerFamily =
   | "documental"
   | "fiscal"
@@ -642,6 +658,7 @@ export type AccountingSuggestionContext = {
   accountingContext: AccountingContextResolution;
   assistantSuggestion: AccountingAssistantResult;
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
   activeRules: AccountingRuleRecord[];
 };
 
@@ -799,6 +816,7 @@ export type SourceEventFactsRecord = {
   amount_breakdown_json: unknown;
   line_items_json: unknown;
   payload_hash: string | null;
+  economic_hash: string | null;
   source_binary_hash: string | null;
 };
 
@@ -809,15 +827,21 @@ export type PostingProposalRecord = {
   source_event_facts_id: string;
   source_event_facts_version_no: number;
   accounting_snapshot_id: string | null;
+  accounting_snapshot_fingerprint: string | null;
   proposal_version_no: number;
   status: string;
   posting_mode: JournalPostingMode;
   proposal_hash: string;
+  economic_hash: string | null;
+  confirmability_status: string;
   explanation: string | null;
   journal_preview_json: JsonRecord | null;
   warnings_json: unknown;
   blockers_json: unknown;
   metadata_json: JsonRecord | null;
+  invalidated_at?: string | null;
+  invalidated_reason?: string | null;
+  materialized_journal_entry_id?: string | null;
 };
 
 export type TrialBalanceRow = {
@@ -889,6 +913,7 @@ export type AccountingRuntimeContext = {
   concepts: OrganizationConceptRecord[];
   conceptAliases: OrganizationConceptAliasRecord[];
   accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
   activeRules: AccountingRuleRecord[];
 };
 

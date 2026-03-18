@@ -77,6 +77,8 @@ const journalEntryStep5Patterns = [
   /provider_managed/i,
   /source_provider/i,
   /source_hash/i,
+  /economic_hash/i,
+  /entry_number/i,
   /first_seen_at/i,
   /last_seen_at/i,
   /immutable_at/i,
@@ -263,6 +265,8 @@ export function omitJournalEntryStep5Columns<T extends Record<string, unknown>>(
   delete clone.provider_managed;
   delete clone.source_provider;
   delete clone.source_hash;
+  delete clone.economic_hash;
+  delete clone.entry_number;
   delete clone.first_seen_at;
   delete clone.last_seen_at;
   delete clone.immutable_at;
@@ -291,6 +295,8 @@ export function omitJournalEntryStep5Columns<T extends Record<string, unknown>>(
     | "provider_managed"
     | "source_provider"
     | "source_hash"
+    | "economic_hash"
+    | "entry_number"
     | "first_seen_at"
     | "last_seen_at"
     | "immutable_at"
