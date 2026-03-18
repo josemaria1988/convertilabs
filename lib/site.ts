@@ -1,8 +1,8 @@
 export const siteConfig = {
   name: "Convertilabs",
-  tagline: "Infraestructura contable y fiscal para Uruguay",
+  tagline: "Contabilidad, liquidaciones y auditoria para Uruguay",
   description:
-    "Infraestructura contable y fiscal para Uruguay, desde el ingreso documental hasta los flujos tributarios estructurados.",
+    "Plataforma para Uruguay que unifica documentos, decision contable, liquidaciones mensuales y auditoria explicable en una misma superficie operativa.",
   contactEmail: "hola@convertilabs.com",
   location: "Montevideo, Uruguay",
 };

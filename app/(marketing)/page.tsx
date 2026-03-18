@@ -4,118 +4,178 @@ import { MarketingSectionHeading } from "@/components/marketing-section-heading"
 import { PageHero } from "@/components/page-hero";
 import { siteConfig } from "@/lib/site";
 
-const capacidades = [
+const productPillars = [
   {
-    titulo: "Extrae datos de facturas y recibos",
-    descripcion:
-      "Captura evidencia de proveedores y gastos de una forma que el flujo contable puede usar sin retrabajo.",
+    code: "01",
+    title: "Documentos y planillas",
+    description:
+      "Carga comprobantes originales, importa compras o ventas desde ERPs legacy y separa las operaciones internacionales cuando la transaccion lo requiere.",
   },
   {
-    titulo: "Sugiere asientos contables",
-    descripcion:
-      "Reduce trabajo repetitivo manteniendo revision humana sobre reglas, cuentas y criterio profesional.",
+    code: "02",
+    title: "Decision contable",
+    description:
+      "Convierte evidencia en drafts revisables, sugerencias de cuentas, journal entries y open items sin perder control humano.",
   },
   {
-    titulo: "Aplica reglas de tratamiento fiscal",
-    descripcion:
-      "Ordena IVA y criterios tributarios sin depender de planillas separadas o chequeos manuales dispersos.",
+    code: "03",
+    title: "Liquidacion mensual",
+    description:
+      "Ordena IVA por periodo, reconstruye runs mensuales, prepara exportes y deja la conciliacion DGI dentro del mismo carril de trabajo.",
   },
   {
-    titulo: "Mantiene logica regulatoria por ejercicio",
-    descripcion:
-      "Permite sostener cambios normativos sin perder auditabilidad ni mezclar tratamientos de distintos anos.",
-  },
-  {
-    titulo: "Exporta a sistemas externos y APIs",
-    descripcion:
-      "Entrega datos estructurados para ERPs, herramientas internas y futuras integraciones externas.",
-  },
-];
-
-const segmentos = [
-  {
-    nombre: "Pymes",
-    descripcion:
-      "Empresas que necesitan ordenar documentos, contabilidad e IVA sin multiplicar herramientas.",
-  },
-  {
-    nombre: "Estudios contables",
-    descripcion:
-      "Equipos que gestionan varios clientes, ciclos fiscales repetitivos y validaciones operativas intensivas.",
-  },
-  {
-    nombre: "ERPs y sistemas de gestion",
-    descripcion:
-      "Plataformas que quieren sumar logica contable y fiscal para Uruguay sin reconstruirla desde cero.",
-  },
-  {
-    nombre: "Equipos de desarrollo",
-    descripcion:
-      "Productos e integraciones internas que necesitan incorporar flujos contables o tributarios de manera confiable.",
+    code: "04",
+    title: "Auditoria explicable",
+    description:
+      "Expone linaje, duplicate checks, intervenciones manuales, mapa contable e impacto de cada documento sobre el kernel.",
   },
 ];
 
-const roadmap = [
+const capabilities = [
   {
-    fase: "Fase 1",
-    titulo: "Ingreso documental + asientos contables + IVA",
-    detalle:
-      "Captura documentos, extrae campos clave y los convierte en contabilidad estructurada con criterio de IVA.",
+    title: "Bandeja documental operativa",
+    description:
+      "Sube archivos privados, encola procesamiento en background y revisa cada documento desde una bandeja preparada para trabajar en lote.",
+    accent: "Documentos",
   },
   {
-    fase: "Fase 2",
-    titulo: "IRAE + Impuesto al Patrimonio",
-    detalle:
-      "Amplia el motor fiscal con capas tributarias por ejercicio para cobertura corporativa mas profunda.",
+    title: "Importacion estructurada desde planillas",
+    description:
+      "Toma compras y ventas exportadas desde sistemas legacy, las normaliza y crea documentos listos para clasificar sin obligarte a un formato fijo de origen.",
+    accent: "Bridge ERP",
   },
   {
-    fase: "Fase 3",
-    titulo: "Nomina + BPS",
-    detalle:
-      "Suma procesos laborales y de seguridad social para extender la plataforma mas alla de la operacion contable.",
+    title: "Kernel contable mensual",
+    description:
+      "Postea sobre periodos mensuales, protege el cierre por mes y alimenta libro diario, balance de comprobacion y open items desde el mismo core.",
+    accent: "Journal + open items",
   },
   {
-    fase: "Fase 4",
-    titulo: "API publica para terceros",
-    detalle:
-      "Abre el sistema para ERPs, socios e integradores que necesiten bloques contables y fiscales reutilizables.",
+    title: "Liquidacion IVA revisable",
+    description:
+      "Trabaja sobre previews y runs mensuales, permite regenerar, finalizar, exportar y conciliar sin mezclar comprobantes de distintos periodos.",
+    accent: "IVA mensual",
+  },
+  {
+    title: "Mapa contable explicable",
+    description:
+      "Muestra arbol de cuentas, impacto por documento y trazabilidad de decisiones para que control interno y auditoria tengan una superficie de inspeccion real.",
+    accent: "Auditoria",
+  },
+  {
+    title: "Exportes y capas de integracion",
+    description:
+      "Prepara datasets contables y fiscales para sistemas externos, recategorizacion, conciliaciones y futuros conectores de producto o API.",
+    accent: "Salida estructurada",
   },
 ];
 
-const flujoOperativo = [
+const monthlyFlow = [
   {
-    paso: "01",
-    titulo: "Ingreso documental",
-    descripcion:
-      "Facturas y recibos entran, se normalizan y quedan listos para validacion operativa.",
+    step: "01",
+    title: "Captura y normalizacion",
+    description:
+      "Los comprobantes entran por upload privado o por planillas de compras y ventas.",
   },
   {
-    paso: "02",
-    titulo: "Logica contable",
-    descripcion:
-      "El sistema sugiere asientos y aplica reglas reutilizables por categoria, proveedor y organizacion.",
+    step: "02",
+    title: "Revision contable",
+    description:
+      "El sistema propone contexto, cuentas, montos y tratamiento para que el equipo confirme con criterio profesional.",
   },
   {
-    paso: "03",
-    titulo: "Tratamiento fiscal",
-    descripcion:
-      "IVA y reglas tributarias se resuelven dentro del mismo flujo, sin saltos a herramientas aparte.",
+    step: "03",
+    title: "Posting y saldos vivos",
+    description:
+      "El kernel genera journal entries y actualiza open items para cuentas a cobrar, pagar y cancelaciones.",
   },
   {
-    paso: "04",
-    titulo: "Salida estructurada",
-    descripcion:
-      "La informacion queda lista para exportacion, conciliacion o integracion con otros sistemas.",
+    step: "04",
+    title: "Liquidacion y exportacion",
+    description:
+      "IVA mensual, conciliacion DGI y exportes salen del mismo set validado, sin rearmar la historia en otra herramienta.",
   },
 ];
+
+const auditStrengths = [
+  {
+    title: "Trazabilidad por documento",
+    description:
+      "Cada documento conserva estado, origen, draft, run de procesamiento y accion sugerida dentro de una misma historia operativa.",
+  },
+  {
+    title: "Linaje contable",
+    description:
+      "El libro diario y el chart map permiten inspeccionar de donde viene cada impacto, sus reversas y sus ajustes.",
+  },
+  {
+    title: "Controles por periodo",
+    description:
+      "La capa mensual evita cruces entre meses para liquidaciones y lecturas contables sensibles al cierre.",
+  },
+  {
+    title: "Intervencion humana visible",
+    description:
+      "Overrides, revisiones y correcciones quedan expuestos para control interno, supervision o auditoria externa.",
+  },
+];
+
+const audiences = [
+  {
+    name: "Estudios contables",
+    description:
+      "Para operar varios clientes con mas consistencia, menos retrabajo y una pista clara de por que se tomo cada decision.",
+  },
+  {
+    name: "Equipos financieros internos",
+    description:
+      "Para ordenar el mes contable, sostener liquidaciones y revisar documentos sin depender de planillas dispersas.",
+  },
+  {
+    name: "ERPs y software vertical",
+    description:
+      "Para sumar contabilidad, IVA y auditoria operativa sin reconstruir desde cero un motor regulatorio para Uruguay.",
+  },
+  {
+    name: "Proyectos de auditoria y saneamiento",
+    description:
+      "Para reconstruir lotes historicos, inspeccionar impactos y convertir exportaciones legacy en evidencia mas utilizable.",
+  },
+];
+
+const currentScope = [
+  "Uruguay only, con foco operativo en documentos, decision contable, IVA y bridge externo.",
+  "Conciliacion DGI manual asistida y exportes fiscales; no filing automatico a organismos.",
+  "Libro diario, balance, open items y mapa contable como superficie de lectura y control.",
+  "Carril especial para operaciones internacionales dentro del workspace documental.",
+];
+
+const expansionPotential = [
+  "Mas capas tributarias encima del mismo kernel, empezando por la logica mensual ya resuelta en IVA.",
+  "Mas integraciones con ERPs y herramientas externas a partir de datasets ya estructurados.",
+  "Uso como modulo premium de auditoria para revisiones masivas, saneamiento y recuperacion operativa.",
+  "API publica cuando la cobertura contable y fiscal madura quede consolidada como plataforma.",
+];
+
+const darkCardClassName =
+  "rounded-[1.45rem] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(124,157,255,0.24)]";
+
+const mutedDarkCardClassName =
+  "rounded-[1.35rem] border border-white/10 bg-white/[0.038] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
 
 export default function HomePage() {
   return (
-    <div className="page-shell space-y-6">
+    <div className="page-shell relative space-y-6">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute left-[-6%] top-10 h-72 w-72 rounded-full bg-[rgba(76,124,212,0.16)] blur-3xl" />
+        <div className="absolute right-[-4%] top-[22rem] h-80 w-80 rounded-full bg-[rgba(26,140,124,0.14)] blur-3xl" />
+        <div className="absolute left-[24%] top-[78rem] h-80 w-80 rounded-full bg-[rgba(210,131,66,0.12)] blur-3xl" />
+      </div>
+
       <PageHero
-        eyebrow="Infraestructura contable y fiscal"
-        title="Infraestructura de contabilidad e impuestos para Uruguay"
-        description="Automatiza ingreso documental, asientos contables, flujos de IVA y logica fiscal para pymes, estudios, ERPs y plataformas de software."
+        eyebrow="Contabilidad, liquidaciones y auditoria"
+        title="Convertilabs organiza documentos, contabilidad e IVA mensual en una misma superficie operativa"
+        description="Convertilabs no se limita a leer facturas. Convierte documentos y planillas en decisiones contables revisables, liquidaciones mensuales y evidencia auditable para equipos de Uruguay."
         actions={
           <>
             <Link
@@ -125,27 +185,27 @@ export default function HomePage() {
               Solicitar demo
             </Link>
             <a
-              href="#waitlist"
+              href="#plataforma"
               className="rounded-full border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
             >
-              Sumarme a la lista de espera
+              Ver la plataforma
             </a>
           </>
         }
         highlights={[
-          { label: "Ingreso documental", value: "Automatizado" },
-          { label: "Flujos de IVA", value: "Estructurados" },
-          { label: "Logica fiscal", value: "Por ejercicio" },
+          { label: "Ingreso", value: "Documentos + planillas" },
+          { label: "Liquidacion", value: "IVA mensual revisable" },
+          { label: "Control", value: "Journal, open items y auditoria" },
         ]}
         aside={
           <div className="space-y-5">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Vista operativa
+                  Superficie real hoy
                 </p>
                 <p className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-                  De documentos a salida fiscal
+                  De la evidencia al cierre mensual
                 </p>
               </div>
               <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
@@ -154,19 +214,19 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-3">
-              {flujoOperativo.map((item) => (
+              {productPillars.map((item) => (
                 <div
-                  key={item.paso}
+                  key={item.code}
                   className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4"
                 >
                   <div className="flex items-start gap-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/8 font-mono text-sm text-white/72">
-                      {item.paso}
+                      {item.code}
                     </div>
                     <div>
-                      <p className="text-sm font-semibold">{item.titulo}</p>
+                      <p className="text-sm font-semibold">{item.title}</p>
                       <p className="mt-2 text-sm leading-6 text-white/56">
-                        {item.descripcion}
+                        {item.description}
                       </p>
                     </div>
                   </div>
@@ -177,18 +237,18 @@ export default function HomePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-[1.25rem] border border-white/8 bg-[color:var(--color-accent)]/14 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Motor fiscal
+                  Resguardo mensual
                 </p>
                 <p className="mt-2 text-sm leading-6 text-white/80">
-                  Empieza con IVA y deja base para IRAE, Patrimonio, nomina y BPS.
+                  Las lecturas contables y fiscales sensibles al cierre se ordenan por periodo mensual.
                 </p>
               </div>
               <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Integraciones
+                  Potencial de negocio
                 </p>
                 <p className="mt-2 text-sm leading-6 text-white/80">
-                  Primero dentro del producto, despues como exportaciones y APIs para terceros.
+                  Sirve para operacion diaria hoy y abre una capa fuerte para auditoria y saneamiento masivo.
                 </p>
               </div>
             </div>
@@ -196,127 +256,254 @@ export default function HomePage() {
         }
       />
 
-      <section className="grid gap-4 lg:grid-cols-[0.72fr_minmax(0,1fr)]">
-        <div className="panel px-6 py-7 md:px-8 md:py-8">
-          <MarketingSectionHeading
-            eyebrow="Lo que hace"
-            title="De documentos a contabilidad estructurada"
-            description="No se trata solo de digitalizar entradas. La propuesta es convertir procesos contables y fiscales desordenados en logica reutilizable para equipos operativos y productos de software."
-          />
-        </div>
+      <section
+        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(145deg,rgba(15,22,35,0.98),rgba(22,31,47,0.96))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.16)]"
+        id="plataforma"
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(41,109,192,0.22),transparent_28%),radial-gradient(circle_at_78%_26%,rgba(24,148,132,0.18),transparent_22%)]" />
+        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[0.78fr_minmax(0,1fr)]">
+          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Lo que ofrece"
+              title="Una plataforma operativa para contabilidad, liquidaciones y control"
+              description="La propuesta real de Convertilabs es unificar captura documental, criterio contable, ciclo mensual de IVA y superficies de auditoria dentro de una misma plataforma para Uruguay."
+            />
+          </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {capacidades.map((capacidad, index) => (
-            <article
-              key={capacidad.titulo}
-              className={`panel p-6 ${index === 4 ? "md:col-span-2" : ""}`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <p className="max-w-sm text-xl font-semibold tracking-[-0.05em]">
-                  {capacidad.titulo}
-                </p>
-                <span className="font-mono text-sm text-[color:var(--color-muted)]">
-                  0{index + 1}
-                </span>
-              </div>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-[color:var(--color-muted)]">
-                {capacidad.descripcion}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[1fr_0.92fr]">
-        <div className="panel px-6 py-7 md:px-8 md:py-8">
-          <MarketingSectionHeading
-            eyebrow="Pensado para"
-            title="Una base util para operadores y para plataformas"
-            description="El producto puede servir a equipos internos, estudios y software que necesiten incorporar contabilidad e impuestos de Uruguay sin armar un sistema paralelo."
-          />
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {segmentos.map((segmento) => (
+          <div className="grid gap-4 md:grid-cols-2">
+            {capabilities.map((item) => (
               <article
-                key={segmento.nombre}
-                className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-white/72 p-5"
+                key={item.title}
+                className={`${darkCardClassName} flex h-full flex-col justify-between p-6`}
               >
-                <p className="text-xl font-semibold tracking-[-0.05em]">
-                  {segmento.nombre}
-                </p>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
-                  {segmento.descripcion}
-                </p>
+                <div>
+                  <span className="eyebrow">{item.accent}</span>
+                  <p className="mt-4 text-2xl font-semibold tracking-[-0.05em] text-white">
+                    {item.title}
+                  </p>
+                  <p className="mt-4 text-sm leading-7 text-white/70">
+                    {item.description}
+                  </p>
+                </div>
               </article>
             ))}
           </div>
         </div>
+      </section>
 
-        <div className="panel overflow-hidden bg-[linear-gradient(180deg,rgba(223,245,242,0.7),rgba(255,255,255,0.72))] px-6 py-7 md:px-8 md:py-8">
-          <MarketingSectionHeading
-            eyebrow="Disenado para Uruguay"
-            title="Superficie de producto arriba, pensamiento de infraestructura abajo"
-            description="Convertilabs se presenta como software de aplicacion, pero se organiza para sostener un modelo de plataforma a medida que maduren los dominios contables y tributarios."
-          />
+      <section className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(145deg,rgba(27,33,48,0.98),rgba(38,33,29,0.94))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(27,148,132,0.18),transparent_24%),radial-gradient(circle_at_82%_18%,rgba(214,140,82,0.16),transparent_20%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_60%)]" />
+        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[1fr_0.96fr]">
+          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Como trabaja el mes"
+              title="El flujo une ingreso documental, posting y liquidacion"
+              description="En vez de repartir el trabajo entre OCR, planillas, cierres manuales y verificaciones separadas, Convertilabs ordena el mes sobre un recorrido continuo."
+            />
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                Alcance actual
-              </p>
-              <p className="mt-2 text-sm leading-7">
-                Ingreso documental, sugerencias contables, IVA y reglas fiscales para Uruguay.
-              </p>
+            <div className="mt-6 space-y-4">
+              {monthlyFlow.map((item) => (
+                <article
+                  key={item.step}
+                  className={darkCardClassName}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[rgba(102,146,235,0.18)] font-mono text-sm font-semibold text-[rgba(196,218,255,0.92)]">
+                      {item.step}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold tracking-[-0.05em] text-white">
+                        {item.title}
+                      </h3>
+                      <p className="mt-2 text-sm leading-7 text-white/70">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
             </div>
-            <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/80 p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                Camino de expansion
-              </p>
-              <p className="mt-2 text-sm leading-7">
-                Mas cobertura tributaria, nomina, BPS y API publica cuando el modelo de dominio este firme.
-              </p>
+          </div>
+
+          <div className="rounded-[1.7rem] border border-white/10 bg-[linear-gradient(180deg,rgba(243,248,247,0.08),rgba(255,255,255,0.03))] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Liquidador mensual"
+              title="Fuerte para cierres de IVA y lecturas contables por periodo"
+              description="El valor no esta solo en cargar documentos. Esta en que el cierre mensual quede protegido, explicable y reutilizable para liquidar, revisar y exportar."
+            />
+
+            <div className="mt-6 grid gap-3">
+              <div className={mutedDarkCardClassName}>
+                <p className="text-xs uppercase tracking-[0.18em] text-white/46">
+                  Lo que ya esta hoy
+                </p>
+                <p className="mt-2 text-sm leading-7 text-white/74">
+                  VAT preview, VAT runs, exportes fiscales, conciliacion DGI manual por buckets y proteccion mensual para no mezclar febrero con marzo.
+                </p>
+              </div>
+              <div className={mutedDarkCardClassName}>
+                <p className="text-xs uppercase tracking-[0.18em] text-white/46">
+                  Donde genera mas palanca
+                </p>
+                <p className="mt-2 text-sm leading-7 text-white/74">
+                  Estudios, equipos internos y software que necesitan cerrar meses con menos retrabajo y una pista clara de como se llego al numero final.
+                </p>
+              </div>
+              <div className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(12,21,38,0.94),rgba(18,29,60,0.9))] p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/52">
+                  Superficies conectadas
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className={mutedDarkCardClassName}>
+                    <p className="text-sm font-semibold text-white">Documentos</p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      Bandeja, revision y cargas masivas.
+                    </p>
+                  </div>
+                  <div className={mutedDarkCardClassName}>
+                    <p className="text-sm font-semibold text-white">Contabilidad</p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      Diario, balance y open items.
+                    </p>
+                  </div>
+                  <div className={mutedDarkCardClassName}>
+                    <p className="text-sm font-semibold text-white">Impuestos</p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      IVA mensual, lifecycle y conciliacion.
+                    </p>
+                  </div>
+                  <div className={mutedDarkCardClassName}>
+                    <p className="text-sm font-semibold text-white">Mapa contable</p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      Arbol, impacto y explicabilidad.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="panel px-6 py-7 md:px-8 md:py-8" id="roadmap">
-        <MarketingSectionHeading
-          eyebrow="Hoja de ruta"
-          title="Un despliegue por fases para cubrir contabilidad e impuestos"
-          description="La hoja de ruta prioriza los flujos que generan mas palanca para equipos de Uruguay y despues amplifica la cobertura funcional."
-        />
+      <section
+        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(150deg,rgba(14,19,32,0.98),rgba(19,24,31,0.94))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]"
+        id="auditoria"
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(94,130,184,0.18),transparent_24%),radial-gradient(circle_at_24%_72%,rgba(212,136,77,0.14),transparent_26%)]" />
+        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[0.92fr_1fr]">
+          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Potencia para auditoria"
+              title="No solo procesa: deja evidencia para revisar"
+              description="Convertilabs gana valor real cuando el equipo necesita entender que paso, por que paso y que impacto genero cada documento sobre el cierre, el ledger y la liquidacion."
+            />
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-4">
-          {roadmap.map((item, index) => (
-            <article
-              key={item.fase}
-              className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-white/72 p-5"
-            >
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {auditStrengths.map((item) => (
+                <article
+                  key={item.title}
+                  className={darkCardClassName}
+                >
+                  <h3 className="text-xl font-semibold tracking-[-0.05em] text-white">
+                    {item.title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-7 text-white/70">
+                    {item.description}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[1.7rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Para quien"
+              title="Util para equipos contables y tambien para software"
+              description="La plataforma puede correr como superficie de trabajo interna o como capa especializada encima de otras herramientas."
+            />
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {audiences.map((item) => (
+                <article
+                  key={item.name}
+                  className={darkCardClassName}
+                >
+                  <p className="text-xl font-semibold tracking-[-0.05em] text-white">
+                    {item.name}
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-white/70">
+                    {item.description}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(150deg,rgba(22,28,41,0.98),rgba(32,25,29,0.95))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]"
+        id="alcance"
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,132,123,0.18),transparent_24%),radial-gradient(circle_at_88%_80%,rgba(120,92,188,0.12),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_50%)]" />
+        <div className="relative px-6 py-7 md:px-8 md:py-8">
+          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
+            <MarketingSectionHeading
+              eyebrow="Alcance real y expansion"
+              title="Transparente sobre lo que ya hace hoy y sobre hacia donde puede crecer"
+              description="La mejor forma de presentar Convertilabs es ser precisos: hoy ya resuelve una base fuerte para operar, liquidar y auditar; y esa base habilita capas nuevas sin rehacer el core."
+            />
+          </div>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+            <article className="rounded-[1.6rem] border border-white/10 bg-white/[0.045] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center justify-between gap-3">
-                <span className="rounded-full bg-[color:var(--color-accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-accent-strong)]">
-                  {item.fase}
-                </span>
-                <span className="font-mono text-sm text-[color:var(--color-muted)]">
-                  0{index + 1}
+                <h3 className="text-2xl font-semibold tracking-[-0.05em] text-white">
+                  Alcance operativo hoy
+                </h3>
+                <span className="eyebrow">Actual</span>
+              </div>
+              <div className="mt-5 space-y-3">
+                {currentScope.map((item) => (
+                  <div
+                    key={item}
+                    className={mutedDarkCardClassName}
+                  >
+                    <p className="text-sm leading-7 text-white/70">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(12,20,34,0.94),rgba(36,29,26,0.9))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-2xl font-semibold tracking-[-0.05em] text-white">
+                  Potencial real
+                </h3>
+                <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/68">
+                  Expansion
                 </span>
               </div>
-              <h3 className="mt-5 text-xl font-semibold tracking-[-0.05em]">
-                {item.titulo}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
-                {item.detalle}
-              </p>
+              <div className="mt-5 space-y-3">
+                {expansionPotential.map((item) => (
+                  <div
+                    key={item}
+                    className={mutedDarkCardClassName}
+                  >
+                    <p className="text-sm leading-7 text-white/70">{item}</p>
+                  </div>
+                ))}
+              </div>
             </article>
-          ))}
+          </div>
         </div>
       </section>
 
       <div id="waitlist">
         <MarketingCtaBanner
           eyebrow="Acceso temprano"
-          title="Solicita una demo o sumate a la lista de espera"
-          description="Las primeras conversaciones tienen especial valor para pymes, estudios y equipos de software que ya conviven con procesos contables o fiscales en Uruguay."
+          title="Solicita una demo y conversemos donde te genera mas valor"
+          description="Si hoy te importa ordenar documentos, cerrar IVA, explicar decisiones contables o convertir auditoria en una superficie mejor, Convertilabs ya tiene una base concreta para esa conversacion."
           actions={
             <>
               <Link
@@ -326,10 +513,10 @@ export default function HomePage() {
                 Solicitar demo
               </Link>
               <a
-                href={`mailto:${siteConfig.contactEmail}?subject=Lista%20de%20espera%20Convertilabs`}
+                href={`mailto:${siteConfig.contactEmail}?subject=Demo%20Convertilabs`}
                 className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
               >
-                Sumarme a la lista de espera
+                Escribir por email
               </a>
             </>
           }
