@@ -1,5 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isMissingSupabaseColumnError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
+import {
+  buildJournalEntrySourceHash,
+  buildPostingProposalLinePayloads,
+  buildPostingProposalPayload,
+  buildReversalJournalEntry,
+  buildSourceEventFactsPayload,
+  buildSourceEventPayload,
+  computeKernelHash,
+} from "@/modules/accounting/kernel";
 import {
   normalizeCurrencyCode,
   normalizeDocumentNumber,
@@ -75,6 +87,22 @@ type ChartAccountRow = {
   cashflow_tag?: string | null;
   tax_profile_hint?: string | null;
   currency_policy?: string | null;
+  chapter_code?: string | null;
+  presentation_code?: string | null;
+  group_id?: string | null;
+  currency_code?: string | null;
+  natural_balance?: "debit" | "credit" | null;
+  requires_party?: boolean | null;
+  reconciliable?: boolean | null;
+  tax_account_kind?: string | null;
+  include_fx_revaluation?: boolean | null;
+  cost_center_policy?: string | null;
+  sort_order?: number | null;
+  provider_managed?: boolean | null;
+  source_provider?: string | null;
+  source_channel?: string | null;
+  provider_meta_json?: Record<string, unknown> | null;
+  jurisdiction_meta_json?: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -262,6 +290,22 @@ export async function loadOrganizationPostableAccounts(
     "cashflow_tag",
     "tax_profile_hint",
     "currency_policy",
+    "chapter_code",
+    "presentation_code",
+    "group_id",
+    "currency_code",
+    "natural_balance",
+    "requires_party",
+    "reconciliable",
+    "tax_account_kind",
+    "include_fx_revaluation",
+    "cost_center_policy",
+    "sort_order",
+    "provider_managed",
+    "source_provider",
+    "source_channel",
+    "provider_meta_json",
+    "jurisdiction_meta_json",
     "metadata",
   ].join(", ");
   const legacySelectClause = [
@@ -310,6 +354,27 @@ export async function loadOrganizationPostableAccounts(
       cashflow_tag: asString(row.cashflow_tag) ?? asString(metadata.cashflow_tag),
       tax_profile_hint: asString(row.tax_profile_hint) ?? asString(metadata.tax_profile_hint),
       currency_policy: asString(row.currency_policy) ?? asString(metadata.currency_policy) ?? "mono_currency",
+      chapter_code: asString(row.chapter_code) ?? asString(metadata.chapter_code),
+      presentation_code: asString(row.presentation_code) ?? asString(metadata.presentation_code),
+      group_id: asString(row.group_id) ?? asString(metadata.group_id),
+      currency_code: asString(row.currency_code) ?? asString(metadata.currency_code),
+      natural_balance:
+        (asString(row.natural_balance) as "debit" | "credit" | null)
+        ?? (asString(metadata.natural_balance) as "debit" | "credit" | null),
+      requires_party: asBoolean(row.requires_party) ?? asBoolean(metadata.requires_party),
+      reconciliable: asBoolean(row.reconciliable) ?? asBoolean(metadata.reconciliable),
+      tax_account_kind: asString(row.tax_account_kind) ?? asString(metadata.tax_account_kind),
+      include_fx_revaluation:
+        asBoolean(row.include_fx_revaluation) ?? asBoolean(metadata.include_fx_revaluation),
+      cost_center_policy:
+        asString(row.cost_center_policy) ?? asString(metadata.cost_center_policy) ?? "optional",
+      sort_order: asNumber(row.sort_order) ?? asNumber(metadata.sort_order),
+      provider_managed: asBoolean(row.provider_managed) ?? asBoolean(metadata.provider_managed),
+      source_provider: asString(row.source_provider) ?? asString(metadata.source_provider),
+      source_channel: asString(row.source_channel) ?? asString(metadata.source_channel),
+      provider_meta_json: asRecord(row.provider_meta_json) ?? asRecord(metadata.provider_meta_json),
+      jurisdiction_meta_json:
+        asRecord(row.jurisdiction_meta_json) ?? asRecord(metadata.jurisdiction_meta_json),
       metadata,
     } satisfies PostableAccountRecord;
   });
@@ -1014,6 +1079,22 @@ async function loadOrganizationChartAccounts(
     "cashflow_tag",
     "tax_profile_hint",
     "currency_policy",
+    "chapter_code",
+    "presentation_code",
+    "group_id",
+    "currency_code",
+    "natural_balance",
+    "requires_party",
+    "reconciliable",
+    "tax_account_kind",
+    "include_fx_revaluation",
+    "cost_center_policy",
+    "sort_order",
+    "provider_managed",
+    "source_provider",
+    "source_channel",
+    "provider_meta_json",
+    "jurisdiction_meta_json",
     "metadata",
   ].join(", ");
   const legacySelectClause =
@@ -1043,76 +1124,662 @@ async function loadOrganizationChartAccounts(
   return asArray(data as ChartAccountRow[] | null);
 }
 
-async function upsertJournalEntryWithCompat(
+async function loadOrganizationBaseCurrency(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("base_currency")
+    .eq("id", organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return normalizeCurrencyCode(asString(data?.base_currency) ?? "UYU") ?? "UYU";
+}
+
+async function loadAccountingSettingsWithFallback(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const functionalCurrencyCode = await loadOrganizationBaseCurrency(supabase, organizationId);
+  const fallback = {
+    id: null as string | null,
+    functionalCurrencyCode,
+    modificationsLockedBefore: null as string | null,
+    usesForeignCurrency: false,
+    usesCostCenters: false,
+    usesReferences: false,
+    usesTaxLiterals: false,
+    metadata: {} as Record<string, unknown>,
+  };
+
+  const result = await supabase
+    .from("accounting_settings")
+    .select(
+      "id, functional_currency_code, modifications_locked_before, uses_foreign_currency, uses_cost_centers, uses_references, uses_tax_literals, metadata",
+    )
+    .eq("organization_id", organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "accounting_settings")) {
+    return fallback;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    return fallback;
+  }
+
+  return {
+    id: asString(result.data.id),
+    functionalCurrencyCode:
+      normalizeCurrencyCode(asString(result.data.functional_currency_code) ?? functionalCurrencyCode)
+      ?? functionalCurrencyCode,
+    modificationsLockedBefore: asString(result.data.modifications_locked_before),
+    usesForeignCurrency: asBoolean(result.data.uses_foreign_currency) ?? false,
+    usesCostCenters: asBoolean(result.data.uses_cost_centers) ?? false,
+    usesReferences: asBoolean(result.data.uses_references) ?? false,
+    usesTaxLiterals: asBoolean(result.data.uses_tax_literals) ?? false,
+    metadata: asRecord(result.data.metadata),
+  };
+}
+
+async function ensureFiscalPeriodForDate(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    documentDate: string;
+    actorId: string | null;
+  },
+) {
+  const settings = await loadAccountingSettingsWithFallback(supabase, input.organizationId);
+
+  if (
+    settings.modificationsLockedBefore
+    && input.documentDate <= settings.modificationsLockedBefore
+  ) {
+    throw new Error("La fecha contable cae en una ventana bloqueada por configuracion contable.");
+  }
+
+  let periodResult = await supabase
+    .from("fiscal_periods")
+    .select("id, status, starts_on, ends_on, locked_at")
+    .eq("organization_id", input.organizationId)
+    .lte("starts_on", input.documentDate)
+    .gte("ends_on", input.documentDate)
+    .order("starts_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (periodResult.error && isMissingSupabaseRelationError(periodResult.error, "fiscal_periods")) {
+    return null;
+  }
+
+  if (periodResult.error) {
+    throw new Error(periodResult.error.message);
+  }
+
+  let period = periodResult.data as Record<string, unknown> | null;
+
+  if (!period) {
+    const year = input.documentDate.slice(0, 4);
+    const now = new Date().toISOString();
+    const insertResult = await supabase
+      .from("fiscal_periods")
+      .insert({
+        organization_id: input.organizationId,
+        code: `FY-${year}`,
+        label: `Ejercicio ${year}`,
+        starts_on: `${year}-01-01`,
+        ends_on: `${year}-12-31`,
+        status: "open",
+        is_current: true,
+        metadata: {
+          source: "kernel_auto_open",
+        },
+        updated_at: now,
+      })
+      .select("id, status, starts_on, ends_on, locked_at")
+      .limit(1)
+      .single();
+
+    if (insertResult.error && isMissingSupabaseRelationError(insertResult.error, "fiscal_periods")) {
+      return null;
+    }
+
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
+
+    period = insertResult.data as Record<string, unknown> | null;
+  }
+
+  const status = asString(period?.status) ?? "open";
+  const lockedAt = asString(period?.locked_at);
+
+  if (status === "closed" || status === "locked" || lockedAt) {
+    throw new Error("No se puede postear en un periodo contable cerrado o bloqueado.");
+  }
+
+  return asString(period?.id);
+}
+
+async function materializeOrganizationAccountingSnapshot(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    actorId: string | null;
+    ruleSnapshotId: string | null;
+  },
+) {
+  const settings = await loadAccountingSettingsWithFallback(supabase, input.organizationId);
+  const accounts = await loadOrganizationChartAccounts(supabase, input.organizationId);
+  const snapshotJson = {
+    settings: {
+      functional_currency_code: settings.functionalCurrencyCode,
+      modifications_locked_before: settings.modificationsLockedBefore,
+      uses_foreign_currency: settings.usesForeignCurrency,
+      uses_cost_centers: settings.usesCostCenters,
+      uses_references: settings.usesReferences,
+      uses_tax_literals: settings.usesTaxLiterals,
+      metadata: settings.metadata,
+    },
+    chart_of_accounts: accounts
+      .sort((left, right) => left.code.localeCompare(right.code))
+      .map((account) => ({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        account_type: account.account_type,
+        normal_side: account.normal_side,
+        is_postable: account.is_postable,
+        is_provisional: account.is_provisional ?? false,
+        external_code: account.external_code ?? null,
+        chapter_code: account.chapter_code ?? null,
+        presentation_code: account.presentation_code ?? null,
+        source_channel: account.source_channel ?? null,
+        source_provider: account.source_provider ?? null,
+      })),
+  };
+  const fingerprint = computeKernelHash(snapshotJson);
+
+  const existingResult = await supabase
+    .from("organization_accounting_snapshots")
+    .select("id, fingerprint, version_number")
+    .eq("organization_id", input.organizationId)
+    .eq("fingerprint", fingerprint)
+    .limit(1)
+    .maybeSingle();
+
+  if (
+    existingResult.error
+    && isMissingSupabaseRelationError(existingResult.error, "organization_accounting_snapshots")
+  ) {
+    return {
+      id: null as string | null,
+      fingerprint: null as string | null,
+    };
+  }
+
+  if (existingResult.error) {
+    throw new Error(existingResult.error.message);
+  }
+
+  if (existingResult.data?.id) {
+    return {
+      id: existingResult.data.id as string,
+      fingerprint,
+    };
+  }
+
+  const versionResult = await supabase
+    .from("organization_accounting_snapshots")
+    .select("version_number")
+    .eq("organization_id", input.organizationId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (
+    versionResult.error
+    && isMissingSupabaseRelationError(versionResult.error, "organization_accounting_snapshots")
+  ) {
+    return {
+      id: null as string | null,
+      fingerprint: null as string | null,
+    };
+  }
+
+  if (versionResult.error) {
+    throw new Error(versionResult.error.message);
+  }
+
+  const nextVersion = (asNumber(versionResult.data?.version_number) ?? 0) + 1;
+  const insertResult = await supabase
+    .from("organization_accounting_snapshots")
+    .insert({
+      organization_id: input.organizationId,
+      version_number: nextVersion,
+      fingerprint,
+      source_rule_snapshot_id: input.ruleSnapshotId,
+      snapshot_json: snapshotJson,
+      metadata: {
+        source: "posting_confirmation",
+      },
+      created_by: input.actorId,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (
+    insertResult.error
+    && isMissingSupabaseRelationError(insertResult.error, "organization_accounting_snapshots")
+  ) {
+    return {
+      id: null as string | null,
+      fingerprint: null as string | null,
+    };
+  }
+
+  if (insertResult.error || !insertResult.data?.id) {
+    throw new Error(insertResult.error?.message ?? "No se pudo materializar la snapshot contable.");
+  }
+
+  return {
+    id: insertResult.data.id as string,
+    fingerprint,
+  };
+}
+
+async function upsertSourceEventWithCompat(
+  supabase: SupabaseClient,
+  input: AccountingArtifactsPersistenceInput,
+) {
+  const payload = buildSourceEventPayload(input);
+  const existingResult = await supabase
+    .from("source_events")
+    .select("id")
+    .eq("organization_id", input.organizationId)
+    .eq("source_channel", payload.source_channel)
+    .eq("source_entity_type", payload.source_entity_type)
+    .eq("source_entity_id", input.documentId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingResult.error && isMissingSupabaseRelationError(existingResult.error, "source_events")) {
+    return null;
+  }
+
+  if (existingResult.error) {
+    throw new Error(existingResult.error.message);
+  }
+
+  if (existingResult.data?.id) {
+    const updateResult = await supabase
+      .from("source_events")
+      .update({
+        source_document_id: input.documentId,
+        binary_hash: payload.binary_hash,
+        payload_hash: payload.payload_hash,
+        source_ref_json: payload.source_ref_json,
+        metadata_json: payload.metadata_json,
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingResult.data.id)
+      .select("id")
+      .limit(1)
+      .single();
+
+    if (updateResult.error) {
+      throw new Error(updateResult.error.message);
+    }
+
+    return existingResult.data.id as string;
+  }
+
+  const insertResult = await supabase
+    .from("source_events")
+    .insert({
+      organization_id: input.organizationId,
+      ...payload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (insertResult.error && isMissingSupabaseRelationError(insertResult.error, "source_events")) {
+    return null;
+  }
+
+  if (insertResult.error || !insertResult.data?.id) {
+    throw new Error(insertResult.error?.message ?? "No se pudo materializar el source event.");
+  }
+
+  return insertResult.data.id as string;
+}
+
+async function upsertSourceEventFactsWithCompat(
+  supabase: SupabaseClient,
+  input: AccountingArtifactsPersistenceInput,
+  sourceEventId: string | null,
+) {
+  if (!sourceEventId) {
+    return null;
+  }
+
+  const payload = buildSourceEventFactsPayload(input);
+  const result = await supabase
+    .from("source_event_facts")
+    .upsert({
+      organization_id: input.organizationId,
+      source_event_id: sourceEventId,
+      ...payload,
+      created_by: input.actorId,
+    }, {
+      onConflict: "source_event_id,version_no",
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "source_event_facts")) {
+    return null;
+  }
+
+  if (result.error || !result.data?.id) {
+    throw new Error(result.error?.message ?? "No se pudo versionar los facts del source event.");
+  }
+
+  return result.data.id as string;
+}
+
+async function createPostingProposalWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    artifacts: AccountingArtifactsPersistenceInput;
+    sourceEventId: string | null;
+    sourceEventFactsId: string | null;
+    accountingSnapshotId: string | null;
+    accountingSnapshotFingerprint: string | null;
+  },
+) {
+  if (!input.sourceEventId || !input.sourceEventFactsId) {
+    return null;
+  }
+
+  const versionResult = await supabase
+    .from("posting_proposals")
+    .select("proposal_version_no")
+    .eq("organization_id", input.artifacts.organizationId)
+    .eq("source_event_id", input.sourceEventId)
+    .order("proposal_version_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (versionResult.error && isMissingSupabaseRelationError(versionResult.error, "posting_proposals")) {
+    return null;
+  }
+
+  if (versionResult.error) {
+    throw new Error(versionResult.error.message);
+  }
+
+  const proposalPayload = buildPostingProposalPayload({
+    artifacts: input.artifacts,
+    accountingSnapshotId: input.accountingSnapshotId,
+    accountingSnapshotFingerprint: input.accountingSnapshotFingerprint,
+    sourceEventFactsVersionNo: input.artifacts.revisionNumber,
+    proposalVersionNo: (asNumber(versionResult.data?.proposal_version_no) ?? 0) + 1,
+  });
+  const result = await supabase
+    .from("posting_proposals")
+    .insert({
+      organization_id: input.artifacts.organizationId,
+      source_event_id: input.sourceEventId,
+      source_event_facts_id: input.sourceEventFactsId,
+      ...proposalPayload,
+      created_by: input.artifacts.actorId,
+      confirmed_by: input.artifacts.actorId,
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "posting_proposals")) {
+    return null;
+  }
+
+  if (result.error || !result.data?.id) {
+    throw new Error(result.error?.message ?? "No se pudo crear la posting proposal.");
+  }
+
+  return result.data.id as string;
+}
+
+async function insertPostingProposalLinesWithCompat(
+  supabase: SupabaseClient,
+  input: AccountingArtifactsPersistenceInput,
+  proposalId: string | null,
+) {
+  if (!proposalId) {
+    return;
+  }
+
+  const payload = buildPostingProposalLinePayloads(input).map((line) => ({
+    proposal_id: proposalId,
+    ...line,
+  }));
+
+  const result = await supabase
+    .from("posting_proposal_lines")
+    .insert(payload);
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "posting_proposal_lines")) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+}
+
+async function insertPostingDecisionLogWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    artifacts: AccountingArtifactsPersistenceInput;
+    sourceEventId: string | null;
+    sourceEventFactsId: string | null;
+    postingProposalId: string | null;
+  },
+) {
+  if (!input.sourceEventId || !input.sourceEventFactsId || !input.postingProposalId) {
+    return;
+  }
+
+  const result = await supabase
+    .from("posting_decision_logs")
+    .insert({
+      organization_id: input.artifacts.organizationId,
+      source_event_id: input.sourceEventId,
+      source_event_facts_id: input.sourceEventFactsId,
+      posting_proposal_id: input.postingProposalId,
+      decision_stage: "proposal_confirmed",
+      decision_source: "kernel",
+      explanation: input.artifacts.derived.journalSuggestion.explanation,
+      decision_json: {
+        applied_rule: {
+          rule_id: input.artifacts.derived.appliedRule.ruleId,
+          scope: input.artifacts.derived.appliedRule.scope,
+          priority: input.artifacts.derived.appliedRule.priority,
+        },
+        validation: input.artifacts.derived.validation,
+        settlement_context: input.artifacts.derived.settlementContext,
+      },
+      created_by: input.artifacts.actorId,
+    });
+
+  if (result.error && isMissingSupabaseRelationError(result.error, "posting_decision_logs")) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+}
+
+async function loadLatestActiveJournalEntryForDocument(
   supabase: SupabaseClient,
   input: {
     organizationId: string;
     documentId: string;
-    sourceSuggestionId: string;
-    payload: Record<string, unknown>;
   },
 ) {
-  const { data: existing, error: existingError } = await supabase
+  let result = await supabase
     .from("journal_entries")
-    .select("id")
+    .select(
+      "id, organization_id, source_document_id, source_suggestion_id, fiscal_period_id, journal_type_id, auxiliary_book_id, source_channel, source_system, source_event_id, posting_proposal_id, accounting_snapshot_id, posting_mode, currency_code, fx_rate, fx_rate_date, fx_rate_source, fx_rate_bcu_value, fx_rate_bcu_date_used, functional_currency_code, functional_currency, reference, description, source_hash",
+    )
     .eq("organization_id", input.organizationId)
     .eq("source_document_id", input.documentId)
+    .is("reverses_journal_entry_id", null)
     .neq("status", "void")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (existingError) {
-    throw new Error(existingError.message);
-  }
-
-  if (existing?.id) {
-    let updateResult = await supabase
+  if (result.error && isMissingJournalEntryStep5ColumnError(result.error)) {
+    result = await supabase
       .from("journal_entries")
-      .update({
-        ...input.payload,
-        source_suggestion_id: input.sourceSuggestionId,
-      })
-      .eq("id", existing.id)
-      .select("id")
+      .select(
+        "id, organization_id, source_document_id, source_suggestion_id, posting_mode, currency_code, fx_rate, fx_rate_date, fx_rate_source, functional_currency_code, functional_currency, reference, description",
+      )
+      .eq("organization_id", input.organizationId)
+      .eq("source_document_id", input.documentId)
+      .neq("status", "void")
+      .order("created_at", { ascending: false })
       .limit(1)
-      .single();
-
-    if (updateResult.error && isMissingJournalEntryStep5ColumnError(updateResult.error)) {
-      updateResult = await supabase
-        .from("journal_entries")
-        .update({
-          ...omitJournalEntryStep5Columns(input.payload),
-          source_suggestion_id: input.sourceSuggestionId,
-        })
-        .eq("id", existing.id)
-        .select("id")
-        .limit(1)
-        .single();
-    }
-
-    if (updateResult.error || !updateResult.data?.id) {
-      throw new Error(updateResult.error?.message ?? "No se pudo actualizar el journal entry.");
-    }
-
-    const { error: deleteLinesError } = await supabase
-      .from("journal_entry_lines")
-      .delete()
-      .eq("journal_entry_id", existing.id);
-
-    if (deleteLinesError) {
-      throw new Error(deleteLinesError.message);
-    }
-
-    return existing.id as string;
+      .maybeSingle();
   }
 
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data as Record<string, unknown> | null) ?? null;
+}
+
+async function loadJournalEntryLinesForLedgerMutation(
+  supabase: SupabaseClient,
+  journalEntryId: string,
+) {
+  const primaryResult = await supabase
+    .from("journal_entry_lines")
+    .select(
+      "line_no, account_id, debit, credit, currency_code, original_currency_code, original_amount, debit_original, credit_original, fx_rate, fx_rate_applied, functional_debit, functional_credit, functional_amount_uyu, functional_currency_code, tax_tag, party_id, tax_code_id, vendor_id, customer_id, description, role_code, line_purpose, tax_component, settlement_component, source_ref_json, source_hash, provider_managed, metadata",
+    )
+    .eq("journal_entry_id", journalEntryId)
+    .order("line_no", { ascending: true });
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingJournalEntryLineStep5ColumnError(error)) {
+    const legacyResult = await supabase
+      .from("journal_entry_lines")
+      .select(
+        "line_no, account_id, debit, credit, currency_code, original_currency_code, original_amount, fx_rate, fx_rate_applied, functional_debit, functional_credit, functional_amount_uyu, tax_tag, vendor_id, customer_id, description, metadata",
+      )
+      .eq("journal_entry_id", journalEntryId)
+      .order("line_no", { ascending: true });
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return asArray(data as Array<Record<string, unknown>> | null).map((line) => ({
+    line_no: asNumber(line.line_no) ?? 0,
+    account_id: asString(line.account_id),
+    debit: asNumber(line.debit) ?? 0,
+    credit: asNumber(line.credit) ?? 0,
+    currency_code: asString(line.currency_code),
+    original_currency_code: asString(line.original_currency_code),
+    original_amount: asNumber(line.original_amount),
+    debit_original: asNumber(line.debit_original),
+    credit_original: asNumber(line.credit_original),
+    fx_rate: asNumber(line.fx_rate),
+    fx_rate_applied: asNumber(line.fx_rate_applied),
+    functional_debit: asNumber(line.functional_debit),
+    functional_credit: asNumber(line.functional_credit),
+    functional_amount_uyu: asNumber(line.functional_amount_uyu),
+    functional_currency_code: asString(line.functional_currency_code),
+    tax_tag: asString(line.tax_tag),
+    party_id: asString(line.party_id),
+    tax_code_id: asString(line.tax_code_id),
+    vendor_id: asString(line.vendor_id),
+    customer_id: asString(line.customer_id),
+    description: asString(line.description),
+    role_code: asString(line.role_code),
+    line_purpose: asString(line.line_purpose),
+    tax_component: asString(line.tax_component),
+    settlement_component: asString(line.settlement_component),
+    source_ref_json: asRecord(line.source_ref_json),
+    source_hash: asString(line.source_hash),
+    provider_managed: asBoolean(line.provider_managed) ?? false,
+    metadata: asRecord(line.metadata),
+  }));
+}
+
+async function markJournalEntryReversedByWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    originalJournalEntryId: string;
+    reversalJournalEntryId: string;
+  },
+) {
+  let result = await supabase
+    .from("journal_entries")
+    .update({
+      reversed_by_journal_entry_id: input.reversalJournalEntryId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.originalJournalEntryId);
+
+  if (result.error && isMissingJournalEntryStep5ColumnError(result.error)) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+}
+
+async function insertJournalEntryWithCompat(
+  supabase: SupabaseClient,
+  input: {
+    payload: Record<string, unknown>;
+  },
+) {
   let insertResult = await supabase
     .from("journal_entries")
-    .insert({
-      ...input.payload,
-      source_suggestion_id: input.sourceSuggestionId,
-    })
+    .insert(input.payload)
     .select("id")
     .limit(1)
     .single();
@@ -1120,17 +1787,14 @@ async function upsertJournalEntryWithCompat(
   if (insertResult.error && isMissingJournalEntryStep5ColumnError(insertResult.error)) {
     insertResult = await supabase
       .from("journal_entries")
-      .insert({
-        ...omitJournalEntryStep5Columns(input.payload),
-        source_suggestion_id: input.sourceSuggestionId,
-      })
+      .insert(omitJournalEntryStep5Columns(input.payload))
       .select("id")
       .limit(1)
       .single();
   }
 
   if (insertResult.error || !insertResult.data?.id) {
-    throw new Error(insertResult.error?.message ?? "No se pudo crear el journal entry draft.");
+    throw new Error(insertResult.error?.message ?? "No se pudo crear el journal entry.");
   }
 
   return insertResult.data.id as string;
@@ -1163,6 +1827,7 @@ export async function persistApprovedAccountingArtifacts(
   supabase: SupabaseClient,
   input: AccountingArtifactsPersistenceInput,
 ) {
+  const now = new Date().toISOString();
   const extractionId = await loadActiveExtractionId(supabase, input.documentId);
   const { data: suggestion, error: suggestionError } = await supabase
     .from("accounting_suggestions")
@@ -1189,7 +1854,7 @@ export async function persistApprovedAccountingArtifacts(
           ? "system+assistant"
           : "system",
         approved_by: input.actorId,
-        approved_at: new Date().toISOString(),
+        approved_at: now,
       },
       {
         onConflict: "document_id,version_no",
@@ -1256,15 +1921,138 @@ export async function persistApprovedAccountingArtifacts(
   const description = missingCodes.length > 0
     ? `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}. Lineas pendientes por falta de plan de cuentas: ${missingCodes.join(", ")}.`
     : `${input.derived.journalSuggestion.explanation} Template ${input.derived.journalSuggestion.templateCode ?? "sin_template"}.`;
-  const journalEntryId = await upsertJournalEntryWithCompat(supabase, {
+  const sourceEventId = await upsertSourceEventWithCompat(supabase, input);
+  const sourceEventFactsId = await upsertSourceEventFactsWithCompat(
+    supabase,
+    input,
+    sourceEventId,
+  );
+  const accountingSnapshot = await materializeOrganizationAccountingSnapshot(supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    ruleSnapshotId: input.ruleSnapshotId,
+  });
+  const postingProposalId = await createPostingProposalWithCompat(supabase, {
+    artifacts: input,
+    sourceEventId,
+    sourceEventFactsId,
+    accountingSnapshotId: accountingSnapshot.id,
+    accountingSnapshotFingerprint: accountingSnapshot.fingerprint,
+  });
+
+  await insertPostingProposalLinesWithCompat(supabase, input, postingProposalId);
+  await insertPostingDecisionLogWithCompat(supabase, {
+    artifacts: input,
+    sourceEventId,
+    sourceEventFactsId,
+    postingProposalId,
+  });
+
+  const fiscalPeriodId = await ensureFiscalPeriodForDate(supabase, {
+    organizationId: input.organizationId,
+    documentDate: input.documentDate,
+    actorId: input.actorId,
+  });
+  const sourceHash = buildJournalEntrySourceHash(input);
+  const latestActiveEntry = await loadLatestActiveJournalEntryForDocument(supabase, {
     organizationId: input.organizationId,
     documentId: input.documentId,
-    sourceSuggestionId: suggestion.id as string,
+  });
+  let reversalJournalEntryId: string | null = null;
+
+  if (asString(latestActiveEntry?.source_hash) === sourceHash && asString(latestActiveEntry?.id)) {
+    return {
+      suggestionId: suggestion.id as string,
+      journalEntryId: asString(latestActiveEntry?.id) as string,
+      sourceEventId,
+      sourceEventFactsId,
+      postingProposalId,
+      accountingSnapshotId: accountingSnapshot.id,
+      reversalJournalEntryId,
+    } satisfies AccountingArtifactsPersistenceResult;
+  }
+
+  if (latestActiveEntry?.id) {
+    const previousLines = await loadJournalEntryLinesForLedgerMutation(
+      supabase,
+      latestActiveEntry.id as string,
+    );
+    const reversal = buildReversalJournalEntry({
+      header: {
+        organization_id: input.organizationId,
+        source_document_id: input.documentId,
+        source_suggestion_id: suggestion.id as string,
+        fiscal_period_id: asString(latestActiveEntry.fiscal_period_id) ?? fiscalPeriodId,
+        journal_type_id: asString(latestActiveEntry.journal_type_id),
+        auxiliary_book_id: asString(latestActiveEntry.auxiliary_book_id),
+        source_channel: asString(latestActiveEntry.source_channel) ?? "documents",
+        source_system: asString(latestActiveEntry.source_system) ?? "convertilabs",
+        source_event_id: sourceEventId,
+        posting_proposal_id: postingProposalId,
+        accounting_snapshot_id: accountingSnapshot.id,
+        posting_mode:
+          asString(latestActiveEntry.posting_mode)
+          ?? input.derived.journalSuggestion.postingMode,
+        currency_code: asString(latestActiveEntry.currency_code) ?? input.currencyCode ?? "UYU",
+        fx_rate: asNumber(latestActiveEntry.fx_rate) ?? input.derived.journalSuggestion.fxRate,
+        fx_rate_date:
+          asString(latestActiveEntry.fx_rate_date)
+          ?? input.derived.journalSuggestion.fxRateDate,
+        fx_rate_source:
+          asString(latestActiveEntry.fx_rate_source)
+          ?? input.derived.journalSuggestion.fxRateSource,
+        fx_rate_bcu_value:
+          asNumber(latestActiveEntry.fx_rate_bcu_value)
+          ?? input.derived.journalSuggestion.fxRateBcuValue,
+        fx_rate_bcu_date_used:
+          asString(latestActiveEntry.fx_rate_bcu_date_used)
+          ?? input.derived.journalSuggestion.fxRateBcuDateUsed,
+        functional_currency_code:
+          asString(latestActiveEntry.functional_currency_code)
+          ?? input.derived.journalSuggestion.functionalCurrencyCode,
+        functional_currency:
+          asString(latestActiveEntry.functional_currency)
+          ?? input.derived.journalSuggestion.functionalCurrencyCode,
+        reference: asString(latestActiveEntry.reference) ?? input.reference,
+        description: asString(latestActiveEntry.description) ?? description,
+      },
+      lines: previousLines,
+      originalJournalEntryId: latestActiveEntry.id as string,
+      actorId: input.actorId,
+    });
+    reversalJournalEntryId = await insertJournalEntryWithCompat(supabase, {
+      payload: {
+        ...reversal.header,
+        created_at: now,
+        updated_at: now,
+      },
+    });
+    await insertJournalEntryLinesWithCompat(
+      supabase,
+      reversal.lines.map((line) => ({
+        journal_entry_id: reversalJournalEntryId,
+        ...line,
+      })),
+    );
+    await markJournalEntryReversedByWithCompat(supabase, {
+      originalJournalEntryId: latestActiveEntry.id as string,
+      reversalJournalEntryId,
+    });
+  }
+
+  const journalEntryId = await insertJournalEntryWithCompat(supabase, {
     payload: {
       organization_id: input.organizationId,
       source_document_id: input.documentId,
+      source_suggestion_id: suggestion.id as string,
+      fiscal_period_id: fiscalPeriodId,
+      source_channel: "documents",
+      source_system: "convertilabs",
+      source_event_id: sourceEventId,
+      posting_proposal_id: postingProposalId,
+      accounting_snapshot_id: accountingSnapshot.id,
       entry_date: input.documentDate,
-      status: "draft",
+      status: "posted",
       posting_mode: input.derived.journalSuggestion.postingMode,
       currency_code: input.currencyCode ?? "UYU",
       fx_rate: input.derived.journalSuggestion.fxRate,
@@ -1283,8 +2071,14 @@ export async function persistApprovedAccountingArtifacts(
       total_credit: input.derived.journalSuggestion.totalCredit,
       functional_total_debit: input.derived.journalSuggestion.functionalTotalDebit,
       functional_total_credit: input.derived.journalSuggestion.functionalTotalCredit,
+      first_seen_at: now,
+      last_seen_at: now,
+      immutable_at: now,
+      legacy_immutable: false,
+      adjusts_journal_entry_id: asString(latestActiveEntry?.id),
+      source_hash: sourceHash,
       created_by: input.actorId,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     },
   });
 
@@ -1311,6 +2105,8 @@ export async function persistApprovedAccountingArtifacts(
       original_amount: roundCurrency(
         entry.line.debit > 0 ? entry.line.debit : entry.line.credit,
       ),
+      debit_original: roundCurrency(entry.line.debit),
+      credit_original: roundCurrency(entry.line.credit),
       fx_rate: entry.line.fxRate,
       fx_rate_applied: entry.line.fxRate,
       functional_debit: roundCurrency(entry.line.functionalDebit),
@@ -1320,6 +2116,23 @@ export async function persistApprovedAccountingArtifacts(
           ? entry.line.functionalDebit
           : entry.line.functionalCredit,
       ),
+      functional_currency_code: input.derived.journalSuggestion.functionalCurrencyCode,
+      role_code: entry.line.roleCode,
+      line_purpose: entry.line.linePurpose,
+      tax_component: entry.line.taxComponent,
+      settlement_component: entry.line.settlementComponent,
+      source_hash: computeKernelHash({
+        journal_entry_id: journalEntryId,
+        line_no: entry.line.lineNumber,
+        account_id: entry.account?.id,
+        debit: roundCurrency(entry.line.debit),
+        credit: roundCurrency(entry.line.credit),
+      }),
+      source_ref_json: {
+        source_document_id: input.documentId,
+        draft_id: input.draftId,
+        provenance: entry.line.provenance,
+      },
       metadata: {
         provenance: entry.line.provenance,
         role_code: entry.line.roleCode,
@@ -1335,6 +2148,11 @@ export async function persistApprovedAccountingArtifacts(
   return {
     suggestionId: suggestion.id as string,
     journalEntryId,
+    sourceEventId,
+    sourceEventFactsId,
+    postingProposalId,
+    accountingSnapshotId: accountingSnapshot.id,
+    reversalJournalEntryId,
   } satisfies AccountingArtifactsPersistenceResult;
 }
 

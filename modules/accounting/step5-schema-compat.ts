@@ -65,6 +65,26 @@ const journalEntryStep5Patterns = [
   /source_currency_present/i,
   /fx_rate_bcu_value/i,
   /fx_rate_bcu_date_used/i,
+  /fiscal_period_id/i,
+  /journal_type_id/i,
+  /auxiliary_book_id/i,
+  /source_channel/i,
+  /source_system/i,
+  /source_event_id/i,
+  /posting_proposal_id/i,
+  /accounting_snapshot_id/i,
+  /provider_connection_id/i,
+  /provider_managed/i,
+  /source_provider/i,
+  /source_hash/i,
+  /first_seen_at/i,
+  /last_seen_at/i,
+  /immutable_at/i,
+  /legacy_immutable/i,
+  /reverses_journal_entry_id/i,
+  /reversed_by_journal_entry_id/i,
+  /adjusts_journal_entry_id/i,
+  /annulment_reason/i,
 ];
 
 const journalLineStep5Patterns = [
@@ -72,6 +92,18 @@ const journalLineStep5Patterns = [
   /original_amount/i,
   /fx_rate_applied/i,
   /functional_amount_uyu/i,
+  /party_id/i,
+  /tax_code_id/i,
+  /debit_original/i,
+  /credit_original/i,
+  /functional_currency_code/i,
+  /role_code/i,
+  /line_purpose/i,
+  /tax_component/i,
+  /settlement_component/i,
+  /source_ref_json/i,
+  /source_hash/i,
+  /provider_managed/i,
 ];
 
 export function isMissingDocumentStep5ColumnError(
@@ -219,6 +251,26 @@ export function omitJournalEntryStep5Columns<T extends Record<string, unknown>>(
   delete clone.source_currency_present;
   delete clone.fx_rate_bcu_value;
   delete clone.fx_rate_bcu_date_used;
+  delete clone.fiscal_period_id;
+  delete clone.journal_type_id;
+  delete clone.auxiliary_book_id;
+  delete clone.source_channel;
+  delete clone.source_system;
+  delete clone.source_event_id;
+  delete clone.posting_proposal_id;
+  delete clone.accounting_snapshot_id;
+  delete clone.provider_connection_id;
+  delete clone.provider_managed;
+  delete clone.source_provider;
+  delete clone.source_hash;
+  delete clone.first_seen_at;
+  delete clone.last_seen_at;
+  delete clone.immutable_at;
+  delete clone.legacy_immutable;
+  delete clone.reverses_journal_entry_id;
+  delete clone.reversed_by_journal_entry_id;
+  delete clone.adjusts_journal_entry_id;
+  delete clone.annulment_reason;
 
   return clone as Omit<
     T,
@@ -227,6 +279,26 @@ export function omitJournalEntryStep5Columns<T extends Record<string, unknown>>(
     | "source_currency_present"
     | "fx_rate_bcu_value"
     | "fx_rate_bcu_date_used"
+    | "fiscal_period_id"
+    | "journal_type_id"
+    | "auxiliary_book_id"
+    | "source_channel"
+    | "source_system"
+    | "source_event_id"
+    | "posting_proposal_id"
+    | "accounting_snapshot_id"
+    | "provider_connection_id"
+    | "provider_managed"
+    | "source_provider"
+    | "source_hash"
+    | "first_seen_at"
+    | "last_seen_at"
+    | "immutable_at"
+    | "legacy_immutable"
+    | "reverses_journal_entry_id"
+    | "reversed_by_journal_entry_id"
+    | "adjusts_journal_entry_id"
+    | "annulment_reason"
   >;
 }
 
@@ -239,9 +311,36 @@ export function omitJournalEntryLineStep5Columns<T extends Record<string, unknow
   delete clone.original_amount;
   delete clone.fx_rate_applied;
   delete clone.functional_amount_uyu;
+  delete clone.party_id;
+  delete clone.tax_code_id;
+  delete clone.debit_original;
+  delete clone.credit_original;
+  delete clone.functional_currency_code;
+  delete clone.role_code;
+  delete clone.line_purpose;
+  delete clone.tax_component;
+  delete clone.settlement_component;
+  delete clone.source_ref_json;
+  delete clone.source_hash;
+  delete clone.provider_managed;
 
   return clone as Omit<
     T,
-    "original_currency_code" | "original_amount" | "fx_rate_applied" | "functional_amount_uyu"
+    | "original_currency_code"
+    | "original_amount"
+    | "fx_rate_applied"
+    | "functional_amount_uyu"
+    | "party_id"
+    | "tax_code_id"
+    | "debit_original"
+    | "credit_original"
+    | "functional_currency_code"
+    | "role_code"
+    | "line_purpose"
+    | "tax_component"
+    | "settlement_component"
+    | "source_ref_json"
+    | "source_hash"
+    | "provider_managed"
   >;
 }

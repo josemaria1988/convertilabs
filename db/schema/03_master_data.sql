@@ -23,6 +23,161 @@ create table if not exists public.chart_of_accounts (
   unique (organization_id, code)
 );
 
+alter table public.chart_of_accounts
+  add column if not exists chapter_code text,
+  add column if not exists presentation_code text,
+  add column if not exists group_id uuid,
+  add column if not exists currency_code text,
+  add column if not exists natural_balance public.normal_side,
+  add column if not exists requires_party boolean not null default false,
+  add column if not exists reconciliable boolean not null default false,
+  add column if not exists tax_account_kind text,
+  add column if not exists include_fx_revaluation boolean not null default false,
+  add column if not exists cost_center_policy text not null default 'optional',
+  add column if not exists sort_order integer,
+  add column if not exists provider_managed boolean not null default false,
+  add column if not exists source_provider text,
+  add column if not exists source_channel text not null default 'document_workflow',
+  add column if not exists provider_meta_json jsonb not null default '{}'::jsonb,
+  add column if not exists jurisdiction_meta_json jsonb not null default '{}'::jsonb;
+
+update public.chart_of_accounts
+set natural_balance = coalesce(natural_balance, normal_side)
+where natural_balance is null;
+
+create table if not exists public.account_groups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  code text not null,
+  name text not null,
+  description text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, code)
+);
+
+create index if not exists idx_account_groups_org_code
+  on public.account_groups (organization_id, code);
+
+alter table public.chart_of_accounts
+  drop constraint if exists chart_of_accounts_group_id_fkey;
+
+alter table public.chart_of_accounts
+  add constraint chart_of_accounts_group_id_fkey
+    foreign key (group_id)
+    references public.account_groups(id)
+    on delete set null;
+
+create table if not exists public.currencies (
+  code text primary key,
+  name text not null,
+  symbol text,
+  decimals smallint not null default 2,
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.currencies (code, name, symbol, decimals)
+values
+  ('UYU', 'Peso Uruguayo', '$', 2),
+  ('USD', 'US Dollar', 'US$', 2),
+  ('EUR', 'Euro', 'EUR', 2)
+on conflict (code) do update
+set
+  name = excluded.name,
+  symbol = excluded.symbol,
+  decimals = excluded.decimals,
+  updated_at = now();
+
+create table if not exists public.exchange_rates (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  base_currency_code text not null references public.currencies(code),
+  quote_currency_code text not null references public.currencies(code),
+  rate_type text not null default 'spot',
+  rate numeric(18,6) not null,
+  effective_date date not null,
+  source text not null default 'manual',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, base_currency_code, quote_currency_code, rate_type, effective_date)
+);
+
+create index if not exists idx_exchange_rates_org_date
+  on public.exchange_rates (organization_id, effective_date desc);
+
+create table if not exists public.auxiliary_books (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  code text not null,
+  name text not null,
+  description text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, code)
+);
+
+create index if not exists idx_auxiliary_books_org_code
+  on public.auxiliary_books (organization_id, code);
+
+create table if not exists public.journal_types (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  code text not null,
+  name text not null,
+  description text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, code)
+);
+
+create index if not exists idx_journal_types_org_code
+  on public.journal_types (organization_id, code);
+
+create table if not exists public.parties (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  party_kind text not null default 'external',
+  legal_name text not null,
+  display_name text,
+  tax_id text,
+  tax_id_normalized text,
+  legacy_vendor_id uuid references public.vendors(id) on delete set null,
+  legacy_customer_id uuid references public.customers(id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_parties_org_tax_id_normalized
+  on public.parties (organization_id, tax_id_normalized)
+  where tax_id_normalized is not null;
+
+create index if not exists idx_parties_org_display_name
+  on public.parties (organization_id, display_name);
+
+create table if not exists public.accounting_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null unique references public.organizations(id) on delete cascade,
+  functional_currency_code text not null default 'UYU' references public.currencies(code),
+  chapter_codes_json jsonb not null default '[]'::jsonb,
+  modifications_locked_before date,
+  uses_foreign_currency boolean not null default false,
+  uses_cost_centers boolean not null default false,
+  uses_references boolean not null default false,
+  uses_tax_literals boolean not null default false,
+  shared_exchange_rate_source_organization_id uuid references public.organizations(id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.vendors (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -46,6 +201,13 @@ create unique index if not exists idx_vendors_org_tax_id_normalized
 create index if not exists idx_chart_of_accounts_org_external_code
   on public.chart_of_accounts (organization_id, external_code)
   where external_code is not null;
+
+create index if not exists idx_chart_of_accounts_org_group
+  on public.chart_of_accounts (organization_id, group_id)
+  where group_id is not null;
+
+create index if not exists idx_chart_of_accounts_org_source_channel
+  on public.chart_of_accounts (organization_id, source_channel);
 
 create index if not exists idx_vendors_org_name_normalized
   on public.vendors (organization_id, name_normalized);

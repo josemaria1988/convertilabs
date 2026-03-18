@@ -89,6 +89,7 @@ type DocumentRow = {
   storage_path: string;
   original_filename: string;
   mime_type: string | null;
+  file_hash: string | null;
   document_date: string | null;
   created_at: string;
   metadata: JsonRecord | null;
@@ -601,6 +602,7 @@ const DOCUMENT_SELECT_STEP5 = [
   "storage_path",
   "original_filename",
   "mime_type",
+  "file_hash",
   "document_date",
   "created_at",
   "metadata",
@@ -620,6 +622,7 @@ const DOCUMENT_SELECT_LEGACY = [
   "storage_path",
   "original_filename",
   "mime_type",
+  "file_hash",
   "document_date",
   "created_at",
   "metadata",
@@ -1914,6 +1917,7 @@ export async function listOrganizationWorkspaceDocuments(input: {
       storage_path: row.storage_path,
       original_filename: row.original_filename,
       mime_type: row.mime_type,
+      file_hash: null,
       document_date: row.document_date,
       created_at: row.created_at,
       metadata: row.metadata,
@@ -2398,7 +2402,10 @@ function buildAccountingArtifactsInput(input: {
       input.facts.document_date
       ?? input.document.document_date
       ?? new Date().toISOString().slice(0, 10),
+    documentType: input.draft.document_type,
+    documentRole: input.draft.document_role,
     originalFilename: input.document.original_filename,
+    fileHash: input.document.file_hash,
     currencyCode: input.facts.currency_code ?? input.derived.journalSuggestion.currencyCode ?? "UYU",
     reference:
       referenceParts.length > 0
@@ -2406,6 +2413,10 @@ function buildAccountingArtifactsInput(input: {
         : input.document.original_filename,
     confidence: input.draft.source_confidence,
     actorId: input.actorId,
+    facts: input.facts,
+    amountBreakdown: parseAmountBreakdown(input.draft.fields_json),
+    lineItems: parseLineItems(input.draft.fields_json),
+    ruleSnapshotId: input.draft.organization_rule_snapshot_id,
     derived: {
       ...input.derived,
       journalSuggestion: {

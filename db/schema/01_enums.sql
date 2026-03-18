@@ -122,6 +122,13 @@ create type public.tax_period_status as enum (
   'locked'
 );
 
+create type public.fiscal_period_status as enum (
+  'open',
+  'review',
+  'closed',
+  'locked'
+);
+
 create type public.export_status as enum (
   'queued',
   'generating',

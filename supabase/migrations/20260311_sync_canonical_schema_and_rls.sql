@@ -434,8 +434,6 @@ create index if not exists idx_organization_members_user_id
 create index if not exists idx_organization_members_organization_id
   on public.organization_members (organization_id);
 
-drop function if exists public.sync_profile_from_auth_user();
-
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -457,11 +455,11 @@ end;
 $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
+drop trigger if exists on_auth_user_updated on auth.users;
+drop function if exists public.sync_profile_from_auth_user();
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
-
-drop trigger if exists on_auth_user_updated on auth.users;
 
 create or replace function public.is_org_member(p_org_id uuid)
 returns boolean

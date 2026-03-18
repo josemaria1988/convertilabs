@@ -394,6 +394,22 @@ export type PostableAccountRecord = {
   cashflow_tag: string | null;
   tax_profile_hint: string | null;
   currency_policy: string | null;
+  chapter_code?: string | null;
+  presentation_code?: string | null;
+  group_id?: string | null;
+  currency_code?: string | null;
+  natural_balance?: "debit" | "credit" | null;
+  requires_party?: boolean | null;
+  reconciliable?: boolean | null;
+  tax_account_kind?: string | null;
+  include_fx_revaluation?: boolean | null;
+  cost_center_policy?: string | null;
+  sort_order?: number | null;
+  provider_managed?: boolean | null;
+  source_provider?: string | null;
+  source_channel?: string | null;
+  provider_meta_json?: JsonRecord | null;
+  jurisdiction_meta_json?: JsonRecord | null;
   metadata: JsonRecord | null;
 };
 
@@ -685,17 +701,135 @@ export type AccountingArtifactsPersistenceInput = {
   draftId: string;
   revisionNumber: number;
   documentDate: string;
+  documentType: string | null;
+  documentRole: DocumentRoleCandidate;
   originalFilename: string;
+  fileHash: string | null;
   currencyCode: string | null;
   reference: string;
   confidence: number | null;
   actorId: string | null;
+  facts: DocumentIntakeFactMap;
+  amountBreakdown: DocumentIntakeAmountBreakdown[];
+  lineItems: DocumentIntakeLineItem[];
+  ruleSnapshotId: string | null;
   derived: DerivedDraftArtifacts;
 };
 
 export type AccountingArtifactsPersistenceResult = {
   suggestionId: string;
   journalEntryId: string;
+  sourceEventId: string | null;
+  sourceEventFactsId: string | null;
+  postingProposalId: string | null;
+  accountingSnapshotId: string | null;
+  reversalJournalEntryId: string | null;
+};
+
+export type AccountingSourceChannel =
+  | "documents"
+  | "spreadsheets"
+  | "provider_mirror"
+  | "manual"
+  | "imports";
+
+export type AccountingSettingsRecord = {
+  id: string;
+  organization_id: string;
+  functional_currency_code: string;
+  chapter_codes_json: unknown;
+  modifications_locked_before: string | null;
+  uses_foreign_currency: boolean;
+  uses_cost_centers: boolean;
+  uses_references: boolean;
+  uses_tax_literals: boolean;
+  shared_exchange_rate_source_organization_id: string | null;
+  metadata: JsonRecord | null;
+};
+
+export type FiscalPeriodRecord = {
+  id: string;
+  organization_id: string;
+  code: string;
+  label: string;
+  starts_on: string;
+  ends_on: string;
+  status: "open" | "review" | "closed" | "locked";
+  is_current: boolean;
+  closed_at: string | null;
+  locked_at: string | null;
+  reopened_at: string | null;
+  metadata: JsonRecord | null;
+};
+
+export type OrganizationAccountingSnapshotRecord = {
+  id: string;
+  organization_id: string;
+  version_number: number;
+  status: string;
+  fingerprint: string;
+  effective_from: string;
+  source_rule_snapshot_id: string | null;
+  snapshot_json: JsonRecord | null;
+  metadata: JsonRecord | null;
+};
+
+export type SourceEventRecord = {
+  id: string;
+  organization_id: string;
+  source_channel: AccountingSourceChannel;
+  source_entity_type: string;
+  source_entity_id: string | null;
+  source_external_id: string | null;
+  source_document_id: string | null;
+  binary_hash: string | null;
+  payload_hash: string | null;
+  source_ref_json: JsonRecord | null;
+  metadata_json: JsonRecord | null;
+};
+
+export type SourceEventFactsRecord = {
+  id: string;
+  organization_id: string;
+  source_event_id: string;
+  source_document_id: string | null;
+  draft_id: string | null;
+  version_no: number;
+  facts_json: JsonRecord | null;
+  amount_breakdown_json: unknown;
+  line_items_json: unknown;
+  payload_hash: string | null;
+  source_binary_hash: string | null;
+};
+
+export type PostingProposalRecord = {
+  id: string;
+  organization_id: string;
+  source_event_id: string;
+  source_event_facts_id: string;
+  source_event_facts_version_no: number;
+  accounting_snapshot_id: string | null;
+  proposal_version_no: number;
+  status: string;
+  posting_mode: JournalPostingMode;
+  proposal_hash: string;
+  explanation: string | null;
+  journal_preview_json: JsonRecord | null;
+  warnings_json: unknown;
+  blockers_json: unknown;
+  metadata_json: JsonRecord | null;
+};
+
+export type TrialBalanceRow = {
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  debit: number;
+  credit: number;
+  balance: number;
+  functionalDebit: number;
+  functionalCredit: number;
+  functionalBalance: number;
 };
 
 export type DuplicateResolutionAction =

@@ -20,7 +20,12 @@ export type OpenItemCreatePayload = {
   organization_id: string;
   counterparty_type: OpenItemCounterpartyType;
   counterparty_id: string | null;
+  party_id?: string | null;
   source_document_id: string;
+  source_channel?: string;
+  source_entity_type?: string | null;
+  source_entity_id?: string | null;
+  source_ref_json?: Record<string, unknown>;
   document_role: "purchase" | "sale" | "other";
   document_type: string | null;
   issue_date: string | null;
@@ -36,6 +41,7 @@ export type OpenItemCreatePayload = {
   outstanding_amount: number;
   status: OpenItemStatus;
   journal_entry_id: string | null;
+  opening_journal_entry_line_id?: string | null;
   metadata: Record<string, unknown>;
 };
 
@@ -51,6 +57,11 @@ export type SettlementLinkPayload = {
   open_item_id: string;
   settlement_document_id: string;
   settlement_journal_entry_id: string | null;
+  settlement_journal_entry_line_id?: string | null;
+  source_channel?: string;
+  source_entity_type?: string | null;
+  source_entity_id?: string | null;
+  source_ref_json?: Record<string, unknown>;
   currency_code: string;
   fx_rate: number;
   fx_rate_date: string | null;
@@ -113,7 +124,15 @@ export function buildOpenItemMutationPlan(input: {
     organization_id: input.organizationId,
     counterparty_type: input.counterpartyType,
     counterparty_id: input.counterpartyId,
+    party_id: input.counterpartyId,
     source_document_id: input.documentId,
+    source_channel: "documents",
+    source_entity_type: "document",
+    source_entity_id: input.documentId,
+    source_ref_json: {
+      source_document_id: input.documentId,
+      journal_entry_id: input.journalEntryId,
+    },
     document_role: input.documentRole,
     document_type: input.documentType,
     issue_date: input.issueDate,
@@ -124,6 +143,7 @@ export function buildOpenItemMutationPlan(input: {
     fx_rate_source: input.fxRateSource,
     functional_currency_code: input.functionalCurrencyCode,
     journal_entry_id: input.journalEntryId,
+    opening_journal_entry_line_id: null,
     metadata: {
       kind: input.openItemKind ?? null,
     },
@@ -190,6 +210,14 @@ export function buildOpenItemMutationPlan(input: {
       open_item_id: item.id,
       settlement_document_id: input.documentId,
       settlement_journal_entry_id: input.journalEntryId,
+      settlement_journal_entry_line_id: null,
+      source_channel: "documents",
+      source_entity_type: "document",
+      source_entity_id: input.documentId,
+      source_ref_json: {
+        source_document_id: input.documentId,
+        journal_entry_id: input.journalEntryId,
+      },
       currency_code: input.currencyCode,
       fx_rate: input.fxRate,
       fx_rate_date: input.fxRateDate,

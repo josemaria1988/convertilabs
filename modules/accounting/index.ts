@@ -9,6 +9,7 @@ export * from "@/modules/accounting/decision-log";
 export * from "@/modules/accounting/invoice-identity";
 export * from "@/modules/accounting/journal-entry-builder";
 export * from "@/modules/accounting/journal-builder";
+export * from "@/modules/accounting/kernel";
 export * from "@/modules/accounting/learning-approval-service";
 export * from "@/modules/accounting/learning-suggestions";
 export * from "@/modules/accounting/location-parser";
