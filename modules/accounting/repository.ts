@@ -21,6 +21,10 @@ import {
   roundCurrency,
   slugifyConceptCode,
 } from "@/modules/accounting/normalization";
+import {
+  buildAccountingMonthRange,
+  getAccountingMonthKey,
+} from "@/modules/accounting/periods";
 import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 import {
   isMissingJournalEntryLineStep5ColumnError,
@@ -1270,13 +1274,18 @@ async function ensureFiscalPeriodForDate(
     throw new Error("La fecha contable cae en una ventana bloqueada por configuracion contable.");
   }
 
+  const periodRange = buildAccountingMonthRange(input.documentDate);
+
+  if (!periodRange) {
+    throw new Error("La fecha contable no permite resolver un periodo mensual.");
+  }
+
   let periodResult = await supabase
     .from("fiscal_periods")
     .select("id, status, starts_on, ends_on, locked_at")
     .eq("organization_id", input.organizationId)
-    .lte("starts_on", input.documentDate)
-    .gte("ends_on", input.documentDate)
-    .order("starts_on", { ascending: false })
+    .eq("starts_on", periodRange.startDate)
+    .eq("ends_on", periodRange.endDate)
     .limit(1)
     .maybeSingle();
 
@@ -1291,20 +1300,21 @@ async function ensureFiscalPeriodForDate(
   let period = periodResult.data as Record<string, unknown> | null;
 
   if (!period) {
-    const year = input.documentDate.slice(0, 4);
     const now = new Date().toISOString();
     const insertResult = await supabase
       .from("fiscal_periods")
       .insert({
         organization_id: input.organizationId,
-        code: `FY-${year}`,
-        label: `Ejercicio ${year}`,
-        starts_on: `${year}-01-01`,
-        ends_on: `${year}-12-31`,
+        code: periodRange.code,
+        label: periodRange.label,
+        starts_on: periodRange.startDate,
+        ends_on: periodRange.endDate,
         status: "open",
-        is_current: true,
+        is_current: getAccountingMonthKey(new Date().toISOString().slice(0, 10)) === periodRange.periodKey,
         metadata: {
           source: "kernel_auto_open",
+          period_granularity: "month",
+          period_key: periodRange.periodKey,
         },
         updated_at: now,
       })
@@ -2164,6 +2174,14 @@ export async function persistApprovedAccountingArtifacts(
     documentId: input.documentId,
   });
   let reversalJournalEntryId: string | null = null;
+  const reversalEntryDate = now.slice(0, 10);
+  const reversalFiscalPeriodId = latestActiveEntry?.id
+    ? await ensureFiscalPeriodForDate(supabase, {
+      organizationId: input.organizationId,
+      documentDate: reversalEntryDate,
+      actorId: input.actorId,
+    })
+    : null;
 
   if (asString(latestActiveEntry?.source_hash) === sourceHash && asString(latestActiveEntry?.id)) {
     await markPostingProposalMaterializedWithCompat(supabase, {
@@ -2192,7 +2210,7 @@ export async function persistApprovedAccountingArtifacts(
         organization_id: input.organizationId,
         source_document_id: input.documentId,
         source_suggestion_id: suggestion.id as string,
-        fiscal_period_id: asString(latestActiveEntry.fiscal_period_id) ?? fiscalPeriodId,
+        fiscal_period_id: reversalFiscalPeriodId ?? fiscalPeriodId,
         journal_type_id: asString(latestActiveEntry.journal_type_id),
         auxiliary_book_id: asString(latestActiveEntry.auxiliary_book_id),
         source_channel: asString(latestActiveEntry.source_channel) ?? "documents",
@@ -2225,6 +2243,7 @@ export async function persistApprovedAccountingArtifacts(
           ?? input.derived.journalSuggestion.functionalCurrencyCode,
         reference: asString(latestActiveEntry.reference) ?? input.reference,
         description: asString(latestActiveEntry.description) ?? description,
+        entry_date: reversalEntryDate,
       },
       lines: previousLines,
       originalJournalEntryId: latestActiveEntry.id as string,

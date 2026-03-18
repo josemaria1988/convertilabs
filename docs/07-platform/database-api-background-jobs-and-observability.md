@@ -6,7 +6,17 @@ Documentar la infraestructura real que sostiene el producto: schemas, migracione
 
 ## Base de datos y migraciones
 
-El esquema vive en `supabase/migrations/` y ya esta organizado por hitos de producto.
+El esquema vive en dos capas:
+
+- `db/schema/00..09_*` como referencia canonica consolidada;
+- `supabase/migrations/` como historial aplicable por hitos de producto.
+
+Migraciones recientes que cambian el mapa operativo actual:
+
+- `20260315_doc016_business_profile_catalog_version.sql`
+- `20260317_doc012_accounting_kernel_foundations.sql`
+- `20260317_int002_cfe_email_connections.sql`
+- `20260318_doc013_accounting_read_models.sql`
 
 ## Grupos de tablas activos
 
@@ -39,8 +49,13 @@ El esquema vive en `supabase/migrations/` y ya esta organizado por hitos de prod
 - `document_assignment_runs`
 - `document_invoice_identities`
 
-### Contabilidad
+### Contabilidad transaccional
 
+- `fiscal_periods`
+- `source_events`
+- `posting_proposals`
+- `journal_types`
+- `auxiliary_books`
 - `chart_of_accounts`
 - `accounting_rules`
 - `accounting_suggestions`
@@ -48,6 +63,17 @@ El esquema vive en `supabase/migrations/` y ya esta organizado por hitos de prod
 - `journal_entry_lines`
 - `ledger_open_items`
 - `ledger_settlement_links`
+
+### Read models contables
+
+- `v_journal_entries_read`
+- `v_journal_lineage`
+- `v_trial_balance`
+- `v_open_items_outstanding`
+- `v_balance_sheet`
+- `v_income_statement`
+
+Estas vistas leen el ledger posteado e inmutable y alimentan las superficies `/trial-balance`, `/journal-entries` y `/open-items`.
 
 ### Fiscal
 
@@ -63,6 +89,7 @@ El esquema vive en `supabase/migrations/` y ya esta organizado por hitos de prod
 
 - `exports`
 - `organization_spreadsheet_import_runs`
+- `organization_cfe_email_connections`
 - `audit_log`
 - `ai_decision_logs`
 
@@ -78,6 +105,8 @@ Regla de uso actual:
 
 - la UI nunca habla con llaves privilegiadas;
 - los servicios server-only si usan service role cuando necesitan saltar limitaciones del cliente SSR para orchestration o persistencia interna.
+- `organization_cfe_email_connections` queda acotada por organizacion y por usuario dueno de la casilla, con lectura ampliada a roles altos;
+- las vistas contables usan `security_invoker = true` para no escapar del contexto del invocador.
 
 ## APIs internas relevantes
 
@@ -112,7 +141,8 @@ Capacidades actuales:
 - background structured responses;
 - batch jobs;
 - file uploads;
-- usage accounting y costo estimado.
+- usage accounting y costo estimado;
+- soporte para intake documental, interpretacion de planillas y recomendacion hibrida de presets.
 
 Model config:
 
@@ -131,7 +161,7 @@ Defaults efectivos:
 
 ### Inngest
 
-Se usa para el pipeline documental durable.
+Se usa para el pipeline documental durable y su orquestacion en background.
 
 ### Sync server actions
 
@@ -139,9 +169,12 @@ Se usan para:
 
 - onboarding;
 - settings;
+- conexiones CFE;
 - posting;
 - exportaciones;
 - consultas IA de presets;
+- conciliacion DGI;
+- lifecycle de VAT runs;
 - materializaciones de chart e imports.
 
 ## Observabilidad y auditoria
@@ -152,6 +185,7 @@ Se usan para:
 - `ai_decision_logs` para decisiones IA/documentales;
 - `document_assignment_runs`;
 - `organization_preset_ai_runs`;
+- cambios de conexiones CFE y settings sensibles;
 - timestamps y snapshots a traves del dominio.
 
 ### Lo que aun falta
@@ -166,6 +200,7 @@ Existen helpers de compatibilidad de schema como:
 
 - `schema-compat`
 - `step5-schema-compat`
+- `vat-run-schema-compat`
 - `chart-write-compat`
 
 Esto indica que el repo esta cuidando transiciones de base reales mientras converge hacia la arquitectura rectora.

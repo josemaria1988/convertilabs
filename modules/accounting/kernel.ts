@@ -30,6 +30,7 @@ type ReversibleJournalEntryHeader = {
   functional_currency?: string | null;
   reference?: string | null;
   description?: string | null;
+  entry_date?: string | null;
 };
 
 type ReversibleJournalEntryLine = {
@@ -412,7 +413,7 @@ export function buildReversalJournalEntry(input: {
       source_event_id: input.header.source_event_id ?? null,
       posting_proposal_id: input.header.posting_proposal_id ?? null,
       accounting_snapshot_id: input.header.accounting_snapshot_id ?? null,
-      entry_date: new Date().toISOString().slice(0, 10),
+      entry_date: input.header.entry_date ?? new Date().toISOString().slice(0, 10),
       status: "posted",
       posting_mode: input.header.posting_mode ?? "final",
       currency_code: input.header.currency_code ?? "UYU",

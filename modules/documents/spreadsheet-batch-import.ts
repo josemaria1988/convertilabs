@@ -99,6 +99,78 @@ type DocumentSpreadsheetMappingResult = {
   confidence: number;
 };
 
+type RawDocumentSpreadsheetRow = {
+  rowNumber: number;
+  typedRow: Record<string, string | null>;
+  rawType: string | null;
+  rawDescription: string | null;
+  counterpartyName: string | null;
+  counterpartyTaxId: string | null;
+  documentDateRaw: string | null;
+  dueDateRaw: string | null;
+  documentNumberRaw: string | null;
+  seriesRaw: string | null;
+  externalReferenceRaw: string | null;
+  currencyRaw: string | null;
+  subtotalAmountRaw: string | null;
+  taxAmountRaw: string | null;
+  taxRateRaw: string | null;
+  totalAmountRaw: string | null;
+  balanceAmountRaw: string | null;
+};
+
+type ResolvedDocumentSpreadsheetRow = {
+  rowNumber: number;
+  rawType: string | null;
+  rawDescription: string | null;
+  counterpartyName: string | null;
+  counterpartyTaxId: string | null;
+  documentDate: string | null;
+  dueDate: string | null;
+  documentNumber: string | null;
+  series: string | null;
+  currencyCode: string | null;
+  subtotalAmount: number | null;
+  taxAmount: number | null;
+  taxRate: number | null;
+  totalAmount: number | null;
+  balanceAmount: number | null;
+  warnings: string[];
+  confidence: number;
+  typedRow: Record<string, string | null>;
+};
+
+type DocumentSpreadsheetAiRowNormalization = {
+  rowNumber: number;
+  importable: boolean;
+  skipReason: string | null;
+  rawType: string | null;
+  rawDescription: string | null;
+  counterpartyName: string | null;
+  counterpartyTaxId: string | null;
+  documentDate: string | null;
+  dueDate: string | null;
+  documentNumber: string | null;
+  series: string | null;
+  currencyCode: string | null;
+  subtotalAmount: number | null;
+  taxAmount: number | null;
+  taxRate: number | null;
+  totalAmount: number | null;
+  balanceAmount: number | null;
+  warnings: string[];
+  confidence: number;
+};
+
+type DocumentSpreadsheetRowsNormalizationResult = {
+  rows: DocumentSpreadsheetImportRow[];
+  skippedRows: Array<{
+    rowNumber: number;
+    reason: string;
+  }>;
+  warnings: string[];
+};
+
 const documentSpreadsheetColumnKeys = [
   "documentDate",
   "documentTypeLabel",
@@ -119,6 +191,9 @@ const documentSpreadsheetColumnKeys = [
 
 const DOCUMENT_SPREADSHEET_PROMPT_VERSION = "document_spreadsheet_mapping_v1";
 const DOCUMENT_SPREADSHEET_SCHEMA_VERSION = "document_spreadsheet_mapping_schema_v1";
+const DOCUMENT_SPREADSHEET_ROWS_PROMPT_VERSION = "document_spreadsheet_rows_v1";
+const DOCUMENT_SPREADSHEET_ROWS_SCHEMA_VERSION = "document_spreadsheet_rows_schema_v1";
+const DOCUMENT_SPREADSHEET_AI_BATCH_SIZE = 120;
 
 const documentSpreadsheetMappingJsonSchema = {
   type: "object",
@@ -154,6 +229,113 @@ const documentSpreadsheetMappingJsonSchema = {
             type: "string",
           },
         },
+      },
+    },
+  },
+} as const;
+
+const documentSpreadsheetRowsJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["rows", "warnings"],
+  properties: {
+    rows: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "rowNumber",
+          "importable",
+          "skipReason",
+          "rawType",
+          "rawDescription",
+          "counterpartyName",
+          "counterpartyTaxId",
+          "documentDate",
+          "dueDate",
+          "documentNumber",
+          "series",
+          "currencyCode",
+          "subtotalAmount",
+          "taxAmount",
+          "taxRate",
+          "totalAmount",
+          "balanceAmount",
+          "warnings",
+          "confidence",
+        ],
+        properties: {
+          rowNumber: {
+            type: "number",
+            minimum: 1,
+          },
+          importable: {
+            type: "boolean",
+          },
+          skipReason: {
+            type: ["string", "null"],
+          },
+          rawType: {
+            type: ["string", "null"],
+          },
+          rawDescription: {
+            type: ["string", "null"],
+          },
+          counterpartyName: {
+            type: ["string", "null"],
+          },
+          counterpartyTaxId: {
+            type: ["string", "null"],
+          },
+          documentDate: {
+            type: ["string", "null"],
+          },
+          dueDate: {
+            type: ["string", "null"],
+          },
+          documentNumber: {
+            type: ["string", "null"],
+          },
+          series: {
+            type: ["string", "null"],
+          },
+          currencyCode: {
+            type: ["string", "null"],
+          },
+          subtotalAmount: {
+            type: ["number", "null"],
+          },
+          taxAmount: {
+            type: ["number", "null"],
+          },
+          taxRate: {
+            type: ["number", "null"],
+          },
+          totalAmount: {
+            type: ["number", "null"],
+          },
+          balanceAmount: {
+            type: ["number", "null"],
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string",
+            },
+          },
+          confidence: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+          },
+        },
+      },
+    },
+    warnings: {
+      type: "array",
+      items: {
+        type: "string",
       },
     },
   },
@@ -229,6 +411,27 @@ function parseLocalizedNumber(value: string | null | undefined) {
   return Number.isFinite(parsed) ? roundCurrency(parsed) : null;
 }
 
+function excelSerialDateToIso(value: number) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const wholeDays = Math.floor(value);
+
+  if (wholeDays < 1 || wholeDays > 400_000) {
+    return null;
+  }
+
+  const epoch = Date.UTC(1899, 11, 30);
+  const date = new Date(epoch + (wholeDays * 86_400_000));
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
 function parseDateValue(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -261,7 +464,23 @@ function parseDateValue(value: string | null | undefined) {
     return `${iso[1]}-${iso[2]}-${iso[3]}`;
   }
 
+  const numericValue = parseLocalizedNumber(normalized);
+
+  if (typeof numericValue === "number") {
+    return excelSerialDateToIso(numericValue);
+  }
+
   return null;
+}
+
+function normalizeIdentifierValue(value: string | null | undefined) {
+  const normalized = firstNonEmptyString(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/^(-?\d+)[.,]0+$/, "$1");
 }
 
 function parseCurrencyCode(...values: Array<string | null | undefined>) {
@@ -616,6 +835,60 @@ function buildDocumentSpreadsheetMappingUserPrompt(
   return JSON.stringify(summarizePreviewForPrompt(preview, ledgerKind), null, 2);
 }
 
+function buildDocumentSpreadsheetRowsSystemPrompt(ledgerKind: DocumentSpreadsheetLedgerKind) {
+  const side = ledgerKind === "purchase" ? "compras" : "ventas";
+  const counterparty = ledgerKind === "purchase" ? "proveedor" : "cliente";
+
+  return [
+    "Eres un normalizador de filas de planillas contables para Convertilabs Uruguay.",
+    `Recibiras filas de una hoja de ${side}. La contraparte principal esperada es ${counterparty}.`,
+    "Debes decidir si cada fila representa un comprobante importable y convertirla al contrato interno.",
+    "Las fechas pueden venir como seriales de Excel, por ejemplo 46097.0, y debes traducirlas a YYYY-MM-DD.",
+    "Los montos pueden venir con comas, puntos, simbolos de moneda o formato local.",
+    "Los identificadores como numero de comprobante, serie o RUT no deben conservar un sufijo .0 cuando en realidad son enteros.",
+    "No inventes datos faltantes. Si la fila esta vacia, es subtotal, encabezado repetido o no alcanza para crear un comprobante, marca importable=false y explica el motivo.",
+    "No cambies el rowNumber.",
+  ].join("\n");
+}
+
+function buildDocumentSpreadsheetRowsUserPrompt(input: {
+  fileName: string;
+  sheetName: string;
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+  detectedHeaders: Partial<Record<ColumnKey, string>>;
+  rows: RawDocumentSpreadsheetRow[];
+}) {
+  return JSON.stringify({
+    fileName: input.fileName,
+    sheetName: input.sheetName,
+    ledgerKind: input.ledgerKind,
+    expectedCounterpartyLabel: input.ledgerKind === "purchase" ? "proveedor" : "cliente",
+    detectedHeaders: input.detectedHeaders,
+    rows: input.rows.map((row) => ({
+      rowNumber: row.rowNumber,
+      cells: Object.fromEntries(
+        Object.entries({
+          rawType: row.rawType,
+          rawDescription: row.rawDescription,
+          counterpartyName: row.counterpartyName,
+          counterpartyTaxId: row.counterpartyTaxId,
+          documentDate: row.documentDateRaw,
+          dueDate: row.dueDateRaw,
+          documentNumber: row.documentNumberRaw,
+          series: row.seriesRaw,
+          externalReference: row.externalReferenceRaw,
+          currency: row.currencyRaw,
+          subtotalAmount: row.subtotalAmountRaw,
+          taxAmount: row.taxAmountRaw,
+          taxRate: row.taxRateRaw,
+          totalAmount: row.totalAmountRaw,
+          balanceAmount: row.balanceAmountRaw,
+        }).filter(([, value]) => typeof value === "string" && value.trim().length > 0),
+      ),
+    })),
+  }, null, 2);
+}
+
 function chooseSheetByName(
   preview: SpreadsheetParseResult,
   sheetName: string,
@@ -847,6 +1120,81 @@ function getCellValue(
   return header ? row[header] ?? null : null;
 }
 
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function buildRawDocumentSpreadsheetRows(input: {
+  selectedSheet: SheetSelection;
+}) {
+  const dataRows = input.selectedSheet.sheet.headerRowIndex === null
+    ? input.selectedSheet.sheet.rows
+    : input.selectedSheet.sheet.rows.slice(input.selectedSheet.sheet.headerRowIndex + 1);
+
+  return dataRows.map((rawRowValues, index) => {
+    const rowNumber = (input.selectedSheet.sheet.headerRowIndex ?? -1) + index + 2;
+    const typedRow = Object.fromEntries(
+      input.selectedSheet.sheet.headers.map((header, headerIndex) => [header, rawRowValues[headerIndex] ?? null]),
+    ) as Record<string, string | null>;
+
+    return {
+      rowNumber,
+      typedRow,
+      rawType: firstNonEmptyString(
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "documentTypeLabel"),
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "documentDescription"),
+      ),
+      rawDescription: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "documentDescription"),
+      counterpartyName: firstNonEmptyString(
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "counterpartyName"),
+      ),
+      counterpartyTaxId: firstNonEmptyString(
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "counterpartyTaxId"),
+      ),
+      documentDateRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "documentDate"),
+      dueDateRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "dueDate"),
+      documentNumberRaw: firstNonEmptyString(
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "documentNumber"),
+        getCellValue(typedRow, input.selectedSheet.detectedHeaders, "externalReference"),
+      ),
+      seriesRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "series"),
+      externalReferenceRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "externalReference"),
+      currencyRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "currency"),
+      subtotalAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "subtotalAmount"),
+      taxAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "taxAmount"),
+      taxRateRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "taxRate"),
+      totalAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "totalAmount"),
+      balanceAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "balanceAmount"),
+    } satisfies RawDocumentSpreadsheetRow;
+  });
+}
+
+function isBlankDocumentSpreadsheetRow(row: RawDocumentSpreadsheetRow) {
+  return !firstNonEmptyString(
+    row.rawType,
+    row.rawDescription,
+    row.counterpartyName,
+    row.counterpartyTaxId,
+    row.documentDateRaw,
+    row.dueDateRaw,
+    row.documentNumberRaw,
+    row.seriesRaw,
+    row.externalReferenceRaw,
+    row.currencyRaw,
+    row.subtotalAmountRaw,
+    row.taxAmountRaw,
+    row.taxRateRaw,
+    row.totalAmountRaw,
+    row.balanceAmountRaw,
+  );
+}
+
 function buildEmptyFactMap(): DocumentIntakeFactMap {
   return {
     issuer_name: null,
@@ -1050,6 +1398,394 @@ function buildDisplayLabel(input: {
   return detail ? `${side} - ${detail}` : `${side} - fila ${input.rowNumber}`;
 }
 
+function buildDocumentImportRowFromResolvedFields(input: {
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+  sheetName: string;
+  rawRow: RawDocumentSpreadsheetRow;
+  resolvedRow: ResolvedDocumentSpreadsheetRow;
+}): null
+  | { skippedRow: { rowNumber: number; reason: string } }
+  | { row: DocumentSpreadsheetImportRow } {
+  if (
+    !input.resolvedRow.counterpartyName
+    && !input.resolvedRow.documentDate
+    && input.resolvedRow.totalAmount === null
+    && input.resolvedRow.subtotalAmount === null
+  ) {
+    return null;
+  }
+
+  if (!input.resolvedRow.counterpartyName) {
+    return {
+      skippedRow: {
+        rowNumber: input.rawRow.rowNumber,
+        reason: "Falta la contraparte principal de la fila.",
+      },
+    };
+  }
+
+  if (!input.resolvedRow.documentDate) {
+    return {
+      skippedRow: {
+        rowNumber: input.rawRow.rowNumber,
+        reason: "No pudimos interpretar la fecha del comprobante.",
+      },
+    };
+  }
+
+  if (input.resolvedRow.totalAmount === null && input.resolvedRow.subtotalAmount === null) {
+    return {
+      skippedRow: {
+        rowNumber: input.rawRow.rowNumber,
+        reason: "La fila no trae total ni neto importable.",
+      },
+    };
+  }
+
+  const paymentTerms = inferPaymentTerms(input.resolvedRow.balanceAmount, input.resolvedRow.rawType);
+  const settlementMethod = paymentTerms === "credit"
+    ? "unknown"
+    : inferSettlementMethod(input.resolvedRow.rawType);
+  const currencyCode = input.resolvedRow.currencyCode ?? parseCurrencyCode(
+    input.rawRow.currencyRaw,
+    input.resolvedRow.rawType,
+    input.resolvedRow.rawDescription,
+  );
+  const documentType = inferDocumentType(
+    input.ledgerKind,
+    input.resolvedRow.rawType,
+    input.resolvedRow.totalAmount,
+  );
+  const operationCategory = inferOperationCategory({
+    ledgerKind: input.ledgerKind,
+    rawType: input.resolvedRow.rawType,
+    rawDescription: input.resolvedRow.rawDescription,
+    taxRate: input.resolvedRow.taxRate,
+  });
+  const facts = buildEmptyFactMap();
+
+  if (input.ledgerKind === "purchase") {
+    facts.issuer_name = input.resolvedRow.counterpartyName;
+    facts.issuer_tax_id = input.resolvedRow.counterpartyTaxId;
+  } else {
+    facts.receiver_name = input.resolvedRow.counterpartyName;
+    facts.receiver_tax_id = input.resolvedRow.counterpartyTaxId;
+  }
+
+  facts.document_number = input.resolvedRow.documentNumber;
+  facts.series = input.resolvedRow.series;
+  facts.currency_code = currencyCode;
+  facts.document_date = input.resolvedRow.documentDate;
+  facts.due_date = input.resolvedRow.dueDate ?? (paymentTerms === "cash" ? input.resolvedRow.documentDate : null);
+  facts.subtotal = input.resolvedRow.subtotalAmount;
+  facts.tax_amount = input.resolvedRow.taxAmount;
+  facts.total_amount = input.resolvedRow.totalAmount ?? input.resolvedRow.subtotalAmount;
+  facts.purchase_category_candidate =
+    input.ledgerKind === "purchase" ? operationCategory : null;
+  facts.sale_category_candidate =
+    input.ledgerKind === "sale" ? operationCategory : null;
+
+  const rowWarnings = [...input.resolvedRow.warnings];
+
+  if (input.resolvedRow.subtotalAmount === null) {
+    rowWarnings.push("La fila no trae subtotal/neto separado.");
+  }
+
+  if (input.resolvedRow.taxAmount === null) {
+    rowWarnings.push("La fila no trae IVA separado.");
+  }
+
+  if (paymentTerms === "unknown") {
+    rowWarnings.push("La planilla no permite resolver si la operacion es contado o credito.");
+  }
+
+  if (paymentTerms === "cash" && settlementMethod === "unknown") {
+    rowWarnings.push("La planilla marca la operacion como cancelada, pero no informa el medio real de cobro o pago.");
+  }
+
+  const amountLabel =
+    typeof input.resolvedRow.taxRate === "number"
+      ? `Gravado ${roundCurrency(input.resolvedRow.taxRate)}%`
+      : "Importe principal";
+  const amountBase = input.resolvedRow.subtotalAmount ?? input.resolvedRow.totalAmount ?? null;
+  const amountBreakdown = amountBase === null
+    ? []
+    : [({
+      label: amountLabel,
+      amount: amountBase,
+      tax_rate: input.resolvedRow.taxRate,
+      tax_code: input.resolvedRow.taxAmount !== null ? "iva" : null,
+    })] satisfies DocumentIntakeAmountBreakdown[];
+  const lineItems = [({
+    line_number: 1,
+    concept_code: null,
+    concept_description: firstNonEmptyString(
+      input.resolvedRow.rawDescription,
+      input.resolvedRow.rawType,
+      input.resolvedRow.counterpartyName,
+    ),
+    quantity: null,
+    unit_amount: null,
+    net_amount: input.resolvedRow.subtotalAmount,
+    tax_rate: input.resolvedRow.taxRate,
+    tax_amount: input.resolvedRow.taxAmount,
+    total_amount: input.resolvedRow.totalAmount ?? amountBase,
+  })] satisfies DocumentIntakeLineItem[];
+  const baseConfidence = rowWarnings.length === 0
+    ? 0.92
+    : rowWarnings.length === 1
+      ? 0.82
+      : 0.72;
+  const confidence = roundConfidence(
+    input.resolvedRow.confidence > 0
+      ? Math.min(baseConfidence, input.resolvedRow.confidence)
+      : baseConfidence,
+  );
+
+  return {
+    row: {
+      rowNumber: input.rawRow.rowNumber,
+      sheetName: input.sheetName,
+      documentRole: input.ledgerKind,
+      documentType,
+      operationCategory,
+      paymentTerms,
+      settlementMethod,
+      balanceAmount: input.resolvedRow.balanceAmount,
+      facts,
+      amountBreakdown,
+      lineItems,
+      extractedText: buildRowExtractedText({
+        ledgerKind: input.ledgerKind,
+        facts,
+        rawType: input.resolvedRow.rawType,
+        rawDescription: input.resolvedRow.rawDescription,
+        balanceAmount: input.resolvedRow.balanceAmount,
+      }),
+      warnings: rowWarnings,
+      sourceReference: `${input.sheetName}:fila-${input.rawRow.rowNumber}`,
+      displayLabel: buildDisplayLabel({
+        ledgerKind: input.ledgerKind,
+        counterpartyName: input.resolvedRow.counterpartyName,
+        documentNumber: input.resolvedRow.documentNumber,
+        rowNumber: input.rawRow.rowNumber,
+      }),
+      confidence,
+      originalRow: input.rawRow.typedRow,
+    } satisfies DocumentSpreadsheetImportRow,
+  };
+}
+
+function buildResolvedRowHeuristically(input: {
+  rawRow: RawDocumentSpreadsheetRow;
+  mappingConfidence: number;
+}) {
+  let subtotalAmount = parseLocalizedNumber(input.rawRow.subtotalAmountRaw);
+  let taxAmount = parseLocalizedNumber(input.rawRow.taxAmountRaw);
+  let totalAmount = parseLocalizedNumber(input.rawRow.totalAmountRaw);
+  const balanceAmount = parseLocalizedNumber(input.rawRow.balanceAmountRaw);
+  const taxRate = inferTaxRate({
+    taxRate: parseLocalizedNumber(input.rawRow.taxRateRaw),
+    subtotal: subtotalAmount,
+    taxAmount,
+  });
+
+  if (totalAmount === null && subtotalAmount !== null && taxAmount !== null) {
+    totalAmount = roundCurrency(subtotalAmount + taxAmount);
+  }
+
+  if (subtotalAmount === null && totalAmount !== null && taxAmount !== null) {
+    subtotalAmount = roundCurrency(totalAmount - taxAmount);
+  }
+
+  if (taxAmount === null && totalAmount !== null && subtotalAmount !== null) {
+    taxAmount = roundCurrency(totalAmount - subtotalAmount);
+  }
+
+  return {
+    rowNumber: input.rawRow.rowNumber,
+    rawType: input.rawRow.rawType,
+    rawDescription: input.rawRow.rawDescription,
+    counterpartyName: input.rawRow.counterpartyName,
+    counterpartyTaxId: normalizeIdentifierValue(input.rawRow.counterpartyTaxId),
+    documentDate: parseDateValue(input.rawRow.documentDateRaw),
+    dueDate: parseDateValue(input.rawRow.dueDateRaw),
+    documentNumber: normalizeIdentifierValue(input.rawRow.documentNumberRaw),
+    series: normalizeIdentifierValue(input.rawRow.seriesRaw),
+    currencyCode: parseCurrencyCode(
+      input.rawRow.currencyRaw,
+      input.rawRow.rawType,
+      input.rawRow.rawDescription,
+    ),
+    subtotalAmount,
+    taxAmount,
+    taxRate,
+    totalAmount,
+    balanceAmount,
+    warnings: [],
+    confidence: input.mappingConfidence,
+    typedRow: input.rawRow.typedRow,
+  } satisfies ResolvedDocumentSpreadsheetRow;
+}
+
+async function normalizeDocumentSpreadsheetRowsWithOpenAI(input: {
+  fileName: string;
+  sheetName: string;
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+  detectedHeaders: Partial<Record<ColumnKey, string>>;
+  rawRows: RawDocumentSpreadsheetRow[];
+}) {
+  const warnings: string[] = [];
+  const normalizedRows = new Map<number, DocumentSpreadsheetAiRowNormalization>();
+
+  for (const batch of chunkArray(input.rawRows, DOCUMENT_SPREADSHEET_AI_BATCH_SIZE)) {
+    const response = await createStructuredOpenAIResponse<{
+      rows: DocumentSpreadsheetAiRowNormalization[];
+      warnings: string[];
+    }>({
+      model: getOpenAIModelConfig().openAiDocumentModel,
+      schemaName: "convertilabs_document_spreadsheet_rows",
+      schema: documentSpreadsheetRowsJsonSchema,
+      systemPrompt: buildDocumentSpreadsheetRowsSystemPrompt(input.ledgerKind),
+      userPrompt: buildDocumentSpreadsheetRowsUserPrompt({
+        fileName: input.fileName,
+        sheetName: input.sheetName,
+        ledgerKind: input.ledgerKind,
+        detectedHeaders: input.detectedHeaders,
+        rows: batch,
+      }),
+      metadata: {
+        prompt_version: DOCUMENT_SPREADSHEET_ROWS_PROMPT_VERSION,
+        schema_version: DOCUMENT_SPREADSHEET_ROWS_SCHEMA_VERSION,
+        ledger_kind: input.ledgerKind,
+        row_count: batch.length,
+      },
+    });
+
+    warnings.push(...response.output.warnings.filter(Boolean));
+
+    for (const row of response.output.rows) {
+      normalizedRows.set(row.rowNumber, row);
+    }
+  }
+
+  return {
+    warnings,
+    rows: normalizedRows,
+  };
+}
+
+async function resolveDocumentSpreadsheetRows(input: {
+  fileName: string;
+  ledgerKind: DocumentSpreadsheetLedgerKind;
+  selectedSheet: SheetSelection;
+  provider?: DocumentSpreadsheetInterpreterProvider;
+  mappingConfidence: number;
+}) {
+  const rows: DocumentSpreadsheetImportRow[] = [];
+  const skippedRows: Array<{ rowNumber: number; reason: string }> = [];
+  const warnings: string[] = [];
+  const rawRows = buildRawDocumentSpreadsheetRows({
+    selectedSheet: input.selectedSheet,
+  });
+  const usableRawRows = rawRows.filter((row) => !isBlankDocumentSpreadsheetRow(row));
+  let aiRows = new Map<number, DocumentSpreadsheetAiRowNormalization>();
+
+  if (
+    input.provider !== "heuristic"
+    && process.env.OPENAI_API_KEY
+    && usableRawRows.length > 0
+  ) {
+    try {
+      const aiResult = await normalizeDocumentSpreadsheetRowsWithOpenAI({
+        fileName: input.fileName,
+        sheetName: input.selectedSheet.sheet.sheetName,
+        ledgerKind: input.ledgerKind,
+        detectedHeaders: input.selectedSheet.detectedHeaders,
+        rawRows: usableRawRows,
+      });
+      aiRows = aiResult.rows;
+      warnings.push(...aiResult.warnings);
+    } catch (error) {
+      warnings.push(
+        error instanceof Error
+          ? `Fallback heuristico en normalizacion de filas: ${error.message}`
+          : "Fallback heuristico en normalizacion de filas.",
+      );
+    }
+  }
+
+  for (const rawRow of rawRows) {
+    if (isBlankDocumentSpreadsheetRow(rawRow)) {
+      continue;
+    }
+
+    const aiRow = aiRows.get(rawRow.rowNumber);
+    const heuristicRow = buildResolvedRowHeuristically({
+      rawRow,
+      mappingConfidence: input.mappingConfidence,
+    });
+
+    if (aiRow && !aiRow.importable) {
+      skippedRows.push({
+        rowNumber: rawRow.rowNumber,
+        reason: aiRow.skipReason ?? "La IA marco la fila como no importable.",
+      });
+      continue;
+    }
+
+    const resolvedRow = aiRow
+      ? {
+        rowNumber: rawRow.rowNumber,
+        rawType: firstNonEmptyString(aiRow.rawType, heuristicRow.rawType),
+        rawDescription: firstNonEmptyString(aiRow.rawDescription, heuristicRow.rawDescription),
+        counterpartyName: firstNonEmptyString(aiRow.counterpartyName, heuristicRow.counterpartyName),
+        counterpartyTaxId: normalizeIdentifierValue(aiRow.counterpartyTaxId ?? heuristicRow.counterpartyTaxId),
+        documentDate: parseDateValue(aiRow.documentDate ?? heuristicRow.documentDate),
+        dueDate: parseDateValue(aiRow.dueDate ?? heuristicRow.dueDate),
+        documentNumber: normalizeIdentifierValue(aiRow.documentNumber ?? heuristicRow.documentNumber),
+        series: normalizeIdentifierValue(aiRow.series ?? heuristicRow.series),
+        currencyCode: firstNonEmptyString(aiRow.currencyCode)?.toUpperCase() ?? heuristicRow.currencyCode,
+        subtotalAmount: aiRow.subtotalAmount ?? heuristicRow.subtotalAmount,
+        taxAmount: aiRow.taxAmount ?? heuristicRow.taxAmount,
+        taxRate: aiRow.taxRate ?? heuristicRow.taxRate,
+        totalAmount: aiRow.totalAmount ?? heuristicRow.totalAmount,
+        balanceAmount: aiRow.balanceAmount ?? heuristicRow.balanceAmount,
+        warnings: aiRow.warnings.filter(Boolean),
+        confidence: roundConfidence(aiRow.confidence),
+        typedRow: rawRow.typedRow,
+      } satisfies ResolvedDocumentSpreadsheetRow
+      : heuristicRow;
+
+    const built = buildDocumentImportRowFromResolvedFields({
+      ledgerKind: input.ledgerKind,
+      sheetName: input.selectedSheet.sheet.sheetName,
+      rawRow,
+      resolvedRow,
+    });
+
+    if (!built) {
+      continue;
+    }
+
+    if ("skippedRow" in built) {
+      skippedRows.push(built.skippedRow);
+      continue;
+    }
+
+    rows.push({
+      ...built.row,
+      sourceReference: `${input.fileName}:${input.selectedSheet.sheet.sheetName}:fila-${rawRow.rowNumber}`,
+    });
+  }
+
+  return {
+    rows,
+    skippedRows,
+    warnings,
+  } satisfies DocumentSpreadsheetRowsNormalizationResult;
+}
+
 export async function extractDocumentSpreadsheetRows(input: {
   fileName: string;
   mimeType: string | null;
@@ -1083,11 +1819,6 @@ export async function extractDocumentSpreadsheetRows(input: {
     ...preview.warnings,
     ...mapping.warnings,
   ])];
-  const skippedRows: Array<{ rowNumber: number; reason: string }> = [];
-  const rows: DocumentSpreadsheetImportRow[] = [];
-  const dataRows = selectedSheet.sheet.headerRowIndex === null
-    ? selectedSheet.sheet.rows
-    : selectedSheet.sheet.rows.slice(selectedSheet.sheet.headerRowIndex + 1);
 
   if (selectedSheet.sheet.truncatedForAnalysis) {
     warnings.push(
@@ -1100,222 +1831,24 @@ export async function extractDocumentSpreadsheetRows(input: {
       "La planilla no trae columnas de neto o IVA. Las filas se importan igual, pero el tratamiento fiscal puede requerir revision manual.",
     );
   }
-
-  for (const [index, rawRowValues] of dataRows.entries()) {
-    const rowNumber = (selectedSheet.sheet.headerRowIndex ?? -1) + index + 2;
-    const typedRow = Object.fromEntries(
-      selectedSheet.sheet.headers.map((header, headerIndex) => [header, rawRowValues[headerIndex] ?? null]),
-    ) as Record<string, string | null>;
-    const rawType = firstNonEmptyString(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "documentTypeLabel"),
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "documentDescription"),
-    );
-    const rawDescription = getCellValue(typedRow, selectedSheet.detectedHeaders, "documentDescription");
-    const counterpartyName = firstNonEmptyString(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "counterpartyName"),
-    );
-    const documentDate = parseDateValue(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "documentDate"),
-    );
-    const dueDate = parseDateValue(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "dueDate"),
-    );
-    const documentNumber = firstNonEmptyString(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "documentNumber"),
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "externalReference"),
-    );
-    const counterpartyTaxId = firstNonEmptyString(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "counterpartyTaxId"),
-    );
-    let subtotalAmount = parseLocalizedNumber(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "subtotalAmount"),
-    );
-    let taxAmount = parseLocalizedNumber(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "taxAmount"),
-    );
-    let totalAmount = parseLocalizedNumber(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "totalAmount"),
-    );
-    const balanceAmount = parseLocalizedNumber(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "balanceAmount"),
-    );
-    const taxRate = inferTaxRate({
-      taxRate: parseLocalizedNumber(getCellValue(typedRow, selectedSheet.detectedHeaders, "taxRate")),
-      subtotal: subtotalAmount,
-      taxAmount,
-    });
-
-    if (totalAmount === null && subtotalAmount !== null && taxAmount !== null) {
-      totalAmount = roundCurrency(subtotalAmount + taxAmount);
-    }
-
-    if (subtotalAmount === null && totalAmount !== null && taxAmount !== null) {
-      subtotalAmount = roundCurrency(totalAmount - taxAmount);
-    }
-
-    if (taxAmount === null && totalAmount !== null && subtotalAmount !== null) {
-      taxAmount = roundCurrency(totalAmount - subtotalAmount);
-    }
-
-    if (!counterpartyName && !documentDate && totalAmount === null && subtotalAmount === null) {
-      continue;
-    }
-
-    if (!counterpartyName) {
-      skippedRows.push({
-        rowNumber,
-        reason: "Falta la contraparte principal de la fila.",
-      });
-      continue;
-    }
-
-    if (!documentDate) {
-      skippedRows.push({
-        rowNumber,
-        reason: "No pudimos interpretar la fecha del comprobante.",
-      });
-      continue;
-    }
-
-    if (totalAmount === null && subtotalAmount === null) {
-      skippedRows.push({
-        rowNumber,
-        reason: "La fila no trae total ni neto importable.",
-      });
-      continue;
-    }
-
-    const paymentTerms = inferPaymentTerms(balanceAmount, rawType);
-    const settlementMethod = paymentTerms === "credit"
-      ? "unknown"
-      : inferSettlementMethod(rawType);
-    const currencyCode = parseCurrencyCode(
-      getCellValue(typedRow, selectedSheet.detectedHeaders, "currency"),
-      rawType,
-      rawDescription,
-    );
-    const documentType = inferDocumentType(input.ledgerKind, rawType, totalAmount);
-    const operationCategory = inferOperationCategory({
-      ledgerKind: input.ledgerKind,
-      rawType,
-      rawDescription,
-      taxRate,
-    });
-    const facts = buildEmptyFactMap();
-
-    if (input.ledgerKind === "purchase") {
-      facts.issuer_name = counterpartyName;
-      facts.issuer_tax_id = counterpartyTaxId;
-    } else {
-      facts.receiver_name = counterpartyName;
-      facts.receiver_tax_id = counterpartyTaxId;
-    }
-
-    facts.document_number = documentNumber;
-    facts.series = firstNonEmptyString(getCellValue(typedRow, selectedSheet.detectedHeaders, "series"));
-    facts.currency_code = currencyCode;
-    facts.document_date = documentDate;
-    facts.due_date = dueDate ?? (paymentTerms === "cash" ? documentDate : null);
-    facts.subtotal = subtotalAmount;
-    facts.tax_amount = taxAmount;
-    facts.total_amount = totalAmount ?? subtotalAmount;
-    facts.purchase_category_candidate =
-      input.ledgerKind === "purchase" ? operationCategory : null;
-    facts.sale_category_candidate =
-      input.ledgerKind === "sale" ? operationCategory : null;
-
-    const rowWarnings: string[] = [];
-
-    if (subtotalAmount === null) {
-      rowWarnings.push("La fila no trae subtotal/neto separado.");
-    }
-
-    if (taxAmount === null) {
-      rowWarnings.push("La fila no trae IVA separado.");
-    }
-
-    if (paymentTerms === "unknown") {
-      rowWarnings.push("La planilla no permite resolver si la operacion es contado o credito.");
-    }
-
-    if (paymentTerms === "cash" && settlementMethod === "unknown") {
-      rowWarnings.push("La planilla marca la operacion como cancelada, pero no informa el medio real de cobro o pago.");
-    }
-
-    const amountLabel =
-      typeof taxRate === "number"
-        ? `Gravado ${roundCurrency(taxRate)}%`
-        : "Importe principal";
-    const amountBase = subtotalAmount ?? totalAmount ?? null;
-    const amountBreakdown = amountBase === null
-      ? []
-      : [{
-          label: amountLabel,
-          amount: amountBase,
-          tax_rate: taxRate,
-          tax_code: taxAmount !== null ? "iva" : null,
-        }] satisfies DocumentIntakeAmountBreakdown[];
-    const lineItems = [{
-      line_number: 1,
-      concept_code: null,
-      concept_description: firstNonEmptyString(rawDescription, rawType, counterpartyName),
-      quantity: null,
-      unit_amount: null,
-      net_amount: subtotalAmount,
-      tax_rate: taxRate,
-      tax_amount: taxAmount,
-      total_amount: totalAmount ?? amountBase,
-    }] satisfies DocumentIntakeLineItem[];
-    const baseConfidence = rowWarnings.length === 0
-      ? 0.92
-      : rowWarnings.length === 1
-        ? 0.82
-        : 0.72;
-    const confidence = roundConfidence(
-      mapping.confidence > 0
-        ? Math.min(baseConfidence, mapping.confidence)
-        : baseConfidence,
-    );
-
-    rows.push({
-      rowNumber,
-      sheetName: selectedSheet.sheet.sheetName,
-      documentRole: input.ledgerKind,
-      documentType,
-      operationCategory,
-      paymentTerms,
-      settlementMethod,
-      balanceAmount,
-      facts,
-      amountBreakdown,
-      lineItems,
-      extractedText: buildRowExtractedText({
-        ledgerKind: input.ledgerKind,
-        facts,
-        rawType,
-        rawDescription,
-        balanceAmount,
-      }),
-      warnings: rowWarnings,
-      sourceReference: `${input.fileName}:${selectedSheet.sheet.sheetName}:fila-${rowNumber}`,
-      displayLabel: buildDisplayLabel({
-        ledgerKind: input.ledgerKind,
-        counterpartyName,
-        documentNumber,
-        rowNumber,
-      }),
-      confidence,
-      originalRow: typedRow,
-    });
-  }
+  const normalizedRows = await resolveDocumentSpreadsheetRows({
+    fileName: input.fileName,
+    ledgerKind: input.ledgerKind,
+    selectedSheet,
+    provider: input.provider,
+    mappingConfidence: mapping.confidence,
+  });
 
   return {
     fileName: input.fileName,
     ledgerKind: input.ledgerKind,
     sheetName: selectedSheet.sheet.sheetName,
-    rows,
-    skippedRows,
-    warnings,
+    rows: normalizedRows.rows,
+    skippedRows: normalizedRows.skippedRows,
+    warnings: [...new Set([
+      ...warnings,
+      ...normalizedRows.warnings,
+    ])],
     detectedHeaders: Object.fromEntries(
       Object.entries(selectedSheet.detectedHeaders)
         .filter(([, value]) => typeof value === "string"),

@@ -2,7 +2,7 @@
 
 Este directorio reemplaza la documentacion historica dispersa en `docs/specs*`, archivos sueltos y notas tacticas de iteraciones previas.
 
-La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo, sus rutas, modulos, migraciones y pruebas.
+La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-18: rutas activas, workspaces contables read-only, migraciones recientes, conexiones CFE y suites de prueba.
 
 Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto: todo cambio nuevo debe justificar si mejora el motor documental, el motor de decision contable o el motor fiscal.
 
@@ -10,12 +10,12 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 
 - `00-foundations/` fija la vision, el alcance y el mapa real del repo.
 - `agent_rules.md` resume el foco no negociable del MVP y la regla de descarte.
-- `01-identity/` y `02-organization/` cubren auth, tenancy, onboarding y settings.
-- `03-accounting/` cubre plan de cuentas, presets y recomendacion hibrida con IA.
-- `04-documents/` cubre intake, revision, clasificacion, aprendizaje y posting.
+- `01-identity/` y `02-organization/` cubren auth, tenancy, onboarding, settings y perfil/versionado operativo.
+- `03-accounting/` cubre plan de cuentas, presets, mapa contable y recomendacion hibrida con IA.
+- `04-documents/` cubre intake, revision, clasificacion, posting multi-linea y operaciones internacionales.
 - `05-tax/` cubre VAT, perfil fiscal, importaciones y multimoneda.
 - `06-integrations/` cubre spreadsheets, imports, exports y bridge al sistema externo.
-- `07-platform/` cubre base de datos, APIs, background jobs y observabilidad.
+- `07-platform/` cubre base de datos, read models contables, APIs, background jobs y observabilidad.
 - `08-quality/` cubre testing, rollout y roadmap tecnico.
 - `09-future/` documenta modulos objetivo que el rector exige dejar preparados aunque todavia no existan como feature operativa.
 
@@ -31,6 +31,7 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - [03-accounting/hybrid-ai-preset-recommendation.md](./03-accounting/hybrid-ai-preset-recommendation.md)
 - [04-documents/01-document-intake-and-processing.md](./04-documents/01-document-intake-and-processing.md)
 - [04-documents/02-document-review-classification-and-posting.md](./04-documents/02-document-review-classification-and-posting.md)
+- [04-documents/03-document-settlement-and-multi-line-posting.md](./04-documents/03-document-settlement-and-multi-line-posting.md)
 - [05-tax/tax-platform-vat-fx-and-imports.md](./05-tax/tax-platform-vat-fx-and-imports.md)
 - [06-integrations/spreadsheets-imports-exports-and-bridge.md](./06-integrations/spreadsheets-imports-exports-and-bridge.md)
 - [07-platform/database-api-background-jobs-and-observability.md](./07-platform/database-api-background-jobs-and-observability.md)

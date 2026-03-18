@@ -191,10 +191,9 @@ export default async function OrganizationJournalEntriesPage({
                   <span className="font-medium text-white">Periodo</span>
                   <select
                     name="period"
-                    defaultValue={resolvedSearchParams.period ?? ""}
+                    defaultValue={data.selectedFiscalPeriodCode ?? ""}
                     className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
                   >
-                    <option value="">Todos</option>
                     {data.filterOptions.fiscalPeriodCodes.map((periodCode) => (
                       <option key={periodCode} value={periodCode}>{periodCode}</option>
                     ))}

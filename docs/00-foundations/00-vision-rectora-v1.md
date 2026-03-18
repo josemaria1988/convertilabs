@@ -86,7 +86,7 @@ Toda superficie visible o en desarrollo activo debe clasificarse como `core`, `s
 ### Future o congelado
 
 - cockpit `dashboard` como modulo;
-- vistas standalone de `journal-entries` y `open-items`;
+- vistas top-level separadas de `journal-entries` y `open-items` fuera del workspace contable;
 - cost centers, jobs y profitability como experiencia visible;
 - marketing ampliado mas alla de landing, signup/login y contacto.
 

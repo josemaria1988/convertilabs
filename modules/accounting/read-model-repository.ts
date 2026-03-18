@@ -2,6 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
 import { roundCurrency } from "@/modules/accounting/normalization";
 import {
+  buildAccountingMonthRange,
+  getAccountingMonthKey,
+  sortAccountingMonthKeysDesc,
+} from "@/modules/accounting/periods";
+import {
   buildBalanceSheetRows,
   buildIncomeStatementRows,
   type StatementReadInputRow,
@@ -372,6 +377,7 @@ export type ReadModelFilterOptions = {
 
 export type JournalEntriesWorkspaceData = {
   isAvailable: boolean;
+  selectedFiscalPeriodCode: string | null;
   rows: JournalEntryReadRow[];
   lineageRows: JournalLineageReadRow[];
   summary: {
@@ -388,6 +394,7 @@ export type JournalEntriesWorkspaceData = {
 
 export type OpenItemsWorkspaceData = {
   isAvailable: boolean;
+  selectedFiscalPeriodCode: string | null;
   rows: OpenItemOutstandingRow[];
   summary: {
     totalItems: number;
@@ -406,6 +413,7 @@ export type OpenItemsWorkspaceData = {
 
 export type TrialBalanceWorkspaceData = {
   isAvailable: boolean;
+  selectedFiscalPeriodCode: string | null;
   rows: TrialBalanceReadRow[];
   generalLedgerRows: GeneralLedgerRow[];
   summary: {
@@ -593,6 +601,26 @@ const GENERAL_LEDGER_LINE_SELECT_LEGACY = [
   "debit",
   "credit",
   "description",
+].join(", ");
+
+const TRIAL_BALANCE_LINE_SELECT = [
+  "journal_entry_id",
+  "account_id",
+  "line_no",
+  "debit",
+  "credit",
+  "functional_debit",
+  "functional_credit",
+  "chart_of_accounts(id, code, name, account_type, chapter_code, presentation_code, statement_section, natural_balance, normal_side)",
+].join(", ");
+
+const TRIAL_BALANCE_LINE_SELECT_LEGACY = [
+  "journal_entry_id",
+  "account_id",
+  "line_no",
+  "debit",
+  "credit",
+  "chart_of_accounts(id, code, name, account_type, chapter_code, presentation_code, statement_section, natural_balance, normal_side)",
 ].join(", ");
 
 const ACCOUNTING_READ_MODEL_RELATIONS = [
@@ -814,17 +842,85 @@ function buildFilterOptions(input: {
     counterpartyType?: string | null;
     accountType?: string | null;
   }>;
+  fiscalPeriodCodes?: string[] | null;
 }) {
   const rows = input.rows ?? [];
 
   return {
     statuses: sortTextValues(rows.map((row) => row.status).filter((value): value is string => Boolean(value))),
     sourceChannels: sortTextValues(rows.map((row) => row.sourceChannel).filter((value): value is string => Boolean(value))),
-    fiscalPeriodCodes: sortTextValues(rows.map((row) => row.fiscalPeriodCode).filter((value): value is string => Boolean(value))),
+    fiscalPeriodCodes:
+      input.fiscalPeriodCodes
+      ?? sortTextValues(rows.map((row) => row.fiscalPeriodCode).filter((value): value is string => Boolean(value))),
     journalTypeCodes: sortTextValues(rows.map((row) => row.journalTypeCode).filter((value): value is string => Boolean(value))),
     counterpartyTypes: sortTextValues(rows.map((row) => row.counterpartyType).filter((value): value is string => Boolean(value))),
     accountTypes: sortTextValues(rows.map((row) => row.accountType).filter((value): value is string => Boolean(value))),
   } satisfies ReadModelFilterOptions;
+}
+
+async function loadAvailableAccountingPeriodCodesFromEntries(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("v_journal_entries_read")
+    .select("entry_date")
+    .eq("organization_id", organizationId)
+    .order("entry_date", { ascending: false })
+    .limit(1000);
+
+  if (error) {
+    if (isMissingAccountingReadModelRelationError(error)) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return sortAccountingMonthKeysDesc(
+    (((data as Array<{ entry_date: string | null }> | null) ?? []))
+      .map((row) => getAccountingMonthKey(row.entry_date))
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+async function loadAvailableAccountingPeriodCodesFromOpenItems(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { data, error } = await supabase
+    .from("v_open_items_outstanding")
+    .select("opening_entry_date")
+    .eq("organization_id", organizationId)
+    .order("opening_entry_date", { ascending: false })
+    .limit(1000);
+
+  if (error) {
+    if (isMissingAccountingReadModelRelationError(error)) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return sortAccountingMonthKeysDesc(
+    (((data as Array<{ opening_entry_date: string | null }> | null) ?? []))
+      .map((row) => getAccountingMonthKey(row.opening_entry_date))
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function resolveSelectedAccountingPeriodCode(
+  requestedPeriodCode: string | null | undefined,
+  availablePeriodCodes: string[],
+) {
+  const normalizedRequested = getAccountingMonthKey(requestedPeriodCode);
+
+  if (normalizedRequested) {
+    return normalizedRequested;
+  }
+
+  return availablePeriodCodes[0] ?? null;
 }
 
 export function isMissingAccountingReadModelRelationError(error: SupabaseErrorLike | null | undefined) {
@@ -843,6 +939,35 @@ export async function loadJournalEntriesWorkspaceData(
     searchTerm?: string | null;
   },
 ): Promise<JournalEntriesWorkspaceData> {
+  const availablePeriodCodes = await loadAvailableAccountingPeriodCodesFromEntries(
+    supabase,
+    input.organizationId,
+  );
+
+  if (availablePeriodCodes === null) {
+    return {
+      isAvailable: false,
+      selectedFiscalPeriodCode: null,
+      rows: [],
+      lineageRows: [],
+      summary: {
+        totalEntries: 0,
+        activeLeafCount: 0,
+        immutableCount: 0,
+        providerManagedCount: 0,
+        reversalCount: 0,
+        openItemCount: 0,
+        settlementLinkCount: 0,
+      },
+      filterOptions: buildFilterOptions({ rows: [] }),
+    };
+  }
+
+  const selectedFiscalPeriodCode = resolveSelectedAccountingPeriodCode(
+    input.fiscalPeriodCode ?? null,
+    availablePeriodCodes,
+  );
+  const selectedPeriodRange = buildAccountingMonthRange(selectedFiscalPeriodCode);
   let query = supabase
     .from("v_journal_entries_read")
     .select(JOURNAL_ENTRY_READ_SELECT)
@@ -856,8 +981,10 @@ export async function loadJournalEntriesWorkspaceData(
     query = query.eq("source_channel", input.sourceChannel);
   }
 
-  if (input.fiscalPeriodCode) {
-    query = query.eq("fiscal_period_code", input.fiscalPeriodCode);
+  if (selectedPeriodRange) {
+    query = query
+      .gte("entry_date", selectedPeriodRange.startDate)
+      .lt("entry_date", selectedPeriodRange.nextStartDate);
   }
 
   if (input.journalTypeCode) {
@@ -873,6 +1000,7 @@ export async function loadJournalEntriesWorkspaceData(
     if (isMissingAccountingReadModelRelationError(error)) {
       return {
         isAvailable: false,
+        selectedFiscalPeriodCode: null,
         rows: [],
         lineageRows: [],
         summary: {
@@ -933,6 +1061,7 @@ export async function loadJournalEntriesWorkspaceData(
 
   return {
     isAvailable: true,
+    selectedFiscalPeriodCode,
     rows,
     lineageRows,
     summary: {
@@ -944,7 +1073,10 @@ export async function loadJournalEntriesWorkspaceData(
       openItemCount: rows.reduce((sum, row) => sum + row.openItemCount, 0),
       settlementLinkCount: rows.reduce((sum, row) => sum + row.settlementLinkCount, 0),
     },
-    filterOptions: buildFilterOptions({ rows }),
+    filterOptions: buildFilterOptions({
+      rows,
+      fiscalPeriodCodes: availablePeriodCodes,
+    }),
   };
 }
 
@@ -954,11 +1086,39 @@ export async function loadOpenItemsWorkspaceData(
     organizationId: string;
     status?: string | null;
     sourceChannel?: string | null;
+    fiscalPeriodCode?: string | null;
     counterpartyType?: string | null;
     searchTerm?: string | null;
     overdueOnly?: boolean;
   },
 ): Promise<OpenItemsWorkspaceData> {
+  const availablePeriodCodes = await loadAvailableAccountingPeriodCodesFromOpenItems(
+    supabase,
+    input.organizationId,
+  );
+
+  if (availablePeriodCodes === null) {
+    return {
+      isAvailable: false,
+      selectedFiscalPeriodCode: null,
+      rows: [],
+      summary: {
+        totalItems: 0,
+        outstandingAmount: 0,
+        overdueCount: 0,
+        foreignCurrencyCount: 0,
+        residualCreditCount: 0,
+      },
+      agingBuckets: [],
+      filterOptions: buildFilterOptions({ rows: [] }),
+    };
+  }
+
+  const selectedFiscalPeriodCode = resolveSelectedAccountingPeriodCode(
+    input.fiscalPeriodCode ?? null,
+    availablePeriodCodes,
+  );
+  const selectedPeriodRange = buildAccountingMonthRange(selectedFiscalPeriodCode);
   let query = supabase
     .from("v_open_items_outstanding")
     .select(OPEN_ITEMS_OUTSTANDING_SELECT)
@@ -976,6 +1136,12 @@ export async function loadOpenItemsWorkspaceData(
     query = query.eq("counterparty_type", input.counterpartyType);
   }
 
+  if (selectedPeriodRange) {
+    query = query
+      .gte("opening_entry_date", selectedPeriodRange.startDate)
+      .lt("opening_entry_date", selectedPeriodRange.nextStartDate);
+  }
+
   const { data, error } = await query
     .order("due_date", { ascending: true })
     .order("issue_date", { ascending: false })
@@ -985,6 +1151,7 @@ export async function loadOpenItemsWorkspaceData(
     if (isMissingAccountingReadModelRelationError(error)) {
       return {
         isAvailable: false,
+        selectedFiscalPeriodCode: null,
         rows: [],
         summary: {
           totalItems: 0,
@@ -1038,6 +1205,7 @@ export async function loadOpenItemsWorkspaceData(
 
   return {
     isAvailable: true,
+    selectedFiscalPeriodCode,
     rows,
     summary: {
       totalItems: rows.length,
@@ -1050,7 +1218,10 @@ export async function loadOpenItemsWorkspaceData(
       residualCreditCount: rows.filter((row) => row.isResidualCreditBalance).length,
     },
     agingBuckets,
-    filterOptions: buildFilterOptions({ rows }),
+    filterOptions: buildFilterOptions({
+      rows,
+      fiscalPeriodCodes: availablePeriodCodes,
+    }),
   };
 }
 
@@ -1167,6 +1338,229 @@ async function loadGeneralLedgerRows(
   });
 }
 
+async function loadTrialBalanceRowsForPeriod(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    fiscalPeriodCode: string | null;
+    sourceChannel?: string | null;
+    accountType?: string | null;
+  },
+) {
+  const periodRange = buildAccountingMonthRange(input.fiscalPeriodCode);
+
+  if (!periodRange) {
+    return [];
+  }
+
+  let entryQuery = supabase
+    .from("v_journal_entries_read")
+    .select(JOURNAL_ENTRY_READ_SELECT)
+    .eq("organization_id", input.organizationId)
+    .gte("entry_date", periodRange.startDate)
+    .lt("entry_date", periodRange.nextStartDate);
+
+  if (input.sourceChannel) {
+    entryQuery = entryQuery.eq("source_channel", input.sourceChannel);
+  }
+
+  const entryResult = await entryQuery
+    .order("entry_date", { ascending: true })
+    .limit(2000);
+
+  if (entryResult.error) {
+    if (isMissingAccountingReadModelRelationError(entryResult.error)) {
+      return [];
+    }
+
+    throw new Error(entryResult.error.message);
+  }
+
+  const entries = (((entryResult.data as unknown as JournalEntryReadRowRaw[] | null) ?? []))
+    .map(mapJournalEntryRow)
+    .filter((row) => row.isImmutable && (row.status === "posted" || row.status === "exported"));
+  const entryById = new Map(entries.map((row) => [row.journalEntryId, row]));
+  const entryIds = entries.map((row) => row.journalEntryId);
+
+  if (entryIds.length === 0) {
+    return [];
+  }
+
+  const runLineQuery = async (selectClause: string) =>
+    supabase
+      .from("journal_entry_lines")
+      .select(selectClause)
+      .in("journal_entry_id", entryIds)
+      .order("line_no", { ascending: true })
+      .limit(5000);
+
+  let { data, error } = await runLineQuery(TRIAL_BALANCE_LINE_SELECT);
+
+  if (error && isMissingJournalEntryLineStep5ColumnError(error)) {
+    ({ data, error } = await runLineQuery(TRIAL_BALANCE_LINE_SELECT_LEGACY));
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const grouped = new Map<string, {
+    organizationId: string;
+    fiscalPeriodId: string | null;
+    fiscalPeriodCode: string;
+    fiscalPeriodLabel: string;
+    sourceChannel: string | null;
+    accountId: string | null;
+    accountCode: string | null;
+    accountName: string | null;
+    accountType: string | null;
+    chapterCode: string | null;
+    presentationCode: string | null;
+    statementSection: string | null;
+    naturalBalance: "debit" | "credit" | null;
+    debit: number;
+    credit: number;
+    functionalDebit: number;
+    functionalCredit: number;
+    entryIds: Set<string>;
+    lineCount: number;
+    firstEntryDate: string | null;
+    lastEntryDate: string | null;
+  }>();
+
+  for (const row of ((data as Array<{
+    journal_entry_id: string;
+    account_id: string | null;
+    line_no: number | null;
+    debit: number | null;
+    credit: number | null;
+    functional_debit?: number | null;
+    functional_credit?: number | null;
+    chart_of_accounts:
+      | {
+          id?: string | null;
+          code?: string | null;
+          name?: string | null;
+          account_type?: string | null;
+          chapter_code?: string | null;
+          presentation_code?: string | null;
+          statement_section?: string | null;
+          natural_balance?: "debit" | "credit" | null;
+          normal_side?: "debit" | "credit" | null;
+        }
+      | Array<{
+          id?: string | null;
+          code?: string | null;
+          name?: string | null;
+          account_type?: string | null;
+          chapter_code?: string | null;
+          presentation_code?: string | null;
+          statement_section?: string | null;
+          natural_balance?: "debit" | "credit" | null;
+          normal_side?: "debit" | "credit" | null;
+        }>
+      | null;
+  }> | null) ?? [])) {
+    const entry = entryById.get(row.journal_entry_id);
+
+    if (!entry) {
+      continue;
+    }
+
+    const account = Array.isArray(row.chart_of_accounts)
+      ? row.chart_of_accounts[0]
+      : row.chart_of_accounts;
+    const accountType = account?.account_type ?? null;
+
+    if (input.accountType && accountType !== input.accountType) {
+      continue;
+    }
+
+    const accountId = row.account_id ?? account?.id ?? null;
+    const accountCode = account?.code ?? null;
+    const sourceChannel = entry.sourceChannel ?? null;
+    const key = [
+      sourceChannel ?? "no_source",
+      accountId ?? accountCode ?? `unknown:${grouped.size}`,
+    ].join("::");
+    const current = grouped.get(key) ?? {
+      organizationId: input.organizationId,
+      fiscalPeriodId: entry.fiscalPeriodId ?? null,
+      fiscalPeriodCode: periodRange.periodKey,
+      fiscalPeriodLabel: `Periodo ${periodRange.periodKey}`,
+      sourceChannel,
+      accountId,
+      accountCode,
+      accountName: account?.name ?? null,
+      accountType,
+      chapterCode: account?.chapter_code ?? null,
+      presentationCode: account?.presentation_code ?? null,
+      statementSection: account?.statement_section ?? null,
+      naturalBalance: account?.natural_balance ?? account?.normal_side ?? null,
+      debit: 0,
+      credit: 0,
+      functionalDebit: 0,
+      functionalCredit: 0,
+      entryIds: new Set(),
+      lineCount: 0,
+      firstEntryDate: entry.entryDate,
+      lastEntryDate: entry.entryDate,
+    };
+
+    current.debit = roundAmount(current.debit + roundAmount(row.debit));
+    current.credit = roundAmount(current.credit + roundAmount(row.credit));
+    current.functionalDebit = roundAmount(
+      current.functionalDebit + roundAmount(row.functional_debit ?? row.debit),
+    );
+    current.functionalCredit = roundAmount(
+      current.functionalCredit + roundAmount(row.functional_credit ?? row.credit),
+    );
+    current.entryIds.add(entry.journalEntryId);
+    current.lineCount += 1;
+
+    if (entry.entryDate && (!current.firstEntryDate || entry.entryDate < current.firstEntryDate)) {
+      current.firstEntryDate = entry.entryDate;
+    }
+
+    if (entry.entryDate && (!current.lastEntryDate || entry.entryDate > current.lastEntryDate)) {
+      current.lastEntryDate = entry.entryDate;
+    }
+
+    grouped.set(key, current);
+  }
+
+  return Array.from(grouped.values())
+    .map((row) => ({
+      organizationId: row.organizationId,
+      fiscalPeriodId: row.fiscalPeriodId,
+      fiscalPeriodCode: row.fiscalPeriodCode,
+      fiscalPeriodLabel: row.fiscalPeriodLabel,
+      sourceChannel: row.sourceChannel,
+      accountId: row.accountId,
+      accountCode: row.accountCode,
+      accountName: row.accountName,
+      accountType: row.accountType,
+      chapterCode: row.chapterCode,
+      presentationCode: row.presentationCode,
+      statementSection: row.statementSection,
+      naturalBalance: row.naturalBalance,
+      debit: row.debit,
+      credit: row.credit,
+      balance: roundAmount(row.debit - row.credit),
+      functionalDebit: row.functionalDebit,
+      functionalCredit: row.functionalCredit,
+      functionalBalance: roundAmount(row.functionalDebit - row.functionalCredit),
+      entryCount: row.entryIds.size,
+      lineCount: row.lineCount,
+      firstEntryDate: row.firstEntryDate,
+      lastEntryDate: row.lastEntryDate,
+    } satisfies TrialBalanceReadRow))
+    .sort((left, right) =>
+      (left.chapterCode ?? "").localeCompare(right.chapterCode ?? "")
+      || (left.presentationCode ?? "").localeCompare(right.presentationCode ?? "")
+      || (left.accountCode ?? "").localeCompare(right.accountCode ?? ""));
+}
+
 export async function loadTrialBalanceWorkspaceData(
   supabase: SupabaseClient,
   input: {
@@ -1178,53 +1572,41 @@ export async function loadTrialBalanceWorkspaceData(
     selectedAccountId?: string | null;
   },
 ): Promise<TrialBalanceWorkspaceData> {
-  let query = supabase
-    .from("v_trial_balance")
-    .select(TRIAL_BALANCE_SELECT)
-    .eq("organization_id", input.organizationId);
+  const availablePeriodCodes = await loadAvailableAccountingPeriodCodesFromEntries(
+    supabase,
+    input.organizationId,
+  );
 
-  if (input.fiscalPeriodCode) {
-    query = query.eq("fiscal_period_code", input.fiscalPeriodCode);
+  if (availablePeriodCodes === null) {
+    return {
+      isAvailable: false,
+      selectedFiscalPeriodCode: null,
+      rows: [],
+      generalLedgerRows: [],
+      summary: {
+        accountCount: 0,
+        debit: 0,
+        credit: 0,
+        functionalDebit: 0,
+        functionalCredit: 0,
+        imbalance: 0,
+      },
+      balanceSheetTotals: [],
+      incomeStatementTotals: [],
+      filterOptions: buildFilterOptions({ rows: [] }),
+    };
   }
 
-  if (input.sourceChannel) {
-    query = query.eq("source_channel", input.sourceChannel);
-  }
-
-  if (input.accountType) {
-    query = query.eq("account_type", input.accountType);
-  }
-
-  const { data, error } = await query
-    .order("chapter_code", { ascending: true })
-    .order("presentation_code", { ascending: true })
-    .order("account_code", { ascending: true })
-    .limit(260);
-
-  if (error) {
-    if (isMissingAccountingReadModelRelationError(error)) {
-      return {
-        isAvailable: false,
-        rows: [],
-        generalLedgerRows: [],
-        summary: {
-          accountCount: 0,
-          debit: 0,
-          credit: 0,
-          functionalDebit: 0,
-          functionalCredit: 0,
-          imbalance: 0,
-        },
-        balanceSheetTotals: [],
-        incomeStatementTotals: [],
-        filterOptions: buildFilterOptions({ rows: [] }),
-      };
-    }
-
-    throw new Error(error.message);
-  }
-
-  const allRows = ((data as unknown as TrialBalanceRowRaw[] | null) ?? []).map(mapTrialBalanceRow);
+  const selectedFiscalPeriodCode = resolveSelectedAccountingPeriodCode(
+    input.fiscalPeriodCode ?? null,
+    availablePeriodCodes,
+  );
+  const allRows = await loadTrialBalanceRowsForPeriod(supabase, {
+    organizationId: input.organizationId,
+    fiscalPeriodCode: selectedFiscalPeriodCode,
+    sourceChannel: input.sourceChannel,
+    accountType: input.accountType,
+  });
   const rows = allRows.filter((row) =>
     includesSearch(
       [
@@ -1242,7 +1624,7 @@ export async function loadTrialBalanceWorkspaceData(
   const generalLedgerRows = await loadGeneralLedgerRows(supabase, {
     organizationId: input.organizationId,
     accountId: selectedAccountId,
-    fiscalPeriodCode: input.fiscalPeriodCode,
+    fiscalPeriodCode: selectedFiscalPeriodCode,
     sourceChannel: input.sourceChannel,
   });
   const statementRows: StatementReadInputRow[] = rows.map((row) => ({
@@ -1267,6 +1649,7 @@ export async function loadTrialBalanceWorkspaceData(
 
   return {
     isAvailable: true,
+    selectedFiscalPeriodCode,
     rows,
     generalLedgerRows,
     summary: {
@@ -1279,6 +1662,9 @@ export async function loadTrialBalanceWorkspaceData(
     },
     balanceSheetTotals: buildStatementTotals(statementRows, "balance"),
     incomeStatementTotals: buildStatementTotals(statementRows, "income"),
-    filterOptions: buildFilterOptions({ rows }),
+    filterOptions: buildFilterOptions({
+      rows,
+      fiscalPeriodCodes: availablePeriodCodes,
+    }),
   };
 }

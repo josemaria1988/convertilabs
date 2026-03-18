@@ -1,87 +1,119 @@
 # Convertilabs
 
-Convertilabs es un SaaS contable y fiscal para Uruguay orientado a procesamiento documental, clasificacion asistida y liquidacion IVA revisable.
+Convertilabs es una plataforma contable y fiscal para Uruguay centrada en tres motores: ingreso documental, decision contable y liquidacion fiscal revisable.
 
-El MVP actual esta enfocado en:
+## Estado actual del proyecto
 
-- onboarding multi-tenant con perfil fiscal base,
-- upload privado de facturas y comprobantes,
-- intake documental con IA acotada por snapshots,
-- revision humana sobre draft persistido,
-- sugerencia contable balanceada,
-- soporte inicial de IVA Uruguay,
-- exportacion y trazabilidad desde un modelo canonico.
+- onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets base o hibrida con IA;
+- workspace documental con upload privado, procesamiento por Inngest + OpenAI, revision humana, posting y carril separado para operaciones internacionales;
+- workspace contable read-only con balance de comprobacion, libro diario, open items y mapa contable explicable;
+- workspace fiscal con VAT preview, VAT runs, exportes fiscales y conciliacion DGI manual por buckets;
+- carriles de soporte para planillas de plan de cuentas, historicos IVA, plantillas contables y bridge de exportacion contable hacia sistemas externos;
+- settings con perfil fiscal versionado, plan de cuentas, conexiones de email CFE y capacidades por organizacion.
 
-La referencia principal de ejecucion esta en [docs/specs3/convertilabs_mvp_spec_sdd.md](docs/specs3/convertilabs_mvp_spec_sdd.md) y el corte operativo del MVP esta resumido en [docs/specs3/uruguay_mvp_phase1_scope.md](docs/specs3/uruguay_mvp_phase1_scope.md).
+## Superficies activas
 
-## Stack
+### Publicas
 
-- Next.js App Router
-- TypeScript
+- `/(marketing)`
+- `/login`
+- `/signup`
+- `/logout`
+- `/auth/confirm`
+- `/onboarding`
+
+### Privadas por organizacion
+
+- `/app/o/[slug]/documents`
+- `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/trial-balance`
+- `/app/o/[slug]/journal-entries`
+- `/app/o/[slug]/open-items`
+- `/app/o/[slug]/tax`
+- `/app/o/[slug]/tax/reconciliation`
+- `/app/o/[slug]/chart-map`
+- `/app/o/[slug]/settings`
+- `/app/o/[slug]/imports`
+- `/app/o/[slug]/exports`
+
+Las rutas cortas `/documents`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario.
+
+## Stack operativo
+
+- Next.js 15 App Router
 - React 19
+- TypeScript
 - Supabase Auth, Postgres y Storage
-- OpenAI Responses API para intake documental`r`n- Inngest para orquestacion durable del pipeline documental
+- OpenAI Responses API para salidas estructuradas
+- Inngest para orquestacion durable
+- Tailwind CSS 4 y ESLint 9
 
-## Modulos clave
+## Estructura principal
 
 ```text
 app/
   (marketing)/
-  app/
-  onboarding/
+  app/o/[slug]/
+  api/
 components/
-lib/
-modules/
-  accounting/
-  ai/
-  auth/
-  documents/
-  organizations/
-  tax/
 db/
   schema/
   rls/
 docs/
+modules/
 supabase/
   migrations/
+tests/
 scripts/
+  backfills/
   supabase/
 ```
 
-## Flujo MVP
+## Desarrollo local
 
-1. Usuario autenticado crea su organizacion y perfil fiscal base.
-2. La organizacion sube un PDF, JPG o PNG a storage privado.
-3. Inngest encola el pipeline documental, OpenAI procesa en background y se genera un draft persistido.
-4. El reviewer corrige, confirma o reabre sobre ese draft.
-5. El sistema genera sugerencia contable, tratamiento IVA y trazabilidad para el periodo.
+El proyecto requiere un `.env` basado en `.env.example` con estas piezas minimas:
+
+- app y cliente web: `APP_URL`, `NEXT_PUBLIC_APP_URL`;
+- Supabase web/server: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`;
+- Postgres: `DATABASE_URL`, `DIRECT_URL`;
+- OpenAI: `OPENAI_API_KEY` y, si hace falta, overrides `OPENAI_*_MODEL`;
+- Inngest: `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_BASE_URL`;
+- flags fiscales: `VAT_UY_*`.
+
+Comandos habituales:
+
+```bash
+npm install
+npm run dev
+npm run inngest:dev
+```
 
 ## Scripts utiles
 
 ```bash
-npm run dev
 npm run lint
 npm run typecheck
+npm run test
+npm run db:generate:migration
 npm run db:verify:parity
+npm run db:smoke:profile-sync
 npm run db:smoke:organization-onboarding
 npm run db:smoke:private-dashboard
 npm run db:smoke:document-upload
+npm run documents:repair:stale-processing
 ```
 
-## Estado del MVP
+## Documentacion viva
 
-Incluido en fase 1:
+- [docs/README.md](docs/README.md)
+- [docs/00-foundations/01-mapa-del-repo-y-rutas.md](docs/00-foundations/01-mapa-del-repo-y-rutas.md)
+- [docs/04-documents/01-document-intake-and-processing.md](docs/04-documents/01-document-intake-and-processing.md)
+- [docs/04-documents/03-document-settlement-and-multi-line-posting.md](docs/04-documents/03-document-settlement-and-multi-line-posting.md)
+- [docs/07-platform/database-api-background-jobs-and-observability.md](docs/07-platform/database-api-background-jobs-and-observability.md)
 
-- Uruguay only
-- documentos de compra y venta locales
-- IVA Uruguay revisable
-- aprendizaje explicito de reglas en pasos posteriores del roadmap
+## Alcance operativo hoy
 
-Fuera de alcance en esta fase:
-
-- filing directo con DGI
-- payroll y BPS
-- conciliacion bancaria
-- multi-country
-- emision CFE en runtime
-
+- Uruguay only;
+- foco operativo en documentos, decision contable, IVA y bridge externo;
+- conciliacion DGI manual asistida, no filing automatico;
+- sin payroll/BPS, conciliacion bancaria end-to-end ni multi-country operativo.

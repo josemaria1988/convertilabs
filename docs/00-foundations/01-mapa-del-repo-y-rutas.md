@@ -29,6 +29,7 @@ docs/
 - `evals`
 - `explanations`
 - `exports`
+- `integrations`
 - `imports`
 - `ingestion`
 - `organizations`
@@ -39,8 +40,12 @@ docs/
 
 ### Dominios presentes en `components/`
 
+- `accounting`
+- `auth`
+- `chart-map`
 - `dashboard`
 - `documents`
+- `marketing`
 - `onboarding`
 - `settings`
 - `tax`
@@ -52,6 +57,7 @@ docs/
 
 - `/(marketing)`
 - `/login`
+- `/signup`
 - `/logout`
 - `/auth/confirm`
 - `/onboarding`
@@ -67,20 +73,28 @@ docs/
 
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/trial-balance`
 - `/app/o/[slug]/settings`
 - `/app/o/[slug]/tax`
+- `/app/o/[slug]/chart-map`
 
-### Privadas support por organizacion
+### Privadas de lectura y soporte por organizacion
 
+- `/app/o/[slug]/journal-entries`
+- `/app/o/[slug]/open-items`
 - `/app/o/[slug]/imports`
 - `/app/o/[slug]/exports`
 - `/app/o/[slug]/tax/reconciliation`
 
-### Privadas redirigidas o fuera de foco
+### Privadas legacy, redirigidas o fuera del top nav
 
 - `/app/o/[slug]/dashboard`
-- `/app/o/[slug]/journal-entries`
-- `/app/o/[slug]/open-items`
+- `/documents`
+- `/tax`
+- `/settings`
+- `/trial-balance`
+- `/journal-entries`
+- `/open-items`
 
 ### APIs internas activas
 
@@ -102,20 +116,28 @@ docs/
 1. signup/login;
 2. si el usuario no tiene membresia, redireccion a `/onboarding`;
 3. se crea la organizacion con owner;
-4. se crea el business profile versionado;
+4. se crea el business profile versionado con actividad principal, secundarias y traits;
 5. se aplica preset recomendado, alternativo o modo minimo;
 6. opcionalmente se consulta IA para la recomendacion hibrida;
-7. el usuario entra a `/app/o/[slug]/documents`.
+7. se activa el perfil fiscal y el snapshot de reglas;
+8. el usuario entra a `/app/o/[slug]/documents`.
 
 ### Flujo documental
 
-1. upload a storage privado;
+1. upload a storage privado o importacion batch desde planilla;
 2. `prepare_document_upload` y `complete_document_upload`;
-3. Inngest dispara procesamiento;
+3. Inngest dispara procesamiento estructurado;
 4. OpenAI devuelve estructura documental;
 5. se persiste draft, steps y artefactos;
-6. el usuario revisa, clasifica, aprende y postea;
-7. VAT preview / VAT run / export quedan como carriles separados.
+6. el usuario revisa, clasifica, aplica reglas, reabre o confirma;
+7. el posting alimenta ledger, VAT y superficies de lectura contable.
+
+### Flujo contable y fiscal
+
+1. el ledger posteado alimenta balance, diario y open items via read models;
+2. `tax` construye VAT preview y VAT runs desde documentos confirmados;
+3. `tax/reconciliation` compara buckets DGI contra el sistema;
+4. `exports` genera artefactos contables o fiscales sobre el periodo elegido.
 
 ### Flujo de settings
 
@@ -123,7 +145,8 @@ docs/
 2. activacion de nueva version fiscal;
 3. actualizacion de perfil de negocio;
 4. gestion del plan de cuentas;
-5. acceso opcional a imports/exports como carriles de soporte.
+5. configuracion de casilla CFE por usuario y organizacion;
+6. acceso opcional a imports/exports como carriles de soporte.
 
 ## Mapa de componentes relevantes
 
@@ -134,22 +157,29 @@ docs/
 - `components/onboarding/preset-recommendation-card.tsx`
 - `components/onboarding/preset-ai-recommendation-card.tsx`
 - `components/settings/business-profile-settings.tsx`
+- `components/settings/settings-capabilities-list.tsx`
 
 ### Documentos
 
+- `components/documents/documents-workspace-table.tsx`
 - `components/documents/document-review-workspace.tsx`
+- `components/documents/international-operations-workspace.tsx`
 - `components/documents/accounting-impact-preview.tsx`
 - `components/documents/rule-application-card.tsx`
 - `components/documents/upload-dropzone.tsx`
 
-### Tax
+### Contabilidad y explainability
 
-- `components/tax/vat-run-preview-card.tsx`
-
-### Explainability
-
+- `components/accounting/accounting-workspace-tabs.tsx`
+- `components/chart-map/chart-impact-canvas.tsx`
+- `components/chart-map/chart-inspector.tsx`
+- `components/chart-map/chart-tree-panel.tsx`
 - `components/ui/help-hint.tsx`
 - `modules/ui/help-hints-registry.ts`
+
+### Tax y soporte
+
+- `components/tax/vat-run-preview-card.tsx`
 
 ## Mapa de migraciones por fase
 
@@ -160,6 +190,10 @@ docs/
 - `20260315_doc013_*`: onboarding con business profile y preset applications.
 - `20260315_doc014_*`: separacion de workflow, `admin_processing` y `document_assignment_runs`.
 - `20260315_doc015_*`: recomendacion hibrida de presets con IA y auditoria.
+- `20260315_doc016_*`: versionado del catalogo de business profile.
+- `20260317_doc012_*`: fundaciones del kernel contable.
+- `20260317_int002_*`: conexiones de email CFE por organizacion/usuario.
+- `20260318_doc013_*`: read models contables para balance, diario y open items.
 
 ## Pruebas presentes
 
@@ -167,10 +201,11 @@ El repo tiene suite por dominio:
 
 - auth y organizations
 - document upload e ingestion
-- accounting bootstrap, suggestions, rule logic y exports
+- accounting kernel, read models, suggestions, chart map y exports
 - activity search y preset recommendations
 - preset AI recommendation
 - tax, DGI reconciliation y VAT preview
+- cfe email settings, help hints y decision log
 - workflow state
 - spreadsheets e imports
 

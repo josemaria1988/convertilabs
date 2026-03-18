@@ -25,6 +25,7 @@ type OrganizationOpenItemsPageProps = {
     slug: string;
   }>;
   searchParams?: Promise<{
+    period?: string;
     status?: string;
     source?: string;
     counterparty?: string;
@@ -41,6 +42,7 @@ export const metadata: Metadata = {
 function buildPageHref(
   slug: string,
   search: {
+    period?: string | null;
     status?: string | null;
     source?: string | null;
     counterparty?: string | null;
@@ -50,6 +52,10 @@ function buildPageHref(
   },
 ) {
   const params = new URLSearchParams();
+
+  if (search.period) {
+    params.set("period", search.period);
+  }
 
   if (search.status) {
     params.set("status", search.status);
@@ -89,6 +95,7 @@ export default async function OrganizationOpenItemsPage({
   const supabase = getSupabaseServiceRoleClient();
   const data = await loadOpenItemsWorkspaceData(supabase, {
     organizationId: organization.id,
+    fiscalPeriodCode: resolvedSearchParams.period ?? null,
     status: resolvedSearchParams.status ?? null,
     sourceChannel: resolvedSearchParams.source ?? null,
     counterpartyType: resolvedSearchParams.counterparty ?? null,
@@ -151,7 +158,19 @@ export default async function OrganizationOpenItemsPage({
                 <span className="ui-filter">Subledger</span>
               </div>
 
-              <form className="mt-4 grid gap-3 lg:grid-cols-[170px_170px_170px_minmax(0,1fr)_140px_120px]">
+              <form className="mt-4 grid gap-3 lg:grid-cols-[170px_170px_170px_170px_minmax(0,1fr)_140px_120px]">
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium text-white">Periodo</span>
+                  <select
+                    name="period"
+                    defaultValue={data.selectedFiscalPeriodCode ?? ""}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                  >
+                    {data.filterOptions.fiscalPeriodCodes.map((periodCode) => (
+                      <option key={periodCode} value={periodCode}>{periodCode}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="space-y-2 text-sm">
                   <span className="font-medium text-white">Estado</span>
                   <select
@@ -265,6 +284,7 @@ export default async function OrganizationOpenItemsPage({
                               <td>
                                 <LoadingLink
                                   href={buildPageHref(organization.slug, {
+                                    period: data.selectedFiscalPeriodCode,
                                     status: resolvedSearchParams.status ?? null,
                                     source: resolvedSearchParams.source ?? null,
                                     counterparty: resolvedSearchParams.counterparty ?? null,
