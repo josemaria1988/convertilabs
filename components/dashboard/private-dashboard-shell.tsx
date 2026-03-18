@@ -84,6 +84,28 @@ function TaxIcon({ className }: IconProps) {
   );
 }
 
+function AccountingIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 6.5h14" />
+      <path d="M5 12h14" />
+      <path d="M5 17.5h9" />
+      <path d="M17 17.5h2" />
+      <path d="M7 5v14" />
+      <path d="M15 5v9" />
+    </svg>
+  );
+}
+
 function SettingsIcon({ className }: IconProps) {
   return (
     <svg
@@ -141,6 +163,8 @@ function getNavIcon(label: string) {
   switch (label) {
     case "Documentos":
       return DocumentIcon;
+    case "Contabilidad":
+      return AccountingIcon;
     case "Impuestos":
       return TaxIcon;
     case "Mapa contable":

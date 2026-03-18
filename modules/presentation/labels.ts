@@ -229,6 +229,10 @@ export function formatPostingTemplateCodeLabel(value: string | null | undefined)
       return "Compra local contado";
     case "purchase_local_credit":
       return "Compra local a credito";
+    case "sale_credit_note":
+      return "Nota de credito de venta";
+    case "purchase_credit_note":
+      return "Nota de credito de compra";
     case "customer_collection":
       return "Cobranza de cliente";
     case "supplier_payment":
@@ -358,6 +362,10 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Completada";
     case "computed":
       return "Calculada";
+    case "posted":
+      return "Posteado";
+    case "exported":
+      return "Exportado";
     case "failed":
       return "Con error";
     case "cancelled":
@@ -376,6 +384,57 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Sugerido";
     default:
       return value ? value.replace(/_/g, " ") : "Sin estado";
+  }
+}
+
+export function formatSourceChannelLabel(value: string | null | undefined) {
+  switch (value) {
+    case "document_workflow":
+    case "documents":
+      return "Flujo documental";
+    case "provider_mirror":
+      return "Mirror ERP";
+    case "manual_support":
+    case "manual":
+      return "Soporte manual";
+    case "spreadsheets":
+      return "Planillas";
+    case "imports":
+      return "Importaciones";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin fuente";
+  }
+}
+
+export function formatProposalConfirmabilityLabel(value: string | null | undefined) {
+  switch (value) {
+    case "confirmable":
+      return "Confirmable";
+    case "needs_regeneration":
+      return "Requiere regenerar";
+    case "blocked_by_kernel":
+      return "Bloqueado por kernel";
+    case "superseded":
+      return "Reemplazada";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin estado";
+  }
+}
+
+export function formatLineageKindLabel(value: string | null | undefined) {
+  switch (value) {
+    case "base":
+      return "Base";
+    case "reversal":
+    case "reverses":
+      return "Reversa";
+    case "adjustment":
+    case "adjusts":
+      return "Ajuste";
+    case "reversed_by":
+      return "Revertido por";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin linaje";
   }
 }
 

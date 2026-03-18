@@ -103,6 +103,8 @@ export type PostingTemplateCode =
   | "sale_local_credit"
   | "purchase_local_cash"
   | "purchase_local_credit"
+  | "sale_credit_note"
+  | "purchase_credit_note"
   | "customer_collection"
   | "supplier_payment"
   | "sale_cash_unknown_clearing"

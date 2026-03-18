@@ -18,6 +18,8 @@ export * from "@/modules/accounting/normalization";
 export * from "@/modules/accounting/open-items";
 export * from "@/modules/accounting/organization-identity";
 export * from "@/modules/accounting/repository";
+export * from "@/modules/accounting/read-models";
+export * from "@/modules/accounting/read-model-repository";
 export * from "@/modules/accounting/rules";
 export * from "@/modules/accounting/rule-engine";
 export * from "@/modules/accounting/rule-explainer";

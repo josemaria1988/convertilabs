@@ -271,6 +271,14 @@ function resolveTemplateCode(input: {
     }
   }
 
+  if (input.operationKind === "sale_credit_note") {
+    return "sale_credit_note" satisfies PostingTemplateCode;
+  }
+
+  if (input.operationKind === "purchase_credit_note") {
+    return "purchase_credit_note" satisfies PostingTemplateCode;
+  }
+
   if (input.operationKind === "customer_receipt") {
     return "customer_collection" satisfies PostingTemplateCode;
   }

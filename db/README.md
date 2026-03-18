@@ -19,7 +19,9 @@
 6. `db/schema/05_accounting.sql`
 7. `db/schema/06_tax_and_rules.sql`
 8. `db/schema/07_integrations_and_audit.sql`
-9. `db/rls/supabase_rls_policies.sql`
+9. `db/schema/08_document_ai_pipeline.sql`
+10. `db/schema/09_accounting_read_models.sql`
+11. `db/rls/supabase_rls_policies.sql`
 
 ## Regla de mantenimiento
 

@@ -34,12 +34,13 @@ test("private navigation exposes the dedicated chart map route", () => {
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Documentos", "Impuestos", "Mapa contable", "Configuracion"],
+    ["Documentos", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
     [
       "/app/o/rontil/documents",
+      "/app/o/rontil/trial-balance",
       "/app/o/rontil/tax",
       "/app/o/rontil/chart-map",
       "/app/o/rontil/settings",
@@ -51,6 +52,6 @@ test("public and workspace navigation include the chart map in private workspace
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Documentos", "Impuestos", "Mapa contable", "Configuracion"],
+    ["Documentos", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
   );
 });

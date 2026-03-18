@@ -101,14 +101,52 @@ function resolveRequiredRoles(input: {
   taxTreatment: VatEngineResult;
 }) {
   const roles: AccountRoleCode[] = [];
+  const operationKind = input.settlementContext.operationKind;
+
+  if (operationKind === "customer_receipt") {
+    roles.push("accounts_receivable_account");
+
+    for (const allocation of buildSettlementAllocations({
+      paymentTerms: input.settlementContext.paymentTerms,
+      settlementMethod: input.settlementContext.settlementMethod,
+      settlementAllocations: input.settlementContext.settlementAllocations,
+      totalAmount: 0,
+      documentRole: input.documentRole,
+    })) {
+      roles.push(allocation.roleCode);
+    }
+
+    return roles.filter((role, index, array) => array.indexOf(role) === index);
+  }
+
+  if (operationKind === "supplier_payment") {
+    roles.push("accounts_payable_account");
+
+    for (const allocation of buildSettlementAllocations({
+      paymentTerms: input.settlementContext.paymentTerms,
+      settlementMethod: input.settlementContext.settlementMethod,
+      settlementAllocations: input.settlementContext.settlementAllocations,
+      totalAmount: 0,
+      documentRole: input.documentRole,
+    })) {
+      roles.push(allocation.roleCode);
+    }
+
+    return roles.filter((role, index, array) => array.indexOf(role) === index);
+  }
+
+  if (operationKind === "card_settlement") {
+    roles.push("bank_account", "card_clearing_account");
+    return roles;
+  }
 
   if (
     input.settlementContext.primaryAccountRole
     && (
-      input.settlementContext.operationKind === "sale_invoice"
-      || input.settlementContext.operationKind === "purchase_invoice"
-      || input.settlementContext.operationKind === "sale_credit_note"
-      || input.settlementContext.operationKind === "purchase_credit_note"
+      operationKind === "sale_invoice"
+      || operationKind === "purchase_invoice"
+      || operationKind === "sale_credit_note"
+      || operationKind === "purchase_credit_note"
     )
   ) {
     roles.push(input.settlementContext.primaryAccountRole);
@@ -116,7 +154,7 @@ function resolveRequiredRoles(input: {
 
   if (
     input.documentRole === "sale"
-    && input.settlementContext.operationKind === "sale_invoice"
+    && (operationKind === "sale_invoice" || operationKind === "sale_credit_note")
     && input.taxTreatment.taxAmount > 0
   ) {
     roles.push("output_vat_account");
@@ -124,7 +162,7 @@ function resolveRequiredRoles(input: {
 
   if (
     input.documentRole === "purchase"
-    && input.settlementContext.operationKind === "purchase_invoice"
+    && (operationKind === "purchase_invoice" || operationKind === "purchase_credit_note")
     && input.taxTreatment.vatBucket === "input_creditable"
     && input.taxTreatment.taxAmount > 0
   ) {
@@ -303,8 +341,112 @@ function buildInvoiceLines(input: {
       ? 0
       : roundCurrency(input.taxTreatment.taxAmount);
   const primaryRole = primaryRoleCode ? roleMap.get(primaryRoleCode) ?? null : null;
+  const operationKind = input.settlementContext.operationKind;
+  const isSaleCreditNote = operationKind === "sale_credit_note";
+  const isPurchaseCreditNote = operationKind === "purchase_credit_note";
 
-  if (input.documentRole === "sale") {
+  if (operationKind === "customer_receipt") {
+    const settlementLines = buildSettlementAllocations({
+      paymentTerms: input.settlementContext.paymentTerms,
+      settlementMethod: input.settlementContext.settlementMethod,
+      settlementAllocations: input.settlementContext.settlementAllocations,
+      totalAmount,
+      documentRole: input.documentRole,
+    });
+    const receivableRole = roleMap.get("accounts_receivable_account") ?? null;
+
+    for (const entry of settlementLines) {
+      const role = roleMap.get(entry.roleCode) ?? null;
+
+      if (role) {
+        createLine({
+          lines,
+          role,
+          debit: entry.amount,
+          credit: 0,
+          linePurpose: "settlement",
+          settlementComponent: entry.method,
+          monetary,
+        });
+      }
+    }
+
+    if (receivableRole) {
+      createLine({
+        lines,
+        role: receivableRole,
+        debit: 0,
+        credit: totalAmount,
+        linePurpose: "counterparty",
+        settlementComponent: "open_item",
+        monetary,
+      });
+    }
+  } else if (operationKind === "supplier_payment") {
+    const settlementLines = buildSettlementAllocations({
+      paymentTerms: input.settlementContext.paymentTerms,
+      settlementMethod: input.settlementContext.settlementMethod,
+      settlementAllocations: input.settlementContext.settlementAllocations,
+      totalAmount,
+      documentRole: input.documentRole,
+    });
+    const payableRole = roleMap.get("accounts_payable_account") ?? null;
+
+    if (payableRole) {
+      createLine({
+        lines,
+        role: payableRole,
+        debit: totalAmount,
+        credit: 0,
+        linePurpose: "counterparty",
+        settlementComponent: "open_item",
+        monetary,
+      });
+    }
+
+    for (const entry of settlementLines) {
+      const role = roleMap.get(entry.roleCode) ?? null;
+
+      if (role) {
+        createLine({
+          lines,
+          role,
+          debit: 0,
+          credit: entry.amount,
+          linePurpose: "settlement",
+          settlementComponent: entry.method,
+          monetary,
+        });
+      }
+    }
+  } else if (operationKind === "card_settlement") {
+    const bankRole = roleMap.get("bank_account") ?? null;
+    const cardClearingRole = roleMap.get("card_clearing_account") ?? null;
+
+    if (bankRole) {
+      createLine({
+        lines,
+        role: bankRole,
+        debit: totalAmount,
+        credit: 0,
+        linePurpose: "settlement",
+        settlementComponent: "bank_transfer",
+        monetary,
+      });
+    }
+
+    if (cardClearingRole) {
+      createLine({
+        lines,
+        role: cardClearingRole,
+        debit: 0,
+        credit: totalAmount,
+        linePurpose: "counterparty",
+        settlementComponent: "card",
+        monetary,
+      });
+    }
+  } else if (input.documentRole === "sale") {
     const counterpartyAmount = totalAmount;
     const settlementLines: JournalSettlementLine[] =
       input.settlementContext.paymentTerms === "credit"
@@ -328,10 +470,10 @@ function buildInvoiceLines(input: {
         createLine({
           lines,
           role,
-          debit: entry.amount,
-          credit: 0,
+          debit: isSaleCreditNote ? 0 : entry.amount,
+          credit: isSaleCreditNote ? entry.amount : 0,
           linePurpose: "settlement",
-          settlementComponent: entry.method,
+          settlementComponent: entry.method === "credit" ? "open_item" : entry.method,
           monetary,
         });
       }
@@ -341,8 +483,8 @@ function buildInvoiceLines(input: {
       createLine({
         lines,
         role: primaryRole,
-        debit: 0,
-        credit: netAmount,
+        debit: isSaleCreditNote ? netAmount : 0,
+        credit: isSaleCreditNote ? 0 : netAmount,
         linePurpose: "main",
         taxComponent: "vat_sale_base",
         monetary,
@@ -356,8 +498,8 @@ function buildInvoiceLines(input: {
         createLine({
           lines,
           role: vatRole,
-          debit: 0,
-          credit: vatAmount,
+          debit: isSaleCreditNote ? vatAmount : 0,
+          credit: isSaleCreditNote ? 0 : vatAmount,
           linePurpose: "tax",
           taxComponent: "vat_output_payable",
           monetary,
@@ -369,8 +511,8 @@ function buildInvoiceLines(input: {
       createLine({
         lines,
         role: primaryRole,
-        debit: netAmount,
-        credit: 0,
+        debit: isPurchaseCreditNote ? 0 : netAmount,
+        credit: isPurchaseCreditNote ? netAmount : 0,
         linePurpose: "main",
         taxComponent:
           vatAmount > 0 && input.taxTreatment.vatBucket === "input_creditable"
@@ -387,8 +529,8 @@ function buildInvoiceLines(input: {
         createLine({
           lines,
           role: vatRole,
-          debit: vatAmount,
-          credit: 0,
+          debit: isPurchaseCreditNote ? 0 : vatAmount,
+          credit: isPurchaseCreditNote ? vatAmount : 0,
           linePurpose: "tax",
           taxComponent: "vat_input_creditable",
           monetary,
@@ -418,10 +560,10 @@ function buildInvoiceLines(input: {
         createLine({
           lines,
           role,
-          debit: 0,
-          credit: entry.amount,
+          debit: isPurchaseCreditNote ? entry.amount : 0,
+          credit: isPurchaseCreditNote ? 0 : entry.amount,
           linePurpose: "settlement",
-          settlementComponent: entry.method,
+          settlementComponent: entry.method === "credit" ? "open_item" : entry.method,
           monetary,
         });
       }
