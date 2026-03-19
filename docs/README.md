@@ -24,6 +24,7 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - [agent_rules.md](./agent_rules.md)
 - [00-foundations/00-vision-rectora-v1.md](./00-foundations/00-vision-rectora-v1.md)
 - [00-foundations/01-mapa-del-repo-y-rutas.md](./00-foundations/01-mapa-del-repo-y-rutas.md)
+- [00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-19.md](./00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-19.md)
 - [01-identity/auth-tenancy-and-memberships.md](./01-identity/auth-tenancy-and-memberships.md)
 - [02-organization/business-profile-onboarding-and-settings.md](./02-organization/business-profile-onboarding-and-settings.md)
 - [03-accounting/chart-presets-and-plan-management.md](./03-accounting/chart-presets-and-plan-management.md)
