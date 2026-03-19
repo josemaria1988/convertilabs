@@ -22,6 +22,10 @@ import {
   type SpreadsheetParseResult,
   type SpreadsheetSheetPreview,
 } from "@/modules/spreadsheets";
+import {
+  isZetaPurchaseLayout,
+  normalizeZetaPurchaseRows,
+} from "@/modules/documents/zeta-purchase-import";
 
 export type DocumentSpreadsheetLedgerKind = "purchase" | "sale";
 export type DocumentSpreadsheetInterpreterProvider = "auto" | "heuristic" | "openai";
@@ -43,6 +47,16 @@ export type DocumentSpreadsheetImportRow = {
   sourceReference: string;
   displayLabel: string;
   confidence: number;
+  documentFxRate: number | null;
+  documentFxRateSource: "document_import" | "bcu" | null;
+  documentFxRateDate: string | null;
+  sourceRows: Array<{
+    rowNumber: number;
+    originalRow: Record<string, string | null>;
+  }>;
+  sourceRowNumbers: number[];
+  consolidationKey: string;
+  isCreditNote: boolean;
   originalRow: Record<string, string | null>;
 };
 
@@ -57,6 +71,15 @@ export type DocumentSpreadsheetExtractionResult = {
   }>;
   warnings: string[];
   detectedHeaders: Record<string, string>;
+  rawRowsDetected: number;
+  consolidatedDocumentsDetected: number;
+  duplicateGroupsDetected: number;
+  ignoredResidualRows: number;
+  blockedGroupsDetected: number;
+  usdMissingFxCount: number;
+  creditNotesDetected: number;
+  minDate: string | null;
+  maxDate: string | null;
 };
 
 export type DocumentSpreadsheetBatchImportResult = DocumentSpreadsheetExtractionResult & {
@@ -77,6 +100,15 @@ export type DocumentSpreadsheetPreflightResult = {
   skippedRowsDetected: number;
   warnings: string[];
   detectedHeaders: Record<string, string>;
+  rawRowsDetected: number;
+  consolidatedDocumentsDetected: number;
+  duplicateGroupsDetected: number;
+  ignoredResidualRows: number;
+  blockedGroupsDetected: number;
+  usdMissingFxCount: number;
+  creditNotesDetected: number;
+  minDate: string | null;
+  maxDate: string | null;
 };
 
 type ColumnKey =
@@ -94,7 +126,10 @@ type ColumnKey =
   | "balanceAmount"
   | "dueDate"
   | "series"
-  | "externalReference";
+  | "externalReference"
+  | "lineConcept"
+  | "fxRate"
+  | "vatLabel";
 
 type SheetSelection = {
   sheet: SpreadsheetSheetPreview;
@@ -128,6 +163,9 @@ type RawDocumentSpreadsheetRow = {
   taxRateRaw: string | null;
   totalAmountRaw: string | null;
   balanceAmountRaw: string | null;
+  lineConceptRaw: string | null;
+  fxRateRaw: string | null;
+  vatLabelRaw: string | null;
 };
 
 type ResolvedDocumentSpreadsheetRow = {
@@ -146,6 +184,9 @@ type ResolvedDocumentSpreadsheetRow = {
   taxRate: number | null;
   totalAmount: number | null;
   balanceAmount: number | null;
+  lineConcept: string | null;
+  fxRate: number | null;
+  vatLabel: string | null;
   warnings: string[];
   confidence: number;
   typedRow: Record<string, string | null>;
@@ -180,6 +221,15 @@ type DocumentSpreadsheetRowsNormalizationResult = {
     reason: string;
   }>;
   warnings: string[];
+  rawRowsDetected: number;
+  consolidatedDocumentsDetected: number;
+  duplicateGroupsDetected: number;
+  ignoredResidualRows: number;
+  blockedGroupsDetected: number;
+  usdMissingFxCount: number;
+  creditNotesDetected: number;
+  minDate: string | null;
+  maxDate: string | null;
 };
 
 const documentSpreadsheetColumnKeys = [
@@ -198,6 +248,9 @@ const documentSpreadsheetColumnKeys = [
   "dueDate",
   "series",
   "externalReference",
+  "lineConcept",
+  "fxRate",
+  "vatLabel",
 ] as const satisfies readonly ColumnKey[];
 
 const DOCUMENT_SPREADSHEET_PROMPT_VERSION = "document_spreadsheet_mapping_v1";
@@ -205,6 +258,54 @@ const DOCUMENT_SPREADSHEET_SCHEMA_VERSION = "document_spreadsheet_mapping_schema
 const DOCUMENT_SPREADSHEET_ROWS_PROMPT_VERSION = "document_spreadsheet_rows_v1";
 const DOCUMENT_SPREADSHEET_ROWS_SCHEMA_VERSION = "document_spreadsheet_rows_schema_v1";
 const DOCUMENT_SPREADSHEET_AI_BATCH_SIZE = 120;
+const MISSING_FX_RATE_ERROR_CODE = "MISSING_FX_RATE";
+const MISSING_FX_WARNING_PREFIX = `${MISSING_FX_RATE_ERROR_CODE}:`;
+
+function hasMissingFxWarning(warnings: string[]) {
+  return warnings.some((warning) => warning.startsWith(MISSING_FX_WARNING_PREFIX));
+}
+
+function getMissingFxBlockingReason(warnings: string[]) {
+  return warnings.find((warning) => warning.startsWith(MISSING_FX_WARNING_PREFIX)) ?? null;
+}
+
+function buildMissingFxWarning(documentDate: string | null | undefined) {
+  return documentDate
+    ? `${MISSING_FX_WARNING_PREFIX} No encontramos una cotizacion valida para el documento del ${documentDate}.`
+    : `${MISSING_FX_WARNING_PREFIX} No encontramos una cotizacion valida para este documento en USD.`;
+}
+
+function computeDocumentDateRange(rows: Array<{ facts: DocumentIntakeFactMap }>) {
+  const dates = rows
+    .map((row) => row.facts.document_date)
+    .filter((value): value is string => typeof value === "string" && value.length >= 10)
+    .sort((left, right) => left.localeCompare(right));
+
+  return {
+    minDate: dates[0] ?? null,
+    maxDate: dates.at(-1) ?? null,
+  };
+}
+
+function buildGenericNormalizationMetrics(input: {
+  rows: DocumentSpreadsheetImportRow[];
+  usableRawRowsCount: number;
+  skippedRowsCount: number;
+}) {
+  const { minDate, maxDate } = computeDocumentDateRange(input.rows);
+
+  return {
+    rawRowsDetected: input.usableRawRowsCount,
+    consolidatedDocumentsDetected: input.rows.length,
+    duplicateGroupsDetected: Math.max(0, input.usableRawRowsCount - input.rows.length - input.skippedRowsCount),
+    ignoredResidualRows: 0,
+    blockedGroupsDetected: 0,
+    usdMissingFxCount: input.rows.filter((row) => hasMissingFxWarning(row.warnings)).length,
+    creditNotesDetected: input.rows.filter((row) => row.isCreditNote).length,
+    minDate,
+    maxDate,
+  };
+}
 
 const documentSpreadsheetMappingJsonSchema = {
   type: "object",
@@ -366,6 +467,9 @@ const commonColumnMatchers: Record<Exclude<ColumnKey, "counterpartyName" | "coun
   dueDate: ["fecha vencimiento", "vencimiento", "vence"],
   series: ["serie"],
   externalReference: ["referencia", "ref", "id externo", "codigo externo"],
+  lineConcept: ["concepto", "rubro", "detalle linea", "cuenta"],
+  fxRate: ["cotizacion", "cotizaci?n", "tipo cambio", "tc"],
+  vatLabel: ["iva nombre", "nombre iva", "tasa iva nombre", "iva tipo"],
 };
 
 const counterpartyHeaderMatchers: Record<DocumentSpreadsheetLedgerKind, Record<"counterpartyName" | "counterpartyTaxId", string[]>> = {
@@ -1182,6 +1286,9 @@ function buildRawDocumentSpreadsheetRows(input: {
       taxRateRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "taxRate"),
       totalAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "totalAmount"),
       balanceAmountRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "balanceAmount"),
+      lineConceptRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "lineConcept"),
+      fxRateRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "fxRate"),
+      vatLabelRaw: getCellValue(typedRow, input.selectedSheet.detectedHeaders, "vatLabel"),
     } satisfies RawDocumentSpreadsheetRow;
   });
 }
@@ -1203,6 +1310,9 @@ function isBlankDocumentSpreadsheetRow(row: RawDocumentSpreadsheetRow) {
     row.taxRateRaw,
     row.totalAmountRaw,
     row.balanceAmountRaw,
+    row.lineConceptRaw,
+    row.fxRateRaw,
+    row.vatLabelRaw,
   );
 }
 
@@ -1263,22 +1373,37 @@ function buildAccountingContext(input: {
   fileName: string;
   sheetName: string;
   rowNumber: number;
+  rowNumbers: number[];
   warnings: string[];
+  fxRate: number | null;
+  fxRateSource: "document_import" | "bcu" | null;
+  fxDate: string | null;
+  missingFxRate: boolean;
 }): AccountingContextResolution {
-  const blockingReasons =
-    input.paymentTerms === "unknown"
-      ? ["La planilla no permite resolver si este comprobante es contado o credito."]
-      : [];
+  const blockingReasons: string[] = [];
+  const reasonCodes: AccountingContextResolution["reasonCodes"] = [];
+
+  if (input.paymentTerms === "unknown") {
+    blockingReasons.push("La planilla no permite resolver si este comprobante es contado o credito.");
+    reasonCodes.push("payment_terms_missing");
+  }
+
+  if (input.missingFxRate) {
+    blockingReasons.push(
+      getMissingFxBlockingReason(input.warnings)
+      ?? "MISSING_FX_RATE: No encontramos una cotizacion valida para este documento en USD.",
+    );
+    reasonCodes.push("missing_fx_rate");
+  }
 
   return {
     status:
-      input.paymentTerms !== "unknown" || input.settlementMethod !== "unknown"
+      input.paymentTerms !== "unknown"
+      || input.settlementMethod !== "unknown"
+      || input.missingFxRate
         ? "provided"
         : "not_required",
-    reasonCodes:
-      input.paymentTerms === "unknown"
-        ? ["payment_terms_missing"]
-        : [],
+    reasonCodes,
     userFreeText: null,
     businessPurposeNote: null,
     structuredContext: {
@@ -1291,7 +1416,15 @@ function buildAccountingContext(input: {
       imported_file_name: input.fileName,
       imported_sheet_name: input.sheetName,
       imported_row_number: input.rowNumber,
+      imported_row_numbers: input.rowNumbers,
       imported_warnings: input.warnings,
+      document_fx_rate: input.fxRate,
+      document_fx_rate_source: input.fxRateSource,
+      document_fx_rate_date: input.fxDate,
+      document_fx_missing_error_code: input.missingFxRate ? MISSING_FX_RATE_ERROR_CODE : null,
+      document_fx_blocking_reason: input.missingFxRate
+        ? getMissingFxBlockingReason(input.warnings)
+        : null,
     },
     aiRequestPayload: {},
     aiResponse: {},
@@ -1514,6 +1647,10 @@ function buildDocumentImportRowFromResolvedFields(input: {
     rowWarnings.push("La planilla marca la operacion como cancelada, pero no informa el medio real de cobro o pago.");
   }
 
+  if (currencyCode === "USD" && !(typeof input.resolvedRow.fxRate === "number" && input.resolvedRow.fxRate > 0)) {
+    rowWarnings.push(buildMissingFxWarning(input.resolvedRow.documentDate));
+  }
+
   const amountLabel =
     typeof input.resolvedRow.taxRate === "number"
       ? `Gravado ${roundCurrency(input.resolvedRow.taxRate)}%`
@@ -1531,6 +1668,7 @@ function buildDocumentImportRowFromResolvedFields(input: {
     line_number: 1,
     concept_code: null,
     concept_description: firstNonEmptyString(
+      input.resolvedRow.lineConcept,
       input.resolvedRow.rawDescription,
       input.resolvedRow.rawType,
       input.resolvedRow.counterpartyName,
@@ -1582,6 +1720,16 @@ function buildDocumentImportRowFromResolvedFields(input: {
         rowNumber: input.rawRow.rowNumber,
       }),
       confidence,
+      documentFxRate: input.resolvedRow.fxRate,
+      documentFxRateSource: input.resolvedRow.fxRate && input.resolvedRow.fxRate > 0 ? "document_import" : null,
+      documentFxRateDate: facts.document_date,
+      sourceRows: [{
+        rowNumber: input.rawRow.rowNumber,
+        originalRow: input.rawRow.typedRow,
+      }],
+      sourceRowNumbers: [input.rawRow.rowNumber],
+      consolidationKey: `${input.sheetName}:fila-${input.rawRow.rowNumber}`,
+      isCreditNote: documentType === "purchase_credit_note" || documentType === "sale_credit_note",
       originalRow: input.rawRow.typedRow,
     } satisfies DocumentSpreadsheetImportRow,
   };
@@ -1633,6 +1781,9 @@ function buildResolvedRowHeuristically(input: {
     taxRate,
     totalAmount,
     balanceAmount,
+    lineConcept: firstNonEmptyString(input.rawRow.lineConceptRaw),
+    fxRate: parseLocalizedNumber(input.rawRow.fxRateRaw),
+    vatLabel: firstNonEmptyString(input.rawRow.vatLabelRaw),
     warnings: [],
     confidence: input.mappingConfidence,
     typedRow: input.rawRow.typedRow,
@@ -1700,6 +1851,33 @@ async function resolveDocumentSpreadsheetRows(input: {
     selectedSheet: input.selectedSheet,
   });
   const usableRawRows = rawRows.filter((row) => !isBlankDocumentSpreadsheetRow(row));
+
+  if (
+    input.ledgerKind === "purchase"
+    && isZetaPurchaseLayout(input.selectedSheet.detectedHeaders)
+  ) {
+    const normalized = normalizeZetaPurchaseRows({
+      fileName: input.fileName,
+      sheetName: input.selectedSheet.sheet.sheetName,
+      rawRows: usableRawRows,
+    });
+
+    return {
+      rows: normalized.rows,
+      skippedRows: normalized.skippedRows,
+      warnings: [...new Set(normalized.warnings)],
+      rawRowsDetected: normalized.rawRowsDetected,
+      consolidatedDocumentsDetected: normalized.consolidatedDocumentsDetected,
+      duplicateGroupsDetected: normalized.duplicateGroupsDetected,
+      ignoredResidualRows: normalized.ignoredResidualRows,
+      blockedGroupsDetected: normalized.blockedGroupsDetected,
+      usdMissingFxCount: normalized.usdMissingFxCount,
+      creditNotesDetected: normalized.creditNotesDetected,
+      minDate: normalized.minDate,
+      maxDate: normalized.maxDate,
+    } satisfies DocumentSpreadsheetRowsNormalizationResult;
+  }
+
   let aiRows = new Map<number, DocumentSpreadsheetAiRowNormalization>();
 
   if (
@@ -1762,6 +1940,9 @@ async function resolveDocumentSpreadsheetRows(input: {
         taxRate: aiRow.taxRate ?? heuristicRow.taxRate,
         totalAmount: aiRow.totalAmount ?? heuristicRow.totalAmount,
         balanceAmount: aiRow.balanceAmount ?? heuristicRow.balanceAmount,
+        lineConcept: heuristicRow.lineConcept,
+        fxRate: heuristicRow.fxRate,
+        vatLabel: heuristicRow.vatLabel,
         warnings: aiRow.warnings.filter(Boolean),
         confidence: roundConfidence(aiRow.confidence),
         typedRow: rawRow.typedRow,
@@ -1794,6 +1975,11 @@ async function resolveDocumentSpreadsheetRows(input: {
     rows,
     skippedRows,
     warnings,
+    ...buildGenericNormalizationMetrics({
+      rows,
+      usableRawRowsCount: usableRawRows.length,
+      skippedRowsCount: skippedRows.length,
+    }),
   } satisfies DocumentSpreadsheetRowsNormalizationResult;
 }
 
@@ -1825,13 +2011,17 @@ export async function preflightDocumentSpreadsheetImport(input: {
     );
   }
 
-  const rawRows = buildRawDocumentSpreadsheetRows({
+  const normalizedRows = await resolveDocumentSpreadsheetRows({
+    fileName: input.fileName,
+    ledgerKind: input.ledgerKind,
     selectedSheet,
+    provider: "heuristic",
+    mappingConfidence: mapping.confidence,
   });
-  const totalRowsDetected = rawRows.filter((row) => !isBlankDocumentSpreadsheetRow(row)).length;
   const warnings = [...new Set([
     ...preview.warnings,
     ...mapping.warnings,
+    ...normalizedRows.warnings,
   ])];
 
   if (selectedSheet.sheet.truncatedForAnalysis) {
@@ -1844,14 +2034,23 @@ export async function preflightDocumentSpreadsheetImport(input: {
     fileName: input.fileName,
     ledgerKind: input.ledgerKind,
     sheetName: selectedSheet.sheet.sheetName,
-    totalRowsDetected,
-    importableRowsDetected: totalRowsDetected,
-    skippedRowsDetected: 0,
+    totalRowsDetected: normalizedRows.rawRowsDetected,
+    importableRowsDetected: normalizedRows.rows.length,
+    skippedRowsDetected: normalizedRows.skippedRows.length,
     warnings,
     detectedHeaders: Object.fromEntries(
       Object.entries(selectedSheet.detectedHeaders)
         .filter(([, value]) => typeof value === "string"),
     ),
+    rawRowsDetected: normalizedRows.rawRowsDetected,
+    consolidatedDocumentsDetected: normalizedRows.consolidatedDocumentsDetected,
+    duplicateGroupsDetected: normalizedRows.duplicateGroupsDetected,
+    ignoredResidualRows: normalizedRows.ignoredResidualRows,
+    blockedGroupsDetected: normalizedRows.blockedGroupsDetected,
+    usdMissingFxCount: normalizedRows.usdMissingFxCount,
+    creditNotesDetected: normalizedRows.creditNotesDetected,
+    minDate: normalizedRows.minDate,
+    maxDate: normalizedRows.maxDate,
   } satisfies DocumentSpreadsheetPreflightResult;
 }
 
@@ -1922,6 +2121,15 @@ export async function extractDocumentSpreadsheetRows(input: {
       Object.entries(selectedSheet.detectedHeaders)
         .filter(([, value]) => typeof value === "string"),
     ),
+    rawRowsDetected: normalizedRows.rawRowsDetected,
+    consolidatedDocumentsDetected: normalizedRows.consolidatedDocumentsDetected,
+    duplicateGroupsDetected: normalizedRows.duplicateGroupsDetected,
+    ignoredResidualRows: normalizedRows.ignoredResidualRows,
+    blockedGroupsDetected: normalizedRows.blockedGroupsDetected,
+    usdMissingFxCount: normalizedRows.usdMissingFxCount,
+    creditNotesDetected: normalizedRows.creditNotesDetected,
+    minDate: normalizedRows.minDate,
+    maxDate: normalizedRows.maxDate,
   } satisfies DocumentSpreadsheetExtractionResult;
 }
 
@@ -1939,16 +2147,32 @@ export async function persistDocumentSpreadsheetImportRow(input: {
     "spreadsheet-monthly-import",
     `${savedAt.slice(0, 10)}-${input.row.rowNumber}-${randomUUID()}-${slugifyFragment(input.fileName)}`,
   ].join("/");
+  const validationErrors = hasMissingFxWarning(input.row.warnings)
+    ? [MISSING_FX_RATE_ERROR_CODE]
+    : [];
+  const reviewRequired = validationErrors.length > 0;
+  const isPostable = validationErrors.length === 0;
+  const fxBlockingReason = getMissingFxBlockingReason(input.row.warnings);
   const documentMetadata = {
     synthetic_preview: true,
     source_label: "planilla_mensual",
     spreadsheet_source_file: input.fileName,
     spreadsheet_sheet_name: input.row.sheetName,
     spreadsheet_row_number: input.row.rowNumber,
+    spreadsheet_source_rows: input.row.sourceRows,
+    spreadsheet_source_row_numbers: input.row.sourceRowNumbers,
     spreadsheet_detected_role: input.row.documentRole,
     spreadsheet_original_row: input.row.originalRow,
     spreadsheet_warnings: input.row.warnings,
     warning_count: input.row.warnings.length,
+    review_required: reviewRequired,
+    validation_errors: validationErrors,
+    is_postable: isPostable,
+    fx_status: reviewRequired ? "missing_rate" : input.row.documentFxRate ? "resolved_from_document" : "not_required",
+    fx_blocking_reason: fxBlockingReason,
+    fx_rate_source: input.row.documentFxRateSource,
+    fx_rate_value: input.row.documentFxRate,
+    fx_rate_date: input.row.documentFxRateDate,
   };
   const { data: documentRow, error: documentError } = await input.supabase
     .from("documents")
@@ -1976,6 +2200,9 @@ export async function persistDocumentSpreadsheetImportRow(input: {
       tax_amount_uyu: input.row.facts.currency_code === "UYU" ? input.row.facts.tax_amount : null,
       total_amount_uyu: input.row.facts.currency_code === "UYU" ? input.row.facts.total_amount : null,
       metadata: documentMetadata,
+      fx_rate_document_value: input.row.documentFxRate,
+      fx_rate_document_date: input.row.documentFxRateDate,
+      fx_rate_source: input.row.documentFxRateSource ?? (reviewRequired ? "document_default" : null),
       created_at: savedAt,
       updated_at: savedAt,
     })
@@ -2013,7 +2240,7 @@ export async function persistDocumentSpreadsheetImportRow(input: {
           shouldReview: input.row.warnings.length > 0,
           warnings: input.row.warnings,
           evidence: [
-            `Fila importada desde planilla mensual (${input.row.sheetName} / fila ${input.row.rowNumber}).`,
+            `Filas importadas desde planilla mensual (${input.row.sheetName} / ${input.row.sourceRowNumbers.join(", ")}).`,
           ],
         },
       },
@@ -2085,7 +2312,12 @@ export async function persistDocumentSpreadsheetImportRow(input: {
       fileName: input.fileName,
       sheetName: input.row.sheetName,
       rowNumber: input.row.rowNumber,
+      rowNumbers: input.row.sourceRowNumbers,
       warnings: input.row.warnings,
+      fxRate: input.row.documentFxRate,
+      fxRateSource: input.row.documentFxRateSource,
+      fxDate: input.row.documentFxRateDate,
+      missingFxRate: reviewRequired,
     }),
   });
 

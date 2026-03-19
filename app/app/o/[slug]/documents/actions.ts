@@ -16,6 +16,7 @@ import {
 } from "@/modules/documents/spreadsheet-import-runs";
 import { loadSpreadsheetImportRun } from "@/modules/spreadsheets";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
+import { resolveMissingFxRates } from "@/modules/documents/spreadsheet-fx-resolution";
 
 function buildPaths(slug: string, documentId?: string) {
   return {
@@ -338,6 +339,40 @@ export async function runSelectedDocumentClassificationFromListAction(input: {
     completedCount,
     failedCount,
     message: `${completedCount}/${uniqueDocumentIds.length} documento(s) quedaron clasificados.${failureSuffix}`.trim(),
+  };
+}
+
+export async function retryMissingFxRatesAction(input: {
+  slug: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+
+  if (!canRunClassification(organization.role)) {
+    return {
+      ok: false,
+      resolvedCount: 0,
+      failedCount: 0,
+      message: "Tu rol no puede reintentar la obtencion de cotizaciones BCU.",
+    };
+  }
+
+  const result = await resolveMissingFxRates({
+    organizationId: organization.id,
+    actorId: authState.user?.id ?? null,
+  });
+
+  revalidateDocumentSurfaces(input.slug);
+
+  return {
+    ok: result.failedCount === 0,
+    resolvedCount: result.resolvedCount,
+    failedCount: result.failedCount,
+    message:
+      result.requestedCount === 0
+        ? "No habia documentos bloqueados por cotizacion pendiente."
+        : result.failedCount > 0
+          ? `Se resolvieron ${result.resolvedCount} documento(s) y ${result.failedCount} siguen bloqueados por falta de tasa.`
+          : `Se resolvieron ${result.resolvedCount} documento(s) con cotizacion BCU.`
   };
 }
 

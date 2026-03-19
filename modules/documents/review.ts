@@ -3194,3 +3194,68 @@ export async function reopenDocumentReview(input: {
     message: "Revision abierta a partir de la ultima confirmacion.",
   };
 }
+
+export async function rederiveDocumentDraftArtifacts(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  preserveDocumentStatus?: boolean;
+  runAssistant?: boolean;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+  const draft = await loadCurrentDraft(supabase, document);
+  const originalStatus = document.status;
+  const originalPostingStatus = document.posting_status;
+  const facts = parseDraftFacts(draft.fields_json);
+  const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const lineItems = parseLineItems(draft.fields_json);
+  const operationCategory = getOperationCategoryValue(draft, facts);
+  const [{ profileVersion, ruleSnapshot }, persistedInvoiceIdentity, storedContext] =
+    await Promise.all([
+      loadRuleSnapshot(supabase, document, draft, input.actorId),
+      loadDocumentInvoiceIdentity(supabase, document.id),
+      loadDocumentAccountingContext(supabase, draft.id),
+    ]);
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    invoiceIdentity,
+    storedContext,
+    runAssistant: input.runAssistant ?? false,
+  });
+
+  await persistDraftArtifacts(supabase, document, draft, input.actorId, accountingState.derived);
+
+  if (input.preserveDocumentStatus ?? false) {
+    await updateDocumentWithCompat(supabase, document.id, {
+      status: originalStatus,
+      posting_status: originalPostingStatus,
+      current_draft_id: draft.id,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  return {
+    documentId: document.id,
+    draftId: draft.id,
+    derived: accountingState.derived,
+  };
+}

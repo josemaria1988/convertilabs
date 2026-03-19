@@ -29,6 +29,7 @@ import {
   documentSpreadsheetImportsStorageBucket,
   documentsStorageBucket,
 } from "@/modules/documents/upload";
+import { resolveMissingFxRates } from "@/modules/documents/spreadsheet-fx-resolution";
 
 export const DOCUMENT_SPREADSHEET_STANDARD_LIMIT = 300;
 
@@ -143,6 +144,7 @@ function getProgress(run: SpreadsheetImportRunRecord) {
     stageValue === "queued"
     || stageValue === "extracting_rows"
     || stageValue === "importing_rows"
+    || stageValue === "resolving_fx"
     || stageValue === "completed"
     || stageValue === "failed"
       ? stageValue
@@ -160,6 +162,9 @@ function getProgress(run: SpreadsheetImportRunRecord) {
     skippedCount: typeof progress.skippedCount === "number" ? progress.skippedCount : 0,
     currentChunk: typeof progress.currentChunk === "number" ? progress.currentChunk : 0,
     totalChunks: typeof progress.totalChunks === "number" ? progress.totalChunks : 0,
+    fxPendingCount: typeof progress.fxPendingCount === "number" ? progress.fxPendingCount : 0,
+    fxResolvedCount: typeof progress.fxResolvedCount === "number" ? progress.fxResolvedCount : 0,
+    fxFailedCount: typeof progress.fxFailedCount === "number" ? progress.fxFailedCount : 0,
     currentMessage: asString(progress.currentMessage),
     latestErrorMessage: asString(progress.latestErrorMessage),
     startedAt: asString(progress.startedAt),
@@ -349,6 +354,9 @@ export async function enqueueDocumentSpreadsheetImport(input: {
           skippedCount: 0,
           currentChunk: 0,
           totalChunks: 0,
+          fxPendingCount: 0,
+          fxResolvedCount: 0,
+          fxFailedCount: 0,
           currentMessage: queuedMessage,
           latestErrorMessage: null,
           startedAt: null,
@@ -419,6 +427,24 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
     return loadSpreadsheetImportRun(supabase, input.organizationId, input.runId);
   });
 
+  async function refreshRun(marker: string) {
+    const fresh = await input.step.run(`refresh-document-spreadsheet-import-run-${marker}`, async () => {
+      return loadSpreadsheetImportRun(supabase, input.organizationId, input.runId);
+    });
+
+    if (!fresh) {
+      throw new Error("No encontramos la corrida de importacion documental.");
+    }
+
+    run = fresh;
+    return fresh;
+  }
+
+  async function shouldStop(marker: string) {
+    const fresh = await refreshRun(marker);
+    return fresh.status === "completed" || fresh.status === "failed" || fresh.status === "cancelled";
+  }
+
   if (!run) {
     throw new Error("No encontramos la corrida de importacion documental.");
   }
@@ -438,6 +464,9 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
       startedAt,
       currentMessage: "Estamos leyendo la planilla y preparando las filas importables en segundo plano.",
       latestErrorMessage: null,
+      fxPendingCount: 0,
+      fxResolvedCount: 0,
+      fxFailedCount: 0,
     },
     eventCode: "extracting_rows",
     eventMessage: "Leyendo la planilla y preparando las filas importables.",
@@ -446,6 +475,10 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
   let extracted: Awaited<ReturnType<typeof extractDocumentSpreadsheetRows>> | null = null;
 
   try {
+    if (await shouldStop("before-extract")) {
+      return summarizeDocumentSpreadsheetImportRun(run);
+    }
+
     const metadata = asRecord(run.metadata);
     const ledgerKind = metadata.ledger_kind === "sale" ? "sale" : "purchase";
     const mimeType = asString(metadata.mime_type);
@@ -475,7 +508,6 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
     }
 
     const resolvedExtraction = extracted;
-
     const totalChunks = Math.max(
       1,
       Math.ceil(resolvedExtraction.rows.length / DOCUMENT_SPREADSHEET_IMPORT_CHUNK_SIZE),
@@ -491,7 +523,7 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
       progress: {
         stage: "importing_rows",
         percent: 20,
-        totalRowsDetected: resolvedExtraction.rows.length + resolvedExtraction.skippedRows.length,
+        totalRowsDetected: resolvedExtraction.rawRowsDetected,
         importableRowsDetected: resolvedExtraction.rows.length,
         skippedRowsDetected: resolvedExtraction.skippedRows.length,
         processedRows: 0,
@@ -500,11 +532,25 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
         skippedCount: resolvedExtraction.skippedRows.length,
         currentChunk: 0,
         totalChunks,
+        fxPendingCount: resolvedExtraction.usdMissingFxCount,
+        fxResolvedCount: 0,
+        fxFailedCount: 0,
         currentMessage: buildQueuedMessage(resolvedExtraction.rows.length),
       },
       metadataPatch: {
         extracted_sheet_name: resolvedExtraction.sheetName,
         extracted_headers: resolvedExtraction.detectedHeaders,
+        extracted_metrics: {
+          rawRowsDetected: resolvedExtraction.rawRowsDetected,
+          consolidatedDocumentsDetected: resolvedExtraction.consolidatedDocumentsDetected,
+          duplicateGroupsDetected: resolvedExtraction.duplicateGroupsDetected,
+          ignoredResidualRows: resolvedExtraction.ignoredResidualRows,
+          blockedGroupsDetected: resolvedExtraction.blockedGroupsDetected,
+          usdMissingFxCount: resolvedExtraction.usdMissingFxCount,
+          creditNotesDetected: resolvedExtraction.creditNotesDetected,
+          minDate: resolvedExtraction.minDate,
+          maxDate: resolvedExtraction.maxDate,
+        },
       },
       eventCode: "rows_detected",
       eventMessage: `Se detectaron ${resolvedExtraction.rows.length} fila(s) importables para procesar en ${totalChunks} bloque(s).`,
@@ -518,6 +564,10 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
       resolvedExtraction.rows,
       DOCUMENT_SPREADSHEET_IMPORT_CHUNK_SIZE,
     ).entries()) {
+      if (await shouldStop(`before-chunk-${chunkIndex + 1}`)) {
+        return summarizeDocumentSpreadsheetImportRun(run);
+      }
+
       for (const row of chunk) {
         const persisted = await input.step.run(
           `persist-document-spreadsheet-row-${row.rowNumber}`,
@@ -567,7 +617,7 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
           stage: "importing_rows",
           percent: Math.min(
             95,
-            20 + Math.round((processedRows / Math.max(1, resolvedExtraction.rows.length)) * 75),
+            20 + Math.round((processedRows / Math.max(1, resolvedExtraction.rows.length)) * 70),
           ),
           processedRows,
           importedCount: importedDocumentIds.length,
@@ -575,6 +625,7 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
           skippedCount: resolvedExtraction.skippedRows.length,
           currentChunk,
           totalChunks,
+          fxPendingCount: resolvedExtraction.usdMissingFxCount,
           currentMessage: progressMessage,
         },
         metadataPatch: {
@@ -585,10 +636,61 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
       });
     }
 
+    let fxResolution = {
+      requestedCount: 0,
+      resolvedCount: 0,
+      failedCount: 0,
+      pendingCount: 0,
+      resolvedDocumentIds: [] as string[],
+      failedDocumentIds: [] as string[],
+      failures: [] as Array<{ documentId: string; documentDate: string | null; reason: string }>,
+    };
+
+    if (importedDocumentIds.length > 0) {
+      if (await shouldStop("before-resolving-fx")) {
+        return summarizeDocumentSpreadsheetImportRun(run);
+      }
+
+      run = await patchRun({
+        supabase,
+        run,
+        progress: {
+          stage: "resolving_fx",
+          percent: 96,
+          processedRows: resolvedExtraction.rows.length,
+          importedCount: importedDocumentIds.length,
+          failedCount: failedRows.length,
+          skippedCount: resolvedExtraction.skippedRows.length,
+          currentChunk: totalChunks,
+          totalChunks,
+          fxPendingCount: resolvedExtraction.usdMissingFxCount,
+          fxResolvedCount: 0,
+          fxFailedCount: 0,
+          currentMessage: `Intentando resolver cotizaciones BCU para ${resolvedExtraction.usdMissingFxCount} documento(s) en USD sin tasa.`,
+        },
+        eventCode: "resolving_fx",
+        eventMessage: "Intentando resolver automaticamente las cotizaciones faltantes contra BCU.",
+      });
+
+      fxResolution = await input.step.run("resolve-document-spreadsheet-fx-rates", async () => {
+        return resolveMissingFxRates({
+          supabase,
+          organizationId: run!.organizationId,
+          actorId: asString(asRecord(run!.metadata).uploaded_by),
+          documentIds: importedDocumentIds,
+        });
+      });
+    }
+
     const finishedAt = new Date().toISOString();
+    const fxSuffix = fxResolution.requestedCount > 0
+      ? fxResolution.failedCount > 0
+        ? ` ${fxResolution.resolvedCount} cotizacion(es) resueltas por BCU y ${fxResolution.failedCount} documento(s) siguen bloqueados por falta de tasa.`
+        : ` ${fxResolution.resolvedCount} cotizacion(es) en USD se resolvieron automaticamente por BCU.`
+      : "";
     const completedMessage = failedRows.length === 0
-      ? `Importacion finalizada con exito. ${importedDocumentIds.length} documento(s) quedaron listos para clasificacion.`
-      : `Importacion finalizada con observaciones. ${importedDocumentIds.length} documento(s) importados, ${failedRows.length} fila(s) con error y ${resolvedExtraction.skippedRows.length} omitida(s).`;
+      ? `Importacion finalizada con exito. ${importedDocumentIds.length} documento(s) quedaron listos para clasificacion.${fxSuffix}`
+      : `Importacion finalizada con observaciones. ${importedDocumentIds.length} documento(s) importados, ${failedRows.length} fila(s) con error y ${resolvedExtraction.skippedRows.length} omitida(s).${fxSuffix}`;
 
     run = await patchRun({
       supabase,
@@ -601,10 +703,13 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
         importedCount: importedDocumentIds.length,
         failedCount: failedRows.length,
         skippedCount: resolvedExtraction.skippedRows.length,
-        currentChunk: Math.max(1, Math.ceil(resolvedExtraction.rows.length / DOCUMENT_SPREADSHEET_IMPORT_CHUNK_SIZE)),
-        totalChunks: Math.max(1, Math.ceil(resolvedExtraction.rows.length / DOCUMENT_SPREADSHEET_IMPORT_CHUNK_SIZE)),
+        currentChunk: totalChunks,
+        totalChunks,
+        fxPendingCount: fxResolution.pendingCount,
+        fxResolvedCount: fxResolution.resolvedCount,
+        fxFailedCount: fxResolution.failedCount,
         currentMessage: completedMessage,
-        latestErrorMessage: failedRows.length > 0 ? failedRows[0]?.reason ?? null : null,
+        latestErrorMessage: failedRows.length > 0 ? failedRows[0]?.reason ?? null : fxResolution.failures[0]?.reason ?? null,
         finishedAt,
       },
       metadataPatch: {
@@ -613,6 +718,7 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
         skipped_row_count: resolvedExtraction.skippedRows.length,
         failed_rows_preview: failedRows.slice(0, 50),
         skipped_rows_preview: resolvedExtraction.skippedRows.slice(0, 50),
+        fx_resolution_summary: fxResolution,
       },
       eventCode: failedRows.length === 0 ? "completed" : "completed_with_warnings",
       eventMessage: completedMessage,
@@ -623,6 +729,8 @@ export async function processDocumentSpreadsheetImportRunFromInngest(input: {
       importedCount: importedDocumentIds.length,
       failedCount: failedRows.length,
       skippedCount: resolvedExtraction.skippedRows.length,
+      fxResolvedCount: fxResolution.resolvedCount,
+      fxFailedCount: fxResolution.failedCount,
     });
 
     return summarizeDocumentSpreadsheetImportRun(run);

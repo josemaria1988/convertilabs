@@ -13,6 +13,7 @@ import type {
   ResolvedAccountingRule,
 } from "@/modules/accounting/types";
 import { asNumber, asRecord, asString } from "@/modules/accounting/normalization";
+import { MISSING_FX_RATE_ERROR_CODE } from "@/modules/accounting/fx-policy";
 
 function parseStoredSettlementAllocations(value: unknown) {
   const entries = Array.isArray(value) ? value : [];
@@ -59,6 +60,11 @@ function parseStoredStructuredContext(record: DocumentAccountingContextRecord | 
     settlementMethod: asString(structured.settlement_method),
     settlementEvidenceSource: asString(structured.settlement_evidence_source),
     settlementAllocations: parseStoredSettlementAllocations(structured.settlement_allocations),
+    fxRate: asNumber(structured.document_fx_rate),
+    fxRateSource: asString(structured.document_fx_rate_source),
+    fxRateDate: asString(structured.document_fx_rate_date),
+    fxMissingErrorCode: asString(structured.document_fx_missing_error_code),
+    fxBlockingReason: asString(structured.document_fx_blocking_reason),
   };
 }
 
@@ -289,6 +295,10 @@ export function resolveAccountingContext(input: {
     reasonCodes.push("multiple_candidate_accounts");
   }
 
+  if (stored.fxMissingErrorCode === MISSING_FX_RATE_ERROR_CODE) {
+    reasonCodes.push("missing_fx_rate");
+  }
+
   if (input.locationSignal?.requiresBusinessPurposeReview) {
     if (input.locationSignal.code === "travel_pattern") {
       reasonCodes.push("travel_pattern");
@@ -318,6 +328,10 @@ export function resolveAccountingContext(input: {
           : userFreeText || businessPurposeNote
             ? "provided"
             : "required";
+  const blockingReasons =
+    uniqueReasonCodes.length > 0 && !hasManualOverride && !userFreeText && !businessPurposeNote
+      ? [stored.fxBlockingReason ?? "Falta contexto contable para clasificar el documento con suficiente confianza."]
+      : [];
 
   return {
     status,
@@ -335,6 +349,11 @@ export function resolveAccountingContext(input: {
       settlement_method: stored.settlementMethod,
       settlement_evidence_source: stored.settlementEvidenceSource,
       settlement_allocations: stored.settlementAllocations,
+      document_fx_rate: stored.fxRate,
+      document_fx_rate_source: stored.fxRateSource,
+      document_fx_rate_date: stored.fxRateDate,
+      document_fx_missing_error_code: stored.fxMissingErrorCode,
+      document_fx_blocking_reason: stored.fxBlockingReason,
     },
     aiRequestPayload: asRecord(input.storedContext?.ai_request_payload_json),
     aiResponse: asRecord(input.storedContext?.ai_response_json),
@@ -388,10 +407,7 @@ export function resolveAccountingContext(input: {
       && !userFreeText
       && !businessPurposeNote,
     canRunAssistant: uniqueReasonCodes.length > 0 && Boolean(userFreeText || businessPurposeNote),
-    blockingReasons:
-      uniqueReasonCodes.length > 0 && !hasManualOverride && !userFreeText && !businessPurposeNote
-        ? ["Falta contexto contable para clasificar el documento con suficiente confianza."]
-        : [],
+    blockingReasons,
   } satisfies AccountingContextResolution;
 }
 

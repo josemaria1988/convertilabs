@@ -14,6 +14,7 @@ import {
 } from "@/modules/documents/review";
 import { listOrganizationImportOperations } from "@/modules/imports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { loadMissingFxDocumentsSummary } from "@/modules/documents/spreadsheet-fx-resolution";
 
 type OrganizationDocumentsPageProps = {
   params: Promise<{
@@ -163,7 +164,7 @@ export default async function OrganizationDocumentsPage({
   const sortOrder = normalizeDocumentSortOrder(resolvedSearchParams.sort);
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [documentsPage, importOperations, recentDocumentsResult] = await Promise.all([
+  const [documentsPage, importOperations, recentDocumentsResult, missingFxSummary] = await Promise.all([
     activeTab === "documents"
       ? listPaginatedOrganizationWorkspaceDocuments({
         organizationId: organization.id,
@@ -189,6 +190,9 @@ export default async function OrganizationDocumentsPage({
         .order("created_at", { ascending: false })
         .limit(8)
       : Promise.resolve({ data: [], error: null }),
+    activeTab === "documents"
+      ? loadMissingFxDocumentsSummary({ organizationId: organization.id, supabase })
+      : Promise.resolve({ count: 0, dates: [] }),
   ]);
 
   if (recentDocumentsResult.error) {
@@ -361,6 +365,7 @@ export default async function OrganizationDocumentsPage({
             <DocumentsWorkspaceTable
               slug={organization.slug}
               documents={documentsPage?.items ?? []}
+              missingFxSummary={missingFxSummary}
             />
 
             {documentsPage ? (

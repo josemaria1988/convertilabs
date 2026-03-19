@@ -5,13 +5,22 @@ import {
   type BcuResolvedFxRate,
 } from "@/modules/accounting/bcu-fx-service";
 
+export const MISSING_FX_RATE_ERROR_CODE = "MISSING_FX_RATE";
+
 export type FiscalFxPolicyCode = "dgi_previous_business_day_interbank";
+export type PersistedDocumentFxSource = "document_import" | "bcu";
 
 export type FiscalFxResolution = {
   policyCode: FiscalFxPolicyCode;
   currencyCode: string;
   functionalCurrencyCode: string;
-  source: "same_currency" | "bcu" | "cfe" | "manual_override" | "document_default";
+  source:
+    | "same_currency"
+    | "bcu"
+    | "cfe"
+    | "manual_override"
+    | "document_import"
+    | "document_default";
   rate: number;
   bcuValue: number | null;
   bcuDateUsed: string | null;
@@ -34,13 +43,60 @@ export type DocumentMonetarySnapshot = {
   fx: FiscalFxResolution;
 };
 
+export type StoredDocumentFxContext = {
+  rate: number | null;
+  source: PersistedDocumentFxSource | null;
+  date: string | null;
+  missingErrorCode: string | null;
+  blockingReason: string | null;
+};
+
 function normalizeCurrencyCode(value: string | null | undefined) {
   const normalized = value?.trim().toUpperCase();
   return normalized && normalized.length === 3 ? normalized : "UYU";
 }
 
 function asNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function normalizePositiveRate(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function isPersistedDocumentFxSource(value: string | null): value is PersistedDocumentFxSource {
+  return value === "document_import" || value === "bcu";
+}
+
+export function buildMissingFxBlockingReason(documentDate: string | null | undefined) {
+  return documentDate
+    ? `${MISSING_FX_RATE_ERROR_CODE}: No encontramos cotizacion BCU para el cierre habil previo del ${documentDate}.`
+    : `${MISSING_FX_RATE_ERROR_CODE}: No encontramos cotizacion BCU para este documento en moneda extranjera.`;
+}
+
+export function extractStoredDocumentFxContext(value: unknown): StoredDocumentFxContext {
+  const record = asRecord(value);
+  const rawSource = asString(record.document_fx_rate_source);
+
+  return {
+    rate: normalizePositiveRate(asNumber(record.document_fx_rate)),
+    source: isPersistedDocumentFxSource(rawSource) ? rawSource : null,
+    date: asString(record.document_fx_rate_date),
+    missingErrorCode: asString(record.document_fx_missing_error_code),
+    blockingReason: asString(record.document_fx_blocking_reason),
+  } satisfies StoredDocumentFxContext;
 }
 
 export async function resolveFiscalFxPolicy(input: {
@@ -48,10 +104,18 @@ export async function resolveFiscalFxPolicy(input: {
   functionalCurrencyCode?: string | null;
   overrideRate?: number | null;
   overrideReason?: string | null;
+  documentRate?: number | null;
+  documentRateDate?: string | null;
+  documentRateSource?: PersistedDocumentFxSource | null;
+  allowBcuLookup?: boolean;
+  fallbackBlockingReason?: string | null;
   fetchImpl?: typeof fetch;
 }) {
   const currencyCode = normalizeCurrencyCode(input.facts.currency_code);
   const functionalCurrencyCode = normalizeCurrencyCode(input.functionalCurrencyCode ?? "UYU");
+  const documentDate = input.facts.document_date ?? null;
+  const fallbackBlockingReason =
+    input.fallbackBlockingReason?.trim() || buildMissingFxBlockingReason(documentDate);
 
   if (currencyCode === functionalCurrencyCode) {
     return {
@@ -61,10 +125,10 @@ export async function resolveFiscalFxPolicy(input: {
       source: "same_currency",
       rate: 1,
       bcuValue: 1,
-      bcuDateUsed: input.facts.document_date ?? null,
+      bcuDateUsed: documentDate,
       bcuSeries: null,
       documentValue: 1,
-      documentDate: input.facts.document_date ?? null,
+      documentDate,
       overrideReason: null,
       warnings: [],
       blockingReasons: [],
@@ -86,32 +150,52 @@ export async function resolveFiscalFxPolicy(input: {
       bcuDateUsed: null,
       bcuSeries: null,
       documentValue: null,
-      documentDate: input.facts.document_date ?? null,
+      documentDate,
       overrideReason: input.overrideReason ?? null,
       warnings: ["Se uso un tipo de cambio manual con motivo auditado."],
       blockingReasons: [],
     } satisfies FiscalFxResolution;
   }
 
-  let resolvedRate: BcuResolvedFxRate | null = null;
-  const warnings: string[] = [];
-  const blockingReasons: string[] = [];
+  const persistedDocumentRate = normalizePositiveRate(input.documentRate);
 
-  try {
-    resolvedRate = await resolveBcuFiscalFxRate({
+  if (persistedDocumentRate) {
+    if (input.documentRateSource === "bcu") {
+      return {
+        policyCode: "dgi_previous_business_day_interbank",
+        currencyCode,
+        functionalCurrencyCode,
+        source: "bcu",
+        rate: persistedDocumentRate,
+        bcuValue: persistedDocumentRate,
+        bcuDateUsed: input.documentRateDate ?? documentDate,
+        bcuSeries: null,
+        documentValue: null,
+        documentDate: input.documentRateDate ?? documentDate,
+        overrideReason: null,
+        warnings: [],
+        blockingReasons: [],
+      } satisfies FiscalFxResolution;
+    }
+
+    return {
+      policyCode: "dgi_previous_business_day_interbank",
       currencyCode,
-      documentDate: input.facts.document_date,
-      fetchImpl: input.fetchImpl,
-    });
-  } catch (error) {
-    blockingReasons.push(
-      error instanceof Error
-        ? error.message
-        : "No se pudo resolver el tipo de cambio fiscal BCU.",
-    );
+      functionalCurrencyCode,
+      source: "document_import",
+      rate: persistedDocumentRate,
+      bcuValue: null,
+      bcuDateUsed: null,
+      bcuSeries: null,
+      documentValue: persistedDocumentRate,
+      documentDate: input.documentRateDate ?? documentDate,
+      overrideReason: null,
+      warnings: [],
+      blockingReasons: [],
+    } satisfies FiscalFxResolution;
   }
 
-  if (!resolvedRate) {
+  if (input.allowBcuLookup === false) {
     return {
       policyCode: "dgi_previous_business_day_interbank",
       currencyCode,
@@ -122,7 +206,47 @@ export async function resolveFiscalFxPolicy(input: {
       bcuDateUsed: null,
       bcuSeries: null,
       documentValue: null,
-      documentDate: input.facts.document_date ?? null,
+      documentDate,
+      overrideReason: null,
+      warnings: [],
+      blockingReasons: [fallbackBlockingReason],
+    } satisfies FiscalFxResolution;
+  }
+
+  let resolvedRate: BcuResolvedFxRate | null = null;
+  const warnings: string[] = [];
+  const blockingReasons: string[] = [];
+
+  try {
+    resolvedRate = await resolveBcuFiscalFxRate({
+      currencyCode,
+      documentDate,
+      fetchImpl: input.fetchImpl,
+    });
+  } catch (error) {
+    blockingReasons.push(
+      error instanceof Error && error.message
+        ? error.message
+        : fallbackBlockingReason,
+    );
+  }
+
+  if (!resolvedRate) {
+    if (blockingReasons.length === 0) {
+      blockingReasons.push(fallbackBlockingReason);
+    }
+
+    return {
+      policyCode: "dgi_previous_business_day_interbank",
+      currencyCode,
+      functionalCurrencyCode,
+      source: "document_default",
+      rate: 1,
+      bcuValue: null,
+      bcuDateUsed: null,
+      bcuSeries: null,
+      documentValue: null,
+      documentDate,
       overrideReason: null,
       warnings,
       blockingReasons,
@@ -139,7 +263,7 @@ export async function resolveFiscalFxPolicy(input: {
     bcuDateUsed: resolvedRate.dateUsed,
     bcuSeries: resolvedRate.seriesCode,
     documentValue: null,
-    documentDate: input.facts.document_date ?? null,
+    documentDate,
     overrideReason: null,
     warnings,
     blockingReasons,
@@ -151,12 +275,17 @@ export async function buildDocumentMonetarySnapshot(input: {
   functionalCurrencyCode?: string | null;
   overrideRate?: number | null;
   overrideReason?: string | null;
+  documentRate?: number | null;
+  documentRateDate?: string | null;
+  documentRateSource?: PersistedDocumentFxSource | null;
+  allowBcuLookup?: boolean;
+  fallbackBlockingReason?: string | null;
   fetchImpl?: typeof fetch;
 }) {
   const fx = await resolveFiscalFxPolicy(input);
-  const netAmountOriginal = asNumber(input.facts.subtotal);
-  const taxAmountOriginal = asNumber(input.facts.tax_amount);
-  const totalAmountOriginal = asNumber(input.facts.total_amount);
+  const netAmountOriginal = asNumber(input.facts.subtotal) ?? 0;
+  const taxAmountOriginal = asNumber(input.facts.tax_amount) ?? 0;
+  const totalAmountOriginal = asNumber(input.facts.total_amount) ?? 0;
 
   return {
     currencyCode: fx.currencyCode,

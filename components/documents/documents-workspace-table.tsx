@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   enqueueDocumentExtractionAction,
   enqueueSelectedDocumentExtractionsAction,
+  retryMissingFxRatesAction,
   runDocumentClassificationFromListAction,
   runSelectedDocumentClassificationFromListAction,
 } from "@/app/app/o/[slug]/documents/actions";
@@ -59,6 +60,10 @@ type DocumentsWorkspaceTableItem = {
 type DocumentsWorkspaceTableProps = {
   slug: string;
   documents: DocumentsWorkspaceTableItem[];
+  missingFxSummary: {
+    count: number;
+    dates: string[];
+  };
 };
 
 type NoticeTone = "success" | "error" | "info";
@@ -158,6 +163,7 @@ function formatDecisionAuditLabel(document: DocumentsWorkspaceTableItem) {
 export function DocumentsWorkspaceTable({
   slug,
   documents,
+  missingFxSummary,
 }: DocumentsWorkspaceTableProps) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -180,6 +186,7 @@ export function DocumentsWorkspaceTable({
     bulkSelectableIds.length > 0
     && selectedIds.filter((id) => bulkSelectableIds.includes(id)).length === bulkSelectableIds.length;
   const isBusy = busyAction !== null || isPending;
+  const hasMissingFxDocuments = missingFxSummary.count > 0;
 
   useEffect(() => {
     setSelectedIds((current) => current.filter((id) => documents.some((document) => document.id === id)));
@@ -294,6 +301,28 @@ export function DocumentsWorkspaceTable({
       setNotice({
         tone: "error",
         message: error instanceof Error ? error.message : "No pudimos clasificar la seleccion.",
+      });
+    } finally {
+      setBusyAction(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+  }
+
+  async function handleRetryMissingFxRates() {
+    setBusyAction("retry:missing-fx");
+
+    try {
+      const result = await retryMissingFxRatesAction({ slug });
+      setNotice({
+        tone: result.ok ? "success" : "info",
+        message: result.message,
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "No pudimos reintentar la obtencion de cotizaciones BCU.",
       });
     } finally {
       setBusyAction(null);
@@ -435,6 +464,19 @@ export function DocumentsWorkspaceTable({
           {hasExtractionInFlight ? (
             <span className="status-pill status-pill--warning">Auto-refresco activo</span>
           ) : null}
+          {hasMissingFxDocuments ? (
+            <span className="status-pill status-pill--danger">{missingFxSummary.count} sin cotizacion</span>
+          ) : null}
+          <button
+            type="button"
+            className="ui-button ui-button--secondary"
+            disabled={hasMissingFxDocuments === false || isBusy}
+            onClick={() => {
+              void handleRetryMissingFxRates();
+            }}
+          >
+            {busyAction === "retry:missing-fx" ? "Consultando BCU..." : "Reintentar tasas BCU"}
+          </button>
           <button
             type="button"
             className="ui-button ui-button--secondary"
@@ -462,6 +504,15 @@ export function DocumentsWorkspaceTable({
         <div className="border-b border-[color:var(--color-border)] px-4 py-3">
           <div className={`rounded-[14px] border px-4 py-3 text-[14px] ${getNoticeClasses(notice.tone)}`}>
             {notice.message}
+          </div>
+        </div>
+      ) : null}
+
+      {hasMissingFxDocuments ? (
+        <div className="border-b border-[color:var(--color-border)] px-4 py-3">
+          <div className="rounded-[14px] border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-[14px] text-amber-50">
+            Tienes {missingFxSummary.count} documento(s) en USD sin cotizacion.
+            {missingFxSummary.dates.length > 0 ? ` Fechas afectadas: ${missingFxSummary.dates.slice(0, 3).join(", ")}${missingFxSummary.dates.length > 3 ? "..." : ""}.` : ""}
           </div>
         </div>
       ) : null}

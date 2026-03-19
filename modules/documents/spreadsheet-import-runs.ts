@@ -4,6 +4,7 @@ export type DocumentSpreadsheetImportRunStage =
   | "queued"
   | "extracting_rows"
   | "importing_rows"
+  | "resolving_fx"
   | "completed"
   | "failed";
 
@@ -19,6 +20,9 @@ export type DocumentSpreadsheetImportRunProgress = {
   skippedCount: number;
   currentChunk: number;
   totalChunks: number;
+  fxPendingCount: number;
+  fxResolvedCount: number;
+  fxFailedCount: number;
   currentMessage: string | null;
   latestErrorMessage: string | null;
   startedAt: string | null;
@@ -85,6 +89,9 @@ export function parseDocumentSpreadsheetImportRunProgress(metadata: Record<strin
     skippedCount: asNumber(progress.skippedCount) ?? 0,
     currentChunk: asNumber(progress.currentChunk) ?? 0,
     totalChunks: asNumber(progress.totalChunks) ?? 0,
+    fxPendingCount: asNumber(progress.fxPendingCount) ?? 0,
+    fxResolvedCount: asNumber(progress.fxResolvedCount) ?? 0,
+    fxFailedCount: asNumber(progress.fxFailedCount) ?? 0,
     currentMessage: asString(progress.currentMessage),
     latestErrorMessage: asString(progress.latestErrorMessage),
     startedAt: asString(progress.startedAt),
@@ -173,6 +180,11 @@ export function formatDocumentSpreadsheetImportStatusMessage(
       ?? `Estamos leyendo ${summary.fileName} para detectar filas importables. Puedes seguir trabajando mientras preparamos el lote.`;
   }
 
+  if (!summary.isTerminal && progress.stage === "resolving_fx") {
+    return progress.currentMessage
+      ?? `Intentando resolver cotizaciones BCU. ${progress.fxResolvedCount} documento(s) resueltos, ${progress.fxPendingCount} pendiente(s), ${progress.fxFailedCount} sin tasa por ahora.`;
+  }
+
   if (!summary.isTerminal && progress.importableRowsDetected !== null) {
     const rowsDetected = progress.importableRowsDetected;
     const chunkMessage =
@@ -192,7 +204,7 @@ export function formatDocumentSpreadsheetImportStatusMessage(
 
   if (summary.status === "completed" && progress.failedCount === 0) {
     return progress.currentMessage
-      ?? `Importacion finalizada con exito. ${progress.importedCount} documento(s) quedaron listos para clasificacion.`;
+      ?? `Importacion finalizada con exito. ${progress.importedCount} documento(s) quedaron listos para clasificacion.${progress.fxPendingCount > 0 ? ` ${progress.fxPendingCount} documento(s) siguen bloqueados por falta de cotizacion.` : ""}`;
   }
 
   if (summary.status === "completed") {

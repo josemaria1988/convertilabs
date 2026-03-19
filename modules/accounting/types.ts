@@ -494,7 +494,8 @@ export type AccountingContextReasonCode =
   | "sensitive_merchant_far_from_base"
   | "operation_kind_missing"
   | "payment_terms_missing"
-  | "settlement_allocations_missing";
+  | "settlement_allocations_missing"
+  | "missing_fx_rate";
 
 export type AccountingContextStatus =
   | "not_required"

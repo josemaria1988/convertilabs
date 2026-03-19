@@ -4,6 +4,8 @@ import {
 } from "@/modules/accounting/suggestion-engine";
 import {
   buildDocumentMonetarySnapshot,
+  extractStoredDocumentFxContext,
+  MISSING_FX_RATE_ERROR_CODE,
 } from "@/modules/accounting/fx-policy";
 import {
   loadAccountingRuntimeContext,
@@ -192,9 +194,19 @@ export async function deriveDocumentAccountingState(input: {
       requiresBusinessPurposeReview: locationRisk.requiresBusinessPurposeReview,
     },
   });
+  const storedFx = extractStoredDocumentFxContext(storedContext?.structured_context_json);
   const monetarySnapshot = await buildDocumentMonetarySnapshot({
     facts: input.facts,
     functionalCurrencyCode,
+    documentRate: storedFx.rate,
+    documentRateDate: storedFx.date,
+    documentRateSource: storedFx.source,
+    allowBcuLookup:
+      storedFx.missingErrorCode === MISSING_FX_RATE_ERROR_CODE
+      && storedFx.rate === null
+        ? false
+        : undefined,
+    fallbackBlockingReason: storedFx.blockingReason,
   });
   let assistantSuggestion: AccountingAssistantResult =
     materializeStoredAssistantResult(accountingContext) ?? {

@@ -201,6 +201,16 @@ function getVisibleFxDisplay(input: {
     };
   }
 
+  if (input.fxRateSource === "document_import") {
+    return {
+      valueText: formatFxRate(visibleRate),
+      detailText: input.fxRateDate
+        ? `Cotizacion importada desde planilla con fecha ${formatDate(input.fxRateDate)}.`
+        : "Cotizacion importada desde planilla.",
+      helperText: "Se respeta la cotizacion explicitamente informada por el ERP de origen.",
+    };
+  }
+
   return {
     valueText: formatFxRate(visibleRate),
     detailText: input.fxRateDate
