@@ -79,6 +79,12 @@ test("document intake decision log marks deterministic organization identity as 
       },
       amount_breakdown: [],
       line_items: [],
+      paymentTerms: "cash",
+      settlementMethodExplicit: "bank_transfer",
+      settlementMethodEvidenceText: "PAGO: Contado. Datos para Transferencia: BROU CTA CTE USD 001556498-00003",
+      hasReceiptLanguage: false,
+      hasCardVoucherLanguage: false,
+      hasBankTransferReference: true,
       explanations: {
         classification: "Venta",
         facts: "Factura",

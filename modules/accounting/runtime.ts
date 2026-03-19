@@ -36,6 +36,7 @@ import type {
   DocumentRoleCandidate,
   OrganizationFiscalProfile,
   OrganizationRuleSnapshotContext,
+  JsonRecord,
 } from "@/modules/accounting/types";
 
 async function loadOrganizationFunctionalCurrency(
@@ -130,6 +131,7 @@ export async function deriveDocumentAccountingState(input: {
   actorId: string | null;
   documentRole: DocumentRoleCandidate;
   documentType: string | null;
+  intakeContext?: JsonRecord | null;
   facts: DocumentIntakeFactMap;
   amountBreakdown: DocumentIntakeAmountBreakdown[];
   lineItems: DocumentIntakeLineItem[];
@@ -271,6 +273,7 @@ export async function deriveDocumentAccountingState(input: {
     draftId: input.draftId,
     documentRole: input.documentRole,
     documentType: input.documentType,
+    intakeContext: input.intakeContext ?? null,
     facts: input.facts,
     amountBreakdown: input.amountBreakdown,
     lineItems: input.lineItems,

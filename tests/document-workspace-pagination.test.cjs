@@ -275,3 +275,125 @@ test("paginated workspace documents sort by document date ascending", async () =
     supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
   }
 });
+
+test("paginated workspace documents sort by period and keep month buckets together", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const seed = buildSeed();
+
+  seed.documents.push(
+    {
+      id: "doc-4",
+      organization_id: "org-1",
+      direction: "purchase",
+      document_type: "invoice",
+      status: "uploaded",
+      posting_status: "draft",
+      storage_bucket: "documents-private",
+      storage_path: "orgs/org-1/doc-4.pdf",
+      original_filename: "compra-febrero.pdf",
+      mime_type: "application/pdf",
+      created_at: "2026-02-20T10:00:00.000Z",
+      document_date: "2026-02-20",
+      current_draft_id: null,
+      current_processing_run_id: null,
+      last_processed_at: null,
+      metadata: {},
+    },
+    {
+      id: "doc-5",
+      organization_id: "org-1",
+      direction: "sale",
+      document_type: "invoice",
+      status: "uploaded",
+      posting_status: "draft",
+      storage_bucket: "documents-private",
+      storage_path: "orgs/org-1/doc-5.pdf",
+      original_filename: "venta-enero.pdf",
+      mime_type: "application/pdf",
+      created_at: "2026-01-18T10:00:00.000Z",
+      document_date: "2026-01-18",
+      current_draft_id: null,
+      current_processing_run_id: null,
+      last_processed_at: null,
+      metadata: {},
+    },
+  );
+
+  const supabase = createSupabaseStub(seed);
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const result = await reviewModule.listPaginatedOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+      page: 1,
+      pageSize: 4,
+      directionFilter: "all",
+      sortOrder: "period_desc",
+    });
+
+    assert.equal(result.totalItems, 5);
+    assert.equal(result.totalPages, 2);
+    assert.deepEqual(result.items.map((item) => item.id), ["doc-3", "doc-2", "doc-1", "doc-4"]);
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});
+
+test("paginated workspace documents sort by confidence after enrichment", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const seed = buildSeed();
+
+  seed.ai_decision_logs = [
+    {
+      organization_id: "org-1",
+      document_id: "doc-1",
+      decision_source: "deterministic_rule",
+      confidence_score: 50,
+      certainty_level: "red",
+      created_at: "2026-03-14T11:00:00.000Z",
+    },
+    {
+      organization_id: "org-1",
+      document_id: "doc-2",
+      decision_source: "deterministic_rule",
+      confidence_score: 90,
+      certainty_level: "green",
+      created_at: "2026-03-15T11:00:00.000Z",
+    },
+    {
+      organization_id: "org-1",
+      document_id: "doc-3",
+      decision_source: "deterministic_rule",
+      confidence_score: 70,
+      certainty_level: "yellow",
+      created_at: "2026-03-17T11:00:00.000Z",
+    },
+  ];
+
+  const supabase = createSupabaseStub(seed);
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const result = await reviewModule.listPaginatedOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+      page: 1,
+      pageSize: 3,
+      directionFilter: "all",
+      sortOrder: "confidence_asc",
+    });
+
+    assert.deepEqual(result.items.map((item) => item.id), ["doc-1", "doc-3", "doc-2"]);
+    assert.deepEqual(
+      result.items.map((item) => item.certaintyConfidence),
+      [50, 70, 90],
+    );
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});

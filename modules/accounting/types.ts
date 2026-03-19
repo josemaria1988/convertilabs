@@ -648,6 +648,7 @@ export type AccountingSuggestionContext = {
   draftId: string;
   documentRole: DocumentRoleCandidate;
   documentType: string | null;
+  intakeContext?: JsonRecord | null;
   facts: DocumentIntakeFactMap;
   amountBreakdown: DocumentIntakeAmountBreakdown[];
   lineItems: DocumentIntakeLineItem[];

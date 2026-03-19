@@ -14,6 +14,34 @@ type DocumentAuditPreviewWorkspaceProps = {
 
 const PREVIEW_PAGE_SIZE = 25;
 
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function asNumberArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (typeof entry === "number" && Number.isFinite(entry)) {
+      return [entry];
+    }
+
+    if (typeof entry === "string" && entry.trim().length > 0) {
+      const parsed = Number(entry);
+
+      if (Number.isFinite(parsed)) {
+        return [parsed];
+      }
+    }
+
+    return [];
+  });
+}
+
 function formatAmount(value: number | null | undefined) {
   if (typeof value !== "number") {
     return "--";
@@ -168,6 +196,9 @@ export function DocumentAuditPreviewWorkspace({
     );
   }
 
+  const runWarnings = asStringArray(run.warnings);
+  const statusEvents = Array.isArray(run.statusEvents) ? run.statusEvents : [];
+
   const allActionableSelected =
     actionableRowIds.length > 0
     && selectedRowIds.length === actionableRowIds.length;
@@ -236,9 +267,9 @@ export function DocumentAuditPreviewWorkspace({
           </div>
         </div>
 
-        {run.warnings.length > 0 ? (
+        {runWarnings.length > 0 ? (
           <div className="mt-4 rounded-2xl border border-amber-300/40 bg-amber-50/10 p-4 text-sm text-amber-100">
-            {run.warnings.join(" ")}
+            {runWarnings.join(" ")}
           </div>
         ) : null}
 
@@ -375,6 +406,8 @@ export function DocumentAuditPreviewWorkspace({
                 visiblePreviewRows.map((row) => {
                   const isActionable = row.decision === "pending" || row.decision === "failed";
                   const isSelected = selectedRowIds.includes(row.rowId);
+                  const sourceRowNumbers = asNumberArray(row.sourceRowNumbers);
+                  const rowWarnings = asStringArray(row.warnings);
 
                   return (
                     <tr key={row.rowId}>
@@ -420,7 +453,7 @@ export function DocumentAuditPreviewWorkspace({
                       <td>
                         <div>{row.sheetName}</div>
                         <div className="mt-1 text-[12px] text-[color:var(--color-muted)]">
-                          Filas {row.sourceRowNumbers.join(", ")}
+                          Filas {sourceRowNumbers.length > 0 ? sourceRowNumbers.join(", ") : "--"}
                         </div>
                       </td>
                       <td>
@@ -436,9 +469,9 @@ export function DocumentAuditPreviewWorkspace({
                           <div className="mt-1 text-[12px] text-rose-200">
                             {row.failureMessage}
                           </div>
-                        ) : row.warnings.length > 0 ? (
+                        ) : rowWarnings.length > 0 ? (
                           <div className="mt-1 text-[12px] text-amber-100">
-                            {row.warnings.join(" ")}
+                            {rowWarnings.join(" ")}
                           </div>
                         ) : (
                           <div className="text-[12px] text-[color:var(--color-muted)]">
@@ -544,7 +577,7 @@ export function DocumentAuditPreviewWorkspace({
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/6 p-4 text-sm">
             <p className="font-semibold text-white">Eventos del run</p>
             <div className="mt-3 space-y-2">
-              {run.statusEvents.map((event) => (
+              {statusEvents.map((event) => (
                 <div key={`${event.code}-${event.createdAt}`} className="ui-subtle-row">
                   <span className="text-white">{event.code}</span>
                   <span>{formatDateTime(event.createdAt)}</span>

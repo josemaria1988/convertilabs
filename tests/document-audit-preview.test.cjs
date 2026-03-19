@@ -134,6 +134,38 @@ test("document audit preview resolves counterparty from receiver fields for sale
   });
 });
 
+test("document audit preview parsing normalizes malformed array fields instead of crashing later in the UI", () => {
+  const parsedRows = parseDocumentAuditPreviewRows({
+    audit_preview_rows: [{
+      rowId: "ventas:fila-3",
+      decision: "pending",
+      decisionAt: null,
+      decidedBy: null,
+      materializedDocumentId: null,
+      failureMessage: null,
+      row: {
+        ...buildSpreadsheetRow({
+          documentRole: "sale",
+          documentType: "sale_invoice",
+        }),
+        warnings: "warning suelta",
+        sourceRowNumbers: ["3", "4", "fila"],
+        sourceRows: {
+          rowNumber: 3,
+          originalRow: {
+            Fecha: "27-02-2026",
+          },
+        },
+      },
+    }],
+  });
+
+  assert.equal(parsedRows.length, 1);
+  assert.deepEqual(parsedRows[0].row.warnings, []);
+  assert.deepEqual(parsedRows[0].row.sourceRowNumbers, [3, 4]);
+  assert.deepEqual(parsedRows[0].row.sourceRows, []);
+});
+
 test("preview_ready is terminal for tracking and reports an audit preview message", () => {
   const run = {
     id: "run-preview-1",

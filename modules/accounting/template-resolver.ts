@@ -1,4 +1,9 @@
-import { normalizeTextToken, roundCurrency } from "@/modules/accounting/normalization";
+import {
+  asRecord,
+  asString,
+  normalizeTextToken,
+  roundCurrency,
+} from "@/modules/accounting/normalization";
 import type {
   AccountingContextResolution,
   DocumentIntakeFactMap,
@@ -96,10 +101,11 @@ function inferPaymentTerms(input: {
   operationKind: OperationKind | null;
   facts: DocumentIntakeFactMap;
   accountingContext: AccountingContextResolution;
+  settlementHints: IntakeSettlementHints;
 }) {
   const manual = normalizePaymentTerms(input.accountingContext.paymentTerms);
 
-  if (manual) {
+  if (manual && manual !== "unknown") {
     return manual;
   }
 
@@ -113,10 +119,21 @@ function inferPaymentTerms(input: {
     return "cash" satisfies PaymentTerms;
   }
 
+  if (input.settlementHints.paymentTerms && input.settlementHints.paymentTerms !== "unknown") {
+    return input.settlementHints.paymentTerms;
+  }
+
   if (
     typeof input.facts.due_date === "string"
     && input.facts.due_date
     && input.facts.due_date !== input.facts.document_date
+  ) {
+    return "credit" satisfies PaymentTerms;
+  }
+
+  if (
+    input.operationKind === "sale_invoice"
+    || input.operationKind === "purchase_invoice"
   ) {
     return "credit" satisfies PaymentTerms;
   }
@@ -138,15 +155,41 @@ function normalizeSettlementMethod(value: string | null | undefined): Settlement
   }
 }
 
+type IntakeSettlementHints = {
+  paymentTerms: PaymentTerms | null;
+  settlementMethodExplicit: SettlementMethod | null;
+  settlementMethodEvidenceText: string | null;
+  hasReceiptLanguage: boolean;
+  hasCardVoucherLanguage: boolean;
+  hasBankTransferReference: boolean;
+};
+
+function parseIntakeSettlementHints(value: Record<string, unknown> | null | undefined): IntakeSettlementHints {
+  const context = asRecord(value);
+  const settlementHints = asRecord(context.settlement_hints);
+
+  return {
+    paymentTerms: normalizePaymentTerms(asString(settlementHints.payment_terms)),
+    settlementMethodExplicit: normalizeSettlementMethod(
+      asString(settlementHints.settlement_method_explicit),
+    ),
+    settlementMethodEvidenceText: asString(settlementHints.settlement_method_evidence_text),
+    hasReceiptLanguage: settlementHints.has_receipt_language === true,
+    hasCardVoucherLanguage: settlementHints.has_card_voucher_language === true,
+    hasBankTransferReference: settlementHints.has_bank_transfer_reference === true,
+  };
+}
+
 function inferSettlementMethod(input: {
   operationKind: OperationKind | null;
   paymentTerms: PaymentTerms;
   documentType: string | null;
   accountingContext: AccountingContextResolution;
+  settlementHints: IntakeSettlementHints;
 }) {
   const manual = normalizeSettlementMethod(input.accountingContext.settlementMethod);
 
-  if (manual) {
+  if (manual && manual !== "unknown") {
     return manual;
   }
 
@@ -154,8 +197,57 @@ function inferSettlementMethod(input: {
     return "unknown" satisfies SettlementMethod;
   }
 
+  if (
+    input.settlementHints.settlementMethodExplicit
+    && input.settlementHints.settlementMethodExplicit !== "unknown"
+  ) {
+    return input.settlementHints.settlementMethodExplicit;
+  }
+
   if (input.operationKind === "card_settlement") {
     return "bank_transfer" satisfies SettlementMethod;
+  }
+
+  if (
+    input.settlementHints.hasBankTransferReference
+    || hasKeyword(input.settlementHints.settlementMethodEvidenceText, [
+      "transferencia",
+      "transfer",
+      "brou",
+      "itau",
+      "bbva",
+      "santander",
+      "scotia",
+      "cuenta",
+      "cta cte",
+      "iban",
+      "swift",
+    ])
+  ) {
+    return "bank_transfer" satisfies SettlementMethod;
+  }
+
+  if (
+    input.settlementHints.hasCardVoucherLanguage
+    || hasKeyword(input.settlementHints.settlementMethodEvidenceText, [
+      "tarjeta",
+      "card",
+      "pos",
+      "visa",
+      "mastercard",
+    ])
+  ) {
+    return "card" satisfies SettlementMethod;
+  }
+
+  if (
+    input.settlementHints.hasReceiptLanguage
+    || hasKeyword(input.settlementHints.settlementMethodEvidenceText, [
+      "efectivo",
+      "cash",
+    ])
+  ) {
+    return "cash" satisfies SettlementMethod;
   }
 
   if (hasKeyword(input.documentType, ["tarjeta", "card", "pos"])) {
@@ -193,10 +285,11 @@ function normalizeEvidenceSource(
 function inferEvidenceSource(input: {
   operationKind: OperationKind | null;
   accountingContext: AccountingContextResolution;
+  settlementHints: IntakeSettlementHints;
 }) {
   const manual = normalizeEvidenceSource(input.accountingContext.settlementEvidenceSource);
 
-  if (manual) {
+  if (manual && manual !== "none") {
     return manual;
   }
 
@@ -214,6 +307,20 @@ function inferEvidenceSource(input: {
 
   if (input.operationKind === "card_settlement") {
     return "card_settlement_document" satisfies SettlementEvidenceSource;
+  }
+
+  if (
+    (input.settlementHints.paymentTerms && input.settlementHints.paymentTerms !== "unknown")
+    || (
+      input.settlementHints.settlementMethodExplicit
+      && input.settlementHints.settlementMethodExplicit !== "unknown"
+    )
+    || input.settlementHints.hasReceiptLanguage
+    || input.settlementHints.hasCardVoucherLanguage
+    || input.settlementHints.hasBankTransferReference
+    || Boolean(input.settlementHints.settlementMethodEvidenceText)
+  ) {
+    return "invoice_document" satisfies SettlementEvidenceSource;
   }
 
   return "none" satisfies SettlementEvidenceSource;
@@ -297,24 +404,29 @@ function resolveTemplateCode(input: {
 export function resolveDocumentSettlementContext(input: {
   documentRole: DocumentRoleCandidate;
   documentType: string | null;
+  intakeContext?: Record<string, unknown> | null;
   facts: DocumentIntakeFactMap;
   accountingContext: AccountingContextResolution;
 }) {
+  const settlementHints = parseIntakeSettlementHints(input.intakeContext);
   const operationKind = inferOperationKind(input);
   const paymentTerms = inferPaymentTerms({
     operationKind,
     facts: input.facts,
     accountingContext: input.accountingContext,
+    settlementHints,
   });
   const settlementMethod = inferSettlementMethod({
     operationKind,
     paymentTerms,
     documentType: input.documentType,
     accountingContext: input.accountingContext,
+    settlementHints,
   });
   const settlementEvidenceSource = inferEvidenceSource({
     operationKind,
     accountingContext: input.accountingContext,
+    settlementHints,
   });
   const settlementAllocations = normalizeSettlementAllocations(
     input.accountingContext.settlementAllocations,
@@ -331,12 +443,14 @@ export function resolveDocumentSettlementContext(input: {
     || operationKind === "purchase_invoice"
     || operationKind === "sale_credit_note"
     || operationKind === "purchase_credit_note";
+  const isCommercialInvoice =
+    operationKind === "sale_invoice" || operationKind === "purchase_invoice";
 
   if (!operationKind) {
     blockers.push("Falta definir la operacion contable del documento.");
   }
 
-  if (isInvoice && paymentTerms === "unknown") {
+  if (isCommercialInvoice && paymentTerms === "unknown") {
     blockers.push("Falta definir si la operacion es contado o credito.");
   }
 

@@ -359,6 +359,7 @@ export async function runDocumentClassification(input: {
       actorId: input.actorId,
       documentRole: context.draft.document_role,
       documentType: context.draft.document_type,
+      intakeContext: context.draft.intake_context_json,
       facts: context.facts,
       amountBreakdown: context.amountBreakdown,
       lineItems: context.lineItems,

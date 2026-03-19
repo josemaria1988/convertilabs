@@ -279,7 +279,13 @@ export type DocumentWorkspaceListItem = {
 
 export type DocumentWorkspaceDirectionFilter = "all" | "purchase" | "sale";
 
-export type DocumentWorkspaceSortOrder = "date_desc" | "date_asc";
+export type DocumentWorkspaceSortOrder =
+  | "date_desc"
+  | "date_asc"
+  | "period_desc"
+  | "period_asc"
+  | "confidence_desc"
+  | "confidence_asc";
 
 export type PaginatedDocumentWorkspaceListResult = {
   items: DocumentWorkspaceListItem[];
@@ -1680,7 +1686,138 @@ function normalizeDocumentWorkspaceDirectionFilter(
 function normalizeDocumentWorkspaceSortOrder(
   value: string | null | undefined,
 ): DocumentWorkspaceSortOrder {
-  return value === "date_asc" ? "date_asc" : "date_desc";
+  switch (value) {
+    case "date_asc":
+    case "period_desc":
+    case "period_asc":
+    case "confidence_desc":
+    case "confidence_asc":
+      return value;
+    default:
+      return "date_desc";
+  }
+}
+
+function compareNullableText(
+  left: string | null | undefined,
+  right: string | null | undefined,
+  ascending: boolean,
+) {
+  const leftValue = typeof left === "string" && left.length > 0 ? left : null;
+  const rightValue = typeof right === "string" && right.length > 0 ? right : null;
+
+  if (leftValue === rightValue) {
+    return 0;
+  }
+
+  if (leftValue === null) {
+    return 1;
+  }
+
+  if (rightValue === null) {
+    return -1;
+  }
+
+  const compared = leftValue.localeCompare(rightValue);
+  return ascending ? compared : -compared;
+}
+
+function compareNullableNumber(
+  left: number | null | undefined,
+  right: number | null | undefined,
+  ascending: boolean,
+) {
+  const leftValue = typeof left === "number" && Number.isFinite(left) ? left : null;
+  const rightValue = typeof right === "number" && Number.isFinite(right) ? right : null;
+
+  if (leftValue === rightValue) {
+    return 0;
+  }
+
+  if (leftValue === null) {
+    return 1;
+  }
+
+  if (rightValue === null) {
+    return -1;
+  }
+
+  return ascending ? leftValue - rightValue : rightValue - leftValue;
+}
+
+function resolveWorkspaceDocumentSortDate(item: Pick<DocumentWorkspaceListItem, "documentDate" | "createdAt">) {
+  return item.documentDate ?? item.createdAt.slice(0, 10);
+}
+
+function resolveWorkspaceDocumentPeriodKey(item: Pick<DocumentWorkspaceListItem, "documentDate" | "createdAt">) {
+  return resolveWorkspaceDocumentSortDate(item).slice(0, 7);
+}
+
+function sortDocumentWorkspaceItems(
+  items: DocumentWorkspaceListItem[],
+  sortOrder: DocumentWorkspaceSortOrder,
+) {
+  const sorted = [...items];
+
+  sorted.sort((left, right) => {
+    if (sortOrder === "period_desc" || sortOrder === "period_asc") {
+      const ascending = sortOrder === "period_asc";
+      const byPeriod = compareNullableText(
+        resolveWorkspaceDocumentPeriodKey(left),
+        resolveWorkspaceDocumentPeriodKey(right),
+        ascending,
+      );
+
+      if (byPeriod !== 0) {
+        return byPeriod;
+      }
+
+      const byDate = compareNullableText(
+        resolveWorkspaceDocumentSortDate(left),
+        resolveWorkspaceDocumentSortDate(right),
+        ascending,
+      );
+
+      if (byDate !== 0) {
+        return byDate;
+      }
+    }
+
+    if (sortOrder === "confidence_desc" || sortOrder === "confidence_asc") {
+      const ascending = sortOrder === "confidence_asc";
+      const byConfidence = compareNullableNumber(
+        left.certaintyConfidence,
+        right.certaintyConfidence,
+        ascending,
+      );
+
+      if (byConfidence !== 0) {
+        return byConfidence;
+      }
+
+      const byDate = compareNullableText(
+        resolveWorkspaceDocumentSortDate(left),
+        resolveWorkspaceDocumentSortDate(right),
+        false,
+      );
+
+      if (byDate !== 0) {
+        return byDate;
+      }
+    }
+
+    const byCreatedAt = compareNullableText(left.createdAt, right.createdAt, false);
+
+    if (byCreatedAt !== 0) {
+      return byCreatedAt;
+    }
+
+    return left.originalFilename.localeCompare(right.originalFilename, "es", {
+      sensitivity: "base",
+    });
+  });
+
+  return sorted;
 }
 
 function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | undefined) {
@@ -2050,6 +2187,107 @@ export async function listOrganizationWorkspaceDocuments(input: {
   });
 }
 
+async function loadPaginatedWorkspaceDocumentRows(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  directionFilter: DocumentWorkspaceDirectionFilter;
+  sortAscending: boolean;
+  from: number;
+  to: number;
+}) {
+  let primaryQuery = input.supabase
+    .from("documents")
+    .select(
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+    )
+    .eq("organization_id", input.organizationId);
+
+  if (input.directionFilter !== "all") {
+    primaryQuery = primaryQuery.eq("direction", input.directionFilter);
+  }
+
+  const primaryResult = await primaryQuery
+    .order("document_date", { ascending: input.sortAscending, nullsFirst: false })
+    .order("created_at", { ascending: input.sortAscending })
+    .range(input.from, input.to);
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingDocumentStep5ColumnError(error)) {
+    let legacyQuery = input.supabase
+      .from("documents")
+      .select(
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      )
+      .eq("organization_id", input.organizationId);
+
+    if (input.directionFilter !== "all") {
+      legacyQuery = legacyQuery.eq("direction", input.directionFilter);
+    }
+
+    const legacyResult = await legacyQuery
+      .order("document_date", { ascending: input.sortAscending, nullsFirst: false })
+      .order("created_at", { ascending: input.sortAscending })
+      .range(input.from, input.to);
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
+}
+
+async function loadAllWorkspaceDocumentRows(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  directionFilter: DocumentWorkspaceDirectionFilter;
+}) {
+  let primaryQuery = input.supabase
+    .from("documents")
+    .select(
+      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+    )
+    .eq("organization_id", input.organizationId);
+
+  if (input.directionFilter !== "all") {
+    primaryQuery = primaryQuery.eq("direction", input.directionFilter);
+  }
+
+  const primaryResult = await primaryQuery
+    .order("document_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  let data = primaryResult.data as unknown;
+  let error = primaryResult.error;
+
+  if (error && isMissingDocumentStep5ColumnError(error)) {
+    let legacyQuery = input.supabase
+      .from("documents")
+      .select(
+        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      )
+      .eq("organization_id", input.organizationId);
+
+    if (input.directionFilter !== "all") {
+      legacyQuery = legacyQuery.eq("direction", input.directionFilter);
+    }
+
+    const legacyResult = await legacyQuery
+      .order("document_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+    data = legacyResult.data as unknown;
+    error = legacyResult.error;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
+}
+
 export async function listPaginatedOrganizationWorkspaceDocuments(input: {
   organizationId: string;
   organizationSlug: string;
@@ -2064,6 +2302,7 @@ export async function listPaginatedOrganizationWorkspaceDocuments(input: {
   const directionFilter = normalizeDocumentWorkspaceDirectionFilter(input.directionFilter);
   const sortOrder = normalizeDocumentWorkspaceSortOrder(input.sortOrder);
   const sortAscending = sortOrder === "date_asc";
+  const useComputedSort = sortOrder !== "date_desc" && sortOrder !== "date_asc";
 
   await reconcileStaleDocumentProcessingRuns({
     supabase,
@@ -2091,55 +2330,37 @@ export async function listPaginatedOrganizationWorkspaceDocuments(input: {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let primaryQuery = supabase
-    .from("documents")
-    .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-    )
-    .eq("organization_id", input.organizationId);
+  let items: DocumentWorkspaceListItem[];
 
-  if (directionFilter !== "all") {
-    primaryQuery = primaryQuery.eq("direction", directionFilter);
+  if (useComputedSort) {
+    const rows = await loadAllWorkspaceDocumentRows({
+      supabase,
+      organizationId: input.organizationId,
+      directionFilter,
+    });
+    const allItems = await buildOrganizationWorkspaceDocumentList({
+      supabase,
+      organizationId: input.organizationId,
+      organizationSlug: input.organizationSlug,
+      rows,
+    });
+    items = sortDocumentWorkspaceItems(allItems, sortOrder).slice(from, to + 1);
+  } else {
+    const rows = await loadPaginatedWorkspaceDocumentRows({
+      supabase,
+      organizationId: input.organizationId,
+      directionFilter,
+      sortAscending,
+      from,
+      to,
+    });
+    items = await buildOrganizationWorkspaceDocumentList({
+      supabase,
+      organizationId: input.organizationId,
+      organizationSlug: input.organizationSlug,
+      rows,
+    });
   }
-
-  const primaryResult = await primaryQuery
-    .order("document_date", { ascending: sortAscending, nullsFirst: false })
-    .order("created_at", { ascending: sortAscending })
-    .range(from, to);
-  let data = primaryResult.data as unknown;
-  let error = primaryResult.error;
-
-  if (error && isMissingDocumentStep5ColumnError(error)) {
-    let legacyQuery = supabase
-      .from("documents")
-      .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-      )
-      .eq("organization_id", input.organizationId);
-
-    if (directionFilter !== "all") {
-      legacyQuery = legacyQuery.eq("direction", directionFilter);
-    }
-
-    const legacyResult = await legacyQuery
-      .order("document_date", { ascending: sortAscending, nullsFirst: false })
-      .order("created_at", { ascending: sortAscending })
-      .range(from, to);
-    data = legacyResult.data as unknown;
-    error = legacyResult.error;
-  }
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
-  const items = await buildOrganizationWorkspaceDocumentList({
-    supabase,
-    organizationId: input.organizationId,
-    organizationSlug: input.organizationSlug,
-    rows,
-  });
 
   return {
     items,
@@ -2236,6 +2457,7 @@ export async function loadDocumentReviewPageData(input: {
     actorId: input.actorId,
     documentRole: draft.document_role,
     documentType: draft.document_type,
+    intakeContext: draft.intake_context_json,
     facts,
     amountBreakdown,
     lineItems,
@@ -2504,6 +2726,7 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     actorId: input.actorId,
     documentRole: nextDraft.document_role,
     documentType: nextDraft.document_type,
+    intakeContext: nextDraft.intake_context_json,
     facts,
     amountBreakdown,
     lineItems,
@@ -2639,6 +2862,7 @@ async function postDocumentReviewInternal(input: {
     actorId: input.actorId,
     documentRole: draft.document_role,
     documentType: draft.document_type,
+    intakeContext: draft.intake_context_json,
     facts,
     amountBreakdown,
     lineItems,
@@ -3092,6 +3316,7 @@ export async function reopenDocumentReview(input: {
     actorId: input.actorId,
     documentRole: newDraft.document_role,
     documentType: newDraft.document_type,
+    intakeContext: newDraft.intake_context_json,
     facts,
     amountBreakdown,
     lineItems,
@@ -3231,6 +3456,7 @@ export async function rederiveDocumentDraftArtifacts(input: {
     actorId: input.actorId,
     documentRole: draft.document_role,
     documentType: draft.document_type,
+    intakeContext: draft.intake_context_json,
     facts,
     amountBreakdown,
     lineItems,

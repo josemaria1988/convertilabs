@@ -148,6 +148,16 @@ function asStringArray(value: unknown) {
   return asArray(value).filter((entry): entry is string => typeof entry === "string");
 }
 
+function asNumberArray(value: unknown) {
+  return asArray(value).flatMap((entry) => (
+    typeof entry === "number" && Number.isFinite(entry)
+      ? [entry]
+      : typeof entry === "string" && entry.trim().length > 0 && Number.isFinite(Number(entry))
+        ? [Number(entry)]
+        : []
+  ));
+}
+
 function isPreviewDecision(value: unknown): value is DocumentAuditPreviewDecision {
   return value === "pending" || value === "accepted" || value === "rejected" || value === "failed";
 }
@@ -164,6 +174,30 @@ function isSpreadsheetImportRow(value: unknown): value is DocumentSpreadsheetImp
 
 function getRowId(row: DocumentSpreadsheetImportRow) {
   return row.sourceReference || `${row.sheetName}:fila-${row.rowNumber}`;
+}
+
+function normalizeDocumentSpreadsheetImportRow(row: DocumentSpreadsheetImportRow): DocumentSpreadsheetImportRow {
+  return {
+    ...row,
+    warnings: asStringArray((row as Record<string, unknown>).warnings),
+    sourceRowNumbers: asNumberArray((row as Record<string, unknown>).sourceRowNumbers),
+    sourceRows: asArray((row as Record<string, unknown>).sourceRows).flatMap((entry) => {
+      const record = asRecord(entry);
+      const rowNumber = asNumber(record.rowNumber);
+      const originalRow = asRecord(record.originalRow);
+
+      if (rowNumber === null) {
+        return [];
+      }
+
+      return [{
+        rowNumber,
+        originalRow: Object.fromEntries(
+          Object.entries(originalRow).map(([key, value]) => [key, typeof value === "string" ? value : null]),
+        ),
+      }];
+    }),
+  };
 }
 
 export function buildDocumentAuditPreviewRows(rows: DocumentSpreadsheetImportRow[]) {
@@ -189,9 +223,11 @@ export function parseDocumentAuditPreviewRows(metadata: Record<string, unknown>)
       return [];
     }
 
+    const normalizedRow = normalizeDocumentSpreadsheetImportRow(row);
+
     return [{
-      rowId: asString(record.rowId) ?? getRowId(row),
-      row,
+      rowId: asString(record.rowId) ?? getRowId(normalizedRow),
+      row: normalizedRow,
       decision: isPreviewDecision(record.decision) ? record.decision : "pending",
       decisionAt: asString(record.decisionAt),
       decidedBy: asString(record.decidedBy),

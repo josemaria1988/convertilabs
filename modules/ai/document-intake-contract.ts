@@ -98,12 +98,12 @@ export type DocumentIntakeOutput = {
   facts: DocumentIntakeFactMap;
   amount_breakdown: DocumentIntakeAmountBreakdown[];
   line_items: DocumentIntakeLineItem[];
-  paymentTerms?: DocumentIntakePaymentTerms;
-  settlementMethodExplicit?: DocumentIntakeSettlementMethod;
-  settlementMethodEvidenceText?: string | null;
-  hasReceiptLanguage?: boolean;
-  hasCardVoucherLanguage?: boolean;
-  hasBankTransferReference?: boolean;
+  paymentTerms: DocumentIntakePaymentTerms | null;
+  settlementMethodExplicit: DocumentIntakeSettlementMethod | null;
+  settlementMethodEvidenceText: string | null;
+  hasReceiptLanguage: boolean;
+  hasCardVoucherLanguage: boolean;
+  hasBankTransferReference: boolean;
   explanations: {
     classification: string;
     facts: string;
@@ -306,6 +306,36 @@ export const documentIntakeJsonSchema = strictObjectSchema({
     type: "array",
     items: lineItemSchema,
   },
+  paymentTerms: {
+    type: ["string", "null"],
+    enum: ["cash", "credit", "unknown", null],
+    description:
+      "Condicion de pago del documento. Usa cash si el propio documento prueba contado; credit si prueba credito o vencimiento diferido; null si el documento no aporta evidencia suficiente; unknown solo si la evidencia es contradictoria.",
+  },
+  settlementMethodExplicit: {
+    type: ["string", "null"],
+    enum: ["cash", "bank_transfer", "card", "check", "mixed", "unknown", null],
+    description:
+      "Medio explicito de cobro o pago probado por el propio documento. Si solo hay una cuenta bancaria o leyenda de transferencia, usa bank_transfer. Si el documento no aporta evidencia suficiente, usa null.",
+  },
+  settlementMethodEvidenceText: nullableStringSchema(
+    "Fragmento textual breve que justifica el medio de cobro o pago detectado, por ejemplo 'PAGO: Contado' o 'Datos para Transferencia: BROU CTA CTE USD ...'.",
+  ),
+  hasReceiptLanguage: {
+    type: "boolean",
+    description:
+      "True cuando el documento contiene lenguaje tipico de recibo o cobranza.",
+  },
+  hasCardVoucherLanguage: {
+    type: "boolean",
+    description:
+      "True cuando el documento contiene lenguaje tipico de POS o tarjeta.",
+  },
+  hasBankTransferReference: {
+    type: "boolean",
+    description:
+      "True cuando el documento contiene datos de cuenta bancaria, transferencia, BROU, CTA/CTA CTE, IBAN, SWIFT o texto equivalente.",
+  },
   explanations: explanationsSchema,
 });
 
@@ -472,13 +502,15 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
     && Array.isArray(output.line_items)
     && output.line_items.every((entry) => isLineItem(entry))
     && (
-      output.paymentTerms === undefined
+      output.paymentTerms === null
+      || output.paymentTerms === undefined
       || output.paymentTerms === "cash"
       || output.paymentTerms === "credit"
       || output.paymentTerms === "unknown"
     )
     && (
-      output.settlementMethodExplicit === undefined
+      output.settlementMethodExplicit === null
+      || output.settlementMethodExplicit === undefined
       || output.settlementMethodExplicit === "cash"
       || output.settlementMethodExplicit === "bank_transfer"
       || output.settlementMethodExplicit === "card"
@@ -486,22 +518,10 @@ export function isDocumentIntakeOutput(value: unknown): value is DocumentIntakeO
       || output.settlementMethodExplicit === "mixed"
       || output.settlementMethodExplicit === "unknown"
     )
-    && (
-      output.settlementMethodEvidenceText === undefined
-      || isNullableString(output.settlementMethodEvidenceText)
-    )
-    && (
-      output.hasReceiptLanguage === undefined
-      || typeof output.hasReceiptLanguage === "boolean"
-    )
-    && (
-      output.hasCardVoucherLanguage === undefined
-      || typeof output.hasCardVoucherLanguage === "boolean"
-    )
-    && (
-      output.hasBankTransferReference === undefined
-      || typeof output.hasBankTransferReference === "boolean"
-    )
+    && isNullableString(output.settlementMethodEvidenceText)
+    && typeof output.hasReceiptLanguage === "boolean"
+    && typeof output.hasCardVoucherLanguage === "boolean"
+    && typeof output.hasBankTransferReference === "boolean"
     && explanations !== null
     && typeof explanations.classification === "string"
     && typeof explanations.facts === "string"

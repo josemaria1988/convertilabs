@@ -60,6 +60,22 @@ const documentSortOptions: Array<{
     key: "date_asc",
     label: "Fecha mas antigua",
   },
+  {
+    key: "period_desc",
+    label: "Periodo mas reciente",
+  },
+  {
+    key: "period_asc",
+    label: "Periodo mas antiguo",
+  },
+  {
+    key: "confidence_desc",
+    label: "Confianza mas alta",
+  },
+  {
+    key: "confidence_asc",
+    label: "Confianza mas baja",
+  },
 ];
 
 const documentTabs: Array<{
@@ -102,7 +118,16 @@ function normalizeDocumentDirectionFilter(value: string | undefined): DocumentWo
 }
 
 function normalizeDocumentSortOrder(value: string | undefined): DocumentWorkspaceSortOrder {
-  return value === "date_asc" ? "date_asc" : "date_desc";
+  switch (value) {
+    case "date_asc":
+    case "period_desc":
+    case "period_asc":
+    case "confidence_desc":
+    case "confidence_asc":
+      return value;
+    default:
+      return "date_desc";
+  }
 }
 
 function buildDocumentsPageHref(
@@ -315,7 +340,7 @@ export default async function OrganizationDocumentsPage({
                 <div>
                   <h2 className="text-[16px] font-semibold text-white">Filtros de bandeja</h2>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                    Acota la vista por direccion y reordena por fecha del comprobante.
+                    Acota la vista por direccion y reordena por fecha, periodo o confianza.
                   </p>
                 </div>
                 <span className="ui-filter">

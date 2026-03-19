@@ -625,6 +625,129 @@ test("sale cash unknown falls back to provisional clearing without blocking prov
   assert.equal(derived.validation.canConfirmFinal, false);
 });
 
+test("sale invoice uses intake settlement hints from the document itself", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    documentType: "sale_invoice",
+    intakeContext: {
+      settlement_hints: {
+        payment_terms: "cash",
+        settlement_method_explicit: "bank_transfer",
+        settlement_method_evidence_text:
+          "PAGO: Contado. Datos para Transferencia: BROU CTA CTE USD 001556498-00003. Titular: RONTIL S.A.",
+        has_receipt_language: false,
+        has_card_voucher_language: false,
+        has_bank_transfer_reference: true,
+      },
+    },
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...seed.accountingContext,
+      operationKind: null,
+      paymentTerms: "unknown",
+      settlementMethod: "unknown",
+      settlementEvidenceSource: "none",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...seed.facts,
+      issuer_name: "Rontil S.A.",
+      issuer_tax_id: "213554700012",
+      receiver_name: "Strong Grain SAS",
+      receiver_tax_id: "220629730013",
+      currency_code: "USD",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+  }));
+
+  assert.equal(derived.settlementContext.operationKind, "sale_invoice");
+  assert.equal(derived.settlementContext.paymentTerms, "cash");
+  assert.equal(derived.settlementContext.settlementMethod, "bank_transfer");
+  assert.equal(derived.settlementContext.settlementEvidenceSource, "invoice_document");
+  assert.equal(derived.journalSuggestion.templateCode, "sale_local_cash");
+  assert.equal(derived.validation.canConfirm, true);
+});
+
+test("sale invoice without explicit payment evidence defaults to credit instead of blocking", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    documentType: "sale_invoice",
+    intakeContext: {
+      settlement_hints: {
+        payment_terms: null,
+        settlement_method_explicit: null,
+        settlement_method_evidence_text: null,
+        has_receipt_language: false,
+        has_card_voucher_language: false,
+        has_bank_transfer_reference: false,
+      },
+    },
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...seed.accountingContext,
+      operationKind: null,
+      paymentTerms: "unknown",
+      settlementMethod: "unknown",
+      settlementEvidenceSource: "none",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...seed.facts,
+      issuer_name: "Rontil S.A.",
+      issuer_tax_id: "213554700012",
+      receiver_name: "Strong Grain SAS",
+      receiver_tax_id: "220629730013",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+  }));
+
+  assert.equal(derived.settlementContext.operationKind, "sale_invoice");
+  assert.equal(derived.settlementContext.paymentTerms, "credit");
+  assert.equal(derived.settlementContext.settlementMethod, "unknown");
+  assert.equal(derived.journalSuggestion.templateCode, "sale_local_credit");
+  assert.equal(derived.validation.canConfirm, true);
+});
+
 test("assistant output can unblock a new concept once context was provided", () => {
   const seed = buildBaseContext();
   const derived = buildAccountingDraftArtifacts(buildBaseContext({

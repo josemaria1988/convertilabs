@@ -206,6 +206,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
   const settlementContext = resolveDocumentSettlementContext({
     documentRole: input.documentRole,
     documentType: input.documentType,
+    intakeContext: input.intakeContext ?? null,
     facts: input.facts,
     accountingContext: input.accountingContext,
   });

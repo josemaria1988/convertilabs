@@ -21,6 +21,10 @@ type OrganizationTaxPageProps = {
   params: Promise<{
     slug: string;
   }>;
+  searchParams?: Promise<{
+    periodYear?: string;
+    periodMonth?: string;
+  }>;
 };
 
 export const metadata: Metadata = {
@@ -68,10 +72,84 @@ function formatVatTitle(periodLabel: string | null) {
   return `${monthNames[index]} ${year}`;
 }
 
+function getCurrentPeriod() {
+  const now = new Date();
+
+  return {
+    year: now.getUTCFullYear(),
+    month: now.getUTCMonth() + 1,
+  };
+}
+
+function normalizePeriodYear(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+
+  if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function normalizePeriodMonth(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function buildPeriodLabel(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function buildTaxPageHref(
+  slug: string,
+  search: {
+    periodYear?: number | null;
+    periodMonth?: number | null;
+  } = {},
+) {
+  const params = new URLSearchParams();
+
+  if (typeof search.periodYear === "number") {
+    params.set("periodYear", String(search.periodYear));
+  }
+
+  if (typeof search.periodMonth === "number") {
+    params.set("periodMonth", String(search.periodMonth));
+  }
+
+  const query = params.toString();
+  return `/app/o/${slug}/tax${query ? `?${query}` : ""}`;
+}
+
+function buildAvailableTaxYears(input: {
+  vatRuns: Awaited<ReturnType<typeof loadOrganizationVatRuns>>;
+  selectedYear: number;
+  currentYear: number;
+}) {
+  const years = new Set<number>([input.currentYear, input.selectedYear]);
+
+  for (const run of input.vatRuns) {
+    const year = Number.parseInt(run.periodLabel.slice(0, 4), 10);
+
+    if (Number.isInteger(year)) {
+      years.add(year);
+    }
+  }
+
+  return Array.from(years).sort((left, right) => right - left);
+}
+
 export default async function OrganizationTaxPage({
   params,
+  searchParams,
 }: OrganizationTaxPageProps) {
   const { slug } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
   const [vatRuns, exports, spreadsheetRuns] = await Promise.all([
@@ -84,25 +162,47 @@ export default async function OrganizationTaxPage({
     && run.status === "completed",
   );
 
-  const latestRun = vatRuns[0] ?? null;
-  const previewPeriod = latestRun?.periodLabel ?? new Date().toISOString().slice(0, 7);
-  const [previewYear, previewMonth] = previewPeriod
-    .split("-")
-    .map((value) => Number.parseInt(value, 10));
+  const currentPeriod = getCurrentPeriod();
+  const selectedYear = normalizePeriodYear(resolvedSearchParams.periodYear, currentPeriod.year);
+  const selectedMonth = normalizePeriodMonth(resolvedSearchParams.periodMonth, currentPeriod.month);
+  const selectedPeriod = buildPeriodLabel(selectedYear, selectedMonth);
+  const selectedRun = vatRuns.find((run) => run.periodLabel === selectedPeriod) ?? null;
   const vatPreview = await buildVatRunPreview({
     organizationId: organization.id,
-    year: previewYear,
-    month: previewMonth,
+    year: selectedYear,
+    month: selectedMonth,
   });
-  const latestExportDataset = latestRun
-    ? await loadVatRunExportDataset(supabase, organization.id, latestRun.id)
+  const selectedExportDataset = selectedRun
+    ? await loadVatRunExportDataset(supabase, organization.id, selectedRun.id)
     : null;
-  const periodTitle = formatVatTitle(latestRun?.periodLabel ?? null);
-  const latestExports = latestRun
-    ? exports.filter((artifact) => artifact.targetId === latestRun.id)
+  const periodTitle = formatVatTitle(selectedPeriod);
+  const selectedExports = selectedRun
+    ? exports.filter((artifact) => artifact.targetId === selectedRun.id)
     : [];
-  const latestSales = latestRun?.tracedDocuments.filter((document) => document.role === "sale") ?? [];
-  const latestPurchases = latestRun?.tracedDocuments.filter((document) => document.role === "purchase") ?? [];
+  const selectedSales = selectedRun?.tracedDocuments.filter((document) => document.role === "sale")
+    ?? vatPreview.includedDocuments.filter((document) => document.role === "sale");
+  const selectedPurchases = selectedRun?.tracedDocuments.filter((document) => document.role === "purchase")
+    ?? vatPreview.includedDocuments.filter((document) => document.role === "purchase");
+  const availableYears = buildAvailableTaxYears({
+    vatRuns,
+    selectedYear,
+    currentYear: currentPeriod.year,
+  });
+  const isClosedRun = selectedRun?.status === "finalized" || selectedRun?.status === "locked";
+  const headerStatusLabel = selectedRun
+    ? formatLifecycleStatusLabel(selectedRun.status)
+    : "Abierto sin cierre";
+  const headerStatusTone = isClosedRun
+    ? "status-pill status-pill--success"
+    : selectedRun
+      ? "status-pill status-pill--warning"
+      : "status-pill status-pill--info";
+  const displayOutputVat = selectedRun?.outputVat ?? vatPreview.totals.outputVat;
+  const displayInputVatCreditable = selectedRun?.inputVatCreditable ?? vatPreview.totals.inputVatCreditable;
+  const displayInputVatNonDeductible = selectedRun?.inputVatNonDeductible ?? vatPreview.totals.inputVatNonDeductible;
+  const displayImportVat = selectedRun?.importVat ?? 0;
+  const displayImportVatAdvance = selectedRun?.importVatAdvance ?? 0;
+  const displayNetVatPayable = selectedRun?.netVatPayable ?? vatPreview.totals.netVatPayable;
 
   return (
     <PrivateDashboardShell
@@ -111,56 +211,108 @@ export default async function OrganizationTaxPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Impuestos"
-      toolbarLabel={latestRun ? `Declaracion de IVA - ${periodTitle}` : "Impuestos"}
+      toolbarLabel={`Declaracion de IVA - ${periodTitle}`}
       description="Declaracion mensual de IVA con resumen del periodo, alertas, historial y acciones reales del ciclo de vida."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "tax")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
         <div className="space-y-4">
-          <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
               Declaracion de IVA - {periodTitle}
             </h1>
+              <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                {selectedRun
+                  ? `Periodo con corrida oficial en estado ${headerStatusLabel.toLowerCase()}.`
+                  : "Periodo abierto en modo preview; todavia no hay cierre oficial generado."}
+              </p>
+            </div>
+            <span className={headerStatusTone}>{headerStatusLabel}</span>
           </div>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Periodo de trabajo</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Selecciona el mes que quieres liquidar o revisar. Si existe cierre oficial se muestra como reporte; si no existe, queda abierto para trabajar y cerrarlo.
+                </p>
+              </div>
+              <span className="ui-filter">{selectedPeriod}</span>
+            </div>
+
+            <form className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="space-y-2 text-sm">
+                <span className="font-medium text-white">Ano</span>
+                <select
+                  name="periodYear"
+                  defaultValue={selectedYear}
+                  className="min-w-[130px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none"
+                >
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="font-medium text-white">Mes</span>
+                <select
+                  name="periodMonth"
+                  defaultValue={selectedMonth}
+                  className="min-w-[180px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none"
+                >
+                  {monthNames.map((monthName, index) => (
+                    <option key={monthName} value={index + 1}>{monthName}</option>
+                  ))}
+                </select>
+              </label>
+              <SubmitButton formMethod="get" pendingLabel="Cambiando..." className="ui-button ui-button--secondary">
+                Cambiar periodo
+              </SubmitButton>
+            </form>
+          </section>
 
           <section className="grid gap-3 md:grid-cols-4">
             <article className="metric-card">
               <span className="metric-card__label">Debito Fiscal</span>
               <span className="ui-kpi-badge bg-[rgba(94,130,184,0.92)]">
-                {formatAmount(latestRun?.outputVat ?? null)}
+                {formatAmount(displayOutputVat)}
               </span>
               <span className="metric-card__value">
-                {formatAmount(latestRun?.outputVat ?? null)}
+                {formatAmount(displayOutputVat)}
               </span>
-              <p className="metric-card__hint">Ventas gravadas del periodo actual.</p>
+              <p className="metric-card__hint">Ventas gravadas del periodo seleccionado.</p>
             </article>
             <article className="metric-card">
               <span className="metric-card__label">Credito Fiscal</span>
               <span className="ui-kpi-badge bg-[rgba(95,157,115,0.92)]">
-                {formatAmount(latestRun?.inputVatCreditable ?? null)}
+                {formatAmount(displayInputVatCreditable)}
               </span>
               <span className="metric-card__value">
-                {formatAmount(latestRun?.inputVatCreditable ?? null)}
+                {formatAmount(displayInputVatCreditable)}
               </span>
               <p className="metric-card__hint">Compras creditables confirmadas.</p>
             </article>
             <article className="metric-card" data-tone="success">
               <span className="metric-card__label">IVA a Pagar</span>
               <span className="ui-kpi-badge bg-[rgba(95,157,115,0.92)]">
-                {latestRun?.status ?? "Pendiente"}
+                {selectedRun?.status ?? "preview"}
               </span>
               <span className="metric-card__value">
-                {formatAmount(latestRun?.netVatPayable ?? null)}
+                {formatAmount(displayNetVatPayable)}
               </span>
-              <p className="metric-card__hint">Resultado neto del ultimo run consolidado.</p>
+              <p className="metric-card__hint">
+                {selectedRun ? "Resultado neto de la corrida oficial del periodo." : "Resultado neto de la simulacion abierta."}
+              </p>
             </article>
             <article className="metric-card">
               <span className="metric-card__label">IVA Importacion</span>
               <span className="ui-kpi-badge bg-[rgba(94,130,184,0.92)]">
-                {formatAmount(latestRun?.importVat ?? null)}
+                {formatAmount(displayImportVat)}
               </span>
               <span className="metric-card__value">
-                {formatAmount(latestRun?.importVat ?? null)}
+                {formatAmount(displayImportVat)}
               </span>
               <p className="metric-card__hint">
                 Anticipos e IVA aduanero aprobados para el periodo.
@@ -168,26 +320,65 @@ export default async function OrganizationTaxPage({
             </article>
           </section>
 
-          <VatRunPreviewCard preview={vatPreview} />
+          {isClosedRun ? (
+            <section className="ui-panel">
+              <div className="ui-panel-header">
+                <div>
+                  <h2 className="text-[16px] font-semibold text-white">Reporte del cierre</h2>
+                  <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                    Este periodo ya tiene una corrida cerrada. Se muestra en modo reporte y solo requiere reapertura si necesitas corregir documentos o recalcular.
+                  </p>
+                </div>
+                <span className="ui-filter">{headerStatusLabel}</span>
+              </div>
 
-          <form
-            action={async () => {
-              "use server";
-              await generateVatRunDefinitiveAction({
-                slug,
-                period: vatPreview.period,
-              });
-            }}
-          >
-            <SubmitButton pendingLabel="Regenerando..." className="ui-button ui-button--primary">
-              Generar IVA definitivo desde la simulacion
-            </SubmitButton>
-          </form>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                  <p className="text-[13px] text-[color:var(--color-muted)]">Debito oficial</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayOutputVat)}</p>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                  <p className="text-[13px] text-[color:var(--color-muted)]">Credito oficial</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayInputVatCreditable)}</p>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                  <p className="text-[13px] text-[color:var(--color-muted)]">No deducible</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayInputVatNonDeductible)}</p>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                  <p className="text-[13px] text-[color:var(--color-muted)]">Neto oficial</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayNetVatPayable)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4 text-sm text-[color:var(--color-muted)]">
+                Comparacion contra la simulacion actual: debito {formatAmount(vatPreview.officialRunComparison.deltaOutputVat)} / credito {formatAmount(vatPreview.officialRunComparison.deltaInputVatCreditable)} / neto {formatAmount(vatPreview.officialRunComparison.deltaNetVatPayable)}.
+              </div>
+            </section>
+          ) : (
+            <VatRunPreviewCard preview={vatPreview} />
+          )}
+
+          {!isClosedRun ? (
+            <form
+              action={async () => {
+                "use server";
+                await generateVatRunDefinitiveAction({
+                  slug,
+                  period: vatPreview.period,
+                });
+              }}
+            >
+              <SubmitButton pendingLabel="Regenerando..." className="ui-button ui-button--primary">
+                {selectedRun ? "Regenerar IVA definitivo del periodo" : "Generar IVA definitivo desde la simulacion"}
+              </SubmitButton>
+            </form>
+          ) : null}
 
           <section className="ui-panel">
             <div className="ui-panel-header">
               <h2 className="text-[16px] font-semibold text-white">Resumen del Periodo</h2>
-              <span className="ui-filter">Financiero</span>
+              <span className="ui-filter">{selectedRun ? "Oficial" : "Preview"}</span>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -199,9 +390,9 @@ export default async function OrganizationTaxPage({
                   <span className="text-white">Ventas Gravadas</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span>{formatAmount(latestRun?.outputVat ?? null)}</span>
+                  <span>{formatAmount(displayOutputVat)}</span>
                   <span className="status-pill status-pill--success">
-                    {latestSales.length} documentos
+                    {selectedSales.length} documentos
                   </span>
                 </div>
               </div>
@@ -213,9 +404,9 @@ export default async function OrganizationTaxPage({
                   <span className="text-white">Compras Gravadas</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span>{formatAmount(latestRun?.inputVatCreditable ?? null)}</span>
+                  <span>{formatAmount(displayInputVatCreditable)}</span>
                   <span className="status-pill status-pill--success">
-                    {latestPurchases.length} documentos
+                    {selectedPurchases.length} documentos
                   </span>
                 </div>
               </div>
@@ -228,81 +419,102 @@ export default async function OrganizationTaxPage({
                 </div>
                 <div className="flex items-center gap-3">
                   <span>
-                    {formatAmount(latestRun ? latestRun.importVat + latestRun.importVatAdvance : null)}
+                    {formatAmount(displayImportVat + displayImportVatAdvance)}
                   </span>
                   <span className="status-pill status-pill--success">
-                    {latestExportDataset?.imports.length ?? 0} trib.
+                    {selectedExportDataset?.imports.length ?? 0} trib.
                   </span>
                 </div>
               </div>
             </div>
 
-            {latestRun ? (
+            {selectedRun ? (
               <div className="mt-4 space-y-3 border-t border-[color:var(--color-border)] pt-4">
-                <div className="grid gap-2 md:grid-cols-4">
-                  <form
-                    action={async () => {
-                      "use server";
-                      await updateVatRunLifecycleAction({
-                        slug,
-                        vatRunId: latestRun.id,
-                        action: "review",
-                      });
-                    }}
-                  >
-                    <SubmitButton pendingLabel="Revisando..." className="ui-button ui-button--secondary w-full">
-                      Revisar
-                    </SubmitButton>
-                  </form>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await updateVatRunLifecycleAction({
-                        slug,
-                        vatRunId: latestRun.id,
-                        action: "finalize",
-                      });
-                    }}
-                  >
-                    <SubmitButton pendingLabel="Finalizando..." className="ui-button ui-button--primary w-full">
-                      Finalizar
-                    </SubmitButton>
-                  </form>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await updateVatRunLifecycleAction({
-                        slug,
-                        vatRunId: latestRun.id,
-                        action: "lock",
-                      });
-                    }}
-                  >
-                    <SubmitButton pendingLabel="Bloqueando..." className="ui-button ui-button--secondary w-full">
-                      Bloquear
-                    </SubmitButton>
-                  </form>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await createVatRunExportAction({
-                        slug,
-                        vatRunId: latestRun.id,
-                      });
-                    }}
-                  >
-                    <SubmitButton pendingLabel="Exportando..." className="ui-button ui-button--secondary w-full">
-                      Exportar
-                    </SubmitButton>
-                  </form>
-                </div>
+                {!isClosedRun ? (
+                  <div className="grid gap-2 md:grid-cols-4">
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: selectedRun.id,
+                          action: "review",
+                        });
+                      }}
+                    >
+                      <SubmitButton pendingLabel="Revisando..." className="ui-button ui-button--secondary w-full">
+                        Revisar
+                      </SubmitButton>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: selectedRun.id,
+                          action: "finalize",
+                        });
+                      }}
+                    >
+                      <SubmitButton pendingLabel="Finalizando..." className="ui-button ui-button--primary w-full">
+                        Finalizar
+                      </SubmitButton>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await updateVatRunLifecycleAction({
+                          slug,
+                          vatRunId: selectedRun.id,
+                          action: "lock",
+                        });
+                      }}
+                    >
+                      <SubmitButton pendingLabel="Bloqueando..." className="ui-button ui-button--secondary w-full">
+                        Bloquear
+                      </SubmitButton>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await createVatRunExportAction({
+                          slug,
+                          vatRunId: selectedRun.id,
+                        });
+                      }}
+                    >
+                      <SubmitButton pendingLabel="Exportando..." className="ui-button ui-button--secondary w-full">
+                        Exportar
+                      </SubmitButton>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <form
+                      action={async () => {
+                        "use server";
+                        await createVatRunExportAction({
+                          slug,
+                          vatRunId: selectedRun.id,
+                        });
+                      }}
+                    >
+                      <SubmitButton pendingLabel="Exportando..." className="ui-button ui-button--secondary w-full">
+                        Exportar reporte
+                      </SubmitButton>
+                    </form>
+                    <div className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[13px] text-[color:var(--color-muted)]">
+                      Periodo cerrado: reabre solo si necesitas corregir o recalcular.
+                    </div>
+                  </div>
+                )}
 
                 <form
                   action={async (formData: FormData) => {
                     "use server";
                     await updateVatRunLifecycleAction({
                       slug,
-                      vatRunId: latestRun.id,
+                      vatRunId: selectedRun.id,
                       action: "reopen",
                       reason: String(formData.get("reason") ?? ""),
                     });
@@ -381,19 +593,19 @@ export default async function OrganizationTaxPage({
               {[
                 {
                   label: "Resumen mensual",
-                  ready: Boolean(latestRun),
+                  ready: Boolean(selectedRun),
                 },
                 {
                   label: "Ventas",
-                  ready: latestSales.length > 0,
+                  ready: selectedSales.length > 0,
                 },
                 {
                   label: "Documentos",
-                  ready: latestPurchases.length > 0 || latestSales.length > 0,
+                  ready: selectedPurchases.length > 0 || selectedSales.length > 0,
                 },
                 {
                   label: "Retenciones",
-                  ready: latestExports.length > 0,
+                  ready: selectedExports.length > 0,
                 },
               ].map((item) => (
                 <div key={item.label} className="ui-subtle-row">
@@ -410,13 +622,13 @@ export default async function OrganizationTaxPage({
               ))}
             </div>
 
-            {latestRun ? (
+            {selectedRun ? (
               <form
                 action={async () => {
                   "use server";
                   await createVatRunExportAction({
                     slug,
-                    vatRunId: latestRun.id,
+                    vatRunId: selectedRun.id,
                   });
                 }}
                 className="mt-4"
@@ -448,7 +660,10 @@ export default async function OrganizationTaxPage({
                 vatRuns.slice(0, 3).map((run) => (
                   <LoadingLink
                     key={run.id}
-                    href={`/app/o/${organization.slug}/tax`}
+                    href={buildTaxPageHref(organization.slug, {
+                      periodYear: Number.parseInt(run.periodLabel.slice(0, 4), 10),
+                      periodMonth: Number.parseInt(run.periodLabel.slice(5, 7), 10),
+                    })}
                     pendingLabel="Abriendo..."
                     className="ui-subtle-row"
                   >
@@ -500,17 +715,17 @@ export default async function OrganizationTaxPage({
                 Resumen DGI
               </h2>
               <span className="ui-filter">
-                {latestExportDataset?.dgiFormSummary.formCode ?? "2176"}
+                {selectedExportDataset?.dgiFormSummary.formCode ?? "2176"}
               </span>
             </div>
 
             <div className="mt-4 space-y-3">
-              {!latestExportDataset ? (
+              {!selectedExportDataset ? (
                 <div className="text-sm text-[color:var(--color-muted)]">
                   Todavia no hay run fiscal listo para mapear a formulario.
                 </div>
               ) : (
-                latestExportDataset.dgiFormSummary.lines.map((line) => (
+                selectedExportDataset.dgiFormSummary.lines.map((line) => (
                   <div key={`${line.lineCode}-${line.metricKey}`} className="ui-subtle-row">
                     <div>
                       <p className="text-white">{line.lineCode} - {line.label}</p>
@@ -524,9 +739,9 @@ export default async function OrganizationTaxPage({
               )}
             </div>
 
-            {latestExportDataset?.dgiFormSummary.warnings.length ? (
+            {selectedExportDataset?.dgiFormSummary.warnings.length ? (
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                {latestExportDataset.dgiFormSummary.warnings.join(" ")}
+                {selectedExportDataset.dgiFormSummary.warnings.join(" ")}
               </div>
             ) : null}
           </section>

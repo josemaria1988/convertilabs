@@ -232,8 +232,8 @@ export type ReconcileStaleDocumentProcessingRunsResult = {
   repairedRuns: ReconciledDocumentProcessingRun[];
 };
 
-const OPENAI_DOCUMENT_PROMPT_VERSION = "2026-03-13";
-const OPENAI_DOCUMENT_SCHEMA_VERSION = "2026-03-13";
+const OPENAI_DOCUMENT_PROMPT_VERSION = "2026-03-19";
+const OPENAI_DOCUMENT_SCHEMA_VERSION = "2026-03-19";
 const OPENAI_DOCUMENT_TRANSPORT_MODE = "file_id";
 const OPENAI_DOCUMENT_STORE_REMOTE = true;
 const OPENAI_POLL_INTERVAL = "10s";
@@ -291,8 +291,11 @@ function buildUserPrompt(input: {
     "Devuelve transaction_family_candidate y document_subtype_candidate, y tambien sus alias legados document_role_candidate y document_type_candidate con el mismo valor.",
     "Usa line_items como senal estructurada preferente cuando el documento lo permita.",
     "Extrae campos base, totales, indicios fiscales, line_items y la categoria candidata mas cercana de V1.",
-    "Si detectas evidencia de contado o credito, completa paymentTerms con cash, credit o unknown.",
-    "Si detectas el medio explicito de cobro o pago, completa settlementMethodExplicit y settlementMethodEvidenceText.",
+    "Solo completa paymentTerms cuando el documento realmente pruebe contado o credito. Usa cash o credit si hay evidencia textual suficiente; usa null si no la hay; usa unknown solo si la evidencia es contradictoria.",
+    "Revisa especialmente etiquetas y cabeceras como PAGO, forma de pago, contado, credito, vencimiento, plazo, recibo, POS, tarjeta, transferencia, BROU, ITAU, BBVA, Santander, Scotia, CTA, CTA CTE, cuenta bancaria, IBAN o SWIFT.",
+    "Si una factura dice PAGO Contado y ademas incluye datos para transferencia o cuenta bancaria, considera que el cobro/pago fue por bank_transfer salvo evidencia mas fuerte en contrario.",
+    "Si detectas el medio explicito de cobro o pago, completa settlementMethodExplicit y settlementMethodEvidenceText con una cita breve del propio documento. Si no hay evidencia suficiente del medio, usa settlementMethodExplicit = null.",
+    "Completa hasReceiptLanguage, hasCardVoucherLanguage y hasBankTransferReference segun la evidencia textual del documento.",
     "Contexto de identidad de la organizacion:",
     input.organizationIdentityContext,
     "Si el documento no es suficientemente claro, baja el confidence_score y agrega warnings.",
@@ -1270,6 +1273,14 @@ async function persistDocumentArtifacts(input: {
         issuer_matches_organization: input.structuredOutput.issuer_matches_organization,
         receiver_matches_organization: input.structuredOutput.receiver_matches_organization,
         certainty_breakdown: input.structuredOutput.certainty_breakdown_json,
+        settlement_hints: {
+          payment_terms: input.structuredOutput.paymentTerms,
+          settlement_method_explicit: input.structuredOutput.settlementMethodExplicit,
+          settlement_method_evidence_text: input.structuredOutput.settlementMethodEvidenceText,
+          has_receipt_language: input.structuredOutput.hasReceiptLanguage,
+          has_card_voucher_language: input.structuredOutput.hasCardVoucherLanguage,
+          has_bank_transfer_reference: input.structuredOutput.hasBankTransferReference,
+        },
       },
       fields_json: {
         ...buildDraftFieldsPayload({
