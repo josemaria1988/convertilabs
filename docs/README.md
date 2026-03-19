@@ -2,7 +2,7 @@
 
 Este directorio reemplaza la documentacion historica dispersa en `docs/specs*`, archivos sueltos y notas tacticas de iteraciones previas.
 
-La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-19: rutas activas, workspaces contables read-only, importacion documental por planilla, conexiones CFE y suites de prueba.
+La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-19: rutas activas, `Auditoria` documental con preview/staging, workspaces contables read-only, conexiones CFE y suites de prueba.
 
 Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto: todo cambio nuevo debe justificar si mejora el motor documental, el motor de decision contable o el motor fiscal.
 
@@ -12,9 +12,9 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - `agent_rules.md` resume el foco no negociable del MVP y la regla de descarte.
 - `01-identity/` y `02-organization/` cubren auth, tenancy, onboarding, settings y perfil/versionado operativo.
 - `03-accounting/` cubre plan de cuentas, presets, mapa contable y recomendacion hibrida con IA.
-- `04-documents/` cubre intake, revision, clasificacion, posting multi-linea y operaciones internacionales.
+- `04-documents/` cubre intake binario, revision, clasificacion, posting multi-linea, operaciones internacionales y el handoff desde `Auditoria` hacia `Documentos`.
 - `05-tax/` cubre VAT, perfil fiscal, importaciones y multimoneda.
-- `06-integrations/` cubre spreadsheets, imports, exports y bridge al sistema externo.
+- `06-integrations/` cubre spreadsheets, `imports`, `audit`, exports y bridge al sistema externo.
 - `07-platform/` cubre base de datos, read models contables, APIs, background jobs y observabilidad.
 - `08-quality/` cubre testing, rollout y roadmap tecnico.
 - `09-future/` documenta modulos objetivo que el rector exige dejar preparados aunque todavia no existan como feature operativa.

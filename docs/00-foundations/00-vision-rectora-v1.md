@@ -40,6 +40,7 @@ La promesa de producto sigue esta secuencia:
 - plan de cuentas del sistema con presets modulares;
 - recomendacion de presets por reglas y capa hibrida opcional con IA;
 - importacion de planillas para historicos IVA, templates y plan de cuentas;
+- auditoria documental por planilla con preview/staging antes de materializar;
 - intake documental con upload privado, OCR/extraccion IA y draft persistido;
 - workspace de revision contable y fiscal separado de la extraccion;
 - rule engine, learning explicito y explainability visible;
@@ -72,13 +73,14 @@ Toda superficie visible o en desarrollo activo debe clasificarse como `core`, `s
 ### Core visible
 
 - `documents` como bandeja principal;
+- `audit` como carril separado para imports documentales masivos con preview y trazabilidad;
 - revision, aprendizaje y posting dentro del workspace documental;
 - `tax` para VAT preview, VAT run, lifecycle y export fiscal;
 - `settings` para perfil fiscal, presets y plan de cuentas minimo.
 
 ### Support visible bajo demanda
 
-- `imports` para historicos, planillas y DUA;
+- `imports` para historicos, planillas de soporte y DUA;
 - `exports` como bridge contable y fiscal;
 - `tax/reconciliation` como apoyo del motor IVA;
 - tooling de onboarding y settings que habilita bootstrap, pero no redefine el producto.
@@ -157,7 +159,8 @@ Cambiar plan, traits o reglas no reescribe historia. Los documentos ya confirmad
 - posting provisional y final;
 - reopen sin rerun automatico de IA;
 - VAT preview, VAT run, export y conciliacion DGI base;
-- imports por planilla y carril de importaciones;
+- auditoria documental por planilla con preview, aceptacion/rechazo y materializacion controlada;
+- imports de soporte y carril de importaciones;
 - export bridge contable generico;
 - decision logs, audit log y trazabilidad de corridas IA.
 

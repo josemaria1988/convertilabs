@@ -10,9 +10,12 @@ Capturar documentos reales, guardarlos en storage privado, extraer hechos estruc
 
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/audit`
 - `components/documents/upload-button.tsx`
 - `components/documents/upload-dropzone.tsx`
 - `components/documents/documents-workspace-table.tsx`
+- `components/audit/document-audit-upload-panel.tsx`
+- `components/audit/document-audit-preview-workspace.tsx`
 
 ### Backend y jobs
 
@@ -30,14 +33,14 @@ Estado real hoy:
 
 - PDF
 - JPG / PNG
-- planillas mensuales `.csv`, `.tsv`, `.xlsx` y `.xls` para importacion documental batch
+- planillas mensuales `.csv`, `.tsv`, `.xlsx` y `.xls` para auditoria documental batch
 - cargas individuales
-- lotes visibles desde la bandeja documental
+- lotes auditados con preview e historico propio
 
-La arquitectura visible hoy ya tiene dos carriles en `Documentos`:
+La arquitectura visible hoy ya separa dos carriles:
 
-- upload privado de comprobantes binarios para intake IA clasico;
-- importacion mensual por planilla que crea documentos sinteticos y los deja listos para revision.
+- `Documentos` para upload privado de comprobantes binarios e intake IA clasico;
+- `Auditoria` para planillas mensuales que primero generan staging auditable y solo despues materializan documentos sinteticos.
 
 ## Flujos operativos
 
@@ -58,13 +61,15 @@ La arquitectura visible hoy ya tiene dos carriles en `Documentos`:
 7. se crea `document_draft` y sus pasos;
 8. el documento queda listo para revision.
 
-### Importacion documental por planilla
+### Auditoria documental por planilla
 
-1. el usuario elige compras o ventas y sube una planilla mensual;
+1. el usuario entra a `/app/o/[slug]/audit`, elige compras o ventas y sube una planilla mensual;
 2. el sistema hace preflight, valida limite del flujo estandar y encola un `document_batch_import`;
-3. la corrida de background detecta headers, extrae filas importables y persiste documentos `source_type = spreadsheet_import`;
-4. si faltan cotizaciones USD, corre la resolucion automatica contra BCU y re-deriva los artifacts necesarios;
-5. el seguimiento visible se hace desde la misma bandeja documental con progreso y toast final.
+3. la corrida de background detecta headers, extrae filas importables y deja la corrida en `preview_ready` dentro de `organization_spreadsheet_import_runs`;
+4. el usuario revisa el preview, acepta o rechaza todo o subconjuntos del batch;
+5. solo las filas aceptadas materializan documentos `source_type = spreadsheet_import`;
+6. esos documentos vuelven al workspace de `Documentos` para revision, clasificacion y posting;
+7. el historico de `Auditoria` conserva archivo, usuario, fechas y documentos creados por la corrida.
 
 ## Contrato IA de intake
 
@@ -132,15 +137,16 @@ El rector propone un pipeline mas expresivo (`ready_for_assignment`, `posted_pro
 - el output IA es estructurado y persistido;
 - la organizacion y el draft quedan versionados;
 - el documento original sigue inmutable;
-- hay trazabilidad de corrida, proveedor, modelo y latencia.
+- hay trazabilidad de corrida, proveedor, modelo y latencia;
+- la importacion documental masiva ya tiene staging previo y no escribe `documents` a ciegas.
 
 ## Lo que sigue parcial
 
 - aun no existe una cola dedicada y explicitamente nombrada como "Procesados pendientes de asignacion";
-- la separacion conceptual ya existe en dominio y review workspace, pero no en una vista operativa independiente de punta a punta;
+- la separacion operativa ya existe entre `Documentos` y `Auditoria`, pero todavia faltan colas y vistas especializadas equivalentes para otros canales de entrada;
 - faltan mas conectores externos de entrada ademas del upload y las planillas;
-- la importacion documental por planilla ya tiene progreso, cierre y cancelacion visibles desde la misma UI de `Documentos`;
-- todavia faltan mas herramientas operativas para reintento fino, auditoria expandida y reproceso por subconjuntos.
+- el flujo auditado ya existe, pero todavia faltan herramientas mas finas para reproceso, diff entre preview y materializado y operaciones sobre subconjuntos mas complejos;
+- la auditoria expandida hoy se concentra en imports documentales por planilla, no en todas las superficies del producto.
 
 ## Regla de lectura del siguiente documento
 

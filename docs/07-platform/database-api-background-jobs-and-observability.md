@@ -93,6 +93,8 @@ Estas vistas leen el ledger posteado e inmutable y alimentan las superficies `/t
 - `audit_log`
 - `ai_decision_logs`
 
+`organization_spreadsheet_import_runs` ya no sostiene solo imports de soporte: hoy tambien guarda el staging auditado de `document_batch_import`, con preview estructurado, decisiones por fila, actor, timestamps y documentos materializados por corrida.
+
 ## RLS y accesos
 
 El repo usa mezcla de:
@@ -175,7 +177,7 @@ Se usan para:
 - consultas IA de presets;
 - conciliacion DGI;
 - lifecycle de VAT runs;
-- materializaciones de chart e imports.
+- materializaciones de chart, imports de soporte y batches auditados desde `Auditoria`.
 
 ## Observabilidad y auditoria
 
@@ -185,6 +187,7 @@ Se usan para:
 - `ai_decision_logs` para decisiones IA/documentales;
 - `document_assignment_runs`;
 - `organization_preset_ai_runs`;
+- `organization_spreadsheet_import_runs` para trazabilidad del preview/staging documental y de imports de planilla;
 - cambios de conexiones CFE y settings sensibles;
 - timestamps y snapshots a traves del dominio.
 

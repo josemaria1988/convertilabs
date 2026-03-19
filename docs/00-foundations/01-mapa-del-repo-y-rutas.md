@@ -23,6 +23,7 @@ docs/
 ### Dominios presentes en `modules/`
 
 - `accounting`
+- `audit`
 - `ai`
 - `auth`
 - `documents`
@@ -41,6 +42,7 @@ docs/
 ### Dominios presentes en `components/`
 
 - `accounting`
+- `audit`
 - `auth`
 - `chart-map`
 - `dashboard`
@@ -73,6 +75,7 @@ docs/
 
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/audit`
 - `/app/o/[slug]/trial-balance`
 - `/app/o/[slug]/settings`
 - `/app/o/[slug]/tax`
@@ -124,11 +127,11 @@ docs/
 
 ### Flujo documental
 
-1. upload a storage privado o importacion batch desde planilla;
-2. `prepare_document_upload` y `complete_document_upload`;
-3. Inngest dispara procesamiento estructurado;
-4. OpenAI devuelve estructura documental;
-5. se persiste draft, steps y artefactos;
+1. documentos binarios se suben desde `documents` y planillas masivas entran por `audit`;
+2. `prepare_document_upload` y `complete_document_upload` resuelven el upload privado de originales;
+3. la auditoria batch genera un `document_batch_import`, corre en background y deja `preview_ready` antes de crear documentos;
+4. el usuario acepta o rechaza filas individuales o el batch completo;
+5. solo lo aceptado materializa `documents`, drafts y artefactos;
 6. el usuario revisa, clasifica, aplica reglas, reabre o confirma;
 7. el posting alimenta ledger, VAT y superficies de lectura contable.
 
@@ -159,7 +162,7 @@ docs/
 - `components/settings/business-profile-settings.tsx`
 - `components/settings/settings-capabilities-list.tsx`
 
-### Documentos
+### Documentos y Auditoria
 
 - `components/documents/documents-workspace-table.tsx`
 - `components/documents/document-review-workspace.tsx`
@@ -167,6 +170,8 @@ docs/
 - `components/documents/accounting-impact-preview.tsx`
 - `components/documents/rule-application-card.tsx`
 - `components/documents/upload-dropzone.tsx`
+- `components/audit/document-audit-upload-panel.tsx`
+- `components/audit/document-audit-preview-workspace.tsx`
 
 ### Contabilidad y explainability
 
