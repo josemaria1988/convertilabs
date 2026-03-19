@@ -65,7 +65,7 @@ La arquitectura visible hoy ya separa dos carriles:
 
 1. el usuario entra a `/app/o/[slug]/audit`, elige compras o ventas y sube una planilla mensual;
 2. el sistema hace preflight, valida limite del flujo estandar y encola un `document_batch_import`;
-3. la corrida de background detecta headers, extrae filas importables y deja la corrida en `preview_ready` dentro de `organization_spreadsheet_import_runs`;
+3. la corrida de background detecta headers, aplica normalizadores deterministas cuando reconoce layouts como Zetasoftware compras o ventas, extrae filas importables y deja la corrida en `preview_ready` dentro de `organization_spreadsheet_import_runs`;
 4. el usuario revisa el preview, acepta o rechaza todo o subconjuntos del batch;
 5. solo las filas aceptadas materializan documentos `source_type = spreadsheet_import`;
 6. esos documentos vuelven al workspace de `Documentos` para revision, clasificacion y posting;

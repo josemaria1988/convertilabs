@@ -215,11 +215,28 @@ export function countDocumentAuditPreviewRows(rows: DocumentAuditPreviewRowRecor
   });
 }
 
+export function resolveDocumentAuditPreviewCounterparty(
+  row: Pick<DocumentSpreadsheetImportRow, "documentRole" | "facts">,
+) {
+  if (row.documentRole === "sale") {
+    return {
+      name: row.facts.receiver_name ?? row.facts.issuer_name ?? null,
+      taxId: row.facts.receiver_tax_id ?? row.facts.issuer_tax_id ?? null,
+    };
+  }
+
+  return {
+    name: row.facts.issuer_name ?? row.facts.receiver_name ?? null,
+    taxId: row.facts.issuer_tax_id ?? row.facts.receiver_tax_id ?? null,
+  };
+}
+
 function buildPreviewRowView(
   rowRecord: DocumentAuditPreviewRowRecord,
   profileLookup: Map<string, string>,
 ) {
   const facts = rowRecord.row.facts;
+  const counterparty = resolveDocumentAuditPreviewCounterparty(rowRecord.row);
 
   return {
     rowId: rowRecord.rowId,
@@ -228,8 +245,8 @@ function buildPreviewRowView(
     displayLabel: rowRecord.row.displayLabel,
     documentRole: rowRecord.row.documentRole,
     documentType: rowRecord.row.documentType,
-    counterpartyName: facts.issuer_name,
-    counterpartyTaxId: facts.issuer_tax_id,
+    counterpartyName: counterparty.name,
+    counterpartyTaxId: counterparty.taxId,
     documentDate: facts.document_date,
     documentNumber: facts.document_number,
     currencyCode: facts.currency_code,
@@ -317,8 +334,9 @@ async function loadImportedDocuments(
     originalFilename: row.original_filename,
     documentDate: row.document_date,
     documentNumber: row.external_reference,
-    counterpartyName: asString(asRecord(row.metadata).issuer_name)
-      ?? asString(asRecord(row.metadata).counterparty_name),
+    counterpartyName: asString(asRecord(row.metadata).counterparty_name)
+      ?? asString(asRecord(row.metadata).receiver_name)
+      ?? asString(asRecord(row.metadata).issuer_name),
     currencyCode: row.document_currency_code,
     totalAmount: row.document_total_amount_original,
     createdAt: row.created_at,
@@ -419,7 +437,8 @@ export async function loadDocumentAuditWorkspace(input: {
 
     return {
       ...document,
-      counterpartyName: document.counterpartyName ?? previewRow?.row.facts.issuer_name ?? null,
+      counterpartyName: document.counterpartyName
+        ?? (previewRow ? resolveDocumentAuditPreviewCounterparty(previewRow.row).name : null),
     };
   });
   const detail = {

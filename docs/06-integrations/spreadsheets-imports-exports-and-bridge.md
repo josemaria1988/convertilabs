@@ -87,6 +87,7 @@ Carril interactivo para imports con preview y confirmacion selectiva:
 Carril auditado orientado a intake documental desde planilla mensual:
 
 - compras o ventas del periodo;
+- layout deterministico de Zetasoftware para compras y ventas, con consolidacion por factura, contraparte correcta y cotizacion documental preservada;
 - deteccion de layout legacy;
 - importacion `document_batch_import` en background;
 - preview paginado con aceptar/rechazar todo o subconjuntos;

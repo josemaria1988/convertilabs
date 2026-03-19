@@ -333,6 +333,52 @@ test("document spreadsheet import duplicate guard falls back to existing documen
   assert.equal(duplicate?.matchedOn, "document_record");
 });
 
+test("document spreadsheet import consolidates Zeta-like sales using the real client column and preserves FX rate", async () => {
+  const content = [
+    "01-02-2026 al 28-02-2026",
+    "Fecha\tComprobante\tCFE\tPendiente Entrega\tSerie\tNº\tCliente #\tCliente\tRUT\tCentro de Costos\tReferencia\tCantidad\tOrigen\tDestino\tArtículo\tDescripción\tMoneda\tCotización\tPrecio\tSubtotal\tSubtotal (+/-)\tIVA\tTotal IVA (+/-)\tTotal",
+    "27-02-2026\tVenta Crédito (CFE)\te-Factura\tN\tA\t6395\tCL00029\tAgropecuaria El Tero\t200027620010\t\t\t1\t\t\t000351\tChapa perforada 1\tU$S\t38.436\t78.69\t78.69\t78.69\t17.31\t17.31\t96",
+    "27-02-2026\tVenta Crédito (CFE)\te-Factura\tN\tA\t6395\tCL00029\tAgropecuaria El Tero\t200027620010\t\t\t4\t\t\t000318\tChapa perforada 2\tU$S\t38.436\t102.46\t409.84\t409.84\t90.16\t90.16\t500",
+    "27-02-2026\tNota de Crédito Venta (CFE)\tNota de Crédito de e-Factura\tN\tA\t903\tCL00029\tAgropecuaria El Tero\t200027620010\t\t\t1\t\t\t000351\tAjuste comercial\tU$S\t38.436\t78.69\t78.69\t-78.69\t17.31\t-17.31\t96",
+  ].join("\n");
+
+  const result = await extractDocumentSpreadsheetRows({
+    fileName: "ventas-zeta.tsv",
+    mimeType: "text/tab-separated-values",
+    bytes: Buffer.from(content, "utf8"),
+    ledgerKind: "sale",
+    provider: "heuristic",
+  });
+
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.skippedRows.length, 0);
+  assert.equal(result.consolidatedDocumentsDetected, 2);
+  assert.equal(result.duplicateGroupsDetected, 1);
+
+  const invoice = result.rows.find((row) => row.facts.document_number === "6395");
+  const creditNote = result.rows.find((row) => row.facts.document_number === "903");
+
+  assert.ok(invoice);
+  assert.ok(creditNote);
+  assert.equal(invoice.facts.receiver_name, "Agropecuaria El Tero");
+  assert.equal(invoice.facts.receiver_tax_id, "200027620010");
+  assert.equal(invoice.facts.subtotal, 488.53);
+  assert.equal(invoice.facts.tax_amount, 107.47);
+  assert.equal(invoice.facts.total_amount, 596);
+  assert.equal(invoice.documentFxRate, 38.436);
+  assert.equal(invoice.documentFxRateSource, "document_import");
+  assert.equal(invoice.paymentTerms, "credit");
+  assert.equal(invoice.lineItems.length, 2);
+  assert.equal(invoice.lineItems[0].concept_code, "000351");
+  assert.equal(invoice.lineItems[1].concept_description, "Chapa perforada 2");
+  assert.deepEqual(invoice.sourceRowNumbers, [3, 4]);
+
+  assert.equal(creditNote.documentType, "sale_credit_note");
+  assert.equal(creditNote.isCreditNote, true);
+  assert.equal(creditNote.facts.receiver_name, "Agropecuaria El Tero");
+  assert.equal(creditNote.documentFxRate, 38.436);
+});
+
 test("document spreadsheet preflight counts candidate rows without calling OpenAI", async () => {
   const originalApiKey = process.env.OPENAI_API_KEY;
   process.env.OPENAI_API_KEY = "test-key";

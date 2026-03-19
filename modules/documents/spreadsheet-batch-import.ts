@@ -29,6 +29,10 @@ import {
   isZetaPurchaseLayout,
   normalizeZetaPurchaseRows,
 } from "@/modules/documents/zeta-purchase-import";
+import {
+  isZetaSaleLayout,
+  normalizeZetaSaleRows,
+} from "@/modules/documents/zeta-sale-import";
 import { parseSpreadsheetDateValue } from "@/modules/documents/spreadsheet-date";
 
 export type DocumentSpreadsheetLedgerKind = "purchase" | "sale";
@@ -1909,6 +1913,32 @@ async function resolveDocumentSpreadsheetRows(input: {
     && isZetaPurchaseLayout(input.selectedSheet.detectedHeaders)
   ) {
     const normalized = normalizeZetaPurchaseRows({
+      fileName: input.fileName,
+      sheetName: input.selectedSheet.sheet.sheetName,
+      rawRows: usableRawRows,
+    });
+
+    return {
+      rows: normalized.rows,
+      skippedRows: normalized.skippedRows,
+      warnings: [...new Set(normalized.warnings)],
+      rawRowsDetected: normalized.rawRowsDetected,
+      consolidatedDocumentsDetected: normalized.consolidatedDocumentsDetected,
+      duplicateGroupsDetected: normalized.duplicateGroupsDetected,
+      ignoredResidualRows: normalized.ignoredResidualRows,
+      blockedGroupsDetected: normalized.blockedGroupsDetected,
+      usdMissingFxCount: normalized.usdMissingFxCount,
+      creditNotesDetected: normalized.creditNotesDetected,
+      minDate: normalized.minDate,
+      maxDate: normalized.maxDate,
+    } satisfies DocumentSpreadsheetRowsNormalizationResult;
+  }
+
+  if (
+    input.ledgerKind === "sale"
+    && isZetaSaleLayout(input.selectedSheet.sheet.headers)
+  ) {
+    const normalized = normalizeZetaSaleRows({
       fileName: input.fileName,
       sheetName: input.selectedSheet.sheet.sheetName,
       rawRows: usableRawRows,

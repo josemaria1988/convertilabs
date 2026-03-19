@@ -1,4 +1,4 @@
-﻿import {
+import {
   normalizeTaxId,
   normalizeTextToken,
   roundCurrency,
@@ -10,7 +10,7 @@ import type {
   DocumentIntakeLineItem,
 } from "@/modules/ai/document-intake-contract";
 
-export type ZetaPurchaseRawRow = {
+export type ZetaSaleRawRow = {
   rowNumber: number;
   typedRow: Record<string, string | null>;
   rawType: string | null;
@@ -33,10 +33,10 @@ export type ZetaPurchaseRawRow = {
   vatLabelRaw: string | null;
 };
 
-export type ZetaPurchaseImportRow = {
+export type ZetaSaleImportRow = {
   rowNumber: number;
   sheetName: string;
-  documentRole: "purchase";
+  documentRole: "sale";
   documentType: string;
   operationCategory: string | null;
   paymentTerms: "cash" | "credit" | "unknown";
@@ -63,8 +63,8 @@ export type ZetaPurchaseImportRow = {
   originalRow: Record<string, string | null>;
 };
 
-export type ZetaPurchaseNormalizationResult = {
-  rows: ZetaPurchaseImportRow[];
+export type ZetaSaleNormalizationResult = {
+  rows: ZetaSaleImportRow[];
   skippedRows: Array<{
     rowNumber: number;
     reason: string;
@@ -81,13 +81,14 @@ export type ZetaPurchaseNormalizationResult = {
   maxDate: string | null;
 };
 
-type ParsedZetaRow = {
+type ParsedZetaSaleRow = {
   rowNumber: number;
   typedRow: Record<string, string | null>;
   rawType: string | null;
-  rawDescription: string | null;
-  counterpartyName: string;
-  counterpartyTaxId: string | null;
+  cfeLabel: string | null;
+  clientCode: string | null;
+  clientName: string;
+  clientTaxId: string | null;
   documentDate: string;
   dueDate: string | null;
   documentNumber: string;
@@ -98,31 +99,35 @@ type ParsedZetaRow = {
   taxRate: number | null;
   totalAmount: number;
   balanceAmount: number | null;
-  lineConcept: string | null;
+  quantity: number | null;
+  unitAmount: number | null;
+  articleCode: string | null;
+  description: string | null;
+  reference: string | null;
   fxRate: number | null;
-  vatLabel: string | null;
   paymentTerms: "cash" | "credit" | "unknown";
   settlementMethod: "cash" | "bank_transfer" | "card" | "check" | "unknown";
   operationCategory: string | null;
-  documentType: "purchase_invoice" | "purchase_credit_note";
+  documentType: "sale_invoice" | "sale_credit_note";
   warnings: string[];
 };
 
 const MISSING_FX_WARNING_PREFIX = "MISSING_FX_RATE:";
-const ZETA_LAYOUT_REQUIRED_HEADERS = [
-  "documentDate",
-  "documentTypeLabel",
-  "documentNumber",
-  "counterpartyName",
-  "counterpartyTaxId",
-  "currency",
-  "subtotalAmount",
-  "taxAmount",
-  "totalAmount",
-  "series",
-  "lineConcept",
-  "fxRate",
-  "vatLabel",
+const ZETA_SALE_LAYOUT_REQUIRED_HEADERS = [
+  "Fecha",
+  "Comprobante",
+  "Serie",
+  "Nº",
+  "Cliente",
+  "Cliente #",
+  "RUT",
+  "Artículo",
+  "Descripción",
+  "Moneda",
+  "Cotización",
+  "Subtotal",
+  "IVA",
+  "Total",
 ] as const;
 
 function normalizeLooseText(value: string | null | undefined) {
@@ -298,12 +303,12 @@ function buildFxMissingWarning(documentDate: string | null) {
 }
 
 function buildDisplayLabel(input: {
-  counterpartyName: string;
+  clientName: string;
   series: string | null;
   documentNumber: string;
 }) {
   const documentRef = [input.series, input.documentNumber].filter(Boolean).join("-");
-  return `Compra importada - ${input.counterpartyName}${documentRef ? ` (${documentRef})` : ""}`;
+  return `Venta importada - ${input.clientName}${documentRef ? ` (${documentRef})` : ""}`;
 }
 
 function buildExtractedText(input: {
@@ -312,12 +317,12 @@ function buildExtractedText(input: {
   lineCount: number;
 }) {
   const parts = [
-    "Importado desde planilla mensual de compras Zetasoftware.",
+    "Importado desde planilla mensual de ventas Zetasoftware.",
     input.facts.document_date ? `Fecha: ${input.facts.document_date}.` : null,
     input.rawType ? `Tipo reportado: ${input.rawType}.` : null,
     input.facts.document_number ? `Numero: ${input.facts.document_number}.` : null,
     input.facts.series ? `Serie: ${input.facts.series}.` : null,
-    input.facts.issuer_name ? `Proveedor: ${input.facts.issuer_name}.` : null,
+    input.facts.receiver_name ? `Cliente: ${input.facts.receiver_name}.` : null,
     input.facts.currency_code ? `Moneda: ${input.facts.currency_code}.` : null,
     typeof input.facts.total_amount === "number" ? `Total: ${input.facts.total_amount}.` : null,
     `Lineas consolidadas: ${input.lineCount}.`,
@@ -326,26 +331,22 @@ function buildExtractedText(input: {
   return parts.filter(Boolean).join(" ");
 }
 
-function inferPaymentTerms(balanceAmount: number | null, rawType: string | null) {
-  if (typeof balanceAmount === "number") {
-    return balanceAmount > 0.009 ? "credit" as const : "cash" as const;
-  }
+function inferPaymentTerms(rawType: string | null, cfeLabel: string | null) {
+  const normalized = normalizeLooseText(firstNonEmptyString(rawType, cfeLabel));
 
-  const normalized = normalizeLooseText(rawType);
-
-  if (normalized.includes("credito") || normalized.includes("cr dito")) {
+  if (normalized.includes("credito")) {
     return "credit" as const;
   }
 
-  if (normalized.includes("contado") || normalized.includes("cash")) {
+  if (normalized.includes("contado") || normalized.includes("ticket")) {
     return "cash" as const;
   }
 
   return "unknown" as const;
 }
 
-function inferSettlementMethod(value: string | null | undefined) {
-  const normalized = normalizeLooseText(value);
+function inferSettlementMethod(rawType: string | null) {
+  const normalized = normalizeLooseText(rawType);
 
   if (!normalized) {
     return "unknown" as const;
@@ -363,46 +364,14 @@ function inferSettlementMethod(value: string | null | undefined) {
     return "check" as const;
   }
 
-  if (normalized.includes("contado") || normalized.includes("efectivo") || normalized.includes("caja") || normalized.includes("cash")) {
+  if (normalized.includes("contado") || normalized.includes("efectivo") || normalized.includes("caja") || normalized.includes("ticket")) {
     return "cash" as const;
   }
 
   return "unknown" as const;
 }
 
-function normalizePartyName(value: string | null | undefined) {
-  const normalized = normalizeLooseText(value);
-  return normalized || null;
-}
-
-function normalizeDocumentKeyPart(value: string | null | undefined, fallback: string) {
-  const normalized = normalizeLooseText(value);
-  return normalized || fallback;
-}
-
-function parseZetaVatRateFromLabel(value: string | null | undefined) {
-  const normalized = normalizeLooseText(value);
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized.includes("22")) {
-    return 22;
-  }
-
-  if (normalized.includes("10")) {
-    return 10;
-  }
-
-  if (normalized.includes("0")) {
-    return 0;
-  }
-
-  return null;
-}
-
-function inferVatRateFromAmounts(subtotalAmount: number, taxAmount: number) {
+function parseZetaVatRateFromAmounts(subtotalAmount: number, taxAmount: number) {
   if (Math.abs(taxAmount) <= 0.009) {
     return 0;
   }
@@ -411,9 +380,7 @@ function inferVatRateFromAmounts(subtotalAmount: number, taxAmount: number) {
     return null;
   }
 
-  const candidates = [22, 10, 0];
-
-  for (const candidate of candidates) {
+  for (const candidate of [22, 10, 0]) {
     const expected = roundCurrency((subtotalAmount * candidate) / 100);
 
     if (Math.abs(expected - taxAmount) <= 0.05) {
@@ -424,54 +391,88 @@ function inferVatRateFromAmounts(subtotalAmount: number, taxAmount: number) {
   return null;
 }
 
-function isCreditNote(rawType: string | null, totalAmount: number) {
-  const normalized = normalizeLooseText(rawType);
+function isCreditNote(input: {
+  rawType: string | null;
+  cfeLabel: string | null;
+  signedSubtotal: number | null;
+  signedTaxAmount: number | null;
+}) {
+  const normalized = normalizeLooseText(firstNonEmptyString(input.rawType, input.cfeLabel));
 
   return normalized.includes("nota credito")
     || normalized.includes("nota de credito")
     || normalized.includes("devolucion")
-    || totalAmount < 0;
+    || (typeof input.signedSubtotal === "number" && input.signedSubtotal < 0)
+    || (typeof input.signedTaxAmount === "number" && input.signedTaxAmount < 0);
 }
 
-function resolveOperationCategory(rawType: string | null) {
-  const normalized = normalizeLooseText(rawType);
+function resolveOperationCategory(input: {
+  rawType: string | null;
+  currencyCode: string;
+  taxAmount: number;
+}) {
+  const normalized = normalizeLooseText(input.rawType);
 
-  if (normalized.includes("gasto")) {
-    return "admin_expense";
+  if (Math.abs(input.taxAmount) <= 0.009 && input.currencyCode === "USD") {
+    return "export_sale";
   }
 
-  if (normalized.includes("compra")) {
+  if (normalized.includes("credito") || normalized.includes("contado")) {
     return "goods_resale";
   }
 
   return null;
 }
 
-function isResidualRow(input: {
-  vatLabel: string | null;
-  subtotalAmount: number;
-  taxAmount: number;
-  totalAmount: number;
-}) {
-  return !firstNonEmptyString(input.vatLabel)
-    && Math.abs(input.taxAmount) <= 0.009
-    && Math.abs(input.subtotalAmount) <= 1
-    && Math.abs(input.totalAmount) <= 1;
-}
+function resolveTypedRowValue(
+  typedRow: Record<string, string | null>,
+  candidates: string[],
+) {
+  for (const candidate of candidates) {
+    const direct = typedRow[candidate];
 
-function parseRow(rawRow: ZetaPurchaseRawRow) {
-  const counterpartyName = firstNonEmptyString(rawRow.counterpartyName);
-
-  if (!counterpartyName) {
-    return {
-      skipped: {
-        rowNumber: rawRow.rowNumber,
-        reason: "Falta la contraparte principal de la fila.",
-      },
-    } as const;
+    if (typeof direct === "string" && direct.trim().length > 0) {
+      return direct;
+    }
   }
 
-  const documentDate = parseDateValue(rawRow.documentDateRaw);
+  const typedEntries = Object.entries(typedRow);
+
+  for (const candidate of candidates) {
+    for (const [header, value] of typedEntries) {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        continue;
+      }
+
+      if (header.trim() === candidate.trim()) {
+        return value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function hasHeader(headers: string[], candidates: string[]) {
+  const normalizedHeaders = new Set(headers.map((header) => normalizeHeader(header)));
+
+  return candidates.some((candidate) => normalizedHeaders.has(normalizeHeader(candidate)));
+}
+
+function parseRow(rawRow: ZetaSaleRawRow) {
+  const documentDate = parseDateValue(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Fecha"]),
+    rawRow.documentDateRaw,
+  ));
 
   if (!documentDate) {
     return {
@@ -482,7 +483,17 @@ function parseRow(rawRow: ZetaPurchaseRawRow) {
     } as const;
   }
 
-  const documentNumber = normalizeIdentifierValue(rawRow.documentNumberRaw);
+  const rawType = firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Comprobante"]),
+    rawRow.rawType,
+  );
+  const cfeLabel = firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["CFE"]),
+  );
+  const documentNumber = normalizeIdentifierValue(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Nº", "N°", "Numero", "Número", "NÂº", "NÂ°", "NÃºmero"]),
+    rawRow.documentNumberRaw,
+  ));
 
   if (!documentNumber) {
     return {
@@ -493,52 +504,81 @@ function parseRow(rawRow: ZetaPurchaseRawRow) {
     } as const;
   }
 
-  const subtotalAmountRaw = parseLocalizedNumber(rawRow.subtotalAmountRaw);
-  const taxAmountRaw = parseLocalizedNumber(rawRow.taxAmountRaw);
-  const totalAmountRaw = parseLocalizedNumber(rawRow.totalAmountRaw);
-  const balanceAmount = parseLocalizedNumber(rawRow.balanceAmountRaw);
+  const clientCode = normalizeIdentifierValue(resolveTypedRowValue(rawRow.typedRow, ["Cliente #"]));
+  const clientName = firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Cliente"]),
+    rawRow.counterpartyName,
+    clientCode,
+  );
 
-  let subtotalAmount = subtotalAmountRaw ?? 0;
-  let taxAmount = taxAmountRaw ?? 0;
-  let totalAmount = totalAmountRaw;
-
-  if (totalAmount === null && subtotalAmountRaw !== null && taxAmountRaw !== null) {
-    totalAmount = roundCurrency(subtotalAmountRaw + taxAmountRaw);
-  }
-
-  if (subtotalAmountRaw === null && totalAmountRaw !== null && taxAmountRaw !== null) {
-    subtotalAmount = roundCurrency(totalAmountRaw - taxAmountRaw);
-  }
-
-  if (taxAmountRaw === null && totalAmountRaw !== null && subtotalAmountRaw !== null) {
-    taxAmount = roundCurrency(totalAmountRaw - subtotalAmountRaw);
-  }
-
-  if (totalAmount === null) {
+  if (!clientName) {
     return {
       skipped: {
         rowNumber: rawRow.rowNumber,
-        reason: "La fila no trae total importable ni suficiente informacion para reconstruirlo.",
+        reason: "Falta el nombre del cliente para la fila importada.",
       },
     } as const;
   }
 
-  const vatLabel = firstNonEmptyString(rawRow.vatLabelRaw);
-  const taxRate = parseZetaVatRateFromLabel(vatLabel) ?? inferVatRateFromAmounts(subtotalAmount, taxAmount);
-  const lineConcept = firstNonEmptyString(rawRow.lineConceptRaw, rawRow.rawDescription, rawRow.rawType);
-  const currencyCode = parseCurrencyCode(rawRow.currencyRaw);
-  const fxRate = parseLocalizedFxRate(rawRow.fxRateRaw);
-  const paymentTerms = inferPaymentTerms(balanceAmount, rawRow.rawType);
-  const settlementMethod = paymentTerms === "credit"
-    ? "unknown"
-    : inferSettlementMethod(rawRow.rawType);
-  const documentType = isCreditNote(rawRow.rawType, totalAmount)
-    ? "purchase_credit_note"
-    : "purchase_invoice";
+  const subtotalAmount = parseLocalizedNumber(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Subtotal"]),
+    rawRow.subtotalAmountRaw,
+    resolveTypedRowValue(rawRow.typedRow, ["Subtotal (+/-)"]),
+  ));
+  const taxAmount = parseLocalizedNumber(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["IVA"]),
+    rawRow.taxAmountRaw,
+    resolveTypedRowValue(rawRow.typedRow, ["Total IVA (+/-)"]),
+  ));
+  let totalAmount = parseLocalizedNumber(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Total"]),
+    rawRow.totalAmountRaw,
+  ));
+
+  if (totalAmount === null && subtotalAmount !== null && taxAmount !== null) {
+    totalAmount = roundCurrency(subtotalAmount + taxAmount);
+  }
+
+  if (subtotalAmount === null || taxAmount === null || totalAmount === null) {
+    return {
+      skipped: {
+        rowNumber: rawRow.rowNumber,
+        reason: "La fila no trae subtotal, IVA y total suficientes para construir la venta.",
+      },
+    } as const;
+  }
+
+  const signedSubtotal = parseLocalizedNumber(resolveTypedRowValue(rawRow.typedRow, ["Subtotal (+/-)"]));
+  const signedTaxAmount = parseLocalizedNumber(resolveTypedRowValue(rawRow.typedRow, ["Total IVA (+/-)"]));
+  const currencyCode = parseCurrencyCode(
+    resolveTypedRowValue(rawRow.typedRow, ["Moneda"]),
+    rawRow.currencyRaw,
+  );
+  const fxRate = parseLocalizedFxRate(firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Cotización", "Cotizacion", "CotizaciÃ³n"]),
+    rawRow.fxRateRaw,
+  ));
+  const quantity = parseLocalizedNumber(resolveTypedRowValue(rawRow.typedRow, ["Cantidad"]));
+  const unitAmount = parseLocalizedNumber(resolveTypedRowValue(rawRow.typedRow, ["Precio"]));
+  const articleCode = normalizeIdentifierValue(resolveTypedRowValue(rawRow.typedRow, ["Artículo", "Articulo", "ArtÃ­culo"]));
+  const description = firstNonEmptyString(
+    resolveTypedRowValue(rawRow.typedRow, ["Descripción", "Descripcion", "DescripciÃ³n"]),
+    rawRow.rawDescription,
+  );
+  const paymentTerms = inferPaymentTerms(rawType, cfeLabel);
+  const documentType = isCreditNote({
+    rawType,
+    cfeLabel,
+    signedSubtotal,
+    signedTaxAmount,
+  })
+    ? "sale_credit_note"
+    : "sale_invoice";
+  const taxRate = parseZetaVatRateFromAmounts(subtotalAmount, taxAmount);
   const warnings: string[] = [];
 
   if (taxRate === null) {
-    warnings.push("No pudimos resolver la tasa de IVA de una linea importada desde Zeta.");
+    warnings.push("No pudimos resolver la tasa de IVA de una linea importada desde Zeta ventas.");
   }
 
   if (currencyCode === "USD" && (!fxRate || fxRate <= 0)) {
@@ -549,39 +589,48 @@ function parseRow(rawRow: ZetaPurchaseRawRow) {
     parsed: {
       rowNumber: rawRow.rowNumber,
       typedRow: rawRow.typedRow,
-      rawType: rawRow.rawType,
-      rawDescription: rawRow.rawDescription,
-      counterpartyName,
-      counterpartyTaxId: normalizeTaxId(rawRow.counterpartyTaxId),
+      rawType,
+      cfeLabel,
+      clientCode,
+      clientName,
+      clientTaxId: normalizeTaxId(firstNonEmptyString(
+        resolveTypedRowValue(rawRow.typedRow, ["RUT"]),
+        rawRow.counterpartyTaxId,
+      )),
       documentDate,
-      dueDate: parseDateValue(rawRow.dueDateRaw),
+      dueDate: paymentTerms === "cash" ? documentDate : parseDateValue(rawRow.dueDateRaw),
       documentNumber,
-      series: normalizeIdentifierValue(rawRow.seriesRaw),
+      series: normalizeIdentifierValue(firstNonEmptyString(
+        resolveTypedRowValue(rawRow.typedRow, ["Serie"]),
+        rawRow.seriesRaw,
+      )),
       currencyCode,
       subtotalAmount,
       taxAmount,
       taxRate,
       totalAmount,
-      balanceAmount,
-      lineConcept,
+      balanceAmount: paymentTerms === "credit" ? totalAmount : 0,
+      quantity,
+      unitAmount,
+      articleCode,
+      description,
+      reference: firstNonEmptyString(resolveTypedRowValue(rawRow.typedRow, ["Referencia"])),
       fxRate,
-      vatLabel,
       paymentTerms,
-      settlementMethod,
-      operationCategory: resolveOperationCategory(rawRow.rawType),
+      settlementMethod: paymentTerms === "credit" ? "unknown" : inferSettlementMethod(rawType),
+      operationCategory: resolveOperationCategory({
+        rawType,
+        currencyCode,
+        taxAmount,
+      }),
       documentType,
       warnings,
-    } satisfies ParsedZetaRow,
-      isResidual: isResidualRow({
-        vatLabel,
-        subtotalAmount,
-        taxAmount,
-        totalAmount,
-      }),
-    } as const;
+    } satisfies ParsedZetaSaleRow,
+    isResidual: false,
+  } as const;
 }
 
-function buildAmountBreakdown(lines: ParsedZetaRow[]) {
+function buildAmountBreakdown(lines: ParsedZetaSaleRow[]) {
   const grouped = new Map<string, { amount: number; taxAmount: number; taxRate: number | null }>();
 
   for (const line of lines) {
@@ -611,32 +660,31 @@ function buildAmountBreakdown(lines: ParsedZetaRow[]) {
   })) satisfies DocumentIntakeAmountBreakdown[];
 }
 
-function buildConsolidationKey(line: ParsedZetaRow) {
+function buildConsolidationKey(line: ParsedZetaSaleRow) {
   return [
     line.documentDate,
-    normalizeDocumentKeyPart(line.rawType, "tipo"),
-    normalizeDocumentKeyPart(line.series, "sin-serie"),
-    normalizeDocumentKeyPart(line.documentNumber, `fila-${line.rowNumber}`),
+    normalizeLooseText(line.rawType) || "tipo",
+    normalizeLooseText(line.series) || "sin-serie",
+    normalizeLooseText(line.documentNumber) || `fila-${line.rowNumber}`,
     line.currencyCode,
-    normalizeDocumentKeyPart(line.counterpartyTaxId, normalizePartyName(line.counterpartyName) ?? `fila-${line.rowNumber}`),
+    normalizeLooseText(line.clientTaxId) || normalizeLooseText(line.clientCode) || normalizeLooseText(line.clientName),
   ].join("|");
 }
 
-export function isZetaPurchaseLayout(detectedHeaders: Partial<Record<string, string>>) {
-  return ZETA_LAYOUT_REQUIRED_HEADERS.every((key) => typeof detectedHeaders[key] === "string");
+export function isZetaSaleLayout(headers: string[]) {
+  return ZETA_SALE_LAYOUT_REQUIRED_HEADERS.every((header) => hasHeader(headers, [header]));
 }
 
-export function normalizeZetaPurchaseRows(input: {
+export function normalizeZetaSaleRows(input: {
   fileName: string;
   sheetName: string;
-  rawRows: ZetaPurchaseRawRow[];
+  rawRows: ZetaSaleRawRow[];
 }) {
-  const groups = new Map<string, ParsedZetaRow[]>();
+  const groups = new Map<string, ParsedZetaSaleRow[]>();
   const skippedRows: Array<{ rowNumber: number; reason: string }> = [];
   const warnings: string[] = [];
   const parsedDates: string[] = [];
   let rawRowsDetected = 0;
-  let ignoredResidualRows = 0;
 
   for (const rawRow of input.rawRows) {
     const hasContent = Object.values(rawRow.typedRow).some((value) => typeof value === "string" && value.trim().length > 0);
@@ -653,11 +701,6 @@ export function normalizeZetaPurchaseRows(input: {
       continue;
     }
 
-    if (parsed.isResidual) {
-      ignoredResidualRows += 1;
-      continue;
-    }
-
     parsedDates.push(parsed.parsed.documentDate);
     const key = buildConsolidationKey(parsed.parsed);
     const current = groups.get(key) ?? [];
@@ -666,7 +709,7 @@ export function normalizeZetaPurchaseRows(input: {
   }
 
   const duplicateGroupsDetected = Array.from(groups.values()).filter((rows) => rows.length > 1).length;
-  const rows: ZetaPurchaseImportRow[] = [];
+  const rows: ZetaSaleImportRow[] = [];
   let blockedGroupsDetected = 0;
   let usdMissingFxCount = 0;
   let creditNotesDetected = 0;
@@ -693,26 +736,33 @@ export function normalizeZetaPurchaseRows(input: {
       .map((value) => roundRate(value))));
     const fxRate = fxCandidates.length > 0 ? fxCandidates[0] : null;
     const isUsdMissingFx = first.currencyCode === "USD" && fxRate === null;
-    const isCreditDocument = lines.some((line) => line.documentType === "purchase_credit_note") || totalAmount < 0;
+    const isCreditDocument = lines.some((line) => line.documentType === "sale_credit_note");
     const facts = buildEmptyFactMap();
-    facts.issuer_name = first.counterpartyName;
-    facts.issuer_tax_id = first.counterpartyTaxId;
+    facts.receiver_name = first.clientName;
+    facts.receiver_tax_id = first.clientTaxId;
     facts.document_number = first.documentNumber;
     facts.series = first.series;
     facts.currency_code = first.currencyCode;
     facts.document_date = first.documentDate;
-    facts.due_date = first.dueDate ?? (first.paymentTerms === "cash" ? first.documentDate : null);
+    facts.due_date = first.paymentTerms === "cash" ? first.documentDate : null;
     facts.subtotal = subtotal;
     facts.tax_amount = taxAmount;
     facts.total_amount = totalAmount;
-    facts.purchase_category_candidate = first.operationCategory;
+    facts.sale_category_candidate = Math.abs(taxAmount) <= 0.009
+      ? "exempt_or_export"
+      : first.operationCategory;
 
     const lineItems = lines.map((line, index) => ({
       line_number: index + 1,
-      concept_code: null,
-      concept_description: firstNonEmptyString(line.lineConcept, line.rawDescription, line.rawType, first.counterpartyName),
-      quantity: null,
-      unit_amount: null,
+      concept_code: line.articleCode,
+      concept_description: firstNonEmptyString(
+        line.description,
+        line.reference,
+        line.rawType,
+        line.clientName,
+      ),
+      quantity: line.quantity,
+      unit_amount: line.unitAmount,
       net_amount: line.subtotalAmount,
       tax_rate: line.taxRate,
       tax_amount: line.taxAmount,
@@ -737,8 +787,8 @@ export function normalizeZetaPurchaseRows(input: {
     rows.push({
       rowNumber: first.rowNumber,
       sheetName: input.sheetName,
-      documentRole: "purchase",
-      documentType: isCreditDocument ? "purchase_credit_note" : "purchase_invoice",
+      documentRole: "sale",
+      documentType: isCreditDocument ? "sale_credit_note" : "sale_invoice",
       operationCategory: first.operationCategory,
       paymentTerms: first.paymentTerms,
       settlementMethod: first.settlementMethod,
@@ -754,7 +804,7 @@ export function normalizeZetaPurchaseRows(input: {
       warnings: Array.from(new Set(groupWarnings)),
       sourceReference: `${input.fileName}:${input.sheetName}:grupo-${slugifyFragment(consolidationKey)}`,
       displayLabel: buildDisplayLabel({
-        counterpartyName: first.counterpartyName,
+        clientName: first.clientName,
         series: first.series,
         documentNumber: first.documentNumber,
       }),
@@ -799,11 +849,11 @@ export function normalizeZetaPurchaseRows(input: {
     rawRowsDetected,
     consolidatedDocumentsDetected: groups.size,
     duplicateGroupsDetected,
-    ignoredResidualRows,
+    ignoredResidualRows: 0,
     blockedGroupsDetected,
     usdMissingFxCount,
     creditNotesDetected,
     minDate: sortedDates[0] ?? null,
     maxDate: sortedDates.at(-1) ?? null,
-  } satisfies ZetaPurchaseNormalizationResult;
+  } satisfies ZetaSaleNormalizationResult;
 }

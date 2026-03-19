@@ -5,6 +5,7 @@ const {
   buildDocumentAuditPreviewRows,
   countDocumentAuditPreviewRows,
   parseDocumentAuditPreviewRows,
+  resolveDocumentAuditPreviewCounterparty,
 } = require("@/modules/audit/document-import-audit");
 const {
   formatDocumentSpreadsheetImportStatusMessage,
@@ -106,6 +107,30 @@ test("document audit preview rows start pending and can be parsed back from meta
     accepted: 0,
     rejected: 0,
     failed: 0,
+  });
+});
+
+test("document audit preview resolves counterparty from receiver fields for sales", () => {
+  const purchaseCounterparty = resolveDocumentAuditPreviewCounterparty(buildSpreadsheetRow());
+  const saleCounterparty = resolveDocumentAuditPreviewCounterparty(buildSpreadsheetRow({
+    documentRole: "sale",
+    documentType: "sale_invoice",
+    facts: {
+      ...buildSpreadsheetRow().facts,
+      issuer_name: null,
+      issuer_tax_id: null,
+      receiver_name: "Cliente S.A.",
+      receiver_tax_id: "216543210019",
+    },
+  }));
+
+  assert.deepEqual(purchaseCounterparty, {
+    name: "Proveedor S.A.",
+    taxId: "213456780019",
+  });
+  assert.deepEqual(saleCounterparty, {
+    name: "Cliente S.A.",
+    taxId: "216543210019",
   });
 });
 
