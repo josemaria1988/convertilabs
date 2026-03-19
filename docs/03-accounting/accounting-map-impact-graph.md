@@ -2,9 +2,9 @@
 
 ## Estado
 
-- Propuesta de producto y arquitectura.
-- No implementado todavia como feature dedicada.
-- Objetivo recomendado: Epic P0 + P1.
+- Feature implementada de forma parcial como superficie privada dedicada.
+- Activos hoy: ruta `/app/o/[slug]/chart-map`, taxonomia de eventos, arbol del plan, modo impacto, modo documento e inspector lateral.
+- Pendiente: simulacion de cambios, snapshots/versionado visible y edicion forward-only completa.
 
 ## Objetivo
 
@@ -62,7 +62,7 @@ Hoy ya existen piezas fuertes del dominio:
 
 El hueco principal no es de dominio. Es de visibilidad unificada.
 
-## Problema a resolver
+## Problema original y huecos actuales
 
 Hoy el usuario puede:
 
@@ -71,7 +71,7 @@ Hoy el usuario puede:
 - importar desde planilla;
 - ver sugerencias y previews desde un documento.
 
-Pero no puede ver en un solo lugar:
+Hoy ya existe una primera version del mapa, pero todavia falta consolidar en una sola experiencia completa:
 
 - arbol del plan;
 - conexiones entre evento, regla, template y cuentas;
@@ -80,9 +80,9 @@ Pero no puede ver en un solo lugar:
 
 ## Ubicacion en la app
 
-### Decision
+### Estado real hoy
 
-Crear ruta propia visible en la navegacion privada:
+La ruta privada ya existe y esta visible en la navegacion:
 
 - `/app/o/[slug]/chart-map`
 
@@ -240,25 +240,28 @@ Esto debe respetar el comportamiento actual del producto:
 - `app/app/o/[slug]/chart-map/page.tsx`
 - `app/app/o/[slug]/chart-map/loading.tsx`
 
-### Componentes propuestos
+### Componentes activos hoy
 
 - `components/chart-map/chart-map-shell.tsx`
 - `components/chart-map/chart-map-toolbar.tsx`
 - `components/chart-map/chart-tree-panel.tsx`
 - `components/chart-map/chart-impact-canvas.tsx`
 - `components/chart-map/chart-inspector.tsx`
-- `components/chart-map/chart-legend.tsx`
-- `components/chart-map/change-preview-drawer.tsx`
 - `components/chart-map/document-impact-banner.tsx`
-- `components/chart-map/snapshot-selector.tsx`
 
-### Modulos de dominio
+### Modulos de dominio activos hoy
 
 - `modules/accounting/chart-map/graph-builder.ts`
 - `modules/accounting/chart-map/event-taxonomy.ts`
+- `modules/accounting/chart-map/selectors.ts`
+
+### Piezas futuras sugeridas
+
+- `components/chart-map/chart-legend.tsx`
+- `components/chart-map/change-preview-drawer.tsx`
+- `components/chart-map/snapshot-selector.tsx`
 - `modules/accounting/chart-map/snapshot-service.ts`
 - `modules/accounting/chart-map/change-simulator.ts`
-- `modules/accounting/chart-map/selectors.ts`
 - `modules/accounting/chart-map/permissions.ts`
 - `modules/accounting/chart-map/layout.ts`
 
@@ -656,27 +659,20 @@ La feature queda lista cuando:
 - se reutiliza explainability existente;
 - hay tests unitarios, integracion y e2e suficientes.
 
-## Testing recomendado
+## Testing actual y recomendado
 
-### Unit
+### Actual hoy
+
+- `tests/chart-map.test.cjs`
+
+### Recomendado al profundizar la feature
 
 - `graph-builder.test.ts`
-- `change-simulator.test.ts`
 - `event-taxonomy.test.ts`
-- `snapshot-service.test.ts`
-
-### Integracion
-
-- `chart-map-page.test.tsx`
 - `document-impact-path.test.ts`
+- `chart-map-page.test.tsx`
 - `activate-accounting-snapshot.test.ts`
-
-### E2E
-
-- abrir mapa desde nav
-- abrir mapa desde documento
-- mover cuenta + preview + activar
-- verificar que documento viejo siga anclado a snapshot previa
+- e2e para deep link desde documento y simulacion forward-only
 
 ### DB smoke
 
@@ -749,20 +745,19 @@ Mitigacion:
 - V1 contable con badges fiscales;
 - overlay fiscal profunda despues.
 
-## Siguiente paso recomendado
+## Siguientes pasos recomendados
 
-Crear el Epic `P0 Mapa contable` con este orden:
+Desde el estado actual, el siguiente tramo razonable es:
 
-1. snapshot contable efectiva;
-2. read model;
-3. ruta `chart-map`;
-4. deep link desde documentos.
+1. snapshot contable efectiva visible;
+2. simulacion de cambios antes de activar;
+3. activacion forward-only con diff before/after;
+4. deep links mas ricos desde documentos y settings.
 
-Dejar para `P1`:
+Dejar para una fase posterior:
 
-- edicion controlada;
-- simulacion;
-- activacion forward-only;
-- diff before / after.
+- edicion controlada mas profunda;
+- layout persistido o preferencias avanzadas;
+- overlays fiscales mas complejas.
 
-La regla principal es no arrancar por "dibujar nodos". Primero hay que hacer visible la logica que el producto ya tiene.
+La regla principal sigue siendo la misma: no convertir el mapa en fuente de verdad visual. Primero se explica el dominio existente; despues se agregan cambios controlados hacia adelante.

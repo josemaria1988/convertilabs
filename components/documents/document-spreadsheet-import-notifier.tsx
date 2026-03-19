@@ -21,16 +21,32 @@ type ToastItem = {
 };
 
 function resolveToastTone(status: DocumentSpreadsheetImportStatus): ToastTone {
+  if (status.status === "preview_ready") {
+    return "success";
+  }
+
   if (status.status === "failed") {
     return "error";
+  }
+
+  if (status.status === "cancelled") {
+    return "warning";
   }
 
   return status.progress.failedCount > 0 ? "warning" : "success";
 }
 
 function resolveToastTitle(status: DocumentSpreadsheetImportStatus) {
+  if (status.status === "preview_ready") {
+    return "Vista previa lista";
+  }
+
   if (status.status === "failed") {
     return "Importacion fallida";
+  }
+
+  if (status.status === "cancelled") {
+    return "Importacion cancelada";
   }
 
   return status.progress.failedCount > 0

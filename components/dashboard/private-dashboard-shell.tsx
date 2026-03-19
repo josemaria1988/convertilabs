@@ -67,6 +67,24 @@ function DocumentIcon({ className }: IconProps) {
   );
 }
 
+function AuditIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3.5 5.5 6v5.4c0 4.2 2.6 7.8 6.5 9.1 3.9-1.3 6.5-4.9 6.5-9.1V6Z" />
+      <path d="m9.2 11.8 1.8 1.8 4-4" />
+    </svg>
+  );
+}
+
 function TaxIcon({ className }: IconProps) {
   return (
     <svg
@@ -164,6 +182,8 @@ function getNavIcon(label: string) {
   switch (label) {
     case "Documentos":
       return DocumentIcon;
+    case "Auditoria":
+      return AuditIcon;
     case "Contabilidad":
       return AccountingIcon;
     case "Impuestos":

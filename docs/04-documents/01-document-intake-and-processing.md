@@ -18,6 +18,8 @@ Capturar documentos reales, guardarlos en storage privado, extraer hechos estruc
 
 - `modules/documents/upload.ts`
 - `modules/documents/processing.ts`
+- `modules/documents/spreadsheet-batch-import.ts`
+- `modules/documents/spreadsheet-import-background.ts`
 - `modules/documents/inngest-function.ts`
 - `app/api/inngest/route.ts`
 - `app/api/v1/documents/[documentId]/processing-status/route.ts`
@@ -28,12 +30,18 @@ Estado real hoy:
 
 - PDF
 - JPG / PNG
+- planillas mensuales `.csv`, `.tsv`, `.xlsx` y `.xls` para importacion documental batch
 - cargas individuales
 - lotes visibles desde la bandeja documental
 
-La arquitectura ya esta preparada para mas fuentes, pero el carril visible principal sigue siendo upload privado de comprobantes.
+La arquitectura visible hoy ya tiene dos carriles en `Documentos`:
 
-## Flujo operativo
+- upload privado de comprobantes binarios para intake IA clasico;
+- importacion mensual por planilla que crea documentos sinteticos y los deja listos para revision.
+
+## Flujos operativos
+
+### Upload binario clasico
 
 1. el usuario sube archivo desde UI privada;
 2. el server prepara metadata y ruta segura de storage;
@@ -49,6 +57,14 @@ La arquitectura ya esta preparada para mas fuentes, pero el carril visible princ
    - candidatos y contexto de extraccion;
 7. se crea `document_draft` y sus pasos;
 8. el documento queda listo para revision.
+
+### Importacion documental por planilla
+
+1. el usuario elige compras o ventas y sube una planilla mensual;
+2. el sistema hace preflight, valida limite del flujo estandar y encola un `document_batch_import`;
+3. la corrida de background detecta headers, extrae filas importables y persiste documentos `source_type = spreadsheet_import`;
+4. si faltan cotizaciones USD, corre la resolucion automatica contra BCU y re-deriva los artifacts necesarios;
+5. el seguimiento visible se hace desde la misma bandeja documental con progreso y toast final.
 
 ## Contrato IA de intake
 
@@ -89,10 +105,11 @@ Campos principales del contrato:
 
 El repo hoy usa, entre otros:
 
+- `uploading`
 - `uploaded`
 - `queued`
 - `extracting`
-- `processing`
+- `extracted`
 - `draft_ready`
 - `classified`
 - `classified_with_open_revision`
@@ -107,6 +124,8 @@ El repo hoy usa, entre otros:
 
 El rector propone un pipeline mas expresivo (`ready_for_assignment`, `posted_provisional`, `posted_final`, etc.). El repo ya modela parte de esa separacion con `posting_status`, `document_assignment_runs` y `workflow-state`, pero `documents.status` todavia conserva nomenclatura heredada de etapas previas.
 
+`processing` sigue existiendo en el proyecto, pero como estado de `document_processing_runs` y como etiqueta derivada en algunas vistas; no es parte del enum canonico actual de `documents.status`.
+
 ## Lo que ya esta bien alineado al rector
 
 - extraccion y revision no viven en el mismo prompt;
@@ -119,7 +138,9 @@ El rector propone un pipeline mas expresivo (`ready_for_assignment`, `posted_pro
 
 - aun no existe una cola dedicada y explicitamente nombrada como "Procesados pendientes de asignacion";
 - la separacion conceptual ya existe en dominio y review workspace, pero no en una vista operativa independiente de punta a punta;
-- faltan mas conectores externos de entrada ademas del upload y planillas.
+- faltan mas conectores externos de entrada ademas del upload y las planillas;
+- la importacion documental por planilla ya tiene progreso, cierre y cancelacion visibles desde la misma UI de `Documentos`;
+- todavia faltan mas herramientas operativas para reintento fino, auditoria expandida y reproceso por subconjuntos.
 
 ## Regla de lectura del siguiente documento
 

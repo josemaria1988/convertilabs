@@ -3,6 +3,7 @@
   normalizeTextToken,
   roundCurrency,
 } from "@/modules/accounting";
+import { parseSpreadsheetDateValue } from "@/modules/documents/spreadsheet-date";
 import type {
   DocumentIntakeAmountBreakdown,
   DocumentIntakeFactMap,
@@ -177,54 +178,8 @@ function parseLocalizedNumber(value: string | null | undefined) {
   return Number.isFinite(parsed) ? roundCurrency(parsed) : null;
 }
 
-function excelSerialDateToIso(value: number) {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-
-  const wholeDays = Math.floor(value);
-
-  if (wholeDays < 1 || wholeDays > 400_000) {
-    return null;
-  }
-
-  const epoch = Date.UTC(1899, 11, 30);
-  const date = new Date(epoch + (wholeDays * 86_400_000));
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString().slice(0, 10);
-}
-
 function parseDateValue(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  const normalized = trimmed.replace(/\s+/g, " ");
-  const ddmmyyyy = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(normalized);
-
-  if (ddmmyyyy) {
-    const day = Number.parseInt(ddmmyyyy[1], 10);
-    const month = Number.parseInt(ddmmyyyy[2], 10);
-    const rawYear = Number.parseInt(ddmmyyyy[3], 10);
-    const year = rawYear < 100 ? 2000 + rawYear : rawYear;
-
-    if (year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    }
-  }
-
-  const numericValue = parseLocalizedNumber(normalized);
-
-  if (typeof numericValue === "number") {
-    return excelSerialDateToIso(numericValue);
-  }
-
-  return null;
+  return parseSpreadsheetDateValue(value);
 }
 
 function parseCurrencyCode(...values: Array<string | null | undefined>) {

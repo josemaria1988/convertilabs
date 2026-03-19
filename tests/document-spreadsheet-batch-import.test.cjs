@@ -3,9 +3,134 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   extractDocumentSpreadsheetRows,
+  findDuplicateSpreadsheetImportDocument,
   preflightDocumentSpreadsheetImport,
 } = require("@/modules/documents/spreadsheet-batch-import");
 const openAiResponses = require("@/lib/llm/openai-responses");
+
+function buildSpreadsheetImportSupabaseState(overrides = {}) {
+  return {
+    documentInvoiceIdentities: [],
+    documents: [],
+    ...overrides,
+  };
+}
+
+function applyFilters(rows, queryState) {
+  let filtered = [...rows];
+
+  for (const [column, value] of Object.entries(queryState.eqFilters)) {
+    filtered = filtered.filter((row) => row[column] === value);
+  }
+
+  for (const [column, values] of Object.entries(queryState.inFilters)) {
+    filtered = filtered.filter((row) => values.includes(row[column]));
+  }
+
+  for (const entry of queryState.notFilters) {
+    if (entry.operator === "is" && entry.value === null) {
+      filtered = filtered.filter((row) => row[entry.column] !== null && row[entry.column] !== undefined);
+    }
+  }
+
+  if (queryState.orderBy) {
+    const { column, ascending } = queryState.orderBy;
+    filtered.sort((left, right) => {
+      const leftValue = left[column] ?? null;
+      const rightValue = right[column] ?? null;
+
+      if (leftValue === rightValue) {
+        return 0;
+      }
+
+      if (leftValue === null) {
+        return ascending ? -1 : 1;
+      }
+
+      if (rightValue === null) {
+        return ascending ? 1 : -1;
+      }
+
+      return ascending
+        ? String(leftValue).localeCompare(String(rightValue))
+        : String(rightValue).localeCompare(String(leftValue));
+    });
+  }
+
+  if (typeof queryState.limitCount === "number") {
+    filtered = filtered.slice(0, queryState.limitCount);
+  }
+
+  return filtered;
+}
+
+function buildSpreadsheetImportSupabaseClient(state) {
+  return {
+    from(table) {
+      const queryState = {
+        eqFilters: {},
+        inFilters: {},
+        notFilters: [],
+        orderBy: null,
+        limitCount: null,
+      };
+
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq(column, value) {
+          queryState.eqFilters[column] = value;
+          return builder;
+        },
+        in(column, values) {
+          queryState.inFilters[column] = values;
+          return builder;
+        },
+        not(column, operator, value) {
+          queryState.notFilters.push({ column, operator, value });
+          return builder;
+        },
+        order(column, options = {}) {
+          queryState.orderBy = {
+            column,
+            ascending: options.ascending !== false,
+          };
+          return builder;
+        },
+        limit(value) {
+          queryState.limitCount = value;
+          return builder;
+        },
+        then(resolve, reject) {
+          try {
+            if (table === "document_invoice_identities") {
+              resolve({
+                data: applyFilters(state.documentInvoiceIdentities, queryState),
+                error: null,
+              });
+              return;
+            }
+
+            if (table === "documents") {
+              resolve({
+                data: applyFilters(state.documents, queryState),
+                error: null,
+              });
+              return;
+            }
+
+            throw new Error(`Unexpected table lookup: ${table}`);
+          } catch (error) {
+            reject(error);
+          }
+        },
+      };
+
+      return builder;
+    },
+  };
+}
 
 test("document spreadsheet import recovers real headers after a date-range row and maps Zeta-like purchases", async () => {
   const content = [
@@ -89,6 +214,123 @@ test("document spreadsheet import accepts Excel serial dates and numeric ids in 
   assert.equal(result.rows[0].facts.document_number, "3550");
   assert.equal(result.rows[1].facts.document_date, "2026-02-28");
   assert.equal(result.rows[1].facts.document_number, "4936316");
+});
+
+test("document spreadsheet import accepts dash-separated invoice dates without falling back to creation date", async () => {
+  const content = [
+    "01-02-2026 al 28-02-2026",
+    "",
+    "Fecha\tTipo\tComprobante\tNÃ‚Â°\tProveedor\tMoneda\tTotal\tSaldo",
+    "01-02-2026\tCompra CrÃƒÂ©dito\tCompra CrÃƒÂ©dito Gastos\t1001\tPergol Maquinaria S.A.\t$\t32.0\t32.0",
+    "28-02-2026\tCompra CrÃƒÂ©dito\tCompra CrÃƒÂ©dito Gastos\t1002\tPergol Maquinaria S.A.\t$\t254.0\t254.0",
+  ].join("\n");
+
+  const result = await extractDocumentSpreadsheetRows({
+    fileName: "compras-zeta-febrero.tsv",
+    mimeType: "text/tab-separated-values",
+    bytes: Buffer.from(content, "utf8"),
+    ledgerKind: "purchase",
+    provider: "heuristic",
+  });
+
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.skippedRows.length, 0);
+  assert.equal(result.rows[0].facts.document_date, "2026-02-01");
+  assert.equal(result.rows[1].facts.document_date, "2026-02-28");
+});
+
+test("document spreadsheet import duplicate guard blocks an existing invoice identity match by number and total", async () => {
+  const supabase = buildSpreadsheetImportSupabaseClient(buildSpreadsheetImportSupabaseState({
+    documentInvoiceIdentities: [
+      {
+        document_id: "doc-existing-1",
+        organization_id: "org-1",
+        document_date: "2026-02-18",
+        document_number_normalized: "a1001",
+        total_amount: 254,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  }));
+
+  const duplicate = await findDuplicateSpreadsheetImportDocument({
+    supabase,
+    organizationId: "org-1",
+    row: {
+      documentRole: "purchase",
+      facts: {
+        issuer_name: "Pergol Maquinaria S.A.",
+        issuer_tax_id: null,
+        receiver_name: null,
+        receiver_tax_id: null,
+        document_number: "1001",
+        series: "A",
+        currency_code: "UYU",
+        document_date: "2026-02-28",
+        due_date: null,
+        subtotal: 208.2,
+        tax_amount: 45.8,
+        total_amount: 254,
+        purchase_category_candidate: null,
+        sale_category_candidate: null,
+      },
+    },
+  });
+
+  assert.equal(duplicate?.documentId, "doc-existing-1");
+  assert.equal(duplicate?.matchedOn, "invoice_identity");
+});
+
+test("document spreadsheet import duplicate guard falls back to existing documents by external reference and total", async () => {
+  const supabase = buildSpreadsheetImportSupabaseClient(buildSpreadsheetImportSupabaseState({
+    documents: [
+      {
+        id: "doc-existing-2",
+        organization_id: "org-1",
+        direction: "purchase",
+        document_date: "2026-02-10",
+        external_reference: "1002",
+        document_total_amount_original: 32,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: "doc-other-direction",
+        organization_id: "org-1",
+        direction: "sale",
+        document_date: "2026-02-10",
+        external_reference: "1002",
+        document_total_amount_original: 32,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  }));
+
+  const duplicate = await findDuplicateSpreadsheetImportDocument({
+    supabase,
+    organizationId: "org-1",
+    row: {
+      documentRole: "purchase",
+      facts: {
+        issuer_name: "Pergol Maquinaria S.A.",
+        issuer_tax_id: null,
+        receiver_name: null,
+        receiver_tax_id: null,
+        document_number: "1002",
+        series: null,
+        currency_code: "UYU",
+        document_date: "2026-02-28",
+        due_date: null,
+        subtotal: 26.23,
+        tax_amount: 5.77,
+        total_amount: 32,
+        purchase_category_candidate: null,
+        sale_category_candidate: null,
+      },
+    },
+  });
+
+  assert.equal(duplicate?.documentId, "doc-existing-2");
+  assert.equal(duplicate?.matchedOn, "document_record");
 });
 
 test("document spreadsheet preflight counts candidate rows without calling OpenAI", async () => {

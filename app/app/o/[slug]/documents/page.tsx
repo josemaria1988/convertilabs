@@ -239,12 +239,20 @@ export default async function OrganizationDocumentsPage({
           </div>
 
           {activeTab === "documents" ? (
-            <Link
-              href="#document-upload-panel"
-              className="ui-button ui-button--secondary"
-            >
-              Cargar o importar
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/app/o/${organization.slug}/audit`}
+                className="ui-button ui-button--secondary"
+              >
+                Ir a Auditoria
+              </Link>
+              <Link
+                href="#document-upload-panel"
+                className="ui-button ui-button--secondary"
+              >
+                Cargar originales
+              </Link>
+            </div>
           ) : (
             <LoadingLink
               href={buildDocumentsPageHref(organization.slug, {
@@ -433,14 +441,19 @@ export default async function OrganizationDocumentsPage({
                     Ingreso documental
                   </h2>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                    Sube comprobantes originales cuando necesites conservar el archivo firmado
-                    y usa planillas mensuales para crear lotes de compras o ventas desde ERPs legacy
-                    sin mezclar ese flujo con operaciones internacionales.
+                    Sube comprobantes originales cuando necesites conservar el archivo firmado.
+                    La importacion masiva por planilla ahora vive en Auditoria para que puedas
+                    revisar un preview y decidir que entra a la base antes de materializarlo.
                   </p>
                 </div>
-                <span className="status-pill status-pill--info">Originales + planilla mensual</span>
+                <Link
+                  href={`/app/o/${organization.slug}/audit`}
+                  className="ui-button ui-button--secondary"
+                >
+                  Abrir Auditoria
+                </Link>
               </div>
-              <DocumentUploadDropzone slug={organization.slug} />
+              <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
             </div>
           </>
         ) : (

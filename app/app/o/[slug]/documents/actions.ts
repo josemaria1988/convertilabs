@@ -14,7 +14,7 @@ import {
   isDocumentSpreadsheetImportType,
   summarizeDocumentSpreadsheetImportRun,
 } from "@/modules/documents/spreadsheet-import-runs";
-import { loadSpreadsheetImportRun } from "@/modules/spreadsheets";
+import { cancelSpreadsheetImport, loadSpreadsheetImportRun } from "@/modules/spreadsheets";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 import { resolveMissingFxRates } from "@/modules/documents/spreadsheet-fx-resolution";
 
@@ -575,4 +575,30 @@ export async function loadDocumentSpreadsheetImportStatusesAction(input: {
         message: formatDocumentSpreadsheetImportStatusMessage(summary),
       };
     });
+}
+
+export async function cancelDocumentSpreadsheetImportAction(input: {
+  slug: string;
+  runId: string;
+}) {
+  const { organization } = await requireOrganizationDashboardPage(input.slug);
+  const supabase = getSupabaseServiceRoleClient();
+  const existingRun = await loadSpreadsheetImportRun(supabase, organization.id, input.runId);
+
+  if (!existingRun || !isDocumentSpreadsheetImportType(existingRun.importType)) {
+    throw new Error("No encontramos una importacion documental en segundo plano para cancelar.");
+  }
+
+  const run = await cancelSpreadsheetImport({
+    supabase,
+    organizationId: organization.id,
+    runId: input.runId,
+  });
+
+  revalidateDocumentSurfaces(input.slug);
+
+  return {
+    ok: true,
+    message: `Importacion cancelada para ${run.fileName}.`,
+  };
 }

@@ -3,9 +3,12 @@ import type { SpreadsheetImportRunRecord } from "@/modules/spreadsheets";
 export type DocumentSpreadsheetImportRunStage =
   | "queued"
   | "extracting_rows"
+  | "preview_ready"
   | "importing_rows"
+  | "materializing_rows"
   | "resolving_fx"
   | "completed"
+  | "cancelled"
   | "failed";
 
 export type DocumentSpreadsheetImportRunProgress = {
@@ -69,7 +72,10 @@ export function isDocumentSpreadsheetImportType(value: string | null | undefined
 }
 
 export function isDocumentSpreadsheetImportTerminalStatus(value: string | null | undefined) {
-  return value === "completed" || value === "failed" || value === "cancelled";
+  return value === "preview_ready"
+    || value === "completed"
+    || value === "failed"
+    || value === "cancelled";
 }
 
 export function parseDocumentSpreadsheetImportRunProgress(metadata: Record<string, unknown>) {
@@ -162,7 +168,7 @@ export function formatDocumentSpreadsheetImportStatusMessage(
       return [
         `Se detectaron ${progress.importableRowsDetected} fila(s) importables.`,
         "Esto puede demorar.",
-        "La solicitud corre en segundo plano; puedes continuar con otra cosa mientras preparamos todo y te avisaremos cuando este pronta.",
+        "La solicitud corre en segundo plano; puedes continuar con otra cosa mientras preparamos la vista previa auditada y te avisaremos cuando este pronta.",
       ].join(" ");
     }
 
@@ -180,9 +186,19 @@ export function formatDocumentSpreadsheetImportStatusMessage(
       ?? `Estamos leyendo ${summary.fileName} para detectar filas importables. Puedes seguir trabajando mientras preparamos el lote.`;
   }
 
+  if (summary.status === "preview_ready" || progress.stage === "preview_ready") {
+    return progress.currentMessage
+      ?? `La vista previa de ${summary.fileName} ya esta lista. Ahora puedes revisar el lote y decidir que documentos aceptar o rechazar antes de materializarlo.`;
+  }
+
   if (!summary.isTerminal && progress.stage === "resolving_fx") {
     return progress.currentMessage
       ?? `Intentando resolver cotizaciones BCU. ${progress.fxResolvedCount} documento(s) resueltos, ${progress.fxPendingCount} pendiente(s), ${progress.fxFailedCount} sin tasa por ahora.`;
+  }
+
+  if (!summary.isTerminal && progress.stage === "materializing_rows") {
+    return progress.currentMessage
+      ?? `Estamos materializando los documentos aceptados del lote ${summary.fileName}.`;
   }
 
   if (!summary.isTerminal && progress.importableRowsDetected !== null) {
@@ -195,7 +211,7 @@ export function formatDocumentSpreadsheetImportStatusMessage(
     return [
       `Se detectaron ${rowsDetected} fila(s) importables.`,
       "Esto puede demorar.",
-      "La solicitud corre en segundo plano; puedes continuar con otra cosa mientras preparamos todo y te avisaremos cuando este pronta.",
+      "La solicitud corre en segundo plano; puedes continuar con otra cosa mientras preparamos la vista previa auditada y te avisaremos cuando este pronta.",
       progress.processedRows > 0
         ? ` Avance: ${progress.processedRows}/${rowsDetected} fila(s) tratadas.${chunkMessage}`
         : "",
@@ -210,6 +226,11 @@ export function formatDocumentSpreadsheetImportStatusMessage(
   if (summary.status === "completed") {
     return progress.currentMessage
       ?? `Importacion finalizada con observaciones. ${progress.importedCount} documento(s) importados, ${progress.failedCount} fila(s) con error y ${progress.skippedCount} omitida(s).`;
+  }
+
+  if (summary.status === "cancelled") {
+    return progress.currentMessage
+      ?? "La auditoria del lote fue cancelada o descartada.";
   }
 
   return progress.latestErrorMessage

@@ -1,12 +1,18 @@
 # Spec — settlement-aware posting y asientos multi-linea
 
-Estado: preparado
+Estado: implementado parcial
 Ambito: backend + frontend + datos + IA + rollout
 Modulo principal: `04-documents/` con soporte en `03-accounting/`, `06-integrations/` y `07-platform/`
 
+Nota editorial 2026-03-19:
+
+- ya existen piezas activas en el repo para `template-resolver`, `settlementContext`, `SettlementMethodCard`, preview multi-linea, `journal_entries`/`open_items` y persistencia del contexto en review;
+- este documento sigue siendo util como spec viva y contrato de evolucion, pero ya no describe solo trabajo futuro;
+- lo pendiente hoy se concentra en follow-up settlements mas profundos, simulacion/operacion masiva y cierre mas uniforme de la UX.
+
 ## 1. Problema a resolver
 
-Hoy el review documental esta demasiado centrado en una sola `cuenta sugerida`. Eso sirve para una clasificacion primaria, pero no alcanza para contabilizar operaciones reales de una empresa uruguaya.
+El problema original de esta spec era que el review documental estaba demasiado centrado en una sola `cuenta sugerida`. Ese limite ya se corrigio en parte, pero sigue siendo un buen marco para explicar por que el producto evoluciono hacia templates, settlement context y preview multi-linea.
 
 Una factura no "va a una cuenta". Una factura dispara una **plantilla de asiento** con varias lineas:
 
@@ -45,7 +51,7 @@ Asiento posterior al liquidar la tarjeta:
 
 ## 2. Objetivo funcional
 
-Implementar un modelo de posting donde:
+Consolidar un modelo de posting donde:
 
 1. el documento siga siendo el disparador principal;
 2. la IA extraiga y sugiera solo lo que el documento realmente permite inferir;

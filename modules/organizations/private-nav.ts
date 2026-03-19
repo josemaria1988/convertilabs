@@ -1,5 +1,6 @@
 export type OrganizationPrivateSection =
   | "documents"
+  | "audit"
   | "accounting"
   | "tax"
   | "chart-map"
@@ -15,6 +16,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Documentos",
       description: "Bandeja operativa, revision y posting",
       current: currentSection === "documents",
+    },
+    {
+      href: `/app/o/${organizationSlug}/audit`,
+      label: "Auditoria",
+      description: "Imports auditados, preview y trazabilidad",
+      current: currentSection === "audit",
     },
     {
       href: `/app/o/${organizationSlug}/trial-balance`,

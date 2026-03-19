@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
+  cancelDocumentSpreadsheetImportAction,
   enqueueSelectedDocumentExtractionsAction,
   failDocumentUploadAction,
   finalizeDocumentUploadAction,
@@ -29,11 +30,13 @@ type UploadStatus =
   | "validating"
   | "uploading"
   | "success"
+  | "cancelled"
   | "error";
 
 type DocumentUploadDropzoneProps = {
   slug: string;
   panelId?: string;
+  showSpreadsheetImport?: boolean;
 };
 
 type SpreadsheetLedgerKind = "purchase" | "sale";
@@ -205,6 +208,7 @@ async function uploadFileToSignedUrl(input: {
 export function DocumentUploadDropzone({
   slug,
   panelId = "document-upload-panel",
+  showSpreadsheetImport = true,
 }: DocumentUploadDropzoneProps) {
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
@@ -215,6 +219,7 @@ export function DocumentUploadDropzone({
   const [activeSpreadsheetRunId, setActiveSpreadsheetRunId] = useState<string | null>(null);
   const [spreadsheetProgressPercent, setSpreadsheetProgressPercent] = useState(0);
   const [spreadsheetLedgerKind, setSpreadsheetLedgerKind] = useState<SpreadsheetLedgerKind>("purchase");
+  const [isCancellingSpreadsheet, setIsCancellingSpreadsheet] = useState(false);
   const [autoProcessAfterUpload, setAutoProcessAfterUpload] = useState(true);
   const [isRefreshing, startTransition] = useTransition();
 
@@ -264,10 +269,13 @@ export function DocumentUploadDropzone({
       if (runStatus.isTerminal) {
         forgetPendingDocumentSpreadsheetImportRun(slug, runStatus.runId);
         setSpreadsheetStatus(
-          runStatus.status === "failed" || runStatus.progress.failedCount > 0
+          runStatus.status === "cancelled"
+            ? "cancelled"
+            : runStatus.status === "failed" || runStatus.progress.failedCount > 0
             ? "error"
             : "success",
         );
+        setIsCancellingSpreadsheet(false);
         setActiveSpreadsheetRunId(null);
         startTransition(() => {
           router.refresh();
@@ -471,6 +479,7 @@ export function DocumentUploadDropzone({
       setActiveSpreadsheetRunId(result.runId);
       setSpreadsheetStatus("uploading");
     } catch (error) {
+      setIsCancellingSpreadsheet(false);
       setSpreadsheetStatus("error");
       setSpreadsheetProgressPercent(100);
       setSpreadsheetMessage(
@@ -481,8 +490,48 @@ export function DocumentUploadDropzone({
     }
   }
 
+  async function handleCancelSpreadsheetImport() {
+    const runId = activeSpreadsheetRunId;
+
+    if (!runId || isCancellingSpreadsheet) {
+      return;
+    }
+
+    setIsCancellingSpreadsheet(true);
+    setSpreadsheetMessage("Cancelando la importacion en segundo plano...");
+
+    try {
+      const result = await cancelDocumentSpreadsheetImportAction({
+        slug,
+        runId,
+      });
+
+      forgetPendingDocumentSpreadsheetImportRun(slug, runId);
+      setActiveSpreadsheetRunId(null);
+      setSpreadsheetStatus("cancelled");
+      setSpreadsheetProgressPercent(100);
+      setSpreadsheetMessage(result.message);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSpreadsheetStatus("error");
+      setSpreadsheetMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cancelar la importacion en segundo plano.",
+      );
+    } finally {
+      setIsCancellingSpreadsheet(false);
+    }
+  }
+
+  const hasActiveSpreadsheetRun = Boolean(activeSpreadsheetRunId);
   const isBusy = status === "uploading" || status === "validating" || isRefreshing;
-  const isSpreadsheetBusy = spreadsheetStatus === "uploading";
+  const isSpreadsheetBusy =
+    spreadsheetStatus === "uploading"
+    || isCancellingSpreadsheet
+    || hasActiveSpreadsheetRun;
 
   return (
     <div
@@ -593,7 +642,8 @@ export function DocumentUploadDropzone({
           </div>
         </section>
 
-        <section className="border-t border-[color:var(--color-border)] pt-6">
+        {showSpreadsheetImport ? (
+          <section className="border-t border-[color:var(--color-border)] pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
               <p className="text-[16px] font-semibold text-white">Planilla para ingreso masivo en segundo plano</p>
@@ -632,6 +682,18 @@ export function DocumentUploadDropzone({
                   void handleSpreadsheetFiles(selectedFiles);
                 }}
               />
+              {hasActiveSpreadsheetRun ? (
+                <button
+                  type="button"
+                  className="ui-button ui-button--secondary"
+                  disabled={isCancellingSpreadsheet}
+                  onClick={() => {
+                    void handleCancelSpreadsheetImport();
+                  }}
+                >
+                  {isCancellingSpreadsheet ? "Cancelando..." : "Cancelar importacion"}
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -666,9 +728,11 @@ export function DocumentUploadDropzone({
               className={`h-full rounded-full transition-all ${
                 spreadsheetStatus === "uploading"
                   ? "bg-[color:var(--color-accent)]"
-                  : spreadsheetStatus === "success"
+                : spreadsheetStatus === "success"
                     ? "bg-emerald-500"
-                    : spreadsheetStatus === "error"
+                  : spreadsheetStatus === "cancelled"
+                    ? "bg-[color:var(--color-warm)]"
+                  : spreadsheetStatus === "error"
                       ? "bg-rose-500"
                       : "bg-transparent"
               }`}
@@ -681,6 +745,8 @@ export function DocumentUploadDropzone({
                 className={`rounded-[1rem] border px-4 py-3 text-[16px] leading-7 ${
                   spreadsheetStatus === "success"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                  : spreadsheetStatus === "cancelled"
+                    ? "border-amber-200 bg-amber-50 text-amber-950"
                     : spreadsheetStatus === "error"
                       ? "border-amber-200 bg-amber-50 text-amber-950"
                       : "border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] text-[color:var(--color-muted)]"
@@ -690,7 +756,8 @@ export function DocumentUploadDropzone({
               </div>
             ) : null}
           </div>
-        </section>
+          </section>
+        ) : null}
       </div>
     </div>
   );

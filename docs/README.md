@@ -2,7 +2,7 @@
 
 Este directorio reemplaza la documentacion historica dispersa en `docs/specs*`, archivos sueltos y notas tacticas de iteraciones previas.
 
-La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-18: rutas activas, workspaces contables read-only, migraciones recientes, conexiones CFE y suites de prueba.
+La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-19: rutas activas, workspaces contables read-only, importacion documental por planilla, conexiones CFE y suites de prueba.
 
 Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto: todo cambio nuevo debe justificar si mejora el motor documental, el motor de decision contable o el motor fiscal.
 
@@ -34,6 +34,7 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - [04-documents/03-document-settlement-and-multi-line-posting.md](./04-documents/03-document-settlement-and-multi-line-posting.md)
 - [05-tax/tax-platform-vat-fx-and-imports.md](./05-tax/tax-platform-vat-fx-and-imports.md)
 - [06-integrations/spreadsheets-imports-exports-and-bridge.md](./06-integrations/spreadsheets-imports-exports-and-bridge.md)
+- [06-integrations/plan-importacion-documentos-compra-zetasoftware.md](./06-integrations/plan-importacion-documentos-compra-zetasoftware.md)
 - [07-platform/database-api-background-jobs-and-observability.md](./07-platform/database-api-background-jobs-and-observability.md)
 - [08-quality/testing-rollout-and-roadmap.md](./08-quality/testing-rollout-and-roadmap.md)
 - [09-future/cost-centers-jobs-and-profitability.md](./09-future/cost-centers-jobs-and-profitability.md)

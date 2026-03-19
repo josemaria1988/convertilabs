@@ -5,9 +5,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenAIModelConfig } from "@/lib/env";
 import { createStructuredOpenAIResponse } from "@/lib/llm/openai-responses";
 import {
+  buildInvoiceIdentityResult,
   buildDraftFieldsPayload,
+  normalizeDocumentNumber,
   normalizeTextToken,
   roundCurrency,
+  upsertDocumentInvoiceIdentity,
   upsertDocumentAccountingContext,
   type AccountingContextResolution,
 } from "@/modules/accounting";
@@ -26,6 +29,7 @@ import {
   isZetaPurchaseLayout,
   normalizeZetaPurchaseRows,
 } from "@/modules/documents/zeta-purchase-import";
+import { parseSpreadsheetDateValue } from "@/modules/documents/spreadsheet-date";
 
 export type DocumentSpreadsheetLedgerKind = "purchase" | "sale";
 export type DocumentSpreadsheetInterpreterProvider = "auto" | "heuristic" | "openai";
@@ -90,6 +94,112 @@ export type DocumentSpreadsheetBatchImportResult = DocumentSpreadsheetExtraction
   }>;
   importedDocumentIds: string[];
 };
+
+type SpreadsheetImportDuplicateMatch = {
+  documentId: string;
+  documentDate: string | null;
+  matchedOn: "invoice_identity" | "document_record";
+};
+
+function buildSpreadsheetDuplicateNumberCandidates(facts: DocumentIntakeFactMap) {
+  const candidates = new Set<string>();
+  const rawDocumentNumber = normalizeDocumentNumber(facts.document_number);
+  const combinedDocumentNumber = normalizeDocumentNumber(
+    [facts.series, facts.document_number].filter(Boolean).join("-"),
+  );
+
+  if (rawDocumentNumber) {
+    candidates.add(rawDocumentNumber);
+  }
+
+  if (combinedDocumentNumber) {
+    candidates.add(combinedDocumentNumber);
+  }
+
+  return candidates;
+}
+
+export async function findDuplicateSpreadsheetImportDocument(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  row: Pick<DocumentSpreadsheetImportRow, "documentRole" | "facts">;
+}) {
+  const numberCandidates = buildSpreadsheetDuplicateNumberCandidates(input.row.facts);
+  const totalAmount =
+    typeof input.row.facts.total_amount === "number"
+      ? roundCurrency(input.row.facts.total_amount)
+      : null;
+
+  if (numberCandidates.size === 0 || totalAmount === null) {
+    return null;
+  }
+
+  const { data: identityRows, error: identityError } = await input.supabase
+    .from("document_invoice_identities")
+    .select("document_id, document_date, document_number_normalized, total_amount")
+    .eq("organization_id", input.organizationId)
+    .in("document_number_normalized", [...numberCandidates])
+    .order("created_at", { ascending: true })
+    .limit(12);
+
+  if (identityError) {
+    throw new Error(identityError.message);
+  }
+
+  const identityMatch = (((identityRows as Array<{
+    document_id: string;
+    document_date: string | null;
+    document_number_normalized: string | null;
+    total_amount: number | null;
+  }> | null) ?? [])).find((row) =>
+    row.document_number_normalized
+    && numberCandidates.has(row.document_number_normalized)
+    && typeof row.total_amount === "number"
+    && roundCurrency(row.total_amount) === totalAmount);
+
+  if (identityMatch) {
+    return {
+      documentId: identityMatch.document_id,
+      documentDate: identityMatch.document_date,
+      matchedOn: "invoice_identity",
+    } satisfies SpreadsheetImportDuplicateMatch;
+  }
+
+  const { data: documentRows, error: documentError } = await input.supabase
+    .from("documents")
+    .select("id, document_date, external_reference, document_total_amount_original")
+    .eq("organization_id", input.organizationId)
+    .eq("direction", input.row.documentRole)
+    .eq("document_total_amount_original", totalAmount)
+    .not("external_reference", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(25);
+
+  if (documentError) {
+    throw new Error(documentError.message);
+  }
+
+  const documentMatch = (((documentRows as Array<{
+    id: string;
+    document_date: string | null;
+    external_reference: string | null;
+    document_total_amount_original: number | null;
+  }> | null) ?? [])).find((row) =>
+    typeof row.external_reference === "string"
+    && numberCandidates.has(normalizeDocumentNumber(row.external_reference) ?? "")
+    && typeof row.document_total_amount_original === "number"
+    && roundCurrency(row.document_total_amount_original) === totalAmount);
+
+  if (!documentMatch) {
+    return null;
+  }
+
+  return {
+    documentId: documentMatch.id,
+    documentDate: documentMatch.document_date,
+    matchedOn: "document_record",
+  } satisfies SpreadsheetImportDuplicateMatch;
+}
 
 export type DocumentSpreadsheetPreflightResult = {
   fileName: string;
@@ -526,66 +636,8 @@ function parseLocalizedNumber(value: string | null | undefined) {
   return Number.isFinite(parsed) ? roundCurrency(parsed) : null;
 }
 
-function excelSerialDateToIso(value: number) {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-
-  const wholeDays = Math.floor(value);
-
-  if (wholeDays < 1 || wholeDays > 400_000) {
-    return null;
-  }
-
-  const epoch = Date.UTC(1899, 11, 30);
-  const date = new Date(epoch + (wholeDays * 86_400_000));
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString().slice(0, 10);
-}
-
 function parseDateValue(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  const normalized = trimmed.replace(/\s+/g, " ");
-  const ddmmyyyy = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(normalized);
-
-  if (ddmmyyyy) {
-    const day = Number.parseInt(ddmmyyyy[1], 10);
-    const month = Number.parseInt(ddmmyyyy[2], 10);
-    const rawYear = Number.parseInt(ddmmyyyy[3], 10);
-    const year = rawYear < 100 ? 2000 + rawYear : rawYear;
-
-    if (
-      year >= 2000
-      && month >= 1
-      && month <= 12
-      && day >= 1
-      && day <= 31
-    ) {
-      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    }
-  }
-
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
-
-  if (iso) {
-    return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  }
-
-  const numericValue = parseLocalizedNumber(normalized);
-
-  if (typeof numericValue === "number") {
-    return excelSerialDateToIso(numericValue);
-  }
-
-  return null;
+  return parseSpreadsheetDateValue(value);
 }
 
 function normalizeIdentifierValue(value: string | null | undefined) {
@@ -2140,6 +2192,22 @@ export async function persistDocumentSpreadsheetImportRow(input: {
   fileName: string;
   row: DocumentSpreadsheetImportRow;
 }) {
+  const duplicateDocument = await findDuplicateSpreadsheetImportDocument({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    row: input.row,
+  });
+
+  if (duplicateDocument) {
+    throw new Error(
+      [
+        "No importamos la fila porque ya existe un documento con el mismo numero y monto total.",
+        `Documento existente: ${duplicateDocument.documentId}.`,
+        duplicateDocument.documentDate ? `Fecha registrada: ${duplicateDocument.documentDate}.` : null,
+      ].filter(Boolean).join(" "),
+    );
+  }
+
   const savedAt = new Date().toISOString();
   const syntheticStoragePath = [
     "synthetic",
@@ -2298,6 +2366,29 @@ export async function persistDocumentSpreadsheetImportRow(input: {
   if (revisionError) {
     throw new Error(revisionError.message);
   }
+
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts: input.row.facts,
+  });
+
+  await upsertDocumentInvoiceIdentity(input.supabase, {
+    organization_id: input.organizationId,
+    document_id: documentRow.id,
+    source_draft_id: draftRow.id,
+    vendor_id: null,
+    issuer_tax_id_normalized: invoiceIdentity.issuerTaxIdNormalized,
+    issuer_name_normalized: invoiceIdentity.issuerNameNormalized,
+    document_number_normalized: invoiceIdentity.documentNumberNormalized,
+    document_date: invoiceIdentity.documentDate,
+    total_amount: invoiceIdentity.totalAmount,
+    currency_code: invoiceIdentity.currencyCode,
+    identity_strategy: invoiceIdentity.identityStrategy,
+    invoice_identity_key: invoiceIdentity.invoiceIdentityKey,
+    duplicate_status: invoiceIdentity.duplicateStatus,
+    duplicate_of_document_id: invoiceIdentity.duplicateOfDocumentId,
+    duplicate_reason: invoiceIdentity.duplicateReason,
+    resolution_notes: null,
+  });
 
   await upsertDocumentAccountingContext(input.supabase, {
     organizationId: input.organizationId,
