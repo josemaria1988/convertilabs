@@ -942,7 +942,8 @@ test("accounting impact preview explains when the selected main account is incom
     settlementContext: derived.settlementContext,
   });
 
-  assert.equal(preview.summary.mainAccount, "1110 - Caja");
+  assert.equal(preview.summary.mainAccount, null);
+  assert.equal(preview.summary.settlementAccount, null);
   assert.match(
     preview.missingItems.join(" "),
     /cuenta principal de ingresos para esta venta/i,

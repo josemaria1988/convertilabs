@@ -207,3 +207,54 @@ test("vat preview includes provisional and final documents without mutating offi
     server.getSupabaseServiceRoleClient = originalFactory;
   }
 });
+
+test("vat preview uses the real last day of the month when loading excluded documents", async () => {
+  const supabase = createSupabaseStub((query) => {
+    if (query.table === "documents" && query.mode === "execute") {
+      if (query.filters.some((filter) => filter.type === "in")) {
+        return {
+          data: [],
+          error: null,
+        };
+      }
+
+      const periodStart = query.filters.find((filter) =>
+        filter.type === "gte" && filter.column === "document_date");
+      const periodEnd = query.filters.find((filter) =>
+        filter.type === "lte" && filter.column === "document_date");
+
+      assert.equal(periodStart?.value, "2026-02-01");
+      assert.equal(periodEnd?.value, "2026-02-28");
+
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "tax_periods" && query.mode === "maybeSingle") {
+      return {
+        data: null,
+        error: null,
+      };
+    }
+
+    throw new Error(`Unexpected query: ${query.table}/${query.mode}`);
+  });
+
+  const originalFactory = server.getSupabaseServiceRoleClient;
+  server.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const preview = await buildVatRunPreview({
+      organizationId: "org-1",
+      year: 2026,
+      month: 2,
+    });
+
+    assert.equal(preview.period, "2026-02");
+    assert.deepEqual(preview.excludedDocuments, []);
+  } finally {
+    server.getSupabaseServiceRoleClient = originalFactory;
+  }
+});

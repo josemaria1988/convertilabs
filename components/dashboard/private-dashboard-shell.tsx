@@ -223,27 +223,14 @@ export function PrivateDashboardShell({
             {navItems.map((item) => {
               const Icon = getNavIcon(item.label);
 
-              if (item.current) {
-                return (
-                  <div
-                    key={item.href}
-                    className="app-nav-item"
-                    data-current="true"
-                >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                      <Icon className="h-[18px] w-[18px]" />
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </div>
-                );
-              }
-
               return (
                 <LoadingLink
                   key={item.href}
                   href={item.href}
                   pendingLabel="Abriendo..."
                   className="app-nav-item"
+                  data-current={item.current ? "true" : undefined}
+                  aria-current={item.current ? "page" : undefined}
                 >
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                     <Icon className="h-[18px] w-[18px]" />

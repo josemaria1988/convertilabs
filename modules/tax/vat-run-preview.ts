@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { buildAccountingMonthRange } from "@/modules/accounting/periods";
 import type { DocumentPostingStatus } from "@/modules/accounting";
 
 type JsonRecord = Record<string, unknown>;
@@ -168,8 +169,14 @@ async function loadExcludedDocuments(
   period: string,
   includeStatuses: DocumentPostingStatus[],
 ) {
-  const periodStart = `${period}-01`;
-  const periodEnd = `${period}-31`;
+  const periodRange = buildAccountingMonthRange(period);
+
+  if (!periodRange) {
+    return [];
+  }
+
+  const periodStart = periodRange.startDate;
+  const periodEnd = periodRange.endDate;
   const { data, error } = await supabase
     .from("documents")
     .select("id, posting_status, current_draft_id, document_date")

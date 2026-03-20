@@ -887,20 +887,39 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     : pageData.derived.appliedRule.accountCode || pageData.derived.appliedRule.accountName
       ? `${pageData.derived.appliedRule.accountCode ?? "--"} - ${pageData.derived.appliedRule.accountName ?? "Cuenta sugerida"}`
       : "Sin cuenta sugerida";
+  const reviewCurrencyCode =
+    pageData.draft.facts.currency_code
+    ?? pageData.derived.monetarySnapshot?.currencyCode
+    ?? pageData.derived.journalSuggestion.currencyCode
+    ?? "UYU";
   const editableTotalAmount = parseOptionalNumber(facts.total_amount);
+  const editableTaxAmount = parseOptionalNumber(facts.tax_amount);
   const totalLabel = editableTotalAmount !== null
     ? formatMoney(
       editableTotalAmount,
-      pageData.draft.facts.currency_code
-        ?? pageData.derived.monetarySnapshot?.currencyCode
-        ?? "UYU",
+      reviewCurrencyCode,
     )
     : typeof pageData.draft.facts.total_amount === "number"
       ? formatMoney(
         pageData.draft.facts.total_amount,
-        pageData.draft.facts.currency_code ?? "UYU",
+        reviewCurrencyCode,
       )
-      : formatMoney(pageData.derived.taxTreatment.totalAmountUyu);
+      : formatMoney(pageData.derived.taxTreatment.totalAmountUyu, "UYU");
+  const taxLabel = editableTaxAmount !== null
+    ? formatMoney(editableTaxAmount, reviewCurrencyCode)
+    : typeof pageData.draft.facts.tax_amount === "number"
+      ? formatMoney(pageData.draft.facts.tax_amount, reviewCurrencyCode)
+      : formatMoney(pageData.derived.taxTreatment.taxAmount, reviewCurrencyCode);
+  const functionalCurrencyCode = pageData.derived.journalSuggestion.functionalCurrencyCode || "UYU";
+  const showFunctionalAmounts = reviewCurrencyCode !== functionalCurrencyCode;
+  const totalUyuLabel = formatMoney(
+    pageData.derived.monetarySnapshot?.totalAmountUyu ?? pageData.derived.taxTreatment.totalAmountUyu,
+    functionalCurrencyCode,
+  );
+  const taxUyuLabel = formatMoney(
+    pageData.derived.monetarySnapshot?.taxAmountUyu ?? pageData.derived.taxTreatment.taxAmountUyu,
+    functionalCurrencyCode,
+  );
   const visibleFx = getVisibleFxDisplay({
     currencyCode:
       pageData.derived.monetarySnapshot?.currencyCode
@@ -970,12 +989,23 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </div>
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
             <p className="font-semibold">Monto</p>
-            <p className="mt-2 text-[color:var(--color-muted)]">{totalLabel}</p>
+            <p className="mt-2 text-[color:var(--color-muted)]">Total documento: {totalLabel}</p>
+            <p className="mt-1 text-[color:var(--color-muted)]">IVA documento: {taxLabel}</p>
+            {showFunctionalAmounts ? (
+              <>
+                <p className="mt-1 text-[color:var(--color-muted)]">
+                  Total contable {functionalCurrencyCode}: {totalUyuLabel}
+                </p>
+                <p className="mt-1 text-[color:var(--color-muted)]">
+                  IVA contable {functionalCurrencyCode}: {taxUyuLabel}
+                </p>
+              </>
+            ) : null}
             <p className="mt-1 text-[color:var(--color-muted)]">
               Fecha {formatDate(facts.document_date || pageData.document.documentDate)}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              Tipo de cambio: {visibleFx.valueText}
+              Tipo de cambio aplicado: {visibleFx.valueText}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.detailText}</p>
           </div>

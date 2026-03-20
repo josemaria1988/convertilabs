@@ -1,17 +1,15 @@
 "use client";
 
-import Link, { type LinkProps } from "next/link";
+import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import type { MouseEvent, MouseEventHandler, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, MouseEvent, MouseEventHandler, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 
-type LoadingLinkProps = LinkProps & {
+type LoadingLinkProps = Omit<ComponentPropsWithoutRef<typeof Link>, "children"> & {
   className?: string;
   children: ReactNode;
   pendingLabel?: ReactNode;
-  target?: string;
-  rel?: string;
   disabled?: boolean;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
 };

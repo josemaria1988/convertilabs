@@ -18,10 +18,14 @@ export type AccountingImpactPreview = {
     settlementStatus: string;
     requiresFollowupSettlement: boolean;
     mainAccount: string | null;
+    settlementAccount: string | null;
     vatAccount: string | null;
     counterpartyAccount: string | null;
     currencyCode: string;
+    functionalCurrencyCode: string;
     fxRate: number;
+    fxRateDate: string | null;
+    fxRateSource: string;
     hasProvisionalAccounts: boolean;
     taxProfileCode: string | null;
   };
@@ -29,6 +33,8 @@ export type AccountingImpactPreview = {
     isBalanced: boolean;
     totalDebit: number;
     totalCredit: number;
+    functionalTotalDebit: number;
+    functionalTotalCredit: number;
     lines: ReviewJournalSuggestion["lines"];
   };
   vat: {
@@ -111,14 +117,22 @@ export function buildAccountingImpactPreview(input: {
 }) {
   const mainLine =
     input.journalSuggestion.lines.find((line) => line.linePurpose === "main")
-    ?? input.journalSuggestion.lines[0]
     ?? null;
   const vatLine = input.journalSuggestion.lines.find((line) =>
     line.linePurpose === "tax" || (typeof line.taxTag === "string" && line.taxTag.includes("vat")),
   ) ?? null;
-  const counterpartyLine =
+  const settlementLine =
     input.journalSuggestion.lines.find((line) => line.linePurpose === "settlement")
     ?? null;
+  const counterpartyLine =
+    input.journalSuggestion.lines.find((line) => line.linePurpose === "counterparty")
+    ?? null;
+  const missingPrimaryAccount = Boolean(
+    input.settlementContext.primaryAccountRole
+    && input.journalSuggestion.blockingReasons.includes(
+      `Falta resolver la cuenta para el rol ${input.settlementContext.primaryAccountRole}.`,
+    ),
+  );
   const journalMissingItems = input.journalSuggestion.ready
     ? []
     : input.journalSuggestion.blockingReasons.map((reason) => formatJournalBlockingReason(reason));
@@ -154,8 +168,12 @@ export function buildAccountingImpactPreview(input: {
       mainAccount:
         mainLine && mainLine.accountCode && mainLine.accountName
           ? `${mainLine.accountCode} - ${mainLine.accountName}`
-          : input.appliedRule.accountCode && input.appliedRule.accountName
+          : !missingPrimaryAccount && input.appliedRule.accountCode && input.appliedRule.accountName
             ? `${input.appliedRule.accountCode} - ${input.appliedRule.accountName}`
+          : null,
+      settlementAccount:
+        settlementLine && settlementLine.accountCode && settlementLine.accountName
+          ? `${settlementLine.accountCode} - ${settlementLine.accountName}`
           : null,
       vatAccount:
         vatLine && vatLine.accountCode && vatLine.accountName
@@ -166,7 +184,10 @@ export function buildAccountingImpactPreview(input: {
           ? `${counterpartyLine.accountCode} - ${counterpartyLine.accountName}`
           : null,
       currencyCode: input.journalSuggestion.currencyCode,
+      functionalCurrencyCode: input.journalSuggestion.functionalCurrencyCode,
       fxRate: input.journalSuggestion.fxRate,
+      fxRateDate: input.journalSuggestion.fxRateDate,
+      fxRateSource: input.journalSuggestion.fxRateSource,
       hasProvisionalAccounts: input.journalSuggestion.hasProvisionalAccounts,
       taxProfileCode: input.appliedRule.taxProfileCode,
     },
@@ -174,6 +195,8 @@ export function buildAccountingImpactPreview(input: {
       isBalanced: input.journalSuggestion.isBalanced,
       totalDebit: input.journalSuggestion.totalDebit,
       totalCredit: input.journalSuggestion.totalCredit,
+      functionalTotalDebit: input.journalSuggestion.functionalTotalDebit,
+      functionalTotalCredit: input.journalSuggestion.functionalTotalCredit,
       lines: input.journalSuggestion.lines,
     },
     vat: {
