@@ -87,10 +87,6 @@ function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function asBoolean(value: unknown) {
-  return typeof value === "boolean" ? value : false;
-}
-
 function asStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")

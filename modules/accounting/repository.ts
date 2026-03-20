@@ -113,31 +113,6 @@ type ChartAccountRow = {
   metadata: Record<string, unknown> | null;
 };
 
-type AccountingRuleRow = {
-  id: string;
-  organization_id: string;
-  scope: AccountingRuleRecord["scope"];
-  document_id: string | null;
-  source_document_id: string | null;
-  vendor_id: string | null;
-  concept_id: string | null;
-  document_role: AccountingRuleRecord["document_role"];
-  account_id: string;
-  status: AccountingRuleRecord["status"];
-  vat_profile_json: Record<string, unknown> | null;
-  tax_profile_code: string | null;
-  operation_category: string | null;
-  linked_operation_type: string | null;
-  template_code: string | null;
-  times_reused: number;
-  times_corrected: number;
-  priority: number;
-  source: string;
-  is_active: boolean;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
-};
-
 type AccountRoleBindingRow = {
   id: string;
   organization_id: string;
@@ -1281,7 +1256,7 @@ async function ensureFiscalPeriodForDate(
     throw new Error("La fecha contable no permite resolver un periodo mensual.");
   }
 
-  let periodResult = await supabase
+  const periodResult = await supabase
     .from("fiscal_periods")
     .select("id, status, starts_on, ends_on, locked_at")
     .eq("organization_id", input.organizationId)
@@ -1928,7 +1903,7 @@ async function markJournalEntryReversedByWithCompat(
     reversalJournalEntryId: string;
   },
 ) {
-  let result = await supabase
+  const result = await supabase
     .from("journal_entries")
     .update({
       reversed_by_journal_entry_id: input.reversalJournalEntryId,

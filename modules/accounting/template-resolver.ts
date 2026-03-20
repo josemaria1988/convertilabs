@@ -438,11 +438,6 @@ export function resolveDocumentSettlementContext(input: {
   });
   const blockers: string[] = [];
   const warnings: string[] = [];
-  const isInvoice =
-    operationKind === "sale_invoice"
-    || operationKind === "purchase_invoice"
-    || operationKind === "sale_credit_note"
-    || operationKind === "purchase_credit_note";
   const isCommercialInvoice =
     operationKind === "sale_invoice" || operationKind === "purchase_invoice";
 

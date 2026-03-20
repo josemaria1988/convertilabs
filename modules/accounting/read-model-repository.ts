@@ -146,32 +146,6 @@ type OpenItemOutstandingRowRaw = {
   updated_at: string | null;
 };
 
-type TrialBalanceRowRaw = {
-  organization_id: string;
-  fiscal_period_id: string | null;
-  fiscal_period_code: string | null;
-  fiscal_period_label: string | null;
-  source_channel: string | null;
-  account_id: string | null;
-  account_code: string | null;
-  account_name: string | null;
-  account_type: string | null;
-  chapter_code: string | null;
-  presentation_code: string | null;
-  statement_section: string | null;
-  natural_balance: "debit" | "credit" | null;
-  debit: number | null;
-  credit: number | null;
-  balance: number | null;
-  functional_debit: number | null;
-  functional_credit: number | null;
-  functional_balance: number | null;
-  entry_count: number | null;
-  line_count: number | null;
-  first_entry_date: string | null;
-  last_entry_date: string | null;
-};
-
 type GeneralLedgerLineRaw = {
   journal_entry_id: string;
   line_no: number | null;
@@ -553,32 +527,6 @@ const OPEN_ITEMS_OUTSTANDING_SELECT = [
   "updated_at",
 ].join(", ");
 
-const TRIAL_BALANCE_SELECT = [
-  "organization_id",
-  "fiscal_period_id",
-  "fiscal_period_code",
-  "fiscal_period_label",
-  "source_channel",
-  "account_id",
-  "account_code",
-  "account_name",
-  "account_type",
-  "chapter_code",
-  "presentation_code",
-  "statement_section",
-  "natural_balance",
-  "debit",
-  "credit",
-  "balance",
-  "functional_debit",
-  "functional_credit",
-  "functional_balance",
-  "entry_count",
-  "line_count",
-  "first_entry_date",
-  "last_entry_date",
-].join(", ");
-
 const GENERAL_LEDGER_LINE_SELECT = [
   "journal_entry_id",
   "line_no",
@@ -781,34 +729,6 @@ function mapOpenItemRow(row: OpenItemOutstandingRowRaw): OpenItemOutstandingRow 
     sourceHash: row.source_hash,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function mapTrialBalanceRow(row: TrialBalanceRowRaw): TrialBalanceReadRow {
-  return {
-    organizationId: row.organization_id,
-    fiscalPeriodId: row.fiscal_period_id,
-    fiscalPeriodCode: row.fiscal_period_code,
-    fiscalPeriodLabel: row.fiscal_period_label,
-    sourceChannel: row.source_channel,
-    accountId: row.account_id,
-    accountCode: row.account_code,
-    accountName: row.account_name,
-    accountType: row.account_type,
-    chapterCode: row.chapter_code,
-    presentationCode: row.presentation_code,
-    statementSection: row.statement_section,
-    naturalBalance: row.natural_balance,
-    debit: roundAmount(row.debit),
-    credit: roundAmount(row.credit),
-    balance: roundAmount(row.balance),
-    functionalDebit: roundAmount(row.functional_debit),
-    functionalCredit: roundAmount(row.functional_credit),
-    functionalBalance: roundAmount(row.functional_balance),
-    entryCount: row.entry_count ?? 0,
-    lineCount: row.line_count ?? 0,
-    firstEntryDate: row.first_entry_date,
-    lastEntryDate: row.last_entry_date,
   };
 }
 

@@ -66,7 +66,8 @@ function compareNullableText(left: string | null | undefined, right: string | nu
   return (left ?? "").localeCompare(right ?? "");
 }
 
-function defaultReportSectionRank(_: string) {
+function defaultReportSectionRank(reportSection: string) {
+  void reportSection;
   return 99;
 }
 

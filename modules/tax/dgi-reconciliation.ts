@@ -12,7 +12,6 @@ import {
   buildEmptyDgiBucketMap,
   dgiBucketDefinitions,
   summarizeDgiReconciliationDifferences,
-  type DgiBucketComparison,
   type DgiReconciliationBucketCode,
 } from "@/modules/tax/dgi-summary-normalizer";
 

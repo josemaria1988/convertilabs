@@ -239,11 +239,6 @@ const OPENAI_DOCUMENT_STORE_REMOTE = true;
 const OPENAI_POLL_INTERVAL = "10s";
 const OPENAI_MAX_POLL_ATTEMPTS = 60;
 const TERMINAL_RUN_STATUSES = new Set(["completed", "error", "skipped"]);
-const STALE_FAILURE_STAGES = new Set<DocumentProcessingStaleReason>([
-  "queue_stalled",
-  "provider_submission_stalled",
-  "provider_poll_stalled",
-]);
 const QUEUED_RUN_STALE_AFTER_MS = 5 * 60 * 1000;
 const PROVIDER_SUBMISSION_STALE_AFTER_MS = 2 * 60 * 1000;
 const PROVIDER_POLL_STALE_AFTER_MS = 15 * 60 * 1000;
