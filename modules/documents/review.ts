@@ -62,6 +62,8 @@ import {
   assertVatPeriodMutableForDocument,
   rebuildMonthlyVatRunFromConfirmations,
 } from "@/modules/tax/vat-runs";
+import { resolveAssistantSuggestionsForTarget } from "@/modules/assistant/runs";
+import { assertFiscalPeriodAllowsDocumentMutation } from "@/modules/close/service";
 import { deriveDocumentWorkflowState } from "@/modules/documents/workflow-state";
 import {
   isDocumentProcessingStaleReason,
@@ -2889,6 +2891,11 @@ async function postDocumentReviewInternal(input: {
   }
 
   if (facts.document_date) {
+    await assertFiscalPeriodAllowsDocumentMutation(
+      supabase,
+      document.organization_id,
+      facts.document_date,
+    );
     await assertVatPeriodMutableForDocument(
       supabase,
       document.organization_id,
@@ -2928,6 +2935,18 @@ async function postDocumentReviewInternal(input: {
         input.actorId,
       );
     }
+
+    await resolveAssistantSuggestionsForTarget(supabase, {
+      organizationId: document.organization_id,
+      targetKind: "document",
+      targetId: document.id,
+      resolutionStatus: derived.appliedRule.scope === "assistant" ? "accepted" : "rejected",
+      resolvedByProfileId: input.actorId,
+      resolutionComment:
+        derived.appliedRule.scope === "assistant"
+          ? "Sugerencia materializada tras aprobacion humana."
+          : "La aprobacion humana materializo una resolucion no asistida.",
+    });
 
     return {
       ok: true,
@@ -3141,6 +3160,18 @@ async function postDocumentReviewInternal(input: {
     );
   }
 
+  await resolveAssistantSuggestionsForTarget(supabase, {
+    organizationId: document.organization_id,
+    targetKind: "document",
+    targetId: document.id,
+    resolutionStatus: derived.appliedRule.scope === "assistant" ? "accepted" : "rejected",
+    resolvedByProfileId: input.actorId,
+    resolutionComment:
+      derived.appliedRule.scope === "assistant"
+        ? "Sugerencia materializada tras aprobacion humana."
+        : "La aprobacion humana materializo una resolucion no asistida.",
+  });
+
   return {
     ok: true,
     message: "Documento confirmado y journal entry draft generado.",
@@ -3220,6 +3251,11 @@ export async function reopenDocumentReview(input: {
   }
 
   if (currentFacts.document_date) {
+    await assertFiscalPeriodAllowsDocumentMutation(
+      supabase,
+      document.organization_id,
+      currentFacts.document_date,
+    );
     await assertVatPeriodMutableForDocument(
       supabase,
       document.organization_id,

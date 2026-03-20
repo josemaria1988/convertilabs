@@ -109,6 +109,14 @@ alter table public.api_clients enable row level security;
 alter table public.api_keys enable row level security;
 alter table public.webhook_subscriptions enable row level security;
 alter table public.audit_log enable row level security;
+alter table public.fiscal_periods enable row level security;
+alter table public.close_check_runs enable row level security;
+alter table public.close_check_results enable row level security;
+alter table public.fiscal_period_transition_logs enable row level security;
+alter table public.system_actors enable row level security;
+alter table public.assistant_runs enable row level security;
+alter table public.assistant_run_evidence_refs enable row level security;
+alter table public.assistant_suggestions enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
@@ -1682,6 +1690,270 @@ for select
 using (
   organization_id is not null
   and public.is_active_member(organization_id)
+);
+
+drop policy if exists "fiscal_periods_select_member" on public.fiscal_periods;
+create policy "fiscal_periods_select_member"
+on public.fiscal_periods
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "fiscal_periods_insert_close_roles" on public.fiscal_periods;
+create policy "fiscal_periods_insert_close_roles"
+on public.fiscal_periods
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "fiscal_periods_update_close_roles" on public.fiscal_periods;
+create policy "fiscal_periods_update_close_roles"
+on public.fiscal_periods
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "close_check_runs_select_member" on public.close_check_runs;
+create policy "close_check_runs_select_member"
+on public.close_check_runs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "close_check_runs_insert_close_roles" on public.close_check_runs;
+create policy "close_check_runs_insert_close_roles"
+on public.close_check_runs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "close_check_results_select_member" on public.close_check_results;
+create policy "close_check_results_select_member"
+on public.close_check_results
+for select
+using (
+  exists (
+    select 1
+    from public.close_check_runs as ccr
+    where ccr.id = close_check_run_id
+      and public.is_active_member(ccr.organization_id)
+  )
+);
+
+drop policy if exists "close_check_results_insert_close_roles" on public.close_check_results;
+create policy "close_check_results_insert_close_roles"
+on public.close_check_results
+for insert
+with check (
+  exists (
+    select 1
+    from public.close_check_runs as ccr
+    where ccr.id = close_check_run_id
+      and public.has_org_role(
+        ccr.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'accountant'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "fiscal_period_transition_logs_select_member" on public.fiscal_period_transition_logs;
+create policy "fiscal_period_transition_logs_select_member"
+on public.fiscal_period_transition_logs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "fiscal_period_transition_logs_insert_close_roles" on public.fiscal_period_transition_logs;
+create policy "fiscal_period_transition_logs_insert_close_roles"
+on public.fiscal_period_transition_logs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "system_actors_select_authenticated" on public.system_actors;
+create policy "system_actors_select_authenticated"
+on public.system_actors
+for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "assistant_runs_select_member" on public.assistant_runs;
+create policy "assistant_runs_select_member"
+on public.assistant_runs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "assistant_runs_insert_processing_roles" on public.assistant_runs;
+create policy "assistant_runs_insert_processing_roles"
+on public.assistant_runs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "assistant_run_evidence_refs_select_member" on public.assistant_run_evidence_refs;
+create policy "assistant_run_evidence_refs_select_member"
+on public.assistant_run_evidence_refs
+for select
+using (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.is_active_member(ar.organization_id)
+  )
+);
+
+drop policy if exists "assistant_run_evidence_refs_insert_processing_roles" on public.assistant_run_evidence_refs;
+create policy "assistant_run_evidence_refs_insert_processing_roles"
+on public.assistant_run_evidence_refs
+for insert
+with check (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role,
+          'operator'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_suggestions_select_member" on public.assistant_suggestions;
+create policy "assistant_suggestions_select_member"
+on public.assistant_suggestions
+for select
+using (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.is_active_member(ar.organization_id)
+  )
+);
+
+drop policy if exists "assistant_suggestions_insert_processing_roles" on public.assistant_suggestions;
+create policy "assistant_suggestions_insert_processing_roles"
+on public.assistant_suggestions
+for insert
+with check (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role,
+          'operator'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_suggestions_update_processing_roles" on public.assistant_suggestions;
+create policy "assistant_suggestions_update_processing_roles"
+on public.assistant_suggestions
+for update
+using (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role,
+          'operator'::public.member_role
+        ]
+      )
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.assistant_runs as ar
+    where ar.id = assistant_run_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role,
+          'operator'::public.member_role
+        ]
+      )
+  )
 );
 
 alter table public.organization_profile_versions enable row level security;

@@ -126,7 +126,12 @@ create type public.fiscal_period_status as enum (
   'open',
   'review',
   'closed',
-  'locked'
+  'locked',
+  'ready_to_close',
+  'soft_closed',
+  'tax_locked',
+  'hard_closed',
+  'audit_frozen'
 );
 
 create type public.export_status as enum (

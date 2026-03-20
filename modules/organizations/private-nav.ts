@@ -1,6 +1,7 @@
 export type OrganizationPrivateSection =
   | "documents"
   | "audit"
+  | "close"
   | "accounting"
   | "tax"
   | "chart-map"
@@ -22,6 +23,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Auditoria",
       description: "Imports auditados, preview y trazabilidad",
       current: currentSection === "audit",
+    },
+    {
+      href: `/app/o/${organizationSlug}/close`,
+      label: "Cierre",
+      description: "Cockpit mensual, validator y locks",
+      current: currentSection === "close",
     },
     {
       href: `/app/o/${organizationSlug}/trial-balance`,

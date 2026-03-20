@@ -16,6 +16,7 @@ Archivos principales:
 - `modules/tax/feature-flags.ts`
 - `app/app/o/[slug]/tax/page.tsx`
 - `app/app/o/[slug]/tax/reconciliation/page.tsx`
+- `app/app/o/[slug]/close/page.tsx`
 
 ## IVA Uruguay como vertical activa
 
@@ -74,6 +75,16 @@ La pantalla `/app/o/[slug]/tax` ya expone:
   - lock
   - reopen
   - export
+
+## Integracion con cierre contable
+
+El IVA ya no vive aislado del resto del mes. El cockpit `/app/o/[slug]/close` usa el estado del VAT run y de la conciliacion DGI como checks formales del periodo.
+
+Reglas activas hoy:
+
+- para avanzar hacia `tax_locked`, el validator exige un VAT run `finalized` o `locked`;
+- la conciliacion DGI cerrada suma verde, y si no existe queda como `warning`;
+- una reapertura posterior del carril fiscal invalida el supuesto de cierre y obliga a volver a un estado anterior del periodo.
 
 ## Conciliacion DGI
 
@@ -134,6 +145,7 @@ La arquitectura y el discurso del producto ya los contempla, pero el repo activo
 - VAT core;
 - preview y definitivo;
 - diferencias DGI base;
+- integracion del estado IVA al close validator;
 - carril inicial de importaciones;
 - hooks de multimoneda;
 - explainability fiscal razonable.

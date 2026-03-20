@@ -29,18 +29,19 @@ test("post auth destination defaults to the documents workspace", () => {
   );
 });
 
-test("private navigation exposes audit and chart map routes", () => {
+test("private navigation exposes close, audit and chart map routes", () => {
   const navItems = buildOrganizationPrivateNavItems("rontil", "documents");
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Documentos", "Auditoria", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
+    ["Documentos", "Auditoria", "Cierre", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
     [
       "/app/o/rontil/documents",
       "/app/o/rontil/audit",
+      "/app/o/rontil/close",
       "/app/o/rontil/trial-balance",
       "/app/o/rontil/tax",
       "/app/o/rontil/chart-map",
@@ -53,6 +54,6 @@ test("public and workspace navigation include audit and chart map in private wor
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Documentos", "Auditoria", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
+    ["Documentos", "Auditoria", "Cierre", "Contabilidad", "Impuestos", "Mapa contable", "Configuracion"],
   );
 });

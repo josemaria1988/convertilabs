@@ -6,6 +6,7 @@ export * from "@/modules/accounting/chart-map";
 export * from "@/modules/accounting/classification-runner";
 export * from "@/modules/accounting/concept-resolution";
 export * from "@/modules/accounting/decision-log";
+export * from "@/modules/accounting/fiscal-period-status";
 export * from "@/modules/accounting/invoice-identity";
 export * from "@/modules/accounting/journal-entry-builder";
 export * from "@/modules/accounting/journal-builder";

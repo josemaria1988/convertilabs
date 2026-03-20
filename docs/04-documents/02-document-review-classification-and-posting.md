@@ -13,6 +13,7 @@ Tomar un draft ya extraido, revisarlo, clasificarlo contable y fiscalmente, perm
 - `modules/documents/workflow-state.ts`
 - `modules/accounting/classification-runner.ts`
 - `modules/accounting/learning-approval-service.ts`
+- `modules/assistant/runs.ts`
 - `modules/documents/post-provisional-service.ts`
 - `modules/documents/confirm-final-service.ts`
 - `modules/documents/reopen-remap-service.ts`
@@ -129,6 +130,9 @@ Herramientas activas:
 - `document_confirmations`
 - `document_revisions`
 - `ai_decision_logs`
+- `assistant_runs`
+- `assistant_run_evidence_refs`
+- `assistant_suggestions`
 
 ### Corridas de clasificacion
 
@@ -141,6 +145,15 @@ Herramientas activas:
 - latencia;
 - confianza.
 
+Adicionalmente, `assistant_runs` deja trazabilidad transversal de:
+
+- persona operativa del assistant;
+- prompt/version/modelo;
+- request/response estructurado;
+- evidencia leida;
+- sugerencia pendiente;
+- resolucion humana posterior.
+
 ## Posting provisional y final
 
 ### Regla operativa
@@ -152,6 +165,7 @@ El repo ya adopta el principio correcto: si el documento puede quedar razonablem
 - persiste artefactos;
 - actualiza `posting_status`;
 - puede alimentar VAT preview;
+- respeta locks del periodo contable antes de materializar;
 - deja cola de recategorizacion hacia export.
 
 ### Final
@@ -160,6 +174,7 @@ El repo ya adopta el principio correcto: si el documento puede quedar razonablem
 - genera confirmacion y journal final;
 - sincroniza open items;
 - puede crear regla aprobada si el usuario lo decide;
+- resuelve la sugerencia IA asociada como aceptada o rechazada;
 - actualiza VAT run del periodo.
 
 ## Reapertura
@@ -170,6 +185,7 @@ El repo ya adopta el principio correcto: si el documento puede quedar razonablem
 - abre nueva revision;
 - reusa contexto y hechos persistidos;
 - marca assignment runs como stale;
+- valida que el periodo contable siga mutable antes de reabrir;
 - no rerunea IA automaticamente.
 
 Esto esta alineado con el rector y es una de las reglas mas importantes del producto.

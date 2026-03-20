@@ -137,6 +137,109 @@ create table if not exists public.audit_log (
 create index if not exists idx_audit_log_org_created
   on public.audit_log (organization_id, created_at desc);
 
+create table if not exists public.system_actors (
+  id text primary key,
+  display_name text not null,
+  actor_kind text not null default 'ai_assistant',
+  is_active boolean not null default true,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.system_actors (
+  id,
+  display_name,
+  actor_kind,
+  is_active,
+  metadata_json
+)
+values (
+  'system_ai_assistant',
+  'Asistente IA del sistema',
+  'ai_assistant',
+  true,
+  jsonb_build_object(
+    'personas',
+    jsonb_build_array(
+      'document_reviewer_assistant',
+      'close_assistant',
+      'tax_assistant',
+      'audit_assistant'
+    )
+  )
+)
+on conflict (id) do update
+set
+  display_name = excluded.display_name,
+  actor_kind = excluded.actor_kind,
+  is_active = excluded.is_active,
+  metadata_json = excluded.metadata_json,
+  updated_at = now();
+
+create table if not exists public.assistant_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  requested_by_profile_id uuid references public.profiles(id),
+  system_actor_id text not null references public.system_actors(id),
+  persona text not null,
+  scope text not null,
+  target_kind text not null,
+  target_id text not null,
+  input_hash text,
+  prompt_template_key text,
+  prompt_template_version text,
+  provider text,
+  model text,
+  model_version text,
+  status text not null default 'completed',
+  confidence numeric(5,4),
+  rationale_markdown text,
+  output_json jsonb not null default '{}'::jsonb,
+  warnings_json jsonb not null default '[]'::jsonb,
+  request_payload_json jsonb not null default '{}'::jsonb,
+  response_payload_json jsonb not null default '{}'::jsonb,
+  error_code text,
+  error_message text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create index if not exists idx_assistant_runs_org_target_created
+  on public.assistant_runs (organization_id, target_kind, target_id, created_at desc);
+
+create index if not exists idx_assistant_runs_org_scope_created
+  on public.assistant_runs (organization_id, scope, created_at desc);
+
+create table if not exists public.assistant_run_evidence_refs (
+  id uuid primary key default gen_random_uuid(),
+  assistant_run_id uuid not null references public.assistant_runs(id) on delete cascade,
+  source_kind text not null,
+  source_id text not null,
+  snapshot_ref text,
+  source_hash_at_read text,
+  excerpt_hash text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_assistant_run_evidence_refs_run
+  on public.assistant_run_evidence_refs (assistant_run_id, source_kind);
+
+create table if not exists public.assistant_suggestions (
+  id uuid primary key default gen_random_uuid(),
+  assistant_run_id uuid not null references public.assistant_runs(id) on delete cascade,
+  suggestion_type text not null,
+  proposed_payload_json jsonb not null default '{}'::jsonb,
+  resolution_status text not null default 'pending',
+  resolved_by_profile_id uuid references public.profiles(id),
+  resolved_at timestamptz,
+  resolution_comment text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_assistant_suggestions_run_status
+  on public.assistant_suggestions (assistant_run_id, resolution_status, created_at desc);
+
 create table if not exists public.ai_decision_logs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

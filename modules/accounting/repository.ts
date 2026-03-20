@@ -25,6 +25,7 @@ import {
   buildAccountingMonthRange,
   getAccountingMonthKey,
 } from "@/modules/accounting/periods";
+import { isFiscalPeriodLockedForPosting } from "@/modules/accounting/fiscal-period-status";
 import { ensureStarterAccountingSetup } from "@/modules/accounting/starter-accounts";
 import {
   isMissingJournalEntryLineStep5ColumnError,
@@ -1336,7 +1337,10 @@ async function ensureFiscalPeriodForDate(
   const status = asString(period?.status) ?? "open";
   const lockedAt = asString(period?.locked_at);
 
-  if (status === "closed" || status === "locked" || lockedAt) {
+  if (isFiscalPeriodLockedForPosting({
+    status,
+    lockedAt,
+  })) {
     throw new Error("No se puede postear en un periodo contable cerrado o bloqueado.");
   }
 

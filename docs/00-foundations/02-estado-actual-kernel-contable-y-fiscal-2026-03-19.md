@@ -23,6 +23,14 @@ Convertilabs ya no es solo un intake documental con IA. En el estado actual del 
 
 La base arquitectonica para operar cierres mensuales de IVA y generar balancetes existe y es seria.
 
+Actualizacion al 2026-03-20:
+
+- ya existe cockpit de cierre en `/app/o/[slug]/close`;
+- `fiscal_periods` ya distingue `open`, `ready_to_close`, `soft_closed`, `tax_locked` y deja preparado `hard_closed` / `audit_frozen`;
+- existe `close validator` con corridas persistidas, resultados por check y transiciones auditadas;
+- el workflow documental ya respeta locks del periodo antes de postear o reabrir;
+- la trazabilidad IA ya tiene capa transversal con `system_actors`, `assistant_runs`, evidencias y sugerencias resolubles.
+
 La parte que todavia no esta cerrada para un circuito contable-financiero completo de estudio o empresa es otra: faltan piezas de cierre contable mensual/anual, ajustes manuales, cierre de resultados, arrastre de saldos, reportes financieros formales y motores tributarios mas alla de IVA.
 
 En otras palabras:
@@ -44,6 +52,7 @@ El repositorio ya materializa esa tesis en superficies reales:
 
 - `Documentos`: bandeja operativa, revision y posting.
 - `Auditoria`: importacion masiva auditada por planilla con preview antes de materializar.
+- `Cierre`: cockpit mensual con validator, semaforos y transiciones formales del periodo.
 - `Contabilidad`: balance, diario y open items como read models.
 - `Impuestos`: IVA mensual, lifecycle y conciliacion DGI.
 - `Mapa contable`: navegacion e impacto del plan.
@@ -506,6 +515,10 @@ Hoy el repo ya tiene varias piezas correctas para un cierre mensual:
 - documentos versionados por revision;
 - posting provisional y final;
 - period guardrails;
+- maquina de estados formal en `fiscal_periods`;
+- cockpit mensual de cierre;
+- `close_check_runs` y `close_check_results`;
+- historial de transiciones del periodo;
 - libro inmutable;
 - balance de comprobacion mensual;
 - open items;
@@ -532,6 +545,12 @@ Este es el bloque mas importante para trabajar con contadores.
 ## 9.1 Cierre contable mensual formal
 
 Existe `fiscal_periods`, pero falta una experiencia completa de cierre mensual contable.
+
+Nota 2026-03-20:
+
+- la base de esa experiencia ya existe en `/app/o/[slug]/close`;
+- hoy el sistema ya corre un validator deterministico, persiste checks y registra transiciones del periodo;
+- lo pendiente en esta seccion pasa a ser profundidad del checklist, `close_snapshots`, hard close real y ajustes/manual entries avanzados.
 
 Hoy hay:
 
@@ -686,6 +705,8 @@ Tampoco existe un “cierre anual pack” que reúna:
 ## 10.5 Control de integridad de cierre
 
 Falta un motor de validacion de cierre que responda preguntas como:
+
+Nota 2026-03-20: ya existe un motor base de validacion de cierre; el gap actual es extenderlo con mas materialidad, bancos, FX, cuentas provisionales y checks de reporting formal.
 
 - hay cuentas provisionales pendientes;
 - hay documentos de un mes cerrados despues del cierre;

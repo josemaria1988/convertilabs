@@ -352,6 +352,10 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Revisada";
     case "finalized":
       return "Finalizada";
+    case "review":
+      return "En revision";
+    case "closed":
+      return "Cerrada";
     case "locked":
       return "Bloqueada";
     case "queued":
@@ -376,6 +380,16 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Requiere revision";
     case "open":
       return "Abierta";
+    case "ready_to_close":
+      return "Lista para cerrar";
+    case "soft_closed":
+      return "Cierre blando";
+    case "tax_locked":
+      return "Lock fiscal";
+    case "hard_closed":
+      return "Cierre duro";
+    case "audit_frozen":
+      return "Congelada para auditoria";
     case "partially_settled":
       return "Parcialmente cancelada";
     case "settled":

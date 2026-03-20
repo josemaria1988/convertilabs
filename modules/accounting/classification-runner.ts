@@ -19,6 +19,10 @@ import {
   insertAIDecisionLogs,
 } from "@/modules/accounting/decision-log";
 import {
+  recordAssistantRun,
+  supersedePendingAssistantSuggestions,
+} from "@/modules/assistant/runs";
+import {
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
   upsertDocumentLineItems,
@@ -204,6 +208,32 @@ function buildClassificationResponsePayload(derived: DerivedDraftArtifacts) {
   };
 }
 
+function buildAssistantRunOutput(derived: DerivedDraftArtifacts) {
+  if (derived.assistantSuggestion.status === "completed" && derived.assistantSuggestion.output) {
+    return {
+      output: derived.assistantSuggestion.output,
+      summary: {
+        status: derived.assistantSuggestion.status,
+        confidence: derived.assistantSuggestion.confidence,
+        rationale: derived.assistantSuggestion.rationale,
+        review_flags: derived.assistantSuggestion.reviewFlags,
+      },
+    } satisfies Record<string, unknown>;
+  }
+
+  return {
+    error_code: "assistant_run_failed",
+    error_message:
+      derived.assistantSuggestion.rationale
+      ?? "La corrida del asistente no devolvio una sugerencia utilizable.",
+    summary: {
+      status: derived.assistantSuggestion.status,
+      confidence: derived.assistantSuggestion.confidence,
+      review_flags: derived.assistantSuggestion.reviewFlags,
+    },
+  } satisfies Record<string, unknown>;
+}
+
 async function insertStartedAssignmentRun(
   supabase: SupabaseClient,
   input: {
@@ -371,6 +401,64 @@ export async function runDocumentClassification(input: {
     });
     const derived = accountingState.derived;
     const savedAt = new Date().toISOString();
+
+    if (derived.assistantSuggestion.status !== "not_requested") {
+      await supersedePendingAssistantSuggestions(supabase, {
+        organizationId: context.document.organization_id,
+        targetKind: "document",
+        targetId: context.document.id,
+        resolvedByProfileId: input.actorId,
+        comment: "Reemplazada por una nueva corrida de clasificacion.",
+      });
+      await recordAssistantRun(supabase, {
+        organizationId: context.document.organization_id,
+        requestedByProfileId: input.actorId,
+        persona: "document_reviewer_assistant",
+        scope: "documents",
+        targetKind: "document",
+        targetId: context.document.id,
+        promptTemplateKey: "accounting_assistant",
+        promptTemplateVersion: "v1",
+        provider: derived.assistantSuggestion.providerCode,
+        model: derived.assistantSuggestion.modelCode,
+        modelVersion: derived.assistantSuggestion.modelCode,
+        status:
+          derived.assistantSuggestion.status === "completed"
+            ? "completed"
+            : "failed",
+        confidence: derived.assistantSuggestion.confidence,
+        rationaleMarkdown: derived.assistantSuggestion.rationale,
+        inputHash: derived.assistantSuggestion.promptHash,
+        outputJson: buildAssistantRunOutput(derived),
+        warningsJson: derived.assistantSuggestion.reviewFlags,
+        requestPayloadJson: derived.assistantSuggestion.requestPayload,
+        responsePayloadJson: derived.assistantSuggestion.responsePayload,
+        evidenceRefs: [
+          {
+            sourceKind: "document",
+            sourceId: context.document.id,
+          },
+          {
+            sourceKind: "document_draft",
+            sourceId: context.draft.id,
+          },
+        ],
+        suggestion: derived.assistantSuggestion.output
+          ? {
+              suggestionType: "document_accounting_resolution",
+              proposedPayloadJson: {
+                suggested_concept_id: derived.assistantSuggestion.output.suggestedConceptId,
+                suggested_account_id: derived.assistantSuggestion.output.suggestedAccountId,
+                suggested_operation_category:
+                  derived.assistantSuggestion.output.suggestedOperationCategory,
+                linked_operation_type: derived.assistantSuggestion.output.linkedOperationType,
+                should_block_confirmation:
+                  derived.assistantSuggestion.output.shouldBlockConfirmation,
+              },
+            }
+          : null,
+      });
+    }
 
     if (derived.invoiceIdentity) {
       await upsertDocumentInvoiceIdentity(supabase, {

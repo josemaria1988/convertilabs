@@ -23,9 +23,11 @@ docs/
 ### Dominios presentes en `modules/`
 
 - `accounting`
+- `assistant`
 - `audit`
 - `ai`
 - `auth`
+- `close`
 - `documents`
 - `evals`
 - `explanations`
@@ -76,6 +78,7 @@ docs/
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
 - `/app/o/[slug]/audit`
+- `/app/o/[slug]/close`
 - `/app/o/[slug]/trial-balance`
 - `/app/o/[slug]/settings`
 - `/app/o/[slug]/tax`
@@ -140,7 +143,8 @@ docs/
 1. el ledger posteado alimenta balance, diario y open items via read models;
 2. `tax` construye VAT preview y VAT runs desde documentos confirmados;
 3. `tax/reconciliation` compara buckets DGI contra el sistema;
-4. `exports` genera artefactos contables o fiscales sobre el periodo elegido.
+4. `close` centraliza estado del periodo, validator y transiciones formales;
+5. `exports` genera artefactos contables o fiscales sobre el periodo elegido.
 
 ### Flujo de settings
 
@@ -186,6 +190,14 @@ docs/
 
 - `components/tax/vat-run-preview-card.tsx`
 
+### Cierre y trazabilidad
+
+- `app/app/o/[slug]/close/page.tsx`
+- `app/app/o/[slug]/close/actions.ts`
+- `modules/close/service.ts`
+- `modules/accounting/fiscal-period-status.ts`
+- `modules/assistant/runs.ts`
+
 ## Mapa de migraciones por fase
 
 - `20260311_*`: auth, dashboard privado, upload y esquema canonico base.
@@ -199,6 +211,7 @@ docs/
 - `20260317_doc012_*`: fundaciones del kernel contable.
 - `20260317_int002_*`: conexiones de email CFE por organizacion/usuario.
 - `20260318_doc013_*`: read models contables para balance, diario y open items.
+- `20260320_close001_*`: estados robustos de periodo, close validator, cockpit base y trazabilidad IA transversal.
 
 ## Pruebas presentes
 

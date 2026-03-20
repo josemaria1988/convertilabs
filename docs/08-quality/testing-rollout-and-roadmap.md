@@ -40,6 +40,7 @@ Definidos en `package.json`:
 
 - bootstrap
 - accounting domain
+- close lifecycle y guardrails de periodo
 - suggestions
 - imports
 - exports

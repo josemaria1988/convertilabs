@@ -17,6 +17,7 @@ Migraciones recientes que cambian el mapa operativo actual:
 - `20260317_doc012_accounting_kernel_foundations.sql`
 - `20260317_int002_cfe_email_connections.sql`
 - `20260318_doc013_accounting_read_models.sql`
+- `20260320_close001_period_close_and_assistant_runs.sql`
 
 ## Grupos de tablas activos
 
@@ -52,6 +53,9 @@ Migraciones recientes que cambian el mapa operativo actual:
 ### Contabilidad transaccional
 
 - `fiscal_periods`
+- `fiscal_period_transition_logs`
+- `close_check_runs`
+- `close_check_results`
 - `source_events`
 - `posting_proposals`
 - `journal_types`
@@ -90,6 +94,10 @@ Estas vistas leen el ledger posteado e inmutable y alimentan las superficies `/t
 - `exports`
 - `organization_spreadsheet_import_runs`
 - `organization_cfe_email_connections`
+- `system_actors`
+- `assistant_runs`
+- `assistant_run_evidence_refs`
+- `assistant_suggestions`
 - `audit_log`
 - `ai_decision_logs`
 
@@ -107,6 +115,7 @@ Regla de uso actual:
 
 - la UI nunca habla con llaves privilegiadas;
 - los servicios server-only si usan service role cuando necesitan saltar limitaciones del cliente SSR para orchestration o persistencia interna.
+- `fiscal_periods`, `close_check_runs`, `close_check_results`, `fiscal_period_transition_logs` y las tablas `assistant_*` ya tienen RLS preparada para lectura por membresia y escritura acotada a roles altos o al carril documental;
 - `organization_cfe_email_connections` queda acotada por organizacion y por usuario dueno de la casilla, con lectura ampliada a roles altos;
 - las vistas contables usan `security_invoker = true` para no escapar del contexto del invocador.
 
@@ -185,6 +194,8 @@ Se usan para:
 
 - `audit_log` para eventos funcionales;
 - `ai_decision_logs` para decisiones IA/documentales;
+- `assistant_runs`, `assistant_run_evidence_refs` y `assistant_suggestions` como estandar transversal de sugerencias IA nuevas;
+- `close_check_runs`, `close_check_results` y `fiscal_period_transition_logs` para trazabilidad formal del cierre;
 - `document_assignment_runs`;
 - `organization_preset_ai_runs`;
 - `organization_spreadsheet_import_runs` para trazabilidad del preview/staging documental y de imports de planilla;

@@ -775,7 +775,16 @@ export type FiscalPeriodRecord = {
   label: string;
   starts_on: string;
   ends_on: string;
-  status: "open" | "review" | "closed" | "locked";
+  status:
+    | "open"
+    | "ready_to_close"
+    | "soft_closed"
+    | "tax_locked"
+    | "hard_closed"
+    | "audit_frozen"
+    | "review"
+    | "closed"
+    | "locked";
   is_current: boolean;
   closed_at: string | null;
   locked_at: string | null;

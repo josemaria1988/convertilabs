@@ -2,16 +2,18 @@
 
 Este directorio reemplaza la documentacion historica dispersa en `docs/specs*`, archivos sueltos y notas tacticas de iteraciones previas.
 
-La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-19: rutas activas, `Auditoria` documental con preview/staging, workspaces contables read-only, conexiones CFE y suites de prueba.
+La fuente editorial de este nuevo set es el rector funcional del 2026-03-15, pero cada documento tambien fue contrastado contra el estado real del repo al 2026-03-20: rutas activas, `Auditoria` documental con preview/staging, workspaces contables read-only, cockpit de cierre, conexiones CFE y suites de prueba.
 
 Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto: todo cambio nuevo debe justificar si mejora el motor documental, el motor de decision contable o el motor fiscal.
+
+Desde 2026-03-20, la epica inmediata de `docs/specs-driven-development-erp-contable-profesional.md` queda absorbida en la documentacion oficial a traves de `03-accounting/close-cockpit-and-period-controls.md`, `04-documents/02-document-review-classification-and-posting.md`, `05-tax/tax-platform-vat-fx-and-imports.md` y `07-platform/database-api-background-jobs-and-observability.md`.
 
 ## Reglas de lectura
 
 - `00-foundations/` fija la vision, el alcance y el mapa real del repo.
 - `agent_rules.md` resume el foco no negociable del MVP y la regla de descarte.
 - `01-identity/` y `02-organization/` cubren auth, tenancy, onboarding, settings y perfil/versionado operativo.
-- `03-accounting/` cubre plan de cuentas, presets, mapa contable y recomendacion hibrida con IA.
+- `03-accounting/` cubre plan de cuentas, presets, mapa contable, recomendacion hibrida con IA y el cockpit de cierre contable.
 - `04-documents/` cubre intake binario, revision, clasificacion, posting multi-linea, operaciones internacionales y el handoff desde `Auditoria` hacia `Documentos`.
 - `05-tax/` cubre VAT, perfil fiscal, importaciones y multimoneda.
 - `06-integrations/` cubre spreadsheets, `imports`, `audit`, exports y bridge al sistema externo.
@@ -30,6 +32,7 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
 - [03-accounting/chart-presets-and-plan-management.md](./03-accounting/chart-presets-and-plan-management.md)
 - [03-accounting/accounting-map-impact-graph.md](./03-accounting/accounting-map-impact-graph.md)
 - [03-accounting/hybrid-ai-preset-recommendation.md](./03-accounting/hybrid-ai-preset-recommendation.md)
+- [03-accounting/close-cockpit-and-period-controls.md](./03-accounting/close-cockpit-and-period-controls.md)
 - [04-documents/01-document-intake-and-processing.md](./04-documents/01-document-intake-and-processing.md)
 - [04-documents/02-document-review-classification-and-posting.md](./04-documents/02-document-review-classification-and-posting.md)
 - [04-documents/03-document-settlement-and-multi-line-posting.md](./04-documents/03-document-settlement-and-multi-line-posting.md)
@@ -56,6 +59,8 @@ Desde 2026-03-16, `docs/agent_rules.md` funciona como cutline corta de producto:
   absorbidos por `05-tax/` y `08-quality/`.
 - `doc_export_API_ready_architecture.md`, `specs/upload-dashboard.md`, `roadmap.md`:
   absorbidos por `06-integrations/`, `07-platform/` y `08-quality/`.
+- `specs-driven-development-erp-contable-profesional.md`:
+  absorbido parcialmente por `03-accounting/close-cockpit-and-period-controls.md`, `04-documents/02-document-review-classification-and-posting.md`, `05-tax/tax-platform-vat-fx-and-imports.md` y `07-platform/database-api-background-jobs-and-observability.md`; el remanente de auditoria externa, hard close y manual entries avanzados queda como roadmap posterior.
 
 ## Regla de mantenimiento
 

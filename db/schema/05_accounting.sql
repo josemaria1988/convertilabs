@@ -81,6 +81,8 @@ create table if not exists public.fiscal_periods (
   closed_at timestamptz,
   locked_at timestamptz,
   reopened_at timestamptz,
+  status_changed_at timestamptz,
+  status_changed_by uuid references public.profiles(id),
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -90,6 +92,59 @@ create table if not exists public.fiscal_periods (
 
 create index if not exists idx_fiscal_periods_org_dates
   on public.fiscal_periods (organization_id, starts_on, ends_on);
+
+create index if not exists idx_fiscal_periods_org_status
+  on public.fiscal_periods (organization_id, status, starts_on desc);
+
+create table if not exists public.close_check_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  fiscal_period_id uuid not null references public.fiscal_periods(id) on delete cascade,
+  run_kind text not null default 'manual',
+  status text not null default 'warning',
+  triggered_by_profile_id uuid references public.profiles(id),
+  input_hash text,
+  summary_json jsonb not null default '{}'::jsonb,
+  snapshot_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_close_check_runs_org_period_created
+  on public.close_check_runs (organization_id, fiscal_period_id, created_at desc);
+
+create table if not exists public.close_check_results (
+  id uuid primary key default gen_random_uuid(),
+  close_check_run_id uuid not null references public.close_check_runs(id) on delete cascade,
+  check_code text not null,
+  family text not null,
+  severity text not null,
+  status text not null,
+  message text not null,
+  metric_value numeric(18,2),
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (close_check_run_id, check_code)
+);
+
+create index if not exists idx_close_check_results_run_status
+  on public.close_check_results (close_check_run_id, status);
+
+create table if not exists public.fiscal_period_transition_logs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  fiscal_period_id uuid not null references public.fiscal_periods(id) on delete cascade,
+  from_status public.fiscal_period_status,
+  to_status public.fiscal_period_status not null,
+  changed_by_profile_id uuid references public.profiles(id),
+  reason_code text,
+  reason_comment text,
+  validator_run_id uuid references public.close_check_runs(id) on delete set null,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_fiscal_period_transition_logs_org_period_created
+  on public.fiscal_period_transition_logs (organization_id, fiscal_period_id, created_at desc);
 
 create table if not exists public.organization_accounting_snapshots (
   id uuid primary key default gen_random_uuid(),
@@ -483,7 +538,14 @@ begin
       raise exception 'La fecha del asiento queda fuera del periodo contable seleccionado.';
     end if;
 
-    if period_record.status in ('closed', 'locked') or period_record.locked_at is not null then
+    if period_record.status in (
+      'closed',
+      'locked',
+      'soft_closed',
+      'tax_locked',
+      'hard_closed',
+      'audit_frozen'
+    ) or period_record.locked_at is not null then
       raise exception 'No se puede finalizar un asiento en un periodo cerrado o bloqueado.';
     end if;
 
