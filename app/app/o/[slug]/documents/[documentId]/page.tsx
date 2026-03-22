@@ -19,10 +19,11 @@ import {
   confirmFinalDocumentReviewAction,
   createDocumentReviewOverrideAccountAction,
   postProvisionalDocumentReviewAction,
+  refreshDocumentAssistantAction,
   reopenDocumentReviewAction,
+  resolveDocumentAssistantSuggestionAction,
   runDocumentClassificationAction,
   resolveDocumentDuplicateAction,
-  saveDocumentLearningRuleAction,
   saveDocumentDraftReviewAction,
 } from "./actions";
 
@@ -210,19 +211,26 @@ export default async function DocumentReviewPage({
             documentId,
           });
         }}
-        saveLearningRuleAction={async (payload) => {
-          "use server";
-          return saveDocumentLearningRuleAction({
-            slug,
-            documentId,
-            ...payload,
-          });
-        }}
         reopenDocumentAction={async () => {
           "use server";
           return reopenDocumentReviewAction({
             slug,
             documentId,
+          });
+        }}
+        refreshAssistantAction={async () => {
+          "use server";
+          return refreshDocumentAssistantAction({
+            slug,
+            documentId,
+          });
+        }}
+        resolveAssistantSuggestionAction={async (payload) => {
+          "use server";
+          return resolveDocumentAssistantSuggestionAction({
+            slug,
+            documentId,
+            ...payload,
           });
         }}
       />

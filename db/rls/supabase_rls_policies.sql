@@ -114,9 +114,13 @@ alter table public.close_check_runs enable row level security;
 alter table public.close_check_results enable row level security;
 alter table public.fiscal_period_transition_logs enable row level security;
 alter table public.system_actors enable row level security;
+alter table public.assistant_personas enable row level security;
+alter table public.assistant_threads enable row level security;
 alter table public.assistant_runs enable row level security;
 alter table public.assistant_run_evidence_refs enable row level security;
+alter table public.assistant_messages enable row level security;
 alter table public.assistant_suggestions enable row level security;
+alter table public.assistant_suggestion_evidence_refs enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
@@ -1819,11 +1823,91 @@ on public.system_actors
 for select
 using (auth.role() = 'authenticated');
 
+drop policy if exists "assistant_personas_select_authenticated" on public.assistant_personas;
+create policy "assistant_personas_select_authenticated"
+on public.assistant_personas
+for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "assistant_threads_select_consultive_roles" on public.assistant_threads;
+create policy "assistant_threads_select_consultive_roles"
+on public.assistant_threads
+for select
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "assistant_threads_insert_consultive_roles" on public.assistant_threads;
+create policy "assistant_threads_insert_consultive_roles"
+on public.assistant_threads
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "assistant_threads_update_consultive_roles" on public.assistant_threads;
+create policy "assistant_threads_update_consultive_roles"
+on public.assistant_threads
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
 drop policy if exists "assistant_runs_select_member" on public.assistant_runs;
 create policy "assistant_runs_select_member"
 on public.assistant_runs
 for select
-using (public.is_active_member(organization_id));
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
 
 drop policy if exists "assistant_runs_insert_processing_roles" on public.assistant_runs;
 create policy "assistant_runs_insert_processing_roles"
@@ -1837,8 +1921,7 @@ with check (
       'admin'::public.member_role,
       'admin_processing'::public.member_role,
       'accountant'::public.member_role,
-      'reviewer'::public.member_role,
-      'operator'::public.member_role
+      'reviewer'::public.member_role
     ]
   )
 );
@@ -1852,7 +1935,16 @@ using (
     select 1
     from public.assistant_runs as ar
     where ar.id = assistant_run_id
-      and public.is_active_member(ar.organization_id)
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
+        ]
+      )
   )
 );
 
@@ -1872,8 +1964,51 @@ with check (
           'admin'::public.member_role,
           'admin_processing'::public.member_role,
           'accountant'::public.member_role,
-          'reviewer'::public.member_role,
-          'operator'::public.member_role
+          'reviewer'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_messages_select_consultive_roles" on public.assistant_messages;
+create policy "assistant_messages_select_consultive_roles"
+on public.assistant_messages
+for select
+using (
+  exists (
+    select 1
+    from public.assistant_threads as at
+    where at.id = thread_id
+      and public.has_org_role(
+        at.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_messages_insert_consultive_roles" on public.assistant_messages;
+create policy "assistant_messages_insert_consultive_roles"
+on public.assistant_messages
+for insert
+with check (
+  exists (
+    select 1
+    from public.assistant_threads as at
+    where at.id = thread_id
+      and public.has_org_role(
+        at.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
         ]
       )
   )
@@ -1888,7 +2023,16 @@ using (
     select 1
     from public.assistant_runs as ar
     where ar.id = assistant_run_id
-      and public.is_active_member(ar.organization_id)
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
+        ]
+      )
   )
 );
 
@@ -1908,8 +2052,7 @@ with check (
           'admin'::public.member_role,
           'admin_processing'::public.member_role,
           'accountant'::public.member_role,
-          'reviewer'::public.member_role,
-          'operator'::public.member_role
+          'reviewer'::public.member_role
         ]
       )
   )
@@ -1931,8 +2074,7 @@ using (
           'admin'::public.member_role,
           'admin_processing'::public.member_role,
           'accountant'::public.member_role,
-          'reviewer'::public.member_role,
-          'operator'::public.member_role
+          'reviewer'::public.member_role
         ]
       )
   )
@@ -1949,8 +2091,55 @@ with check (
           'admin'::public.member_role,
           'admin_processing'::public.member_role,
           'accountant'::public.member_role,
-          'reviewer'::public.member_role,
-          'operator'::public.member_role
+          'reviewer'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_suggestion_evidence_refs_select_consultive_roles" on public.assistant_suggestion_evidence_refs;
+create policy "assistant_suggestion_evidence_refs_select_consultive_roles"
+on public.assistant_suggestion_evidence_refs
+for select
+using (
+  exists (
+    select 1
+    from public.assistant_suggestions as sug
+    join public.assistant_runs as ar
+      on ar.id = sug.assistant_run_id
+    where sug.id = assistant_suggestion_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "assistant_suggestion_evidence_refs_insert_consultive_roles" on public.assistant_suggestion_evidence_refs;
+create policy "assistant_suggestion_evidence_refs_insert_consultive_roles"
+on public.assistant_suggestion_evidence_refs
+for insert
+with check (
+  exists (
+    select 1
+    from public.assistant_suggestions as sug
+    join public.assistant_runs as ar
+      on ar.id = sug.assistant_run_id
+    where sug.id = assistant_suggestion_id
+      and public.has_org_role(
+        ar.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'admin_processing'::public.member_role,
+          'accountant'::public.member_role,
+          'reviewer'::public.member_role
         ]
       )
   )

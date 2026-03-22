@@ -14,6 +14,7 @@ import type {
   DocumentMonetarySnapshot,
   DocumentRoleCandidate,
   DocumentSettlementContext,
+  ManualAccountRoleOverrides,
   PaymentTerms,
   PostableAccountRecord,
   ResolvedAccountingRule,
@@ -190,11 +191,54 @@ function resolveRequiredRoles(input: {
   return roles.filter((role, index, array) => array.indexOf(role) === index);
 }
 
+export function resolveRequiredAccountRoles(input: {
+  documentRole: DocumentRoleCandidate;
+  settlementContext: DocumentSettlementContext;
+  taxTreatment: VatEngineResult;
+}) {
+  return resolveRequiredRoles(input);
+}
+
+function resolveRoleLinePurpose(input: {
+  roleCode: AccountRoleCode;
+  settlementContext: DocumentSettlementContext;
+  primaryRoleCode: AccountRoleCode | null;
+}) {
+  if (input.roleCode === input.primaryRoleCode) {
+    return "main";
+  }
+
+  if (input.roleCode === "input_vat_account" || input.roleCode === "output_vat_account") {
+    return "tax";
+  }
+
+  if (
+    input.settlementContext.operationKind === "customer_receipt"
+    && input.roleCode === "accounts_receivable_account"
+  ) {
+    return "counterparty";
+  }
+
+  if (
+    input.settlementContext.operationKind === "supplier_payment"
+    && input.roleCode === "accounts_payable_account"
+  ) {
+    return "counterparty";
+  }
+
+  if (input.settlementContext.operationKind === "card_settlement") {
+    return input.roleCode === "card_clearing_account" ? "counterparty" : "settlement";
+  }
+
+  return "settlement";
+}
+
 function resolveRoleMap(input: {
   requiredRoles: AccountRoleCode[];
   accounts: PostableAccountRecord[];
   accountRoleBindings: AccountRoleBindingRecord[];
   appliedRule: ResolvedAccountingRule;
+  manualRoleOverrides: ManualAccountRoleOverrides;
   documentRole: DocumentRoleCandidate;
   currencyCode: string;
   settlementMethod: SettlementMethod;
@@ -206,6 +250,7 @@ function resolveRoleMap(input: {
       roleCode,
       accounts: input.accounts,
       appliedRule: input.appliedRule,
+      manualRoleOverrides: input.manualRoleOverrides,
       bindings: input.accountRoleBindings,
       documentRole: input.documentRole,
       currencyCode: input.currencyCode,
@@ -255,6 +300,7 @@ function buildInvoiceLines(input: {
   settlementContext: DocumentSettlementContext;
   taxTreatment: VatEngineResult;
   appliedRule: ResolvedAccountingRule;
+  manualRoleOverrides: ManualAccountRoleOverrides;
   accounts: PostableAccountRecord[];
   accountRoleBindings: AccountRoleBindingRecord[];
 }) {
@@ -283,6 +329,7 @@ function buildInvoiceLines(input: {
     accounts: input.accounts,
     accountRoleBindings: input.accountRoleBindings,
     appliedRule: input.appliedRule,
+    manualRoleOverrides: input.manualRoleOverrides,
     documentRole: input.documentRole,
     currencyCode: monetary.currencyCode,
     settlementMethod: input.settlementContext.settlementMethod,
@@ -591,6 +638,82 @@ function buildInvoiceLines(input: {
   });
 }
 
+export type ReviewAccountRoleAssignment = {
+  roleCode: AccountRoleCode;
+  linePurpose: string;
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  accountLabel: string | null;
+  isMissing: boolean;
+  isProvisional: boolean;
+  provenance: string | null;
+  editable: boolean;
+};
+
+export function buildJournalRoleAssignments(input: {
+  documentRole: DocumentRoleCandidate;
+  facts: DocumentIntakeFactMap;
+  monetarySnapshot: DocumentMonetarySnapshot | null;
+  settlementContext: DocumentSettlementContext;
+  taxTreatment: VatEngineResult;
+  appliedRule: ResolvedAccountingRule;
+  manualRoleOverrides: ManualAccountRoleOverrides;
+  accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
+}) {
+  const monetary = buildJournalMonetaryContext({
+    currencyCode: input.monetarySnapshot?.currencyCode ?? input.facts.currency_code,
+    documentDate: input.monetarySnapshot?.fx.documentDate ?? input.facts.document_date,
+    functionalCurrencyCode: input.monetarySnapshot?.fx.functionalCurrencyCode,
+    fxRate: input.monetarySnapshot?.fx.rate,
+    fxRateSource: input.monetarySnapshot?.fx.source,
+    fxRateBcuValue: input.monetarySnapshot?.fx.bcuValue,
+    fxRateBcuDateUsed: input.monetarySnapshot?.fx.bcuDateUsed,
+    fxRateBcuSeries: input.monetarySnapshot?.fx.bcuSeries,
+  });
+  const requiredRoles = resolveRequiredRoles({
+    documentRole: input.documentRole,
+    settlementContext: input.settlementContext,
+    taxTreatment: input.taxTreatment,
+  });
+  const roleMap = resolveRoleMap({
+    requiredRoles,
+    accounts: input.accounts,
+    accountRoleBindings: input.accountRoleBindings,
+    appliedRule: input.appliedRule,
+    manualRoleOverrides: input.manualRoleOverrides,
+    documentRole: input.documentRole,
+    currencyCode: monetary.currencyCode,
+    settlementMethod: input.settlementContext.settlementMethod,
+  });
+
+  return requiredRoles.map((roleCode) => {
+    const resolved = roleMap.get(roleCode) ?? null;
+    const accountLabel =
+      resolved?.accountCode && resolved.accountName
+        ? `${resolved.accountCode} - ${resolved.accountName}`
+        : null;
+
+    return {
+      roleCode,
+      linePurpose: resolveRoleLinePurpose({
+        roleCode,
+        settlementContext: input.settlementContext,
+        primaryRoleCode: input.settlementContext.primaryAccountRole,
+      }),
+      accountId: resolved?.accountId ?? null,
+      accountCode: resolved?.accountCode ?? null,
+      accountName: resolved?.accountName ?? null,
+      accountLabel,
+      isMissing: !resolved?.accountCode || !resolved.accountName,
+      isProvisional: resolved?.isProvisional ?? false,
+      provenance: resolved?.provenance ?? null,
+      editable: true,
+    } satisfies ReviewAccountRoleAssignment;
+  });
+}
+
 export function buildJournalEntryPreview(input: {
   documentRole: DocumentRoleCandidate;
   facts: DocumentIntakeFactMap;
@@ -598,6 +721,7 @@ export function buildJournalEntryPreview(input: {
   settlementContext: DocumentSettlementContext;
   taxTreatment: VatEngineResult;
   appliedRule: ResolvedAccountingRule;
+  manualRoleOverrides: ManualAccountRoleOverrides;
   accounts: PostableAccountRecord[];
   accountRoleBindings: AccountRoleBindingRecord[];
 }) {
@@ -618,6 +742,7 @@ export function applyJournalPreviewToDerived(input: {
     settlementContext: input.derived.settlementContext,
     taxTreatment: input.derived.taxTreatment,
     appliedRule: input.derived.appliedRule,
+    manualRoleOverrides: input.derived.accountingContext.manualRoleOverrides,
     accounts: input.accounts,
     accountRoleBindings: input.accountRoleBindings,
   });

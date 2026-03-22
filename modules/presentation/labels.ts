@@ -534,7 +534,7 @@ export function formatDecisionSourceLabel(value: string | null | undefined) {
     case "concept_rule":
       return "Regla por concepto";
     case "assistant":
-      return "Asistente IA";
+      return "Asistente Contable";
     case "manual_override":
       return "Revision manual";
     case "imported":

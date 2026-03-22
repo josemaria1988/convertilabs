@@ -173,3 +173,113 @@ test("workflow state marks reopened documents for manual remap", () => {
   assert.equal(state.classificationStatus, "stale");
   assert.match(state.nextRecommendedAction, /Remapear manualmente/i);
 });
+
+test("workflow state allows rerun when a ready draft has stale classification", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "draft_ready",
+    postingStatus: "draft",
+    draftStatus: "open",
+    steps: [
+      { step_code: "identity", status: "draft_saved", stale_reason: null },
+      { step_code: "fields", status: "draft_saved", stale_reason: null },
+      { step_code: "amounts", status: "draft_saved", stale_reason: null },
+      { step_code: "operation_context", status: "draft_saved", stale_reason: null },
+      { step_code: "accounting_context", status: "draft_saved", stale_reason: null },
+    ],
+    derived: buildDerived({
+      validation: {
+        canPostProvisional: true,
+        canConfirmFinal: true,
+        blockers: [],
+      },
+    }),
+    latestClassificationRun: {
+      id: "run-stale",
+      organizationId: "org-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      triggeredByUserId: "user-1",
+      status: "stale",
+      requestPayload: {},
+      responseJson: {},
+      selectedAccountId: "acct-1",
+      selectedOperationCategory: "services",
+      selectedTemplateCode: null,
+      selectedTaxProfileCode: null,
+      confidence: 0.7,
+      providerCode: "openai",
+      modelCode: "gpt-5",
+      latencyMs: 180,
+      createdAt: "2026-03-17T00:00:00Z",
+      updatedAt: "2026-03-17T00:00:01Z",
+    },
+    learningOptionCount: 1,
+  });
+
+  assert.equal(state.queueCode, "pending_assignment");
+  assert.equal(state.classificationStatus, "stale");
+  assert.equal(state.stepStatuses.classification, "ready");
+  assert.equal(state.canRunClassification, true);
+  assert.equal(state.canPostProvisional, false);
+  assert.equal(state.canConfirmFinal, false);
+});
+
+test("workflow state treats manual classification override as resolved even if the last ai run is stale", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "needs_review",
+    postingStatus: "draft",
+    draftStatus: "open",
+    steps: [
+      { step_code: "identity", status: "draft_saved", stale_reason: null },
+      { step_code: "fields", status: "draft_saved", stale_reason: null },
+      { step_code: "amounts", status: "draft_saved", stale_reason: null },
+      { step_code: "operation_context", status: "draft_saved", stale_reason: null },
+      { step_code: "accounting_context", status: "draft_saved", stale_reason: null },
+    ],
+    derived: buildDerived({
+      accountingContext: {
+        status: "manual_override",
+        shouldBlockConfirmation: false,
+        blockingReasons: [],
+        manualOverrideAccountId: "acct-1",
+        manualOverrideConceptId: null,
+        manualOverrideOperationCategory: "services",
+      },
+      appliedRule: {
+        scope: "document_override",
+        accountId: "acct-1",
+      },
+      validation: {
+        canPostProvisional: true,
+        canConfirmFinal: true,
+        blockers: [],
+      },
+    }),
+    latestClassificationRun: {
+      id: "run-stale-manual",
+      organizationId: "org-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      triggeredByUserId: "user-1",
+      status: "stale",
+      requestPayload: {},
+      responseJson: {},
+      selectedAccountId: "acct-1",
+      selectedOperationCategory: "services",
+      selectedTemplateCode: null,
+      selectedTaxProfileCode: null,
+      confidence: 0.41,
+      providerCode: "openai",
+      modelCode: "gpt-5",
+      latencyMs: 180,
+      createdAt: "2026-03-17T00:00:00Z",
+      updatedAt: "2026-03-17T00:00:01Z",
+    },
+    learningOptionCount: 0,
+  });
+
+  assert.equal(state.classificationStatus, "completed");
+  assert.equal(state.canPostProvisional, true);
+  assert.equal(state.canConfirmFinal, true);
+  assert.equal(state.queueCode, "ready_for_final_confirmation");
+});

@@ -132,6 +132,8 @@ export type AccountRoleCode =
   | "bank_fees_account"
   | "fx_difference_account";
 
+export type ManualAccountRoleOverrides = Partial<Record<AccountRoleCode, string | null>>;
+
 export type AccountRoleBindingRecord = {
   id: string;
   organization_id: string;
@@ -527,6 +529,7 @@ export type AccountingContextSaveInput = {
   userFreeText: string | null;
   businessPurposeNote: string | null;
   manualOverrideAccountId: string | null;
+  manualRoleOverrides: ManualAccountRoleOverrides;
   manualOverrideConceptId: string | null;
   manualOverrideOperationCategory: string | null;
   learnedConceptName: string | null;
@@ -555,6 +558,7 @@ export type AccountingContextResolution = {
   promptHash: string | null;
   requestLatencyMs: number | null;
   manualOverrideAccountId: string | null;
+  manualRoleOverrides: ManualAccountRoleOverrides;
   manualOverrideConceptId: string | null;
   manualOverrideOperationCategory: string | null;
   learnedConceptName: string | null;

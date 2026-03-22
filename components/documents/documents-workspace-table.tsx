@@ -45,7 +45,7 @@ type DocumentsWorkspaceTableItem = {
   extractionStatus: "uploaded" | "queued" | "extracting" | "extracted" | "error";
   extractionStatusLabel: string;
   extractionFailureMessage: string | null;
-  classificationStatus: "not_started" | "ready" | "failed" | "completed";
+  classificationStatus: "not_started" | "ready" | "failed" | "stale" | "completed";
   classificationStatusLabel: string;
   classificationFailureMessage: string | null;
   canProcessExtraction: boolean;
@@ -122,6 +122,7 @@ function getStageStatusClasses(
     | "error"
     | "not_started"
     | "ready"
+    | "stale"
     | "failed"
     | "completed",
 ) {
@@ -129,7 +130,7 @@ function getStageStatusClasses(
     return "status-pill status-pill--success";
   }
 
-  if (["queued", "extracting", "ready"].includes(status)) {
+  if (["queued", "extracting", "ready", "stale"].includes(status)) {
     return "status-pill status-pill--warning";
   }
 
@@ -674,7 +675,12 @@ export function DocumentsWorkspaceTable({
                               void handleClassify(document.id);
                             }}
                           >
-                            {classifyBusy ? "Clasificando..." : "Clasificar"}
+                            {classifyBusy
+                              ? "Clasificando..."
+                              : document.classificationStatus === "failed"
+                                  || document.classificationStatus === "stale"
+                                ? "Reintentar clasificacion"
+                                : "Clasificar"}
                           </button>
                         ) : null}
                       </div>

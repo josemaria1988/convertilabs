@@ -42,6 +42,7 @@ Desde 2026-03-20, la epica inmediata de `docs/specs-driven-development-erp-conta
 - [07-platform/database-api-background-jobs-and-observability.md](./07-platform/database-api-background-jobs-and-observability.md)
 - [08-quality/testing-rollout-and-roadmap.md](./08-quality/testing-rollout-and-roadmap.md)
 - [09-future/cost-centers-jobs-and-profitability.md](./09-future/cost-centers-jobs-and-profitability.md)
+- [specs-driven-development-asistente-contable.md](./specs-driven-development-asistente-contable.md)
 
 ## Cobertura de la documentacion legacy
 

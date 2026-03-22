@@ -1489,6 +1489,7 @@ function buildAccountingContext(input: {
     promptHash: null,
     requestLatencyMs: null,
     manualOverrideAccountId: null,
+    manualRoleOverrides: {},
     manualOverrideConceptId: null,
     manualOverrideOperationCategory: null,
     learnedConceptName: null,

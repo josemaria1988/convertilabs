@@ -7,9 +7,14 @@ import type {
   DocumentRoleCandidate,
 } from "@/modules/ai/document-intake-contract";
 import { AccountingImpactPreview } from "@/components/documents/accounting-impact-preview";
+import { DocumentAccountingAssistantRail } from "@/components/documents/document-accounting-assistant-rail";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { SettlementMethodCard } from "@/components/documents/settlement-method-card";
 import { TemplatePreviewCard } from "@/components/documents/template-preview-card";
+import type {
+  AccountRoleCode,
+  ManualAccountRoleOverrides,
+} from "@/modules/accounting";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
   buttonBaseClassName,
@@ -19,6 +24,7 @@ import {
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { LoadingLink } from "@/components/ui/loading-link";
 import {
+  formatAccountRoleCodeLabel,
   formatAccountTypeLabel,
   formatSettlementEvidenceSourceLabel,
 } from "@/modules/presentation/labels";
@@ -41,6 +47,7 @@ type SaveDraftReviewAction = (input: {
       userFreeText?: string | null;
       businessPurposeNote?: string | null;
       manualOverrideAccountId?: string | null;
+      manualRoleOverrides?: ManualAccountRoleOverrides | null;
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
       learnedConceptName?: string | null;
@@ -65,6 +72,16 @@ type SaveDraftReviewAction = (input: {
 }>;
 
 type ReviewSimpleAction = () => Promise<{
+  ok: boolean;
+  message: string;
+}>;
+
+type ResolveAssistantSuggestionAction = (input: {
+  suggestionId: string;
+  resolutionStatus: "accepted" | "rejected" | "edited";
+  execute?: boolean;
+  resolutionComment?: string | null;
+}) => Promise<{
   ok: boolean;
   message: string;
 }>;
@@ -102,17 +119,6 @@ type ResolveDuplicateAction = (input: {
   message: string;
 }>;
 
-type SaveLearningRuleAction = (input: {
-  learning: {
-    scope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
-    learnedConceptName: string | null;
-  };
-}) => Promise<{
-  ok: boolean;
-  message: string;
-  ruleId?: string | null;
-}>;
-
 export type DocumentReviewWorkspaceProps = {
   pageData: DocumentReviewPageData;
   saveDraftReviewAction: SaveDraftReviewAction;
@@ -121,11 +127,13 @@ export type DocumentReviewWorkspaceProps = {
   createReviewAccountAction: CreateReviewAccountAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   runClassificationAction: ReviewSimpleAction;
-  saveLearningRuleAction: SaveLearningRuleAction;
   reopenDocumentAction: ReviewSimpleAction;
+  refreshAssistantAction: ReviewSimpleAction;
+  resolveAssistantSuggestionAction: ResolveAssistantSuggestionAction;
 };
 
 type ReviewAccountOption = DocumentReviewPageData["accountingOptions"]["accounts"][number];
+type ReviewManualRoleOverrides = Partial<Record<AccountRoleCode, string>>;
 
 type SectionStatusMap = {
   manualStage1: string;
@@ -174,30 +182,45 @@ function normalizeAccountType(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function isAccountCompatibleWithPrimaryRole(
+function isAccountCompatibleWithRole(
   account: Pick<ReviewAccountOption, "accountType">,
-  primaryRole: string | null,
+  roleCode: AccountRoleCode | null,
 ) {
   const accountType = normalizeAccountType(account.accountType);
 
-  switch (primaryRole) {
+  switch (roleCode) {
     case "revenue_account":
       return accountType === "revenue" || accountType === "income";
     case "expense_account":
       return accountType === "expense";
     case "inventory_account":
     case "fixed_asset_account":
+    case "accounts_receivable_account":
+    case "cash_account":
+    case "bank_account":
+    case "card_clearing_account":
+    case "check_clearing_account":
+    case "cash_sales_unidentified_account":
+    case "input_vat_account":
       return accountType === "asset";
+    case "accounts_payable_account":
+    case "output_vat_account":
+    case "cash_purchases_unidentified_account":
+      return accountType === "liability";
+    case "bank_fees_account":
+      return accountType === "expense";
+    case "fx_difference_account":
+      return true;
     default:
       return true;
   }
 }
 
-function getPrimaryAccountUiCopy(input: {
-  primaryRole: string | null;
+function getAccountRoleUiCopy(input: {
+  roleCode: AccountRoleCode | null;
   documentRole: DocumentRoleCandidate;
 }) {
-  switch (input.primaryRole) {
+  switch (input.roleCode) {
     case "revenue_account":
       return {
         label: "Cuenta principal de ingresos",
@@ -238,18 +261,146 @@ function getPrimaryAccountUiCopy(input: {
         visibleTypesLabel: "Se muestran cuentas de activo compatibles.",
         createKindLabel: "activo",
       };
+    case "output_vat_account":
+      return {
+        label: "Cuenta de IVA ventas",
+        helper:
+          "Corresponde al IVA debito fiscal de la venta. No uses ingresos, banco ni clientes.",
+        emptyState: "No hay cuentas de IVA ventas disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de pasivo compatibles con IVA ventas.",
+        createKindLabel: "pasivo",
+      };
+    case "input_vat_account":
+      return {
+        label: "Cuenta de IVA compras",
+        helper:
+          "Corresponde al IVA credito fiscal de la compra. No uses gasto, banco ni proveedores.",
+        emptyState: "No hay cuentas de IVA compras disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con IVA compras.",
+        createKindLabel: "activo",
+      };
+    case "accounts_receivable_account":
+      return {
+        label: "Cuenta de clientes",
+        helper:
+          "Usa la cuenta que representa el saldo a cobrar del cliente en ventas a credito.",
+        emptyState: "No hay cuentas de clientes disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con clientes.",
+        createKindLabel: "activo",
+      };
+    case "accounts_payable_account":
+      return {
+        label: "Cuenta de proveedores",
+        helper:
+          "Usa la cuenta que representa el saldo a pagar al proveedor en compras a credito.",
+        emptyState: "No hay cuentas de proveedores disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de pasivo compatibles con proveedores.",
+        createKindLabel: "pasivo",
+      };
+    case "cash_account":
+      return {
+        label: "Cuenta de caja",
+        helper:
+          "Usa la cuenta real por donde entra o sale el efectivo del documento contado.",
+        emptyState: "No hay cuentas de caja disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con caja.",
+        createKindLabel: "activo",
+      };
+    case "bank_account":
+      return {
+        label: "Cuenta bancaria",
+        helper:
+          "Usa la cuenta real del banco o transferencia que cobra o paga este documento.",
+        emptyState: "No hay cuentas bancarias disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con bancos.",
+        createKindLabel: "activo",
+      };
+    case "card_clearing_account":
+      return {
+        label: "Cuenta de tarjetas a cobrar",
+        helper:
+          "Usa la cuenta puente o de clearing donde queda la venta hasta que liquide la tarjeta.",
+        emptyState: "No hay cuentas de clearing de tarjeta disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con tarjetas a cobrar.",
+        createKindLabel: "activo",
+      };
+    case "check_clearing_account":
+      return {
+        label: "Cuenta de cheques",
+        helper:
+          "Usa la cuenta donde se controlan cheques recibidos o entregados hasta su efectivizacion.",
+        emptyState: "No hay cuentas de cheques disponibles para este documento.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con cheques.",
+        createKindLabel: "activo",
+      };
+    case "cash_sales_unidentified_account":
+      return {
+        label: "Cuenta provisoria de cobro",
+        helper:
+          "Se usa cuando la venta fue contado pero el medio exacto de cobro todavia no quedo resuelto.",
+        emptyState: "No hay cuentas provisorias para cobros a identificar disponibles.",
+        visibleTypesLabel: "Se muestran cuentas de activo compatibles con clearing provisorio.",
+        createKindLabel: "activo",
+      };
+    case "cash_purchases_unidentified_account":
+      return {
+        label: "Cuenta provisoria de pago",
+        helper:
+          "Se usa cuando la compra fue contado pero el medio exacto de pago todavia no quedo resuelto.",
+        emptyState: "No hay cuentas provisorias para pagos a identificar disponibles.",
+        visibleTypesLabel: "Se muestran cuentas de pasivo compatibles con clearing provisorio.",
+        createKindLabel: "pasivo",
+      };
     default:
       return {
-        label: "Cuenta principal",
+        label: input.roleCode ? formatAccountRoleCodeLabel(input.roleCode) : "Cuenta contable",
         helper:
           input.documentRole === "other"
             ? "Solo completa esta cuenta si el documento necesita una clasificacion manual especial."
-            : "Usa esta cuenta para clasificar el concepto principal del documento.",
-        emptyState: "No hay cuentas disponibles para esta seleccion.",
+            : "Elige la cuenta que corresponde a este rol dentro del asiento contable.",
+        emptyState: "No hay cuentas disponibles para este rol.",
         visibleTypesLabel: "Se muestran las cuentas disponibles para este caso.",
         createKindLabel: input.documentRole === "sale" ? "ingreso" : "gasto",
       };
   }
+}
+
+function formatLinePurpose(value: string | null) {
+  switch (value) {
+    case "main":
+      return "Concepto principal";
+    case "tax":
+      return "IVA";
+    case "counterparty":
+      return "Contrapartida";
+    case "settlement":
+      return "Cobro o pago";
+    default:
+      return "Linea contable";
+  }
+}
+
+function buildInitialManualRoleOverrides(
+  pageData: DocumentReviewPageData,
+): ReviewManualRoleOverrides {
+  const storedOverrides = pageData.derived.accountingContext.manualRoleOverrides ?? {};
+  const next: ReviewManualRoleOverrides = {};
+
+  for (const assignment of pageData.accountRoleAssignments) {
+    next[assignment.roleCode] = storedOverrides[assignment.roleCode] ?? "";
+  }
+
+  const primaryRole = pageData.derived.settlementContext.primaryAccountRole;
+
+  if (
+    primaryRole
+    && !next[primaryRole]
+    && pageData.derived.accountingContext.manualOverrideAccountId
+  ) {
+    next[primaryRole] = pageData.derived.accountingContext.manualOverrideAccountId;
+  }
+
+  return next;
 }
 
 function formatDate(value: string | null) {
@@ -476,6 +627,8 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     resolveDuplicateAction,
     runClassificationAction,
     reopenDocumentAction,
+    refreshAssistantAction,
+    resolveAssistantSuggestionAction,
   } = props;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -499,8 +652,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     businessPurposeNote: pageData.derived.accountingContext.businessPurposeNote
       ?? pageData.derived.taxTreatment.businessPurposeNote
       ?? "",
-    manualOverrideAccountId:
-      pageData.derived.accountingContext.manualOverrideAccountId ?? "",
+    manualRoleOverrides: buildInitialManualRoleOverrides(pageData),
     operationKind:
       pageData.derived.accountingContext.operationKind
       ?? pageData.derived.settlementContext.operationKind
@@ -537,9 +689,6 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const [showManualFlow, setShowManualFlow] = useState(
     startsConfirmedReview ? false : startsWithForcedManualFlow,
   );
-  const [manualStage, setManualStage] = useState<1 | 2>(
-    startsReopenedReview ? 2 : 1,
-  );
   const [showCreateAccountStage, setShowCreateAccountStage] = useState(false);
 
   useEffect(() => {
@@ -554,8 +703,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       businessPurposeNote: pageData.derived.accountingContext.businessPurposeNote
         ?? pageData.derived.taxTreatment.businessPurposeNote
         ?? "",
-      manualOverrideAccountId:
-        pageData.derived.accountingContext.manualOverrideAccountId ?? "",
+      manualRoleOverrides: buildInitialManualRoleOverrides(pageData),
       operationKind:
         pageData.derived.accountingContext.operationKind
         ?? pageData.derived.settlementContext.operationKind
@@ -580,19 +728,27 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       || isSettlementContextRequired(pageData)
     ) {
       setShowManualFlow(true);
-      if (pageData.document.status === "classified_with_open_revision") {
-        setManualStage(2);
-      }
     }
   }, [pageData]);
 
   function buildAccountingContextPayload(nextAccountingContext = accountingContext) {
+    const manualRoleOverrides = Object.fromEntries(
+      pageData.accountRoleAssignments.map((assignment) => ([
+        assignment.roleCode,
+        nextAccountingContext.manualRoleOverrides[assignment.roleCode]?.trim() || null,
+      ])),
+    ) as ManualAccountRoleOverrides;
+    const primaryRole = pageData.derived.settlementContext.primaryAccountRole;
+
     return {
       accountingContext: {
         userFreeText: nextAccountingContext.userFreeText || null,
         businessPurposeNote: nextAccountingContext.businessPurposeNote || null,
         manualOverrideAccountId:
-          nextAccountingContext.manualOverrideAccountId || null,
+          primaryRole
+            ? manualRoleOverrides[primaryRole] ?? null
+            : null,
+        manualRoleOverrides,
         operationKind: nextAccountingContext.operationKind || null,
         paymentTerms: nextAccountingContext.paymentTerms || null,
         settlementMethod:
@@ -663,13 +819,10 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           return;
         }
         const message = continueToStageTwo
-          ? "Etapa 1 guardada. Ya puedes pasar a la asignacion contable."
+          ? "Etapa 1 guardada. El asiento se recalcula con este contexto."
           : "Etapa 1 guardada.";
         setSectionStatus((current) => ({ ...current, manualStage1: message }));
         setActionMessage(message);
-        if (continueToStageTwo) {
-          setManualStage(2);
-        }
         router.refresh();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Error al guardar la etapa 1.";
@@ -712,10 +865,42 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   }
 
   function runSaveAccounting() {
-    if (selectedAccountIncompatible && selectedAccount && selectedAccountTypeLabel) {
-      const message =
-        `La cuenta elegida (${selectedAccountLabel}) es de tipo ${selectedAccountTypeLabel.toLowerCase()} `
-        + `y no sirve como ${primaryAccountUi.label.toLowerCase()}.`;
+    const invalidOverride = pageData.accountRoleAssignments
+      .map((assignment) => {
+        const overrideId = accountingContext.manualRoleOverrides[assignment.roleCode]?.trim() || "";
+
+        if (!overrideId) {
+          return null;
+        }
+
+        const account = availableAccounts.find((candidate) => candidate.id === overrideId) ?? null;
+
+        if (!account) {
+          return {
+            assignment,
+            errorMessage:
+              `La cuenta elegida para ${formatAccountRoleCodeLabel(assignment.roleCode).toLowerCase()} `
+              + "ya no esta disponible.",
+          };
+        }
+
+        if (!isAccountCompatibleWithRole(account, assignment.roleCode)) {
+          const accountTypeLabel = formatAccountTypeLabel(account.accountType).toLowerCase();
+
+          return {
+            assignment,
+            errorMessage:
+              `La cuenta elegida (${account.code} - ${account.name}) es de tipo ${accountTypeLabel} `
+              + `y no sirve como ${formatAccountRoleCodeLabel(assignment.roleCode).toLowerCase()}.`,
+          };
+        }
+
+        return null;
+      })
+      .find((entry) => entry !== null);
+
+    if (invalidOverride) {
+      const message = invalidOverride.errorMessage;
       setSectionStatus((current) => ({
         ...current,
         accounting: message,
@@ -812,9 +997,13 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         const nextAccounts = [...availableAccounts, created.account].sort((left, right) =>
           left.code.localeCompare(right.code, "es", { numeric: true, sensitivity: "base" })
         );
+        const primaryRole = pageData.derived.settlementContext.primaryAccountRole;
         const nextAccountingContext = {
           ...accountingContext,
-          manualOverrideAccountId: created.account.id,
+          manualRoleOverrides: {
+            ...accountingContext.manualRoleOverrides,
+            ...(primaryRole ? { [primaryRole]: created.account.id } : {}),
+          },
         };
         setAvailableAccounts(nextAccounts);
         setAccountingContext(nextAccountingContext);
@@ -869,24 +1058,61 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const classificationRequired = isManualClassificationRequired(pageData);
   const duplicateStatus = pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear";
   const primaryAccountRole = pageData.derived.settlementContext.primaryAccountRole ?? null;
-  const primaryAccountUi = getPrimaryAccountUiCopy({
-    primaryRole: primaryAccountRole,
+  const primaryAccountUi = getAccountRoleUiCopy({
+    roleCode: primaryAccountRole,
     documentRole: pageData.draft.documentRole,
   });
-  const compatibleAccounts = availableAccounts.filter((account) =>
-    isAccountCompatibleWithPrimaryRole(account, primaryAccountRole),
+  const roleAssignments = pageData.accountRoleAssignments.map((assignment) => {
+    const overrideAccountId = accountingContext.manualRoleOverrides[assignment.roleCode]?.trim() || "";
+    const overrideAccount = overrideAccountId
+      ? availableAccounts.find((account) => account.id === overrideAccountId) ?? null
+      : null;
+    const effectiveAccountId = overrideAccountId || assignment.accountId || "";
+    const effectiveAccount = effectiveAccountId
+      ? availableAccounts.find((account) => account.id === effectiveAccountId) ?? null
+      : null;
+    const compatibleAccounts = availableAccounts.filter((account) =>
+      isAccountCompatibleWithRole(account, assignment.roleCode),
+    );
+
+    return {
+      assignment,
+      roleUi: getAccountRoleUiCopy({
+        roleCode: assignment.roleCode,
+        documentRole: pageData.draft.documentRole,
+      }),
+      overrideAccountId,
+      overrideAccount,
+      effectiveAccount,
+      effectiveLabel:
+        effectiveAccount
+          ? `${effectiveAccount.code} - ${effectiveAccount.name}`
+          : overrideAccountId
+            ? "Cuenta no disponible"
+          : assignment.accountLabel ?? "Sin cuenta resuelta",
+      compatibleAccounts,
+      overrideAccountIncompatible: Boolean(
+        overrideAccount && !isAccountCompatibleWithRole(overrideAccount, assignment.roleCode),
+      ),
+      overrideAccountTypeLabel: overrideAccount
+        ? formatAccountTypeLabel(overrideAccount.accountType)
+        : null,
+      isMissing: !effectiveAccount && !assignment.accountLabel,
+      isProvisional: Boolean(assignment.isProvisional || overrideAccount?.isProvisional),
+    };
+  });
+  const roleAssignmentsByCode = new Map(
+    roleAssignments.map((assignment) => [assignment.assignment.roleCode, assignment]),
   );
-  const selectedAccount = availableAccounts.find((account) =>
-    account.id === accountingContext.manualOverrideAccountId
-  );
-  const selectedAccountIncompatible = Boolean(
-    selectedAccount && !isAccountCompatibleWithPrimaryRole(selectedAccount, primaryAccountRole),
-  );
-  const selectedAccountLabel = selectedAccount
-    ? `${selectedAccount.code} - ${selectedAccount.name}`
-    : pageData.derived.appliedRule.accountCode || pageData.derived.appliedRule.accountName
+  const primaryRoleAssignment = primaryAccountRole
+    ? roleAssignmentsByCode.get(primaryAccountRole) ?? null
+    : null;
+  const canCreatePrimaryAccountInline =
+    primaryAccountRole === "revenue_account" || primaryAccountRole === "expense_account";
+  const selectedAccountLabel = primaryRoleAssignment?.effectiveLabel
+    ?? (pageData.derived.appliedRule.accountCode || pageData.derived.appliedRule.accountName
       ? `${pageData.derived.appliedRule.accountCode ?? "--"} - ${pageData.derived.appliedRule.accountName ?? "Cuenta sugerida"}`
-      : "Sin cuenta sugerida";
+      : "Sin cuenta sugerida");
   const reviewCurrencyCode =
     pageData.draft.facts.currency_code
     ?? pageData.derived.monetarySnapshot?.currencyCode
@@ -942,9 +1168,6 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     fxBlockingReasons: pageData.derived.monetarySnapshot?.fx.blockingReasons ?? [],
     overrideReason: pageData.derived.monetarySnapshot?.fx.overrideReason ?? null,
   });
-  const selectedAccountTypeLabel = selectedAccount
-    ? formatAccountTypeLabel(selectedAccount.accountType)
-    : null;
   const isConfirmedReview =
     pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
   const latestConfirmation = pageData.confirmations[0] ?? null;
@@ -1022,12 +1245,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </div>
         </div>
 
-        {actionMessage ? (
+      {actionMessage ? (
           <div className="mt-5 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
             {actionMessage}
           </div>
         ) : null}
       </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+        <div className="space-y-6">
 
       {!isConfirmedReview && duplicateStatus !== "clear" ? (
         <section className="panel border-rose-200 bg-rose-50/70 p-6">
@@ -1100,13 +1326,36 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </span>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {roleAssignments.map((roleAssignment) => (
+            <div
+              key={roleAssignment.assignment.roleCode}
+              className={`rounded-2xl border p-4 text-sm ${
+                roleAssignment.isMissing
+                  ? "border-amber-200 bg-amber-50/80"
+                  : "border-[color:var(--color-border)] bg-white/70"
+              }`}
+            >
               <p className="font-semibold">
-                {isConfirmedReview ? "Cuenta principal confirmada" : "Cuenta principal sugerida"}
+                {formatAccountRoleCodeLabel(roleAssignment.assignment.roleCode)}
               </p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
+              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                {formatLinePurpose(roleAssignment.assignment.linePurpose)}
+              </p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {roleAssignment.effectiveLabel}
+              </p>
+              {roleAssignment.isMissing ? (
+                <p className="mt-2 text-amber-950">
+                  Falta resolver esta cuenta para completar el asiento.
+                </p>
+              ) : roleAssignment.isProvisional ? (
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  Cuenta provisoria.
+                </p>
+              ) : null}
             </div>
+          ))}
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
             <p className="font-semibold">Confianza</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
@@ -1144,7 +1393,6 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 type="button"
                 onClick={() => {
                   setShowManualFlow(true);
-                  setManualStage(1);
                 }}
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
               >
@@ -1383,7 +1631,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
             >
               {pendingAction === "stage1" && isPending ? <InlineSpinner /> : null}
-              Guardar y seguir a etapa 2
+              Guardar etapa 1 y recalcular asiento
             </button>
           </div>
 
@@ -1508,16 +1756,16 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
-      {!isConfirmedReview && showManualFlow && manualStage >= 2 ? (
+      {!isConfirmedReview && showManualFlow ? (
         <section className="panel p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
             Etapa 2
           </p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-            Cuenta principal y vista previa
+            Asiento contable y cuentas por rol
           </h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            La cuenta principal alimenta la plantilla. El asiento completo se genera abajo con multiples lineas.
+            Aqui puedes revisar y corregir las cuentas que usa cada rol del asiento. La vista previa de abajo sigue siendo la fuente de verdad del Debe, Haber e IVA.
           </p>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1536,53 +1784,87 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             />
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Cuenta principal actual</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">
-                {primaryAccountUi.helper}
-              </p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{primaryAccountUi.visibleTypesLabel}</p>
-            </div>
-            <div className="space-y-2 text-sm">
-              <span className="font-medium">{primaryAccountUi.label}</span>
-              <select
-                value={accountingContext.manualOverrideAccountId}
-                onChange={(event) => {
-                  setAccountingContext((current) => ({
-                    ...current,
-                    manualOverrideAccountId: event.target.value,
-                  }));
-                }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
+            {roleAssignments.map((roleAssignment) => (
+              <div
+                key={roleAssignment.assignment.roleCode}
+                className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm"
               >
-                <option value="">Usar sugerencia actual</option>
-                {selectedAccountIncompatible && selectedAccount ? (
-                  <option value={selectedAccount.id}>
-                    Cuenta incompatible: {selectedAccount.code} - {selectedAccount.name}
-                  </option>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">
+                      {formatAccountRoleCodeLabel(roleAssignment.assignment.roleCode)}
+                    </p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                      {formatLinePurpose(roleAssignment.assignment.linePurpose)}
+                    </p>
+                  </div>
+                  {roleAssignment.isMissing ? (
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-950">
+                      Falta resolver
+                    </span>
+                  ) : roleAssignment.isProvisional ? (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
+                      Provisoria
+                    </span>
+                  ) : null}
+                </div>
+
+                <p className="mt-3 text-[color:var(--color-muted)]">
+                  {roleAssignment.roleUi.helper}
+                </p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  Cuenta actual: {roleAssignment.effectiveLabel}
+                </p>
+
+                <label className="mt-4 block space-y-2">
+                  <span className="font-medium">{roleAssignment.roleUi.label}</span>
+                  <select
+                    value={roleAssignment.overrideAccountId}
+                    onChange={(event) => {
+                      setAccountingContext((current) => ({
+                        ...current,
+                        manualRoleOverrides: {
+                          ...current.manualRoleOverrides,
+                          [roleAssignment.assignment.roleCode]: event.target.value,
+                        },
+                      }));
+                    }}
+                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  >
+                    <option value="">Usar cuenta actual del asiento</option>
+                    {roleAssignment.overrideAccountIncompatible && roleAssignment.overrideAccount ? (
+                      <option value={roleAssignment.overrideAccount.id}>
+                        Cuenta incompatible: {roleAssignment.overrideAccount.code} - {roleAssignment.overrideAccount.name}
+                      </option>
+                    ) : null}
+                    {roleAssignment.compatibleAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.code} - {account.name}
+                        {account.isProvisional ? " (provisoria)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  {roleAssignment.roleUi.visibleTypesLabel}
+                </p>
+
+                {roleAssignment.overrideAccountIncompatible && roleAssignment.overrideAccountTypeLabel ? (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    La cuenta elegida actualmente ({roleAssignment.effectiveLabel}) es de tipo {roleAssignment.overrideAccountTypeLabel.toLowerCase()}
+                    {" "}y no puede usarse como {roleAssignment.roleUi.label.toLowerCase()}.
+                  </div>
                 ) : null}
-                {compatibleAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.code} - {account.name}
-                    {account.isProvisional ? " (provisoria)" : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[color:var(--color-muted)]">{primaryAccountUi.helper}</p>
-              {selectedAccountIncompatible && selectedAccountTypeLabel ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                  La cuenta elegida actualmente ({selectedAccountLabel}) es de tipo {selectedAccountTypeLabel.toLowerCase()}
-                  {" "}y no puede usarse como {primaryAccountUi.label.toLowerCase()}.
-                </div>
-              ) : null}
-              {compatibleAccounts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-3 text-sm text-[color:var(--color-muted)]">
-                  {primaryAccountUi.emptyState}
-                </div>
-              ) : null}
-            </div>
+
+                {roleAssignment.compatibleAccounts.length === 0 ? (
+                  <div className="mt-3 rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                    {roleAssignment.roleUi.emptyState}
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
 
           <div className="mt-5">
@@ -1591,7 +1873,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
           <div className="mt-4 flex flex-wrap gap-3">
             <LoadingLink
-              href={`/app/o/${pageData.organizationSlug}/chart-map?mode=document&documentId=${pageData.document.id}${pageData.derived.appliedRule.accountId ? `&accountId=${pageData.derived.appliedRule.accountId}` : ""}`}
+              href={`/app/o/${pageData.organizationSlug}/chart-map?mode=document&documentId=${pageData.document.id}${primaryRoleAssignment?.effectiveAccount?.id ? `&accountId=${primaryRoleAssignment.effectiveAccount.id}` : pageData.derived.appliedRule.accountId ? `&accountId=${pageData.derived.appliedRule.accountId}` : ""}`}
               pendingLabel="Abriendo mapa..."
               className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
             >
@@ -1616,15 +1898,17 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             >
               Guardar asignacion
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreateAccountStage(true);
-              }}
-              className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
-            >
-              No encuentro la cuenta correcta
-            </button>
+            {canCreatePrimaryAccountInline ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateAccountStage(true);
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+              >
+                No encuentro la cuenta principal
+              </button>
+            ) : null}
             {pageData.canRunClassification ? (
               <button
                 type="button"
@@ -1642,11 +1926,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
-      {!isConfirmedReview && showManualFlow && showCreateAccountStage ? (
+      {!isConfirmedReview && showManualFlow && showCreateAccountStage && canCreatePrimaryAccountInline ? (
         <section className="panel p-6">
-          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Crear cuenta nueva</h3>
+          <h3 className="text-2xl font-semibold tracking-[-0.05em]">Crear cuenta principal nueva</h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            Paso excepcional para evitar un zoologico contable. Solo abre esta opcion si no existe la cuenta correcta.
+            Paso excepcional para la cuenta principal del documento. Solo abre esta opcion si de verdad no existe la cuenta correcta.
           </p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm">
@@ -1830,6 +2114,16 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </pre>
         </details>
       </section>
+        </div>
+
+        <div className="xl:sticky xl:top-6">
+          <DocumentAccountingAssistantRail
+            assistantRail={pageData.assistantRail}
+            refreshAssistantAction={refreshAssistantAction}
+            resolveAssistantSuggestionAction={resolveAssistantSuggestionAction}
+          />
+        </div>
+      </div>
     </div>
   );
 }

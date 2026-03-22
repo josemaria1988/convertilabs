@@ -240,6 +240,9 @@ export default async function OrganizationDocumentsPage({
       totalItems: documentsPage.totalItems,
     })
     : null;
+  const canUsePendingAssignmentQueue = ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(
+    organization.role,
+  );
 
   return (
     <PrivateDashboardShell
@@ -265,6 +268,14 @@ export default async function OrganizationDocumentsPage({
 
           {activeTab === "documents" ? (
             <div className="flex flex-wrap items-center gap-2">
+              {canUsePendingAssignmentQueue ? (
+                <Link
+                  href={`/app/o/${organization.slug}/documents/pending-assignment`}
+                  className="ui-button ui-button--secondary"
+                >
+                  Pending assignment
+                </Link>
+              ) : null}
               <Link
                 href={`/app/o/${organization.slug}/audit`}
                 className="ui-button ui-button--secondary"

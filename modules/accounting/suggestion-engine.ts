@@ -84,12 +84,26 @@ function buildProvisionalBlockers(blockers: string[]) {
   });
 }
 
+function hasManualClassificationResolution(
+  context: AccountingSuggestionContext["accountingContext"],
+) {
+  return Boolean(
+    context.manualOverrideAccountId
+    || context.manualOverrideConceptId
+    || context.manualOverrideOperationCategory,
+  );
+}
+
 function buildAssistantBlockingReasons(input: {
   context: AccountingSuggestionContext;
   requiresPrimaryAccount: boolean;
   appliedRule: ReturnType<typeof resolveAccountingRuleWithPrecedence>;
 }) {
   if (!input.requiresPrimaryAccount) {
+    return [];
+  }
+
+  if (hasManualClassificationResolution(input.context.accountingContext)) {
     return [];
   }
 
@@ -215,6 +229,10 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     requiresPrimaryAccount && appliedRule.scope === "manual_review"
       ? input.conceptResolution.blockingReasons
       : [];
+  const manualClassificationResolved = hasManualClassificationResolution(input.accountingContext);
+  const assistantReviewFlags = manualClassificationResolved
+    ? []
+    : input.assistantSuggestion.reviewFlags;
   const assistantBlockers = buildAssistantBlockingReasons({
     context: input,
     requiresPrimaryAccount,
@@ -248,6 +266,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
     settlementContext,
     taxTreatment,
     appliedRule,
+    manualRoleOverrides: input.accountingContext.manualRoleOverrides,
     accounts: input.accounts,
     accountRoleBindings: input.accountRoleBindings,
   });
@@ -259,7 +278,7 @@ export function buildAccountingDraftArtifacts(input: AccountingSuggestionContext
       : []),
     ...conceptBlockers,
     ...input.accountingContext.blockingReasons,
-    ...input.assistantSuggestion.reviewFlags,
+    ...assistantReviewFlags,
     ...assistantBlockers,
     ...taxTreatment.blockingReasons,
     ...settlementContext.blockers,

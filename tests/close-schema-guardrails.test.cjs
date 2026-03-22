@@ -29,10 +29,16 @@ test("canonical enums and schema include close lifecycle states and validator ta
   assert.match(auditSql, /create table if not exists public\.assistant_runs/i);
   assert.match(auditSql, /create table if not exists public\.assistant_run_evidence_refs/i);
   assert.match(auditSql, /create table if not exists public\.assistant_suggestions/i);
+  assert.match(auditSql, /create table if not exists public\.assistant_personas/i);
+  assert.match(auditSql, /create table if not exists public\.assistant_threads/i);
+  assert.match(auditSql, /create table if not exists public\.assistant_messages/i);
+  assert.match(auditSql, /create table if not exists public\.assistant_suggestion_evidence_refs/i);
+  assert.match(auditSql, /'Asistente Contable'/i);
 });
 
 test("migration and RLS layer wire close cockpit and assistant traces end to end", () => {
   const migrationSql = readProjectFile("supabase/migrations/20260320_close001_period_close_and_assistant_runs.sql");
+  const assistantMigrationSql = readProjectFile("supabase/migrations/20260322_doc017_accounting_assistant_threads.sql");
   const rlsSql = readProjectFile("db/rls/supabase_rls_policies.sql");
 
   assert.match(migrationSql, /close_check_runs/i);
@@ -40,9 +46,17 @@ test("migration and RLS layer wire close cockpit and assistant traces end to end
   assert.match(migrationSql, /assistant_runs/i);
   assert.match(migrationSql, /assistant_suggestions/i);
   assert.match(migrationSql, /system_actors/i);
+  assert.match(assistantMigrationSql, /assistant_personas/i);
+  assert.match(assistantMigrationSql, /assistant_threads/i);
+  assert.match(assistantMigrationSql, /assistant_messages/i);
+  assert.match(assistantMigrationSql, /assistant_suggestion_evidence_refs/i);
+  assert.match(assistantMigrationSql, /Asistente Contable/i);
 
   assert.match(rlsSql, /alter table public\.fiscal_periods enable row level security/i);
   assert.match(rlsSql, /create policy "close_check_runs_select_member"/i);
   assert.match(rlsSql, /create policy "assistant_runs_select_member"/i);
   assert.match(rlsSql, /create policy "assistant_suggestions_update_processing_roles"/i);
+  assert.match(rlsSql, /create policy "assistant_threads_select_consultive_roles"/i);
+  assert.match(rlsSql, /create policy "assistant_messages_select_consultive_roles"/i);
+  assert.match(rlsSql, /create policy "assistant_suggestion_evidence_refs_select_consultive_roles"/i);
 });

@@ -17,6 +17,7 @@ import {
   buildAccountingImpactPreview,
   buildAccountingLearningSuggestions,
   buildAccountingDecisionLog,
+  buildJournalRoleAssignments,
   buildPersistableConceptLines,
   buildDraftFieldsPayload,
   buildDraftStepSnapshots,
@@ -41,10 +42,15 @@ import {
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
   upsertDocumentLineItems,
+  type AccountRoleBindingRecord,
   type DocumentPostingStatus,
+  type DocumentAssignmentRunStatus,
+  type AccountRoleCode,
   type ApprovalLearningInput,
   type DerivedDraftArtifacts,
   type JsonRecord,
+  type ManualAccountRoleOverrides,
+  type PostableAccountRecord,
   type SettlementAllocation,
 } from "@/modules/accounting";
 import {
@@ -62,9 +68,17 @@ import {
   assertVatPeriodMutableForDocument,
   rebuildMonthlyVatRunFromConfirmations,
 } from "@/modules/tax/vat-runs";
+import {
+  loadOrCreateDocumentAssistantRail,
+  markDocumentAssistantThreadStale,
+  type DocumentAssistantRailData,
+} from "@/modules/assistant/document-assistant";
 import { resolveAssistantSuggestionsForTarget } from "@/modules/assistant/runs";
 import { assertFiscalPeriodAllowsDocumentMutation } from "@/modules/close/service";
-import { deriveDocumentWorkflowState } from "@/modules/documents/workflow-state";
+import {
+  canRunDocumentClassificationAction,
+  deriveDocumentWorkflowState,
+} from "@/modules/documents/workflow-state";
 import {
   isDocumentProcessingStaleReason,
   reconcileStaleDocumentProcessingRuns,
@@ -188,7 +202,7 @@ type WorkspaceProcessingRunRow = {
 type WorkspaceAssignmentRunRow = {
   id: string;
   document_id: string;
-  status: string;
+  status: DocumentAssignmentRunStatus;
   response_json: JsonRecord | null;
 };
 
@@ -267,7 +281,7 @@ export type DocumentWorkspaceListItem = {
   extractionStatus: "uploaded" | "queued" | "extracting" | "extracted" | "error";
   extractionStatusLabel: string;
   extractionFailureMessage: string | null;
-  classificationStatus: "not_started" | "ready" | "failed" | "completed";
+  classificationStatus: "not_started" | "ready" | "failed" | "stale" | "completed";
   classificationStatusLabel: string;
   classificationFailureMessage: string | null;
   canProcessExtraction: boolean;
@@ -394,6 +408,16 @@ export type DocumentReviewPageData = {
       canonicalName: string;
     }>;
   };
+  accountRoleAssignments: Array<{
+    roleCode: AccountRoleCode;
+    linePurpose: string;
+    accountId: string | null;
+    accountLabel: string | null;
+    isMissing: boolean;
+    isProvisional: boolean;
+    provenance: string | null;
+    editable: boolean;
+  }>;
   learningSuggestions: {
     suggestedConceptName: string | null;
     recommendedScope: "none" | "document_override" | "vendor_concept_operation_category" | "vendor_concept" | "concept_global" | "vendor_default";
@@ -414,6 +438,7 @@ export type DocumentReviewPageData = {
     confidence: number | null;
     warningCount: number;
   };
+  assistantRail: DocumentAssistantRailData | null;
   decisionLogs: Array<{
     id: string;
     runType: string;
@@ -462,6 +487,7 @@ export type SaveDraftReviewInput = {
       userFreeText?: string | null;
       businessPurposeNote?: string | null;
       manualOverrideAccountId?: string | null;
+      manualRoleOverrides?: ManualAccountRoleOverrides | null;
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
       learnedConceptName?: string | null;
@@ -504,6 +530,43 @@ export class MissingPersistedDraftError extends Error {
     super("El documento aun no tiene draft persistido.");
     this.name = "MissingPersistedDraftError";
   }
+}
+
+const editableReviewAccountRoleCodes = new Set<AccountRoleCode>([
+  "revenue_account",
+  "expense_account",
+  "inventory_account",
+  "fixed_asset_account",
+  "output_vat_account",
+  "input_vat_account",
+  "accounts_receivable_account",
+  "accounts_payable_account",
+  "cash_account",
+  "bank_account",
+  "card_clearing_account",
+  "check_clearing_account",
+  "cash_sales_unidentified_account",
+  "cash_purchases_unidentified_account",
+  "bank_fees_account",
+  "fx_difference_account",
+]);
+
+function normalizeManualRoleOverridesInput(
+  value: ManualAccountRoleOverrides | null | undefined,
+) {
+  const entries = Object.entries(value ?? {});
+
+  return entries.reduce((overrides, [roleCode, accountId]) => {
+    if (!editableReviewAccountRoleCodes.has(roleCode as AccountRoleCode)) {
+      return overrides;
+    }
+
+    overrides[roleCode as AccountRoleCode] =
+      typeof accountId === "string"
+        ? accountId.trim() || null
+        : accountId ?? null;
+    return overrides;
+  }, {} as ManualAccountRoleOverrides);
 }
 
 function getDeterministicRuleRefs(ruleSnapshot: RuleSnapshotRow | null) {
@@ -1118,10 +1181,37 @@ function buildWorkspaceStorageState(metadata: JsonRecord | null) {
 
 function buildWorkspaceClassificationState(input: {
   documentStatus: string;
+  postingStatus: DocumentPostingStatus | null;
   currentDraftId: string | null;
   latestAssignmentRun: WorkspaceAssignmentRunRow | null;
 }) {
   const failureMessage = asString(asRecord(input.latestAssignmentRun?.response_json).error);
+  const canClassify = canRunDocumentClassificationAction({
+    documentStatus: input.documentStatus,
+    postingStatus: input.postingStatus,
+    draftStatus: null,
+    hasDraft: Boolean(input.currentDraftId),
+    latestClassificationRunStatus: input.latestAssignmentRun?.status ?? null,
+  });
+
+  if (input.latestAssignmentRun?.status === "stale") {
+    return {
+      status: "stale" as const,
+      label: "Vencida",
+      failureMessage:
+        "La clasificacion vigente quedo vencida por cambios manuales y conviene reejecutarla.",
+      canClassify,
+    };
+  }
+
+  if (input.latestAssignmentRun?.status === "failed") {
+    return {
+      status: "failed" as const,
+      label: "Fallida",
+      failureMessage,
+      canClassify,
+    };
+  }
 
   if (
     input.documentStatus === "draft_ready"
@@ -1134,16 +1224,7 @@ function buildWorkspaceClassificationState(input: {
       status: "completed" as const,
       label: "Completa",
       failureMessage: null,
-      canClassify: false,
-    };
-  }
-
-  if (input.latestAssignmentRun?.status === "failed") {
-    return {
-      status: "failed" as const,
-      label: "Fallida",
-      failureMessage,
-      canClassify: input.documentStatus === "extracted" && Boolean(input.currentDraftId),
+      canClassify,
     };
   }
 
@@ -1152,7 +1233,7 @@ function buildWorkspaceClassificationState(input: {
       status: "ready" as const,
       label: "Pendiente",
       failureMessage: null,
-      canClassify: true,
+      canClassify,
     };
   }
 
@@ -1198,11 +1279,14 @@ function buildWorkspacePrimaryAction(input: {
 
 function hasManualAccountingIntervention(payload: JsonRecord | null) {
   const patch = asRecord(payload);
+  const accountingContext = asRecord(patch.accountingContext);
+  const manualRoleOverrides = asRecord(accountingContext.manualRoleOverrides);
 
   return Boolean(
-    asString(patch.manualOverrideAccountId)
-    || asString(patch.manualOverrideConceptId)
-    || asString(patch.manualOverrideOperationCategory),
+    asString(accountingContext.manualOverrideAccountId)
+    || Object.values(manualRoleOverrides).some((value) => typeof asString(value) === "string")
+    || asString(accountingContext.manualOverrideConceptId)
+    || asString(accountingContext.manualOverrideOperationCategory),
   );
 }
 
@@ -1246,7 +1330,11 @@ export function buildClassificationActionHint(input: {
   }
 
   if (input.canRunClassification) {
-    return "La clasificacion ya puede ejecutarse desde este draft.";
+    return input.workflowState.classificationStatus === "failed"
+      || input.workflowState.classificationStatus === "stale"
+      || input.workflowState.classificationStatus === "needs_context"
+      ? "La clasificacion puede reintentarse desde este draft."
+      : "La clasificacion ya puede ejecutarse desde este draft.";
   }
 
   if (input.workflowState.classificationStatus === "completed") {
@@ -1262,6 +1350,35 @@ export function buildClassificationActionHint(input: {
   return blockingReason
     ? `${leadingMessage}. ${blockingReason}`
     : `${leadingMessage}.`;
+}
+
+function buildDocumentReviewAccountRoleAssignments(input: {
+  documentRole: DocumentRoleCandidate;
+  facts: DocumentIntakeFactMap;
+  derived: DerivedDraftArtifacts;
+  accounts: PostableAccountRecord[];
+  accountRoleBindings: AccountRoleBindingRecord[];
+}) {
+  return buildJournalRoleAssignments({
+    documentRole: input.documentRole,
+    facts: input.facts,
+    monetarySnapshot: input.derived.monetarySnapshot,
+    settlementContext: input.derived.settlementContext,
+    taxTreatment: input.derived.taxTreatment,
+    appliedRule: input.derived.appliedRule,
+    manualRoleOverrides: input.derived.accountingContext.manualRoleOverrides,
+    accounts: input.accounts,
+    accountRoleBindings: input.accountRoleBindings,
+  }).map((assignment) => ({
+    roleCode: assignment.roleCode,
+    linePurpose: assignment.linePurpose,
+    accountId: assignment.accountId,
+    accountLabel: assignment.accountLabel,
+    isMissing: assignment.isMissing,
+    isProvisional: assignment.isProvisional,
+    provenance: assignment.provenance,
+    editable: assignment.editable,
+  }));
 }
 
 function getOperationCategoryOptions(role: DocumentRoleCandidate) {
@@ -1348,6 +1465,9 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
         amount: Math.round(entry.amount * 100) / 100,
       }))
     : null;
+  const nextManualRoleOverrides = input.accountingContext
+    ? normalizeManualRoleOverridesInput(input.accountingContext.manualRoleOverrides)
+    : undefined;
   const nextFacts = input.facts
     ? Object.fromEntries(
         Object.entries(input.facts).map(([key, value]) => {
@@ -1397,6 +1517,7 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
             typeof input.accountingContext.manualOverrideAccountId === "string"
               ? input.accountingContext.manualOverrideAccountId.trim() || null
               : input.accountingContext.manualOverrideAccountId ?? null,
+          manualRoleOverrides: nextManualRoleOverrides,
           manualOverrideConceptId:
             typeof input.accountingContext.manualOverrideConceptId === "string"
               ? input.accountingContext.manualOverrideConceptId.trim() || null
@@ -1458,6 +1579,16 @@ function mergeStoredAccountingContext(
   }
 
   const currentStructured = asRecord(current?.structured_context_json);
+  const currentManualRoleOverrides = normalizeManualRoleOverridesInput(
+    asRecord(currentStructured.manual_role_overrides) as ManualAccountRoleOverrides,
+  );
+  const nextManualRoleOverrides =
+    patch?.manualRoleOverrides === undefined
+      ? currentManualRoleOverrides
+      : {
+          ...currentManualRoleOverrides,
+          ...patch.manualRoleOverrides,
+        };
   const structuredContext = {
     ...currentStructured,
     ...(patch
@@ -1466,6 +1597,7 @@ function mergeStoredAccountingContext(
             patch.businessPurposeNote ?? asString(currentStructured.business_purpose_note),
           manual_override_account_id:
             patch.manualOverrideAccountId ?? asString(currentStructured.manual_override_account_id),
+          manual_role_overrides: nextManualRoleOverrides,
           manual_override_concept_id:
             patch.manualOverrideConceptId ?? asString(currentStructured.manual_override_concept_id),
           manual_override_operation_category:
@@ -1485,7 +1617,9 @@ function mergeStoredAccountingContext(
           settlement_allocations:
             patch.settlementAllocations ?? currentStructured.settlement_allocations ?? [],
         }
-      : {}),
+      : {
+          manual_role_overrides: currentManualRoleOverrides,
+        }),
   };
 
   return {
@@ -2105,6 +2239,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       });
       const classification = buildWorkspaceClassificationState({
         documentStatus: row.status,
+        postingStatus: row.posting_status ?? null,
         currentDraftId: row.current_draft_id,
         latestAssignmentRun: latestAssignmentRunByDocumentId.get(row.id) ?? null,
       });
@@ -2515,6 +2650,38 @@ export async function loadDocumentReviewPageData(input: {
     documentStatus: document.status,
     workflowState,
   });
+  const accountRoleAssignments = buildDocumentReviewAccountRoleAssignments({
+    documentRole: draft.document_role,
+    facts,
+    derived,
+    accounts: accountingState.runtimeContext.accounts,
+    accountRoleBindings: accountingState.runtimeContext.accountRoleBindings,
+  });
+  const assistantRail = await loadOrCreateDocumentAssistantRail(supabase, {
+    organizationId: input.organizationId,
+    userRole: input.userRole,
+    actorId: input.actorId,
+    document: {
+      id: document.id,
+      status: document.status,
+      postingStatus: document.posting_status,
+      originalFilename: document.original_filename,
+    },
+    draft: {
+      id: draft.id,
+      revisionNumber: draft.revision_number,
+      status: draft.status,
+      documentRole: draft.document_role,
+      documentType: draft.document_type ?? "",
+    },
+    facts,
+    derived,
+    workflowState,
+    latestClassificationRun,
+    learningSuggestions,
+    accountRoleAssignments,
+    certaintyConfidence: certaintySummary.confidence,
+  });
 
   return {
     organizationId: input.organizationId,
@@ -2588,12 +2755,14 @@ export async function loadDocumentReviewPageData(input: {
         canonicalName: concept.canonical_name,
       })),
     },
+    accountRoleAssignments,
     learningSuggestions,
     workflowState,
     latestClassificationRun,
     ruleExplanation,
     accountingImpactPreview,
     certaintySummary,
+    assistantRail,
     decisionLogs: decisionLogs.map((log) => ({
       id: log.id,
       runType: log.run_type,
@@ -2774,6 +2943,11 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
   await markDocumentAssignmentRunsStale(supabase, {
     documentId: document.id,
   });
+  await markDocumentAssistantThreadStale(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    reason: "draft_context_saved",
+  });
 
   return {
     ok: true,
@@ -2946,6 +3120,11 @@ async function postDocumentReviewInternal(input: {
         derived.appliedRule.scope === "assistant"
           ? "Sugerencia materializada tras aprobacion humana."
           : "La aprobacion humana materializo una resolucion no asistida.",
+    });
+    await markDocumentAssistantThreadStale(supabase, {
+      organizationId: document.organization_id,
+      documentId: document.id,
+      reason: "document_posted_provisional",
     });
 
     return {
@@ -3170,6 +3349,11 @@ async function postDocumentReviewInternal(input: {
       derived.appliedRule.scope === "assistant"
         ? "Sugerencia materializada tras aprobacion humana."
         : "La aprobacion humana materializo una resolucion no asistida.",
+  });
+  await markDocumentAssistantThreadStale(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    reason: "document_confirmed_final",
   });
 
   return {
@@ -3448,6 +3632,11 @@ export async function reopenDocumentReview(input: {
 
   await markDocumentAssignmentRunsStale(supabase, {
     documentId: document.id,
+  });
+  await markDocumentAssistantThreadStale(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    reason: "review_reopened",
   });
 
   return {

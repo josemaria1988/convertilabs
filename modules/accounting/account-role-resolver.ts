@@ -2,6 +2,7 @@ import { normalizeTextToken } from "@/modules/accounting/normalization";
 import type {
   AccountRoleBindingRecord,
   AccountRoleCode,
+  ManualAccountRoleOverrides,
   PostableAccountRecord,
   ResolvedAccountingRule,
   SettlementMethod,
@@ -212,11 +213,27 @@ export function resolveAccountRole(input: {
   roleCode: AccountRoleCode;
   accounts: PostableAccountRecord[];
   appliedRule: ResolvedAccountingRule;
+  manualRoleOverrides?: ManualAccountRoleOverrides;
   bindings?: AccountRoleBindingRecord[];
   documentRole?: string | null;
   currencyCode?: string | null;
   settlementMethod?: SettlementMethod | null;
 }) {
+  const manualRoleOverrideId = input.manualRoleOverrides?.[input.roleCode] ?? null;
+
+  if (manualRoleOverrideId) {
+    const account = findAccountById(input.accounts, manualRoleOverrideId);
+
+    return {
+      roleCode: input.roleCode,
+      accountId: account?.id ?? manualRoleOverrideId,
+      accountCode: account?.code ?? null,
+      accountName: account?.name ?? null,
+      isProvisional: isProvisionalAccount(account),
+      provenance: "manual_role_override",
+    } satisfies ResolvedAccountRole;
+  }
+
   const fromPrimary = resolveFromPrimaryAccount(input);
 
   if (fromPrimary) {

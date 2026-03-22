@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
 import { computeKernelHash } from "@/modules/accounting/kernel";
 
 export const SYSTEM_AI_ASSISTANT_ID = "system_ai_assistant";
@@ -19,6 +22,8 @@ function asString(value: unknown) {
 export type AssistantRunInsertInput = {
   organizationId: string;
   requestedByProfileId: string | null;
+  threadId?: string | null;
+  messageId?: string | null;
   persona: string;
   scope: string;
   targetKind: string;
@@ -45,11 +50,88 @@ export type AssistantRunInsertInput = {
   }>;
   suggestion?:
     | {
+        threadId?: string | null;
+        messageId?: string | null;
         suggestionType: string;
         proposedPayloadJson: JsonRecord;
+        inputHash?: string | null;
+        evidenceHash?: string | null;
+        confidence?: number | null;
+        rationaleMarkdown?: string | null;
+        requestedByProfileId?: string | null;
       }
     | null;
 };
+
+async function insertAssistantRunRow(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+) {
+  const attempt = await supabase
+    .from("assistant_runs")
+    .insert(payload)
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (
+    attempt.error
+    && (
+      isMissingSupabaseColumnError(attempt.error, "assistant_runs", "thread_id")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_runs", "message_id")
+    )
+  ) {
+    const legacyPayload = {
+      ...payload,
+    };
+    delete legacyPayload.thread_id;
+    delete legacyPayload.message_id;
+
+    return supabase
+      .from("assistant_runs")
+      .insert(legacyPayload)
+      .select("id")
+      .limit(1)
+      .single();
+  }
+
+  return attempt;
+}
+
+async function insertAssistantSuggestionRow(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+) {
+  const attempt = await supabase
+    .from("assistant_suggestions")
+    .insert(payload);
+
+  if (
+    attempt.error
+    && (
+      isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "thread_id")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "message_id")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "input_hash")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "evidence_hash")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "confidence")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "rationale_md")
+      || isMissingSupabaseColumnError(attempt.error, "assistant_suggestions", "requested_by_profile_id")
+    )
+  ) {
+    const legacyPayload = {
+      assistant_run_id: payload.assistant_run_id,
+      suggestion_type: payload.suggestion_type,
+      proposed_payload_json: payload.proposed_payload_json,
+      resolution_status: payload.resolution_status,
+    };
+
+    return supabase
+      .from("assistant_suggestions")
+      .insert(legacyPayload);
+  }
+
+  return attempt;
+}
 
 export async function supersedePendingAssistantSuggestions(
   supabase: SupabaseClient,
@@ -123,6 +205,8 @@ export async function recordAssistantRun(
     organization_id: input.organizationId,
     requested_by_profile_id: input.requestedByProfileId,
     system_actor_id: SYSTEM_AI_ASSISTANT_ID,
+    thread_id: input.threadId ?? null,
+    message_id: input.messageId ?? null,
     persona: input.persona,
     scope: input.scope,
     target_kind: input.targetKind,
@@ -151,12 +235,7 @@ export async function recordAssistantRun(
         ? (asString(input.outputJson.error_message) ?? input.rationaleMarkdown)
         : null,
   };
-  const { data, error } = await supabase
-    .from("assistant_runs")
-    .insert(payload)
-    .select("id")
-    .limit(1)
-    .single();
+  const { data, error } = await insertAssistantRunRow(supabase, payload);
 
   if (error && isMissingSupabaseRelationError(error, "assistant_runs")) {
     return null;
@@ -188,14 +267,22 @@ export async function recordAssistantRun(
   }
 
   if (input.suggestion) {
-    const { error: suggestionError } = await supabase
-      .from("assistant_suggestions")
-      .insert({
-        assistant_run_id: assistantRunId,
-        suggestion_type: input.suggestion.suggestionType,
-        proposed_payload_json: input.suggestion.proposedPayloadJson,
-        resolution_status: "pending",
-      });
+    const { error: suggestionError } = await insertAssistantSuggestionRow(supabase, {
+      assistant_run_id: assistantRunId,
+      thread_id: input.suggestion.threadId ?? input.threadId ?? null,
+      message_id: input.suggestion.messageId ?? input.messageId ?? null,
+      suggestion_type: input.suggestion.suggestionType,
+      proposed_payload_json: input.suggestion.proposedPayloadJson,
+      input_hash: input.suggestion.inputHash ?? input.inputHash ?? inputHash,
+      evidence_hash: input.suggestion.evidenceHash ?? null,
+      confidence: input.suggestion.confidence ?? input.confidence ?? null,
+      rationale_md: input.suggestion.rationaleMarkdown ?? input.rationaleMarkdown ?? null,
+      requested_by_profile_id:
+        input.suggestion.requestedByProfileId
+        ?? input.requestedByProfileId
+        ?? null,
+      resolution_status: "pending",
+    });
 
     if (suggestionError && !isMissingSupabaseRelationError(suggestionError, "assistant_suggestions")) {
       throw new Error(suggestionError.message);

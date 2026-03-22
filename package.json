@@ -2,6 +2,9 @@
   "name": "convertilabs",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "next dev",
     "inngest:dev": "npx inngest-cli@latest dev -u http://127.0.0.1:3000/api/inngest",
@@ -21,8 +24,8 @@
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
-    "inngest": "^3.52.6",
-    "next": "15.5.12",
+    "inngest": "3.40.3",
+    "next": "15.5.14",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0"
@@ -34,9 +37,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.12",
+    "eslint-config-next": "15.5.14",
     "pg": "^8.20.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "flatted": "3.4.2"
   }
 }

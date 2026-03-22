@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { approveDocumentLearning } from "@/modules/accounting/learning-approval-service";
 import { runDocumentClassification } from "@/modules/accounting/classification-runner";
+import {
+  refreshDocumentAssistantAnalysis,
+  resolveDocumentAssistantSuggestion,
+} from "@/modules/assistant/document-assistant";
 import { confirmDocumentFinal } from "@/modules/documents/confirm-final-service";
 import { postDocumentProvisional } from "@/modules/documents/post-provisional-service";
 import { reopenDocumentForRemap } from "@/modules/documents/reopen-remap-service";
@@ -12,6 +17,7 @@ import {
   createDocumentReviewOverrideAccount,
   resolveDocumentDuplicate,
   saveDraftReview,
+  loadDocumentReviewPageData,
 } from "@/modules/documents/review";
 
 type SaveDraftPayload = Parameters<typeof saveDraftReview>[0]["payload"];
@@ -307,4 +313,138 @@ export async function saveDocumentLearningRuleAction(input: {
   revalidatePath(paths.review);
 
   return result;
+}
+
+export async function refreshDocumentAssistantAction(input: {
+  slug: string;
+  documentId: string;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede actualizar el analisis del Asistente Contable.",
+    };
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const pageData = await loadDocumentReviewPageData({
+    organizationId: organization.id,
+    organizationSlug: organization.slug,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    userRole: organization.role as
+      | "owner"
+      | "admin"
+      | "admin_processing"
+      | "accountant"
+      | "reviewer"
+      | "operator"
+      | "viewer"
+      | "developer",
+  });
+  const result = await refreshDocumentAssistantAnalysis(supabase, {
+    organizationId: organization.id,
+    userRole: organization.role as
+      | "owner"
+      | "admin"
+      | "admin_processing"
+      | "accountant"
+      | "reviewer"
+      | "operator"
+      | "viewer"
+      | "developer",
+    actorId: authState.user?.id ?? null,
+    document: {
+      id: pageData.document.id,
+      status: pageData.document.status,
+      postingStatus: pageData.document.postingStatus,
+      originalFilename: pageData.document.originalFilename,
+    },
+    draft: {
+      id: pageData.draft.id,
+      revisionNumber: pageData.draft.revisionNumber,
+      status: pageData.draft.status,
+      documentRole: pageData.draft.documentRole,
+      documentType: pageData.draft.documentType,
+    },
+    facts: pageData.draft.facts,
+    derived: pageData.derived,
+    workflowState: pageData.workflowState,
+    latestClassificationRun: pageData.latestClassificationRun,
+    learningSuggestions: pageData.learningSuggestions,
+    accountRoleAssignments: pageData.accountRoleAssignments,
+    certaintyConfidence: pageData.certaintySummary.confidence,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+
+  return result;
+}
+
+export async function resolveDocumentAssistantSuggestionAction(input: {
+  slug: string;
+  documentId: string;
+  suggestionId: string;
+  resolutionStatus: "accepted" | "rejected" | "edited";
+  execute?: boolean;
+  resolutionComment?: string | null;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede resolver sugerencias del Asistente Contable.",
+    };
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const resolution = await resolveDocumentAssistantSuggestion(supabase, {
+    organizationId: organization.id,
+    suggestionId: input.suggestionId,
+    actorId: authState.user?.id ?? null,
+    resolutionStatus: input.resolutionStatus,
+    resolutionComment: input.resolutionComment ?? null,
+  });
+
+  if (
+    resolution.ok
+    && input.execute
+    && input.resolutionStatus === "accepted"
+    && resolution.actionKind === "run_classification"
+  ) {
+    await runDocumentClassification({
+      organizationId: organization.id,
+      documentId: input.documentId,
+      actorId: authState.user?.id ?? null,
+    });
+  }
+
+  if (
+    resolution.ok
+    && input.execute
+    && input.resolutionStatus === "accepted"
+    && resolution.actionKind === "post_provisional"
+  ) {
+    await postDocumentProvisional({
+      organizationId: organization.id,
+      documentId: input.documentId,
+      actorId: authState.user?.id ?? null,
+    });
+  }
+
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+  revalidatePath(paths.tax);
+  revalidatePath(paths.journalEntries);
+
+  return resolution;
 }

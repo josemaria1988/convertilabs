@@ -257,6 +257,7 @@ function buildBaseContext(overrides = {}) {
       promptHash: null,
       requestLatencyMs: null,
       manualOverrideAccountId: null,
+      manualRoleOverrides: {},
       manualOverrideConceptId: null,
       manualOverrideOperationCategory: null,
       learnedConceptName: null,
@@ -748,6 +749,74 @@ test("sale invoice without explicit payment evidence defaults to credit instead 
   assert.equal(derived.validation.canConfirm, true);
 });
 
+test("manual role overrides only affect the targeted role in the journal", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    documentRole: "sale",
+    documentType: "sale_invoice",
+    operationCategory: "taxed_basic_22",
+    accountingContext: {
+      ...seed.accountingContext,
+      manualRoleOverrides: {
+        bank_account: "acct-bank-alt",
+      },
+      operationKind: "sale_invoice",
+      paymentTerms: "cash",
+      settlementMethod: "bank_transfer",
+      settlementEvidenceSource: "invoice_document",
+    },
+    activeRules: [
+      {
+        id: "rule-sale",
+        organization_id: "org-1",
+        scope: "concept_global",
+        document_id: null,
+        vendor_id: null,
+        concept_id: "concept-services",
+        document_role: "sale",
+        account_id: "acct-revenue",
+        vat_profile_json: {},
+        operation_category: "taxed_basic_22",
+        linked_operation_type: null,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+      },
+    ],
+    facts: {
+      ...seed.facts,
+      issuer_name: "Rontil S.A.",
+      issuer_tax_id: "213554700012",
+      receiver_name: "Cliente SA",
+      receiver_tax_id: "21677899001",
+      purchase_category_candidate: null,
+      sale_category_candidate: "taxed_basic_22",
+    },
+    accounts: [
+      ...seed.accounts,
+      buildAccount({
+        id: "acct-bank-alt",
+        code: "1121",
+        name: "Banco USD alternativo",
+        account_type: "asset",
+        metadata: {
+          system_role: "bank_account",
+        },
+      }),
+    ],
+  }));
+
+  const bankLine = derived.journalSuggestion.lines.find((line) => line.roleCode === "bank_account");
+  const revenueLine = derived.journalSuggestion.lines.find((line) => line.roleCode === "revenue_account");
+  const vatLine = derived.journalSuggestion.lines.find((line) => line.roleCode === "output_vat_account");
+
+  assert.equal(derived.validation.canConfirm, true);
+  assert.equal(bankLine?.accountId, "acct-bank-alt");
+  assert.equal(revenueLine?.accountId, "acct-revenue");
+  assert.equal(vatLine?.accountId, "acct-vat-output");
+});
+
 test("assistant output can unblock a new concept once context was provided", () => {
   const seed = buildBaseContext();
   const derived = buildAccountingDraftArtifacts(buildBaseContext({
@@ -865,6 +934,54 @@ test("assistant low confidence keeps the document blocked even if an account was
 
   assert.equal(derived.validation.canConfirm, false);
   assert.match(derived.validation.blockers.join(" "), /baja confianza/i);
+});
+
+test("manual classification resolution clears second-ai blockers after human override", () => {
+  const seed = buildBaseContext();
+  const derived = buildAccountingDraftArtifacts(buildBaseContext({
+    accountingContext: {
+      ...seed.accountingContext,
+      status: "manual_override",
+      manualOverrideAccountId: "acct-expense",
+      manualOverrideOperationCategory: "services",
+      shouldBlockConfirmation: false,
+      blockingReasons: [],
+    },
+    assistantSuggestion: {
+      status: "completed",
+      shouldBlockConfirmation: true,
+      confidence: 0.42,
+      rationale: "La cuenta necesita revision manual.",
+      output: {
+        suggestedConceptId: null,
+        suggestedAccountId: "acct-expense",
+        suggestedOperationCategory: "services",
+        linkedOperationType: null,
+        vatContextHint: null,
+        confidence: 0.42,
+        rationale: "Duda material.",
+        reviewFlags: [
+          "La segunda IA devolvio baja confianza y requiere revision manual antes de confirmar.",
+        ],
+        shouldBlockConfirmation: true,
+      },
+      providerCode: "openai",
+      modelCode: "gpt-4o",
+      promptHash: "hash",
+      latencyMs: 200,
+      requestPayload: {},
+      responsePayload: {},
+      reviewFlags: [
+        "La segunda IA devolvio baja confianza y requiere revision manual antes de confirmar.",
+      ],
+    },
+    activeRules: [],
+  }));
+
+  assert.equal(derived.appliedRule.provenance, "manual_override");
+  assert.equal(derived.validation.canPostProvisional, true);
+  assert.equal(derived.validation.canConfirmFinal, true);
+  assert.doesNotMatch(derived.validation.blockers.join(" "), /segunda ia|baja confianza/i);
 });
 
 test("learning suggestions proactively recommend vendor plus concept when both are reusable", () => {

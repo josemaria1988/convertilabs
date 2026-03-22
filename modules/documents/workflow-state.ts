@@ -46,6 +46,51 @@ export type DocumentWorkflowState = {
   classificationStatus: "not_started" | "completed" | "failed" | "stale" | "needs_context";
 };
 
+function isClassificationMaterializedDocumentStatus(documentStatus: string) {
+  return [
+    "draft_ready",
+    "needs_review",
+    "classified",
+    "classified_with_open_revision",
+    "approved",
+    "rejected",
+    "duplicate",
+    "archived",
+  ].includes(documentStatus);
+}
+
+export function canRunDocumentClassificationAction(input: {
+  documentStatus: string;
+  postingStatus: DocumentPostingStatus | null;
+  draftStatus: string | null;
+  hasDraft: boolean;
+  latestClassificationRunStatus?: DocumentAssignmentRunRecord["status"] | null;
+  classificationStatus?: DocumentWorkflowState["classificationStatus"] | null;
+}) {
+  if (!input.hasDraft) {
+    return false;
+  }
+
+  if (
+    input.draftStatus === "confirmed"
+    || input.postingStatus === "posted_final"
+    || input.postingStatus === "locked"
+  ) {
+    return false;
+  }
+
+  if (
+    input.latestClassificationRunStatus === "failed"
+    || input.latestClassificationRunStatus === "stale"
+    || input.classificationStatus === "needs_context"
+  ) {
+    return true;
+  }
+
+  return input.documentStatus === "extracted"
+    || input.documentStatus === "classified_with_open_revision";
+}
+
 function unique(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value && value.trim()))),
@@ -74,6 +119,19 @@ function resolveStepStatus(
   return fallbackBlocked ? "blocked" : "pending";
 }
 
+function hasManualClassificationResolution(input: {
+  derived: DerivedDraftArtifacts;
+}) {
+  return Boolean(
+    input.derived.appliedRule.accountId
+    && (
+      input.derived.accountingContext.manualOverrideAccountId
+      || input.derived.accountingContext.manualOverrideConceptId
+      || input.derived.accountingContext.manualOverrideOperationCategory
+    ),
+  );
+}
+
 export function deriveDocumentWorkflowState(input: {
   documentStatus: string;
   postingStatus: DocumentPostingStatus | null;
@@ -92,28 +150,13 @@ export function deriveDocumentWorkflowState(input: {
     step.step_code === "accounting_context"
     && ["draft_saved", "confirmed"].includes(step.status)
   ) || input.derived.accountingContext.status === "not_required";
-  const classificationCompleted = [
-    "draft_ready",
-    "needs_review",
-    "classified",
-    "classified_with_open_revision",
-    "approved",
-    "rejected",
-    "duplicate",
-    "archived",
-  ].includes(input.documentStatus);
-  const canCreateLearningRule =
-    classificationCompleted
-    && Boolean(input.derived.appliedRule.accountId)
-    && input.derived.appliedRule.scope !== "manual_review"
-    && input.learningOptionCount > 0;
-  const canRunClassification =
-    input.documentStatus === "extracted"
-    && input.draftStatus !== "confirmed"
-    && input.postingStatus !== "posted_final"
-    && input.postingStatus !== "locked";
+  const manualClassificationResolved = hasManualClassificationResolution({
+    derived: input.derived,
+  });
   const classificationStatus =
-    input.latestClassificationRun?.status === "failed"
+    manualClassificationResolved
+      ? "completed"
+      : input.latestClassificationRun?.status === "failed"
       ? "failed"
       : input.latestClassificationRun?.status === "stale"
         ? "stale"
@@ -122,6 +165,25 @@ export function deriveDocumentWorkflowState(input: {
           : input.documentStatus === "extracted" && input.derived.accountingContext.shouldBlockConfirmation
             ? "needs_context"
             : "not_started";
+  const classificationMaterialized = isClassificationMaterializedDocumentStatus(input.documentStatus);
+  const classificationUpToDate =
+    classificationMaterialized
+    && classificationStatus !== "failed"
+    && classificationStatus !== "stale"
+    && classificationStatus !== "needs_context";
+  const canCreateLearningRule =
+    classificationUpToDate
+    && Boolean(input.derived.appliedRule.accountId)
+    && input.derived.appliedRule.scope !== "manual_review"
+    && input.learningOptionCount > 0;
+  const canRunClassification = canRunDocumentClassificationAction({
+    documentStatus: input.documentStatus,
+    postingStatus: input.postingStatus,
+    draftStatus: input.draftStatus,
+    hasDraft: true,
+    latestClassificationRunStatus: input.latestClassificationRun?.status ?? null,
+    classificationStatus,
+  });
   const visibleWarnings = unique([
     ...input.derived.validation.blockers,
     ...input.derived.taxTreatment.warnings,
@@ -143,7 +205,7 @@ export function deriveDocumentWorkflowState(input: {
     queueCode = "posted_provisional";
   } else if (!factualReady) {
     queueCode = "pending_factual_review";
-  } else if (!classificationCompleted) {
+  } else if (!classificationUpToDate) {
     queueCode = "pending_assignment";
   } else if (input.derived.validation.canPostProvisional && canCreateLearningRule) {
     queueCode = "pending_learning_decision";
@@ -175,18 +237,18 @@ export function deriveDocumentWorkflowState(input: {
     stepStatuses: {
       factual: resolveStepStatus(input.steps, ["identity", "fields", "amounts"], false),
       context: resolveStepStatus(input.steps, ["operation_context", "accounting_context"], !contextReady),
-      classification: classificationCompleted
+      classification: classificationUpToDate
         ? "completed"
-        : classificationStatus === "failed" || classificationStatus === "needs_context"
-          ? "blocked"
-          : canRunClassification
+        : canRunClassification
             ? "ready"
-            : "pending",
+            : classificationStatus === "failed" || classificationStatus === "stale" || classificationStatus === "needs_context"
+              ? "blocked"
+              : "pending",
       learning: canCreateLearningRule ? "ready" : "pending",
       posting:
         input.postingStatus === "posted_final" || input.postingStatus === "posted_provisional"
           ? "completed"
-          : classificationCompleted
+          : classificationUpToDate
             && (input.derived.validation.canPostProvisional || input.derived.validation.canConfirmFinal)
             ? "ready"
             : "blocked",
@@ -199,10 +261,10 @@ export function deriveDocumentWorkflowState(input: {
     visibleWarnings,
     canRunClassification,
     canCreateLearningRule,
-    canPostProvisional: classificationCompleted && input.derived.validation.canPostProvisional,
-    canConfirmFinal: classificationCompleted && input.derived.validation.canConfirmFinal,
+    canPostProvisional: classificationUpToDate && input.derived.validation.canPostProvisional,
+    canConfirmFinal: classificationUpToDate && input.derived.validation.canConfirmFinal,
     canRunVatPreview:
-      (classificationCompleted && input.derived.validation.canPostProvisional)
+      (classificationUpToDate && input.derived.validation.canPostProvisional)
       || input.postingStatus === "posted_provisional"
       || input.postingStatus === "posted_final",
     classificationStatus,

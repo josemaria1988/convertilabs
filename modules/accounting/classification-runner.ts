@@ -22,6 +22,7 @@ import {
   recordAssistantRun,
   supersedePendingAssistantSuggestions,
 } from "@/modules/assistant/runs";
+import { markDocumentAssistantThreadStale } from "@/modules/assistant/document-assistant";
 import {
   upsertDocumentAccountingContext,
   upsertDocumentInvoiceIdentity,
@@ -566,6 +567,11 @@ export async function runDocumentClassification(input: {
     await markDocumentAssignmentRunsStale(supabase, {
       documentId: context.document.id,
       excludeRunId: startedRun?.id ?? null,
+    });
+    await markDocumentAssistantThreadStale(supabase, {
+      organizationId: context.document.organization_id,
+      documentId: context.document.id,
+      reason: "classification_context_updated",
     });
     await insertAIDecisionLogs(supabase, [
       buildAccountingDecisionLog({
