@@ -7,6 +7,7 @@ import {
   eligibleForVatPreview,
   eligibleForVatRun,
   type VatEligibilityDecision,
+  type VatEligibilityReasonCode,
 } from "@/modules/tax/vat-eligibility";
 
 type JsonRecord = Record<string, unknown>;
@@ -25,6 +26,7 @@ type PeriodDraftRow = {
   document_id: string;
   document_role: "purchase" | "sale" | "other";
   status: string;
+  fields_json: JsonRecord | null;
   tax_treatment_json: JsonRecord | null;
 };
 
@@ -63,10 +65,12 @@ export type VatPeriodUniverse = {
   excludedFromVatRunCount: number;
   excludedFromVatPreview: Array<{
     documentId: string;
+    reasonCode: VatEligibilityReasonCode | null;
     reason: string;
   }>;
   excludedFromVatRun: Array<{
     documentId: string;
+    reasonCode: VatEligibilityReasonCode | null;
     reason: string;
   }>;
 };
@@ -103,6 +107,10 @@ function asStringArray(value: unknown) {
     : [];
 }
 
+function getDraftFacts(fieldsJson: JsonRecord | null) {
+  return asRecord(asRecord(fieldsJson).facts);
+}
+
 function classificationLooksResolved(input: {
   documentStatus: string;
   draftStatus: string | null;
@@ -130,6 +138,7 @@ function buildUniverseDocument(input: {
   duplicateStatus: string | null;
 }) {
   const taxJson = asRecord(input.draft?.tax_treatment_json);
+  const facts = getDraftFacts(input.draft?.fields_json ?? null);
   const fiscalTreatmentResolved = taxJson.ready === true;
   const vatBucket =
     asString(taxJson.vat_bucket)
@@ -178,10 +187,12 @@ function buildUniverseDocument(input: {
     vatBucket,
     taxableAmountUyu:
       asNumber(taxJson.taxable_amount_uyu)
-      || asNumber(taxJson.taxableAmountUyu),
+      || asNumber(taxJson.taxableAmountUyu)
+      || asNumber(facts.subtotal),
     taxAmountUyu:
       asNumber(taxJson.tax_amount_uyu)
-      || asNumber(taxJson.taxAmountUyu),
+      || asNumber(taxJson.taxAmountUyu)
+      || asNumber(facts.tax_amount),
     reviewFlags: [
       ...asStringArray(taxJson.warnings),
       ...asStringArray(taxJson.blockingReasons),
@@ -235,7 +246,7 @@ export async function loadVatPeriodUniverse(
     draftIds.length > 0
       ? supabase
         .from("document_drafts")
-        .select("id, document_id, document_role, status, tax_treatment_json")
+        .select("id, document_id, document_role, status, fields_json, tax_treatment_json")
         .in("id", draftIds)
       : Promise.resolve({ data: [], error: null }),
     documentIds.length > 0
@@ -272,12 +283,14 @@ export async function loadVatPeriodUniverse(
     .filter((document) => !document.previewDecision.ok)
     .map((document) => ({
       documentId: document.documentId,
+      reasonCode: document.previewDecision.reasonCode,
       reason: document.previewDecision.reason ?? "Excluido del VAT preview.",
     }));
   const excludedFromVatRun = universeDocuments
     .filter((document) => !document.runDecision.ok)
     .map((document) => ({
       documentId: document.documentId,
+      reasonCode: document.runDecision.reasonCode,
       reason: document.runDecision.reason ?? "Excluido del VAT run oficial.",
     }));
 
@@ -292,6 +305,33 @@ export async function loadVatPeriodUniverse(
     excludedFromVatPreview,
     excludedFromVatRun,
   } satisfies VatPeriodUniverse;
+}
+
+export type VatPeriodUniverseSelection = {
+  includedDocuments: VatPeriodUniverseDocument[];
+  excludedDocuments: Array<{
+    documentId: string;
+    reasonCode: VatEligibilityReasonCode | null;
+    reason: string;
+  }>;
+};
+
+export function selectVatUniverseDocumentsForPreview(
+  universe: VatPeriodUniverse,
+) {
+  return {
+    includedDocuments: universe.documents.filter((document) => document.previewDecision.ok),
+    excludedDocuments: universe.excludedFromVatPreview,
+  } satisfies VatPeriodUniverseSelection;
+}
+
+export function selectVatUniverseDocumentsForRun(
+  universe: VatPeriodUniverse,
+) {
+  return {
+    includedDocuments: universe.documents.filter((document) => document.runDecision.ok),
+    excludedDocuments: universe.excludedFromVatRun,
+  } satisfies VatPeriodUniverseSelection;
 }
 
 export function describeVatPeriodOperationalStatus(input: {

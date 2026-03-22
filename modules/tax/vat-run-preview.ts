@@ -3,7 +3,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import type { DocumentPostingStatus } from "@/modules/accounting";
-import { loadVatPeriodUniverse } from "@/modules/tax/vat-period-universe";
+import {
+  loadVatPeriodUniverse,
+  selectVatUniverseDocumentsForPreview,
+} from "@/modules/tax/vat-period-universe";
 
 type OfficialVatRunRow = {
   id: string;
@@ -105,12 +108,12 @@ export async function buildVatRunPreview(input: {
     organizationId: input.organizationId,
     period,
   });
-  const includedDocuments = universe.documents
+  const previewSelection = selectVatUniverseDocumentsForPreview(universe);
+  const includedDocuments = previewSelection.includedDocuments
     .filter((document) =>
-      document.previewDecision.ok
-      && document.postingStatus !== null
+      document.postingStatus !== null
       && includeStatuses.includes(document.postingStatus),
-      )
+    )
     .map((document) => ({
       documentId: document.documentId,
       draftId: document.draftId ?? `missing-draft-${document.documentId}`,
@@ -121,7 +124,10 @@ export async function buildVatRunPreview(input: {
       taxAmount: document.taxAmountUyu,
       reviewFlags: document.reviewFlags,
     } satisfies VatRunPreviewSnapshot));
-  const excludedDocuments = universe.excludedFromVatPreview;
+  const excludedDocuments = previewSelection.excludedDocuments.map((document) => ({
+    documentId: document.documentId,
+    reason: document.reason,
+  }));
   const totals = includedDocuments.reduce(
     (accumulator, document) => {
       if (document.role === "sale") {

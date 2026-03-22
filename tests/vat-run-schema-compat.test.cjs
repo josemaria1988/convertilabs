@@ -47,6 +47,22 @@ function createSupabaseStub(resolver) {
         });
         return builder;
       },
+      gte(column, value) {
+        state.filters.push({
+          type: "gte",
+          column,
+          value,
+        });
+        return builder;
+      },
+      lte(column, value) {
+        state.filters.push({
+          type: "lte",
+          column,
+          value,
+        });
+        return builder;
+      },
       not(column, operator, value) {
         state.filters.push({
           type: "not",
@@ -359,4 +375,169 @@ test("rebuildMonthlyVatRunFromConfirmations retries updates without import colum
   assert.equal(Object.hasOwn(updatePayloads[0], "import_vat"), true);
   assert.equal(Object.hasOwn(updatePayloads[1], "import_vat"), false);
   assert.equal(Object.hasOwn(updatePayloads[1], "import_vat_advance"), false);
+});
+
+test("rebuildMonthlyVatRunFromConfirmations uses declarative VAT run eligibility and persists exclusions", async () => {
+  const insertPayloads = [];
+  const supabase = createSupabaseStub((query) => {
+    if (query.table === "tax_periods" && query.mutation === "upsert" && query.mode === "single") {
+      return {
+        data: {
+          id: "period-1",
+          period_year: 2026,
+          period_month: 3,
+          start_date: "2026-03-01",
+          end_date: "2026-03-31",
+          status: "open",
+        },
+        error: null,
+      };
+    }
+
+    if (query.table === "vat_runs" && query.mode === "maybeSingle") {
+      return {
+        data: null,
+        error: null,
+      };
+    }
+
+    if (query.table === "documents" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "doc-provisional",
+            current_draft_id: "draft-provisional",
+            direction: "purchase",
+            status: "classified",
+            posting_status: "posted_provisional",
+            document_date: "2026-03-10",
+          },
+          {
+            id: "doc-vat-ready",
+            current_draft_id: "draft-vat-ready",
+            direction: "purchase",
+            status: "classified",
+            posting_status: "vat_ready",
+            document_date: "2026-03-11",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_drafts" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "draft-provisional",
+            document_id: "doc-provisional",
+            document_role: "purchase",
+            status: "confirmed",
+            fields_json: {
+              facts: {
+                subtotal: 100,
+                tax_amount: 22,
+              },
+            },
+            tax_treatment_json: {
+              ready: true,
+              vat_bucket: "input_creditable",
+              taxable_amount_uyu: 100,
+              tax_amount_uyu: 22,
+              warnings: [],
+              blockingReasons: [],
+            },
+          },
+          {
+            id: "draft-vat-ready",
+            document_id: "doc-vat-ready",
+            document_role: "purchase",
+            status: "confirmed",
+            fields_json: {
+              facts: {
+                subtotal: 50,
+                tax_amount: 11,
+              },
+            },
+            tax_treatment_json: {
+              ready: true,
+              vat_bucket: "input_creditable",
+              taxable_amount_uyu: 50,
+              tax_amount_uyu: 11,
+              warnings: [],
+              blockingReasons: [],
+            },
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_invoice_identities" && query.mode === "execute") {
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (
+      query.table === "organization_import_operations"
+      || query.table === "organization_import_operation_taxes"
+    ) {
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "vat_runs" && query.mutation === "insert" && query.mode === "single") {
+      insertPayloads.push(query.payload);
+
+      return {
+        data: {
+          id: "run-2",
+        },
+        error: null,
+      };
+    }
+
+    if (query.table === "tax_periods" && query.mutation === "update" && query.mode === "execute") {
+      return {
+        data: null,
+        error: null,
+      };
+    }
+
+    throw new Error(`Unexpected query: ${query.table}/${query.mode}/${query.mutation ?? "read"}`);
+  });
+
+  const runId = await rebuildMonthlyVatRunFromConfirmations(
+    supabase,
+    "org-1",
+    "2026-03",
+    "user-1",
+  );
+
+  assert.equal(runId, "run-2");
+  assert.equal(insertPayloads.length, 1);
+  assert.equal(insertPayloads[0].input_snapshot_json.documents.length, 1);
+  assert.equal(insertPayloads[0].input_snapshot_json.documents[0].documentId, "doc-provisional");
+  assert.equal(insertPayloads[0].input_snapshot_json.excluded_from_run.length, 1);
+  assert.equal(
+    insertPayloads[0].input_snapshot_json.excluded_from_run[0].reasonCode,
+    "insufficient_posting_for_run",
+  );
+  assert.match(
+    insertPayloads[0].input_snapshot_json.excluded_from_run[0].reason,
+    /corrida oficial de IVA/i,
+  );
+  assert.equal(insertPayloads[0].result_json.documents_included_count, 1);
+  assert.equal(insertPayloads[0].result_json.excluded_from_run_count, 1);
+  assert.deepEqual(insertPayloads[0].result_json.eligibility_summary, {
+    documentsInPeriod: 2,
+    eligibleForVatPreview: 2,
+    excludedFromVatPreview: 0,
+    eligibleForVatRun: 1,
+    excludedFromVatRun: 1,
+  });
 });

@@ -2,6 +2,12 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissingDocumentStep5ColumnError } from "@/modules/accounting/step5-schema-compat";
+import type { VatEligibilityReasonCode } from "@/modules/tax/vat-eligibility";
+import {
+  loadVatPeriodUniverse,
+  selectVatUniverseDocumentsForRun,
+  type VatPeriodUniverseDocument,
+} from "@/modules/tax/vat-period-universe";
 import {
   isMissingVatRunImportColumnError,
   omitVatRunImportColumns,
@@ -75,6 +81,27 @@ export type OrganizationVatRun = {
   createdAt: string;
   reviewFlagsCount: number;
   tracedDocuments: VatDocumentSnapshot[];
+};
+
+type VatRunExcludedDocument = {
+  documentId: string;
+  reasonCode: VatEligibilityReasonCode | null;
+  reason: string;
+};
+
+type VatRunEligibilitySummary = {
+  documentsInPeriod: number;
+  eligibleForVatPreview: number;
+  excludedFromVatPreview: number;
+  eligibleForVatRun: number;
+  excludedFromVatRun: number;
+};
+
+type VatRunDocumentSelection = {
+  includedDocuments: VatDocumentSnapshot[];
+  excludedFromPreview: VatRunExcludedDocument[];
+  excludedFromRun: VatRunExcludedDocument[];
+  eligibilitySummary: VatRunEligibilitySummary | null;
 };
 
 function asRecord(value: unknown): JsonRecord {
@@ -165,6 +192,25 @@ function buildVatDocumentSnapshot(draft: ConfirmedDraftRow): VatDocumentSnapshot
     taxableAmount: roundCurrency(taxSnapshot.taxableAmount),
     taxAmount: roundCurrency(taxSnapshot.taxAmount),
     reviewFlags: [...taxSnapshot.warnings, ...taxSnapshot.blockingReasons],
+  };
+}
+
+function buildVatDocumentSnapshotFromUniverseDocument(
+  document: VatPeriodUniverseDocument,
+): VatDocumentSnapshot | null {
+  if (!document.draftId || !document.documentDate) {
+    return null;
+  }
+
+  return {
+    documentId: document.documentId,
+    draftId: document.draftId,
+    role: document.role,
+    documentDate: document.documentDate,
+    vatBucket: document.vatBucket,
+    taxableAmount: roundCurrency(document.taxableAmountUyu),
+    taxAmount: roundCurrency(document.taxAmountUyu),
+    reviewFlags: document.reviewFlags,
   };
 }
 
@@ -339,6 +385,51 @@ async function loadVatEligibleDrafts(
   return loadLatestConfirmedDrafts(supabase, organizationId);
 }
 
+async function loadVatRunDocumentSelection(
+  supabase: SupabaseClient,
+  organizationId: string,
+  period: string,
+) {
+  try {
+    const universe = await loadVatPeriodUniverse(supabase, {
+      organizationId,
+      period,
+    });
+    const runSelection = selectVatUniverseDocumentsForRun(universe);
+
+    return {
+      includedDocuments: runSelection.includedDocuments
+        .map((document) => buildVatDocumentSnapshotFromUniverseDocument(document))
+        .filter((document): document is VatDocumentSnapshot => document !== null),
+      excludedFromPreview: universe.excludedFromVatPreview,
+      excludedFromRun: runSelection.excludedDocuments,
+      eligibilitySummary: {
+        documentsInPeriod: universe.documentsInPeriod,
+        eligibleForVatPreview: universe.eligibleForVatPreviewCount,
+        excludedFromVatPreview: universe.excludedFromVatPreviewCount,
+        eligibleForVatRun: universe.eligibleForVatRunCount,
+        excludedFromVatRun: universe.excludedFromVatRunCount,
+      },
+    } satisfies VatRunDocumentSelection;
+  } catch (error) {
+    if (!isMissingDocumentStep5ColumnError(error as { message?: string | null })) {
+      throw error;
+    }
+  }
+
+  const drafts = await loadVatEligibleDrafts(supabase, organizationId);
+
+  return {
+    includedDocuments: drafts
+      .map((draft) => buildVatDocumentSnapshot(draft))
+      .filter((snapshot): snapshot is VatDocumentSnapshot => snapshot !== null)
+      .filter((snapshot) => toPeriodMonthKey(snapshot.documentDate) === period),
+    excludedFromPreview: [],
+    excludedFromRun: [],
+    eligibilitySummary: null,
+  } satisfies VatRunDocumentSelection;
+}
+
 async function loadLatestVatRun(
   supabase: SupabaseClient,
   organizationId: string,
@@ -471,8 +562,8 @@ export async function assertVatPeriodMutableForDocument(
     return;
   }
 
-  const period = await ensureVatPeriod(supabase, organizationId, year, month);
-  const existingRun = await loadLatestVatRun(supabase, organizationId, period.id);
+  const periodRecord = await ensureVatPeriod(supabase, organizationId, year, month);
+  const existingRun = await loadLatestVatRun(supabase, organizationId, periodRecord.id);
 
   if (existingRun?.status === "finalized" || existingRun?.status === "locked") {
     throw new Error(
@@ -494,23 +585,25 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     throw new Error("La fecha del documento no es valida para reconstruir IVA mensual.");
   }
 
-  const period = await ensureVatPeriod(supabase, organizationId, year, month);
-  const existingRun = await loadLatestVatRun(supabase, organizationId, period.id);
+  const periodRecord = await ensureVatPeriod(supabase, organizationId, year, month);
+  const existingRun = await loadLatestVatRun(supabase, organizationId, periodRecord.id);
 
   if (existingRun?.status === "finalized" || existingRun?.status === "locked") {
     throw new Error("No se puede recalcular un periodo IVA finalizado o locked sin reapertura.");
   }
 
-  const drafts = await loadVatEligibleDrafts(supabase, organizationId);
+  const periodKey = `${year}-${String(month).padStart(2, "0")}`;
+  const documentSelection = await loadVatRunDocumentSelection(
+    supabase,
+    organizationId,
+    periodKey,
+  );
   const importSummary = await loadApprovedImportOperationTaxSummary(
     supabase,
     organizationId,
     periodDate,
   );
-  const relevantSnapshots = drafts
-    .map((draft) => buildVatDocumentSnapshot(draft))
-    .filter((snapshot): snapshot is VatDocumentSnapshot => snapshot !== null)
-    .filter((snapshot) => toPeriodMonthKey(snapshot.documentDate) === periodDate.slice(0, 7));
+  const relevantSnapshots = documentSelection.includedDocuments;
 
   const totals = relevantSnapshots.reduce(
     (accumulator, snapshot) => {
@@ -557,16 +650,19 @@ export async function rebuildMonthlyVatRunFromConfirmations(
         : "draft";
   const payload = {
     organization_id: organizationId,
-    period_id: period.id,
+    period_id: periodRecord.id,
     status: nextStatus,
     input_snapshot_json: {
       documents: relevantSnapshots,
+      excluded_from_preview: documentSelection.excludedFromPreview,
+      excluded_from_run: documentSelection.excludedFromRun,
+      eligibility_summary: documentSelection.eligibilitySummary,
       import_operations: importSummary.operationIds,
       generated_at: new Date().toISOString(),
     },
     result_json: {
       formula: "output_vat - input_vat_creditable - import_vat - import_vat_advance + input_vat_non_deductible",
-      period: `${year}-${String(month).padStart(2, "0")}`,
+      period: periodKey,
       totals: {
         output_vat: outputVat,
         input_vat_creditable: inputVatCreditable,
@@ -576,6 +672,8 @@ export async function rebuildMonthlyVatRunFromConfirmations(
         net_vat_payable: netVatPayable,
       },
       documents_included_count: relevantSnapshots.length,
+      excluded_from_run_count: documentSelection.excludedFromRun.length,
+      eligibility_summary: documentSelection.eligibilitySummary,
       import_operations_included_count: importSummary.operationIds.length,
       import_other_taxes_count: importSummary.otherTaxesCount,
       review_flags_count: totals.reviewFlagsCount,
@@ -641,7 +739,7 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     runId = insertResult.data.id as string;
   }
 
-  await updateTaxPeriodStatus(supabase, period.id, nextStatus);
+  await updateTaxPeriodStatus(supabase, periodRecord.id, nextStatus);
   return runId;
 }
 
