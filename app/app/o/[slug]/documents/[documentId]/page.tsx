@@ -16,6 +16,7 @@ import {
 } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
+  confirmDocumentManualAssignmentAction,
   confirmFinalDocumentReviewAction,
   createDocumentReviewOverrideAccountAction,
   postProvisionalDocumentReviewAction,
@@ -183,6 +184,14 @@ export default async function DocumentReviewPage({
         confirmFinalDocumentAction={async (payload) => {
           "use server";
           return confirmFinalDocumentReviewAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        confirmManualAssignmentAction={async (payload) => {
+          "use server";
+          return confirmDocumentManualAssignmentAction({
             slug,
             documentId,
             ...payload,

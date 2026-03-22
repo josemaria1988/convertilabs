@@ -1,5 +1,6 @@
 import { resolveUyVatTreatment } from "@/modules/tax/uy-vat-engine";
 import { buildJournalEntryPreview } from "@/modules/accounting/journal-entry-builder";
+import { hasManualClassificationResolution } from "@/modules/accounting/manual-resolution";
 import { resolveAccountingRuleWithPrecedence } from "@/modules/accounting/rules";
 import { resolveDocumentSettlementContext } from "@/modules/accounting/template-resolver";
 import type {
@@ -84,16 +85,6 @@ function buildProvisionalBlockers(blockers: string[]) {
   });
 }
 
-function hasManualClassificationResolution(
-  context: AccountingSuggestionContext["accountingContext"],
-) {
-  return Boolean(
-    context.manualOverrideAccountId
-    || context.manualOverrideConceptId
-    || context.manualOverrideOperationCategory,
-  );
-}
-
 function buildAssistantBlockingReasons(input: {
   context: AccountingSuggestionContext;
   requiresPrimaryAccount: boolean;
@@ -118,7 +109,7 @@ function buildAssistantBlockingReasons(input: {
   if (
     assistant.status === "failed"
     && assistantWorkflowActive
-    && !input.context.accountingContext.manualOverrideAccountId
+    && !hasManualClassificationResolution(input.context.accountingContext)
   ) {
     blockers.push(
       "La segunda IA no pudo completar la clasificacion y el documento requiere override manual o una regla confiable.",
@@ -148,7 +139,7 @@ function buildAssistantBlockingReasons(input: {
   if (
     assistantWorkflowActive
     && input.appliedRule.scope === "manual_review"
-    && !input.context.accountingContext.manualOverrideAccountId
+    && !hasManualClassificationResolution(input.context.accountingContext)
   ) {
     blockers.push(
       "Aun falta una resolucion contable confiable despues del contexto del usuario.",

@@ -5,10 +5,14 @@ import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
-import { loadRecentExports, loadVatRunExportDataset } from "@/modules/exports";
+import { loadVatRunExportDataset } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
 import { listOrganizationSpreadsheetImportRuns } from "@/modules/spreadsheets";
+import {
+  describeVatPeriodOperationalStatus,
+  loadVatPeriodUniverse,
+} from "@/modules/tax/vat-period-universe";
 import { buildVatRunPreview } from "@/modules/tax/vat-run-preview";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 import {
@@ -152,9 +156,8 @@ export default async function OrganizationTaxPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [vatRuns, exports, spreadsheetRuns] = await Promise.all([
+  const [vatRuns, spreadsheetRuns] = await Promise.all([
     loadOrganizationVatRuns(supabase, organization.id),
-    loadRecentExports(organization.id),
     listOrganizationSpreadsheetImportRuns(supabase, organization.id, 8),
   ]);
   const historicalImports = spreadsheetRuns.filter((run) =>
@@ -167,18 +170,21 @@ export default async function OrganizationTaxPage({
   const selectedMonth = normalizePeriodMonth(resolvedSearchParams.periodMonth, currentPeriod.month);
   const selectedPeriod = buildPeriodLabel(selectedYear, selectedMonth);
   const selectedRun = vatRuns.find((run) => run.periodLabel === selectedPeriod) ?? null;
-  const vatPreview = await buildVatRunPreview({
-    organizationId: organization.id,
-    year: selectedYear,
-    month: selectedMonth,
-  });
+  const [vatUniverse, vatPreview] = await Promise.all([
+    loadVatPeriodUniverse(supabase, {
+      organizationId: organization.id,
+      period: selectedPeriod,
+    }),
+    buildVatRunPreview({
+      organizationId: organization.id,
+      year: selectedYear,
+      month: selectedMonth,
+    }),
+  ]);
   const selectedExportDataset = selectedRun
     ? await loadVatRunExportDataset(supabase, organization.id, selectedRun.id)
     : null;
   const periodTitle = formatVatTitle(selectedPeriod);
-  const selectedExports = selectedRun
-    ? exports.filter((artifact) => artifact.targetId === selectedRun.id)
-    : [];
   const selectedSales = selectedRun?.tracedDocuments.filter((document) => document.role === "sale")
     ?? vatPreview.includedDocuments.filter((document) => document.role === "sale");
   const selectedPurchases = selectedRun?.tracedDocuments.filter((document) => document.role === "purchase")
@@ -189,14 +195,18 @@ export default async function OrganizationTaxPage({
     currentYear: currentPeriod.year,
   });
   const isClosedRun = selectedRun?.status === "finalized" || selectedRun?.status === "locked";
-  const headerStatusLabel = selectedRun
-    ? formatLifecycleStatusLabel(selectedRun.status)
-    : "Abierto sin cierre";
-  const headerStatusTone = isClosedRun
-    ? "status-pill status-pill--success"
-    : selectedRun
-      ? "status-pill status-pill--warning"
-      : "status-pill status-pill--info";
+  const periodOperationalStatus = describeVatPeriodOperationalStatus({
+    runStatus: selectedRun?.status ?? null,
+    reviewFlagsCount: selectedRun?.reviewFlagsCount ?? 0,
+    universe: vatUniverse,
+  });
+  const headerStatusLabel = periodOperationalStatus.label;
+  const headerStatusTone =
+    periodOperationalStatus.tone === "success"
+      ? "status-pill status-pill--success"
+      : periodOperationalStatus.tone === "warning"
+        ? "status-pill status-pill--warning"
+        : "status-pill status-pill--info";
   const displayOutputVat = selectedRun?.outputVat ?? vatPreview.totals.outputVat;
   const displayInputVatCreditable = selectedRun?.inputVatCreditable ?? vatPreview.totals.inputVatCreditable;
   const displayInputVatNonDeductible = selectedRun?.inputVatNonDeductible ?? vatPreview.totals.inputVatNonDeductible;
@@ -224,7 +234,7 @@ export default async function OrganizationTaxPage({
             </h1>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                 {selectedRun
-                  ? `Periodo con corrida oficial en estado ${headerStatusLabel.toLowerCase()}.`
+                  ? periodOperationalStatus.summary
                   : "Periodo abierto en modo preview; todavia no hay cierre oficial generado."}
               </p>
             </div>
@@ -271,6 +281,74 @@ export default async function OrganizationTaxPage({
                 Cambiar periodo
               </SubmitButton>
             </form>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Universo fiscal del periodo</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Antes de leer importes, aqui ves cuantos documentos del mes existen, cuantos entran al preview y cuantos ya cumplen condiciones para la corrida oficial.
+                </p>
+              </div>
+              <span className="ui-filter">{vatUniverse.period}</span>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-5">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-[13px] text-[color:var(--color-muted)]">Documentos del periodo</p>
+                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.documentsInPeriod}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-[13px] text-[color:var(--color-muted)]">Elegibles VAT preview</p>
+                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.eligibleForVatPreviewCount}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-[13px] text-[color:var(--color-muted)]">Excluidos preview</p>
+                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.excludedFromVatPreviewCount}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-[13px] text-[color:var(--color-muted)]">Elegibles VAT run</p>
+                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.eligibleForVatRunCount}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-[13px] text-[color:var(--color-muted)]">Excluidos run</p>
+                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.excludedFromVatRunCount}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-sm font-semibold text-white">Excluidos del VAT preview</p>
+                <div className="mt-3 max-h-72 space-y-2 overflow-auto">
+                  {vatUniverse.excludedFromVatPreview.length > 0 ? vatUniverse.excludedFromVatPreview.map((document) => (
+                    <div key={`preview-${document.documentId}`} className="ui-subtle-row">
+                      <span>{document.documentId}</span>
+                      <span>{document.reason}</span>
+                    </div>
+                  )) : (
+                    <div className="text-sm text-[color:var(--color-muted)]">
+                      No hay exclusiones para el preview del periodo.
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+                <p className="text-sm font-semibold text-white">Excluidos del VAT run oficial</p>
+                <div className="mt-3 max-h-72 space-y-2 overflow-auto">
+                  {vatUniverse.excludedFromVatRun.length > 0 ? vatUniverse.excludedFromVatRun.map((document) => (
+                    <div key={`run-${document.documentId}`} className="ui-subtle-row">
+                      <span>{document.documentId}</span>
+                      <span>{document.reason}</span>
+                    </div>
+                  )) : (
+                    <div className="text-sm text-[color:var(--color-muted)]">
+                      No hay exclusiones para la corrida oficial del periodo.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="grid gap-3 md:grid-cols-4">
@@ -585,27 +663,34 @@ export default async function OrganizationTaxPage({
           <section className="ui-panel">
             <div className="ui-panel-header">
               <h2 className="text-[16px] font-semibold text-white">
-                Historial de declaraciones
+                Estado del periodo
               </h2>
             </div>
 
             <div className="mt-4 space-y-3">
               {[
                 {
-                  label: "Resumen mensual",
-                  ready: Boolean(selectedRun),
+                  label: "Estado operativo",
+                  value: periodOperationalStatus.label,
+                  ready: periodOperationalStatus.tone === "success",
                 },
                 {
-                  label: "Ventas",
-                  ready: selectedSales.length > 0,
+                  label: "VAT preview",
+                  value: `${vatUniverse.eligibleForVatPreviewCount} elegibles / ${vatUniverse.documentsInPeriod} del periodo`,
+                  ready: vatUniverse.eligibleForVatPreviewCount > 0,
                 },
                 {
-                  label: "Documentos",
-                  ready: selectedPurchases.length > 0 || selectedSales.length > 0,
+                  label: "VAT run oficial",
+                  value: `${vatUniverse.eligibleForVatRunCount} elegibles / ${vatUniverse.documentsInPeriod} del periodo`,
+                  ready: vatUniverse.eligibleForVatRunCount > 0,
                 },
                 {
-                  label: "Retenciones",
-                  ready: selectedExports.length > 0,
+                  label: "Exclusiones activas",
+                  value: `Preview ${vatUniverse.excludedFromVatPreviewCount} / Run ${vatUniverse.excludedFromVatRunCount}`,
+                  ready:
+                    vatUniverse.excludedFromVatPreviewCount === 0
+                    && vatUniverse.excludedFromVatRunCount === 0
+                    && vatUniverse.documentsInPeriod > 0,
                 },
               ].map((item) => (
                 <div key={item.label} className="ui-subtle-row">
@@ -616,7 +701,7 @@ export default async function OrganizationTaxPage({
                     <span className="text-white">{item.label}</span>
                   </div>
                   <span className={item.ready ? "text-[#daf0e0]" : "text-[color:var(--color-muted)]"}>
-                    {item.ready ? "Listo" : "Pendiente"}
+                    {item.value}
                   </span>
                 </div>
               ))}

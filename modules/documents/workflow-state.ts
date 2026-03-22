@@ -3,6 +3,7 @@ import type {
   DocumentAssignmentRunRecord,
   DocumentPostingStatus,
 } from "@/modules/accounting";
+import { hasManualClassificationResolution } from "@/modules/accounting/manual-resolution";
 
 type DraftStepStatus = {
   step_code: string;
@@ -119,19 +120,6 @@ function resolveStepStatus(
   return fallbackBlocked ? "blocked" : "pending";
 }
 
-function hasManualClassificationResolution(input: {
-  derived: DerivedDraftArtifacts;
-}) {
-  return Boolean(
-    input.derived.appliedRule.accountId
-    && (
-      input.derived.accountingContext.manualOverrideAccountId
-      || input.derived.accountingContext.manualOverrideConceptId
-      || input.derived.accountingContext.manualOverrideOperationCategory
-    ),
-  );
-}
-
 export function deriveDocumentWorkflowState(input: {
   documentStatus: string;
   postingStatus: DocumentPostingStatus | null;
@@ -150,9 +138,10 @@ export function deriveDocumentWorkflowState(input: {
     step.step_code === "accounting_context"
     && ["draft_saved", "confirmed"].includes(step.status)
   ) || input.derived.accountingContext.status === "not_required";
-  const manualClassificationResolved = hasManualClassificationResolution({
-    derived: input.derived,
-  });
+  const manualClassificationResolved = Boolean(
+    input.derived.appliedRule.accountId
+    && hasManualClassificationResolution(input.derived.accountingContext),
+  );
   const classificationStatus =
     manualClassificationResolved
       ? "completed"

@@ -72,42 +72,28 @@ function createSupabaseStub(resolver) {
 test("vat preview includes provisional and final documents without mutating official runs", async () => {
   const supabase = createSupabaseStub((query) => {
     if (query.table === "documents" && query.mode === "execute") {
-      if (query.filters.some((filter) => filter.type === "in")) {
-        return {
-          data: [
-            {
-              id: "doc-provisional",
-              current_draft_id: "draft-provisional",
-              posting_status: "posted_provisional",
-              document_date: "2026-03-10",
-            },
-            {
-              id: "doc-final",
-              current_draft_id: "draft-final",
-              posting_status: "posted_final",
-              document_date: "2026-03-11",
-            },
-          ],
-          error: null,
-        };
-      }
-
       return {
         data: [
           {
             id: "doc-provisional",
+            direction: "purchase",
+            status: "classified",
             posting_status: "posted_provisional",
             current_draft_id: "draft-provisional",
             document_date: "2026-03-10",
           },
           {
             id: "doc-final",
+            direction: "sale",
+            status: "classified",
             posting_status: "posted_final",
             current_draft_id: "draft-final",
             document_date: "2026-03-11",
           },
           {
             id: "doc-draft",
+            direction: "purchase",
+            status: "needs_review",
             posting_status: "draft",
             current_draft_id: "draft-open",
             document_date: "2026-03-12",
@@ -124,14 +110,9 @@ test("vat preview includes provisional and final documents without mutating offi
             id: "draft-provisional",
             document_id: "doc-provisional",
             document_role: "purchase",
-            fields_json: {
-              facts: {
-                document_date: "2026-03-10",
-                subtotal: 100,
-                tax_amount: 22,
-              },
-            },
+            status: "confirmed",
             tax_treatment_json: {
+              ready: true,
               vat_bucket: "input_creditable",
               taxable_amount_uyu: 100,
               tax_amount_uyu: 22,
@@ -142,21 +123,36 @@ test("vat preview includes provisional and final documents without mutating offi
             id: "draft-final",
             document_id: "doc-final",
             document_role: "sale",
-            fields_json: {
-              facts: {
-                document_date: "2026-03-11",
-                subtotal: 200,
-                tax_amount: 44,
-              },
-            },
+            status: "confirmed",
             tax_treatment_json: {
+              ready: true,
               vat_bucket: "output_vat",
               taxable_amount_uyu: 200,
               tax_amount_uyu: 44,
               warnings: ["cuenta provisional"],
             },
           },
+          {
+            id: "draft-open",
+            document_id: "doc-draft",
+            document_role: "purchase",
+            status: "open",
+            tax_treatment_json: {
+              ready: true,
+              vat_bucket: "input_creditable",
+              taxable_amount_uyu: 50,
+              tax_amount_uyu: 11,
+              warnings: [],
+            },
+          },
         ],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_invoice_identities" && query.mode === "execute") {
+      return {
+        data: [],
         error: null,
       };
     }
@@ -211,13 +207,6 @@ test("vat preview includes provisional and final documents without mutating offi
 test("vat preview uses the real last day of the month when loading excluded documents", async () => {
   const supabase = createSupabaseStub((query) => {
     if (query.table === "documents" && query.mode === "execute") {
-      if (query.filters.some((filter) => filter.type === "in")) {
-        return {
-          data: [],
-          error: null,
-        };
-      }
-
       const periodStart = query.filters.find((filter) =>
         filter.type === "gte" && filter.column === "document_date");
       const periodEnd = query.filters.find((filter) =>
@@ -226,6 +215,13 @@ test("vat preview uses the real last day of the month when loading excluded docu
       assert.equal(periodStart?.value, "2026-02-01");
       assert.equal(periodEnd?.value, "2026-02-28");
 
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_invoice_identities" && query.mode === "execute") {
       return {
         data: [],
         error: null,

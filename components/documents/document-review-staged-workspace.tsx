@@ -17,6 +17,9 @@ import type {
 } from "@/modules/accounting";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
+  buildDocumentOperationalHeaderView,
+} from "@/modules/presentation/document-decision-view";
+import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
   buttonSecondaryChromeClassName,
@@ -96,6 +99,13 @@ type ConfirmFinalDocumentAction = (input: {
   message: string;
 }>;
 
+type ConfirmManualAssignmentAction = (input: {
+  manualRoleOverrides?: ManualAccountRoleOverrides | null;
+}) => Promise<{
+  ok: boolean;
+  message: string;
+}>;
+
 type CreateReviewAccountAction = (input: {
   code: string;
   name: string;
@@ -124,6 +134,7 @@ export type DocumentReviewWorkspaceProps = {
   saveDraftReviewAction: SaveDraftReviewAction;
   postProvisionalDocumentAction: ReviewSimpleAction;
   confirmFinalDocumentAction: ConfirmFinalDocumentAction;
+  confirmManualAssignmentAction: ConfirmManualAssignmentAction;
   createReviewAccountAction: CreateReviewAccountAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   runClassificationAction: ReviewSimpleAction;
@@ -144,6 +155,7 @@ type SectionStatusMap = {
 type PendingAction =
   | "stage1"
   | "classify"
+  | "confirm_manual_assignment"
   | "post_provisional"
   | "confirm_final"
   | "reopen"
@@ -553,21 +565,6 @@ function formatDraftStatus(value: string) {
   }
 }
 
-function formatNextRecommendedAction(value: string) {
-  switch (value) {
-    case "process_extraction":
-      return "Procesar extraccion";
-    case "retry_extraction":
-      return "Reintentar extraccion";
-    case "open_review":
-      return "Abrir revision";
-    case "wait":
-      return "Esperar";
-    default:
-      return value.replace(/_/g, " ");
-  }
-}
-
 function formatConfirmationType(value: string | null | undefined) {
   switch (value) {
     case "final":
@@ -606,6 +603,46 @@ function buildBlockingMessage(blockers: string[]) {
   return blockers.join(" ") || "No se pudo completar la accion.";
 }
 
+function buildActionableDecisionMessage(input: {
+  reasons: string[];
+  missingConditions: string[];
+  fallback: string;
+}) {
+  return input.reasons[0]
+    ?? (input.missingConditions[0] ? `Falta: ${input.missingConditions[0]}.` : input.fallback);
+}
+
+function getChecklistToneClasses(input: {
+  done: boolean;
+  severity: "info" | "warning" | "blocking";
+}) {
+  if (input.done) {
+    return {
+      badge: "bg-emerald-100 text-emerald-950",
+      row: "border-emerald-200 bg-emerald-50/40",
+    };
+  }
+
+  if (input.severity === "blocking") {
+    return {
+      badge: "bg-rose-100 text-rose-950",
+      row: "border-rose-200 bg-rose-50/40",
+    };
+  }
+
+  if (input.severity === "warning") {
+    return {
+      badge: "bg-amber-100 text-amber-950",
+      row: "border-amber-200 bg-amber-50/40",
+    };
+  }
+
+  return {
+    badge: "bg-slate-100 text-slate-900",
+    row: "border-[color:var(--color-border)] bg-white/60",
+  };
+}
+
 function parseOptionalNumber(value: string) {
   const trimmed = value.trim();
 
@@ -623,6 +660,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     saveDraftReviewAction,
     postProvisionalDocumentAction,
     confirmFinalDocumentAction,
+    confirmManualAssignmentAction,
     createReviewAccountAction,
     resolveDuplicateAction,
     runClassificationAction,
@@ -968,6 +1006,31 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     );
   }
 
+  function runConfirmManualAssignment() {
+    setPendingAction("confirm_manual_assignment");
+    setActionMessage("Confirmando asignacion manual...");
+    startTransition(async () => {
+      try {
+        const result = await confirmManualAssignmentAction({
+          manualRoleOverrides: Object.fromEntries(
+            Object.entries(accountingContext.manualRoleOverrides).map(([roleCode, accountId]) => [
+              roleCode,
+              accountId?.trim() || null,
+            ]),
+          ) as ManualAccountRoleOverrides,
+        });
+        setActionMessage(result.message);
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
   function runCreateAccount() {
     const code = newReviewAccount.code.trim();
     const name = newReviewAccount.name.trim();
@@ -1056,6 +1119,10 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   }
 
   const classificationRequired = isManualClassificationRequired(pageData);
+  const decisionSnapshot = pageData.decisionSnapshot;
+  const operationalHeader = buildDocumentOperationalHeaderView(decisionSnapshot);
+  const provisionalGate = operationalHeader.provisional;
+  const finalGate = operationalHeader.final;
   const duplicateStatus = pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear";
   const primaryAccountRole = pageData.derived.settlementContext.primaryAccountRole ?? null;
   const primaryAccountUi = getAccountRoleUiCopy({
@@ -1171,6 +1238,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const isConfirmedReview =
     pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
   const latestConfirmation = pageData.confirmations[0] ?? null;
+  const resolutionStatusSummary = decisionSnapshot.classificationResolved
+    ? "La resolucion actual ya quedo consolidada para este draft."
+    : "El preview puede verse correcto aunque la resolucion todavia no este consolidada.";
+  const manualAssignmentReady = Boolean(primaryRoleAssignment?.effectiveAccount?.id);
+  const shouldShowManualAssignmentCta =
+    !isConfirmedReview
+    && showManualFlow
+    && manualAssignmentReady
+    && decisionSnapshot.resolutionSource !== "manual";
 
   return (
     <div className="space-y-6">
@@ -1235,12 +1311,69 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
             <p className="font-semibold">Posteo</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
-              {formatPostingStatus(pageData.document.postingStatus)}
+              {operationalHeader.postingStateLabel}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              {isConfirmedReview
-                ? "Revision cerrada"
-                : formatNextRecommendedAction(pageData.workflowState.nextRecommendedAction)}
+              {isConfirmedReview ? "Revision cerrada" : operationalHeader.nextBestAction}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-3xl border border-[color:var(--color-border)] bg-white/72 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Header operativo
+              </p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
+                {operationalHeader.workflowLabel}
+              </h3>
+              <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+                {operationalHeader.workflowSummary}
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
+              {operationalHeader.resolutionSourceLabel}
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Estado workflow</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.workflowLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Fuente de resolucion</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.resolutionSourceLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Confianza</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.confidenceLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Estado contable</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.postingStateLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Provisional</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <p className="font-semibold">Final</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado"}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{finalGate.summary}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+            <p className="font-semibold">Siguiente mejor accion</p>
+            <p className="mt-2 text-[color:var(--color-muted)]">
+              {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
             </p>
           </div>
         </div>
@@ -1620,7 +1753,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
             >
               {pendingAction === "stage1" && isPending ? <InlineSpinner /> : null}
-              Guardar etapa 1
+              Guardar contexto documental
             </button>
             <button
               type="button"
@@ -1631,7 +1764,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
             >
               {pendingAction === "stage1" && isPending ? <InlineSpinner /> : null}
-              Guardar etapa 1 y recalcular asiento
+              Guardar y recalcular sugerencia
             </button>
           </div>
 
@@ -1867,8 +2000,83 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             ))}
           </div>
 
-          <div className="mt-5">
-            <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Preview actual del asiento
+              </p>
+              <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+                Esta vista muestra como quedaria hoy el Debe, Haber, IVA y saldos abiertos si postearas con el contexto actual.
+              </p>
+              <div className="mt-4">
+                <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5 text-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Estado de resolucion
+              </p>
+              <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em]">
+                {operationalHeader.resolutionSourceLabel}
+              </h4>
+              <p className="mt-2 leading-7 text-[color:var(--color-muted)]">
+                {resolutionStatusSummary}
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                  <p className="font-semibold">Clasificacion</p>
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    {decisionSnapshot.classificationResolved
+                      ? "Resuelta"
+                      : "Todavia no consolidada"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                  <p className="font-semibold">Ultimo motivo visible</p>
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    {decisionSnapshot.blockers[0]
+                      ?? decisionSnapshot.warnings[0]
+                      ?? "No hay blockers visibles en este momento."}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                  <p className="font-semibold">Ultimo intento</p>
+                  <p className="mt-2 text-[color:var(--color-muted)]">
+                    {pageData.latestClassificationRun
+                      ? formatDate(pageData.latestClassificationRun.createdAt)
+                      : "Sin corridas registradas"}
+                  </p>
+                </div>
+              </div>
+
+              {shouldShowManualAssignmentCta ? (
+                <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sky-950">
+                  <p className="font-semibold">Confirmar asignacion manual</p>
+                  <p className="mt-2 text-sm leading-6">
+                    Esta accion fija la asignacion efectiva actual como resolucion manual, limpia los bloqueos que dependan solo de baja confianza IA y deja rastro auditado.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        runConfirmManualAssignment();
+                      }}
+                      className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
+                    >
+                      {pendingAction === "confirm_manual_assignment" && isPending ? <InlineSpinner /> : null}
+                      Confirmar asignacion manual
+                    </button>
+                  </div>
+                </div>
+              ) : decisionSnapshot.resolutionSource === "manual" ? (
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-950">
+                  La resolucion visible ya quedo consolidada como revision manual.
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-3">
@@ -1896,7 +2104,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               }}
               className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
             >
-              Guardar asignacion
+              Guardar cuentas seleccionadas
             </button>
             {canCreatePrimaryAccountInline ? (
               <button
@@ -1919,7 +2127,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
               >
                 {pendingAction === "classify" && isPending ? <InlineSpinner /> : null}
-                Aplicar clasificacion con este contexto
+                Recalcular clasificacion con este contexto
               </button>
             ) : null}
           </div>
@@ -2060,32 +2268,156 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             ? "La revision ya fue confirmada. Si necesitas volver a editar etapas o reasignar cuentas, primero reabre la revision."
             : "Solo cuando la clasificacion queda resuelta seguimos con posteo, confirmacion o reapertura."}
         </p>
-        {!isConfirmedReview && pageData.derived.validation.blockers.length > 0 ? (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
-            {pageData.derived.validation.blockers.join(" ")}
+
+        {!isConfirmedReview ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/65 p-4">
+              <p className="text-sm font-semibold">Checklist de cierre</p>
+              <div className="mt-4 space-y-3">
+                {decisionSnapshot.checklist.map((item) => {
+                  const tone = getChecklistToneClasses({
+                    done: item.done,
+                    severity: item.severity,
+                  });
+
+                  return (
+                    <div
+                      key={item.code}
+                      className={`rounded-2xl border px-4 py-3 text-sm ${tone.row}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">{item.label}</p>
+                          <p className="mt-2 text-[color:var(--color-muted)]">
+                            {item.explanation ?? "Sin detalle visible."}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone.badge}`}>
+                          {item.done ? "Resuelto" : "Pendiente"}
+                        </span>
+                      </div>
+                      {item.actionHint ? (
+                        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                          Accion sugerida: {item.actionHint}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/65 p-4">
+              <p className="text-sm font-semibold">Motivos de bloqueo y readiness</p>
+
+              <div className="mt-4 space-y-4">
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-4 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">Postear provisional</p>
+                      <p className="mt-2 text-[color:var(--color-muted)]">{provisionalGate.label}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      provisionalGate.ok ? "bg-emerald-100 text-emerald-950" : "bg-rose-100 text-rose-950"
+                    }`}>
+                      {provisionalGate.ok ? "Listo" : "Bloqueado"}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
+                  {!provisionalGate.ok && provisionalGate.missingConditions.length > 0 ? (
+                    <p className="mt-2 text-[color:var(--color-muted)]">
+                      Falta: {provisionalGate.missingConditions.join(", ")}.
+                    </p>
+                  ) : null}
+                  {!provisionalGate.ok && provisionalGate.actionHint ? (
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                      Accion sugerida: {provisionalGate.actionHint}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-4 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">Confirmar final</p>
+                      <p className="mt-2 text-[color:var(--color-muted)]">{finalGate.label}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      finalGate.ok ? "bg-emerald-100 text-emerald-950" : "bg-rose-100 text-rose-950"
+                    }`}>
+                      {finalGate.ok ? "Listo" : "Bloqueado"}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-[color:var(--color-muted)]">{finalGate.summary}</p>
+                  {!finalGate.ok && finalGate.missingConditions.length > 0 ? (
+                    <p className="mt-2 text-[color:var(--color-muted)]">
+                      Falta: {finalGate.missingConditions.join(", ")}.
+                    </p>
+                  ) : null}
+                  {!finalGate.ok && finalGate.actionHint ? (
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                      Accion sugerida: {finalGate.actionHint}
+                    </p>
+                  ) : null}
+                </div>
+
+                {decisionSnapshot.blockers.length > 0 ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+                    {decisionSnapshot.blockers.join(" ")}
+                  </div>
+                ) : decisionSnapshot.warnings.length > 0 ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    {decisionSnapshot.warnings.join(" ")}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                    No quedan blockers ni warnings visibles que impidan avanzar.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : null}
+
         <div className="mt-5 flex flex-wrap gap-3">
           {!isConfirmedReview ? (
             <>
               <button
                 type="button"
-                disabled={!pageData.canPostProvisional || isPending}
+                disabled={!decisionSnapshot.provisionalEligibility.ok || isPending}
                 onClick={() => {
                   runSimpleAction("post_provisional", postProvisionalDocumentAction);
                 }}
                 className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
+                title={
+                  decisionSnapshot.provisionalEligibility.ok
+                    ? "Documento listo para posting provisional"
+                    : buildActionableDecisionMessage({
+                      reasons: decisionSnapshot.provisionalEligibility.reasons,
+                      missingConditions: decisionSnapshot.provisionalEligibility.missingConditions,
+                      fallback: "Todavia no puede postearse en modo provisional.",
+                    })
+                }
               >
                 {pendingAction === "post_provisional" && isPending ? <InlineSpinner /> : null}
                 Postear provisional
               </button>
               <button
                 type="button"
-                disabled={!pageData.canConfirmFinal || isPending}
+                disabled={!decisionSnapshot.finalEligibility.ok || isPending}
                 onClick={() => {
                   runConfirmFinal();
                 }}
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm disabled:opacity-60`}
+                title={
+                  decisionSnapshot.finalEligibility.ok
+                    ? "Documento listo para confirmacion final"
+                    : buildActionableDecisionMessage({
+                      reasons: decisionSnapshot.finalEligibility.reasons,
+                      missingConditions: decisionSnapshot.finalEligibility.missingConditions,
+                      fallback: "Todavia no puede confirmarse en forma final.",
+                    })
+                }
               >
                 {pendingAction === "confirm_final" && isPending ? <InlineSpinner /> : null}
                 Confirmar final

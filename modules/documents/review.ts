@@ -79,6 +79,7 @@ import {
   canRunDocumentClassificationAction,
   deriveDocumentWorkflowState,
 } from "@/modules/documents/workflow-state";
+import { buildDocumentDecisionSnapshot } from "@/modules/documents/document-decision-snapshot";
 import {
   isDocumentProcessingStaleReason,
   reconcileStaleDocumentProcessingRuns,
@@ -430,6 +431,7 @@ export type DocumentReviewPageData = {
     }>;
   };
   workflowState: ReturnType<typeof deriveDocumentWorkflowState>;
+  decisionSnapshot: ReturnType<typeof buildDocumentDecisionSnapshot>;
   latestClassificationRun: Awaited<ReturnType<typeof loadLatestDocumentAssignmentRun>>;
   ruleExplanation: ReturnType<typeof buildRuleApplicationExplanation>;
   accountingImpactPreview: ReturnType<typeof buildAccountingImpactPreview>;
@@ -1379,6 +1381,53 @@ function buildDocumentReviewAccountRoleAssignments(input: {
     provenance: assignment.provenance,
     editable: assignment.editable,
   }));
+}
+
+function buildConfirmedManualRoleOverrides(
+  accountRoleAssignments: ReturnType<typeof buildDocumentReviewAccountRoleAssignments>,
+) {
+  return accountRoleAssignments.reduce((overrides, assignment) => {
+    if (!assignment.editable || !assignment.accountId) {
+      return overrides;
+    }
+
+    overrides[assignment.roleCode] = assignment.accountId;
+    return overrides;
+  }, {} as ManualAccountRoleOverrides);
+}
+
+async function recordDocumentReviewAuditEvent(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    actorId: string | null;
+    documentId: string;
+    action: string;
+    beforeJson?: Record<string, unknown> | null;
+    afterJson?: Record<string, unknown> | null;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const { error } = await supabase
+    .from("audit_log")
+    .insert({
+      organization_id: input.organizationId,
+      actor_user_id: input.actorId,
+      entity_type: "document_review",
+      entity_id: input.documentId,
+      action: input.action,
+      before_json: input.beforeJson ?? null,
+      after_json: input.afterJson ?? null,
+      metadata: input.metadata ?? {},
+    });
+
+  if (error && isMissingSupabaseRelationError(error, "audit_log")) {
+    return;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 function getOperationCategoryOptions(role: DocumentRoleCandidate) {
@@ -2682,6 +2731,18 @@ export async function loadDocumentReviewPageData(input: {
     accountRoleAssignments,
     certaintyConfidence: certaintySummary.confidence,
   });
+  const decisionSnapshot = buildDocumentDecisionSnapshot({
+    documentStatus: document.status,
+    postingStatus: document.posting_status,
+    draftStatus: draft.status,
+    steps,
+    derived,
+    workflowState,
+    latestClassificationRun,
+    accountRoleAssignments,
+    documentDate: facts.document_date ?? document.document_date,
+    duplicateStatus: invoiceIdentity.duplicateStatus,
+  });
 
   return {
     organizationId: input.organizationId,
@@ -2758,6 +2819,7 @@ export async function loadDocumentReviewPageData(input: {
     accountRoleAssignments,
     learningSuggestions,
     workflowState,
+    decisionSnapshot,
     latestClassificationRun,
     ruleExplanation,
     accountingImpactPreview,
@@ -2953,6 +3015,198 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     ok: true,
     status: derived.validation.canConfirm ? "ready_for_confirmation" : "open",
     blockers: derived.validation.blockers,
+  };
+}
+
+export async function confirmDocumentManualAssignment(input: {
+  organizationId: string;
+  documentId: string;
+  actorId: string | null;
+  manualRoleOverrides?: ManualAccountRoleOverrides | null;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const document = await loadDocumentRow(supabase, input.organizationId, input.documentId);
+  const draft = await loadCurrentDraft(supabase, document);
+  const facts = parseDraftFacts(draft.fields_json);
+  const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const lineItems = parseLineItems(draft.fields_json);
+  const operationCategory = getOperationCategoryValue(draft, facts);
+  const existingAccountingContext = await loadDocumentAccountingContext(supabase, draft.id);
+  const incomingManualSelectionPatch = normalizeDraftPatch({
+    accountingContext: {
+      manualRoleOverrides: normalizeManualRoleOverridesInput(input.manualRoleOverrides),
+    },
+  }).accountingContext;
+  const mergedAccountingContext = mergeStoredAccountingContext(
+    existingAccountingContext,
+    incomingManualSelectionPatch,
+    {
+      organizationId: input.organizationId,
+      documentId: input.documentId,
+      draftId: draft.id,
+    },
+  );
+  const [{ profileVersion, ruleSnapshot }, persistedInvoiceIdentity] = await Promise.all([
+    loadRuleSnapshot(supabase, document, draft, input.actorId),
+    loadDocumentInvoiceIdentity(supabase, document.id),
+  ]);
+  const invoiceIdentity = buildInvoiceIdentityResult({
+    facts,
+    persistedDuplicateStatus: persistedInvoiceIdentity?.duplicate_status ?? null,
+    persistedDuplicateOfDocumentId: persistedInvoiceIdentity?.duplicate_of_document_id ?? null,
+    persistedDuplicateReason: persistedInvoiceIdentity?.duplicate_reason ?? null,
+  });
+  const accountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
+    intakeContext: draft.intake_context_json,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    invoiceIdentity,
+    storedContext: mergedAccountingContext,
+    runAssistant: false,
+  });
+  const accountRoleAssignments = buildDocumentReviewAccountRoleAssignments({
+    documentRole: draft.document_role,
+    facts,
+    derived: accountingState.derived,
+    accounts: accountingState.runtimeContext.accounts,
+    accountRoleBindings: accountingState.runtimeContext.accountRoleBindings,
+  });
+  const nextManualRoleOverrides = buildConfirmedManualRoleOverrides(accountRoleAssignments);
+  const primaryRoleAssignment =
+    accountRoleAssignments.find((assignment) => assignment.linePurpose === "main")
+    ?? accountRoleAssignments.find((assignment) =>
+      [
+        "revenue_account",
+        "expense_account",
+        "inventory_account",
+        "fixed_asset_account",
+      ].includes(assignment.roleCode),
+    )
+    ?? null;
+
+  if (!primaryRoleAssignment?.accountId) {
+    return {
+      ok: false,
+      message: "Todavia falta una cuenta principal definida antes de confirmar la asignacion manual.",
+    };
+  }
+
+  const beforeStructuredContext = asRecord(existingAccountingContext?.structured_context_json);
+  const confirmedManualPatch = normalizeDraftPatch({
+    accountingContext: {
+      manualOverrideAccountId: primaryRoleAssignment.accountId,
+      manualRoleOverrides: nextManualRoleOverrides,
+    },
+  }).accountingContext;
+  const confirmedAccountingContext = mergeStoredAccountingContext(
+    existingAccountingContext,
+    confirmedManualPatch,
+    {
+      organizationId: input.organizationId,
+      documentId: input.documentId,
+      draftId: draft.id,
+    },
+  );
+  const confirmedAccountingState = await deriveDocumentAccountingState({
+    supabase,
+    organizationId: input.organizationId,
+    documentId: document.id,
+    draftId: draft.id,
+    actorId: input.actorId,
+    documentRole: draft.document_role,
+    documentType: draft.document_type,
+    intakeContext: draft.intake_context_json,
+    facts,
+    amountBreakdown,
+    lineItems,
+    operationCategory,
+    profile: buildOrganizationFiscalProfile(profileVersion),
+    ruleSnapshot: buildRuleSnapshotContext(ruleSnapshot),
+    invoiceIdentity,
+    storedContext: confirmedAccountingContext,
+    runAssistant: false,
+  });
+
+  await persistDraftArtifacts(
+    supabase,
+    document,
+    draft,
+    input.actorId,
+    confirmedAccountingState.derived,
+  );
+  const { error: autosaveError } = await supabase
+    .from("document_draft_autosaves")
+    .insert({
+      draft_id: draft.id,
+      step_code: "accounting_context",
+      payload_patch_json: {
+        accountingContext: {
+          manualOverrideAccountId: primaryRoleAssignment.accountId,
+          manualRoleOverrides: nextManualRoleOverrides,
+          resolutionSource: "manual_confirmation",
+        },
+      },
+      saved_by: input.actorId,
+    });
+
+  if (autosaveError) {
+    throw new Error(autosaveError.message);
+  }
+  await recordDocumentReviewAuditEvent(supabase, {
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    documentId: document.id,
+    action: "manual_assignment_confirmed",
+    beforeJson: {
+      manual_override_account_id: asString(beforeStructuredContext.manual_override_account_id),
+      manual_role_overrides: asRecord(beforeStructuredContext.manual_role_overrides),
+    },
+    afterJson: {
+      manual_override_account_id: primaryRoleAssignment.accountId,
+      manual_role_overrides: nextManualRoleOverrides,
+    },
+    metadata: {
+      draft_id: draft.id,
+      posting_status: document.posting_status,
+      resolved_roles_count: Object.keys(nextManualRoleOverrides).length,
+      primary_role_code: primaryRoleAssignment.roleCode,
+      primary_role_account_id: primaryRoleAssignment.accountId,
+    },
+  });
+  await markDocumentAssignmentRunsStale(supabase, {
+    documentId: document.id,
+  });
+  await resolveAssistantSuggestionsForTarget(supabase, {
+    organizationId: document.organization_id,
+    targetKind: "document",
+    targetId: document.id,
+    resolutionStatus: "edited",
+    resolvedByProfileId: input.actorId,
+    resolutionComment: "La asignacion efectiva del documento se consolido manualmente.",
+  });
+  await markDocumentAssistantThreadStale(supabase, {
+    organizationId: document.organization_id,
+    documentId: document.id,
+    reason: "manual_assignment_confirmed",
+  });
+
+  return {
+    ok: true,
+    message:
+      confirmedAccountingState.derived.validation.blockers.length > 0
+        ? "Asignacion manual confirmada. El documento ya cuenta con resolucion manual, pero todavia quedan otras condiciones por resolver."
+        : "Asignacion manual confirmada. La resolucion pasa a revision manual y se recalcularon los blockers del documento.",
   };
 }
 

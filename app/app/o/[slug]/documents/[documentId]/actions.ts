@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import type { ManualAccountRoleOverrides } from "@/modules/accounting";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { approveDocumentLearning } from "@/modules/accounting/learning-approval-service";
 import { runDocumentClassification } from "@/modules/accounting/classification-runner";
@@ -13,6 +14,7 @@ import { confirmDocumentFinal } from "@/modules/documents/confirm-final-service"
 import { postDocumentProvisional } from "@/modules/documents/post-provisional-service";
 import { reopenDocumentForRemap } from "@/modules/documents/reopen-remap-service";
 import {
+  confirmDocumentManualAssignment,
   confirmDocumentReview,
   createDocumentReviewOverrideAccount,
   resolveDocumentDuplicate,
@@ -97,6 +99,36 @@ export async function confirmDocumentReviewAction(input: {
   revalidatePath(paths.review);
   revalidatePath(paths.tax);
   revalidatePath(paths.journalEntries);
+
+  return result;
+}
+
+export async function confirmDocumentManualAssignmentAction(input: {
+  slug: string;
+  documentId: string;
+  manualRoleOverrides?: ManualAccountRoleOverrides | null;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede confirmar asignaciones manuales.",
+    };
+  }
+
+  const result = await confirmDocumentManualAssignment({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    manualRoleOverrides: input.manualRoleOverrides ?? null,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+  revalidatePath(paths.tax);
 
   return result;
 }

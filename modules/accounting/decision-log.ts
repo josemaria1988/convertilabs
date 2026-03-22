@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DocumentIntakeOutput } from "@/modules/ai/document-intake-contract";
+import { hasManualClassificationResolution } from "@/modules/accounting/manual-resolution";
 import type { DerivedDraftArtifacts, ResolvedAccountingRule } from "@/modules/accounting/types";
 import type { TransactionFamilyResolution } from "@/modules/accounting/transaction-family-resolution";
 import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
@@ -150,10 +151,7 @@ export function resolveDecisionSourceFromAppliedRule(input: {
   appliedRule: ResolvedAccountingRule;
   derived: DerivedDraftArtifacts;
 }) {
-  if (
-    input.derived.accountingContext.manualOverrideAccountId
-    || input.derived.accountingContext.manualOverrideOperationCategory
-  ) {
+  if (hasManualClassificationResolution(input.derived.accountingContext)) {
     return "manual_override" satisfies AIDecisionSource;
   }
 

@@ -2,18 +2,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { buildAccountingMonthRange } from "@/modules/accounting/periods";
 import type { DocumentPostingStatus } from "@/modules/accounting";
-
-type JsonRecord = Record<string, unknown>;
-
-type DraftPreviewRow = {
-  id: string;
-  document_id: string;
-  document_role: "purchase" | "sale" | "other";
-  fields_json: JsonRecord | null;
-  tax_treatment_json: JsonRecord | null;
-};
+import { loadVatPeriodUniverse } from "@/modules/tax/vat-period-universe";
 
 type OfficialVatRunRow = {
   id: string;
@@ -62,158 +52,8 @@ export type VatRunPreview = {
   generatedAt: string;
 };
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
-    : {};
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function asNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
-}
-
-function getDraftFacts(fieldsJson: JsonRecord | null) {
-  return asRecord(asRecord(fieldsJson).facts);
-}
-
-function buildPreviewSnapshot(draft: DraftPreviewRow): VatRunPreviewSnapshot | null {
-  const facts = getDraftFacts(draft.fields_json);
-  const documentDate = asString(facts.document_date);
-
-  if (!documentDate) {
-    return null;
-  }
-
-  const taxJson = asRecord(draft.tax_treatment_json);
-
-  return {
-    documentId: draft.document_id,
-    draftId: draft.id,
-    role: draft.document_role,
-    documentDate,
-    vatBucket:
-      asString(taxJson.vat_bucket)
-      ?? asString(taxJson.vatBucket)
-      ?? asString(asRecord(taxJson.determination).vat_bucket),
-    taxableAmount:
-      asNumber(taxJson.taxable_amount_uyu)
-      ?? asNumber(taxJson.taxableAmountUyu)
-      ?? asNumber(facts.subtotal)
-      ?? 0,
-    taxAmount:
-      asNumber(taxJson.tax_amount_uyu)
-      ?? asNumber(taxJson.taxAmountUyu)
-      ?? asNumber(facts.tax_amount)
-      ?? 0,
-    reviewFlags: [
-      ...asStringArray(taxJson.warnings),
-      ...asStringArray(taxJson.blockingReasons),
-    ],
-  };
-}
-
-async function loadDraftsForStatuses(
-  supabase: SupabaseClient,
-  organizationId: string,
-  includeStatuses: DocumentPostingStatus[],
-) {
-  const { data: documents, error: documentsError } = await supabase
-    .from("documents")
-    .select("id, current_draft_id, posting_status, document_date")
-    .eq("organization_id", organizationId)
-    .in("posting_status", includeStatuses);
-
-  if (documentsError) {
-    throw new Error(documentsError.message);
-  }
-
-  const draftIds = (((documents as Array<{
-    current_draft_id: string | null;
-  }> | null) ?? []))
-    .map((row) => row.current_draft_id)
-    .filter((value): value is string => Boolean(value));
-
-  if (draftIds.length === 0) {
-    return [];
-  }
-
-  const { data: drafts, error: draftsError } = await supabase
-    .from("document_drafts")
-    .select("id, document_id, document_role, fields_json, tax_treatment_json")
-    .in("id", draftIds);
-
-  if (draftsError) {
-    throw new Error(draftsError.message);
-  }
-
-  return (drafts as DraftPreviewRow[] | null) ?? [];
-}
-
-async function loadExcludedDocuments(
-  supabase: SupabaseClient,
-  organizationId: string,
-  period: string,
-  includeStatuses: DocumentPostingStatus[],
-) {
-  const periodRange = buildAccountingMonthRange(period);
-
-  if (!periodRange) {
-    return [];
-  }
-
-  const periodStart = periodRange.startDate;
-  const periodEnd = periodRange.endDate;
-  const { data, error } = await supabase
-    .from("documents")
-    .select("id, posting_status, current_draft_id, document_date")
-    .eq("organization_id", organizationId)
-    .gte("document_date", periodStart)
-    .lte("document_date", periodEnd);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (((data as Array<{
-    id: string;
-    posting_status: DocumentPostingStatus | null;
-    current_draft_id: string | null;
-    document_date: string | null;
-  }> | null) ?? [])).flatMap((row) => {
-    if (!row.document_date?.startsWith(period)) {
-      return [];
-    }
-
-    if (!row.current_draft_id) {
-      return [{
-        documentId: row.id,
-        reason: "No tiene draft actual listo para entrar en la simulacion.",
-      }];
-    }
-
-    if (!row.posting_status || !includeStatuses.includes(row.posting_status)) {
-      return [{
-        documentId: row.id,
-        reason: `Estado de posteo fuera del preview: ${row.posting_status ?? "sin_posting_status"}.`,
-      }];
-    }
-
-    return [];
-  });
 }
 
 async function loadLatestOfficialVatRun(
@@ -259,19 +99,29 @@ export async function buildVatRunPreview(input: {
   includeStatuses?: DocumentPostingStatus[];
 }) {
   const supabase = getSupabaseServiceRoleClient();
-  const includeStatuses = input.includeStatuses ?? ["posted_provisional", "posted_final"];
+  const includeStatuses = input.includeStatuses ?? ["vat_ready", "posted_provisional", "posted_final"];
   const period = `${input.year}-${String(input.month).padStart(2, "0")}`;
-  const drafts = await loadDraftsForStatuses(supabase, input.organizationId, includeStatuses);
-  const includedDocuments = drafts
-    .map((draft) => buildPreviewSnapshot(draft))
-    .filter((snapshot): snapshot is VatRunPreviewSnapshot => snapshot !== null)
-    .filter((snapshot) => snapshot.documentDate.startsWith(period));
-  const excludedDocuments = await loadExcludedDocuments(
-    supabase,
-    input.organizationId,
+  const universe = await loadVatPeriodUniverse(supabase, {
+    organizationId: input.organizationId,
     period,
-    includeStatuses,
-  );
+  });
+  const includedDocuments = universe.documents
+    .filter((document) =>
+      document.previewDecision.ok
+      && document.postingStatus !== null
+      && includeStatuses.includes(document.postingStatus),
+      )
+    .map((document) => ({
+      documentId: document.documentId,
+      draftId: document.draftId ?? `missing-draft-${document.documentId}`,
+      role: document.role,
+      documentDate: document.documentDate ?? period,
+      vatBucket: document.vatBucket,
+      taxableAmount: document.taxableAmountUyu,
+      taxAmount: document.taxAmountUyu,
+      reviewFlags: document.reviewFlags,
+    } satisfies VatRunPreviewSnapshot));
+  const excludedDocuments = universe.excludedFromVatPreview;
   const totals = includedDocuments.reduce(
     (accumulator, document) => {
       if (document.role === "sale") {
