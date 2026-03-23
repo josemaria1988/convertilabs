@@ -25,6 +25,24 @@ test("decision gate view exposes the blocking reason and suggested action", () =
   assert.equal(gate.actionHint, "Resolver clasificacion");
 });
 
+test("decision gate view prioritizes fiscal FX guidance over generic blocker copy", () => {
+  const gate = buildDecisionGateView({
+    decision: {
+      ok: false,
+      reasons: ["No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal previo al 2026-03-12."],
+      missingConditions: ["Sin bloqueos criticos"],
+    },
+    readyLabel: "Puede confirmar final",
+    blockedLabel: "Todavia no puede confirmar final",
+    readySummary: "Listo para final.",
+    blockedSummary: "Todavia faltan condiciones para la confirmacion final.",
+  });
+
+  assert.equal(gate.ok, false);
+  assert.match(gate.summary, /cotizacion bcu/i);
+  assert.equal(gate.actionHint, "Resolver tipo de cambio fiscal");
+});
+
 test("document operational header uses canonical language from the snapshot", () => {
   const header = buildDocumentOperationalHeaderView({
     workflowState: "pending_assignment",

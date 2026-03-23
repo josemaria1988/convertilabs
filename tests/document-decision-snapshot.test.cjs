@@ -11,6 +11,7 @@ const {
 const {
   formatCanonicalWorkflowStateLabel,
   formatCanonicalResolutionSourceLabel,
+  inferBlockingActionHintFromReasons,
 } = require("@/modules/presentation/product-language");
 
 function buildDerived(overrides = {}) {
@@ -269,4 +270,10 @@ test("canonical language formats stable workflow and source labels", () => {
   assert.equal(formatCanonicalWorkflowStateLabel("pending_assignment"), "Pendiente de asignacion");
   assert.equal(formatCanonicalResolutionSourceLabel("manual"), "Revision manual");
   assert.equal(formatCanonicalResolutionSourceLabel("unknown"), "Pendiente");
+  assert.equal(
+    inferBlockingActionHintFromReasons([
+      "No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal previo al 2026-03-12.",
+    ]),
+    "Resolver tipo de cambio fiscal",
+  );
 });

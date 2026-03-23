@@ -6,7 +6,10 @@ import type {
 } from "@/modules/accounting";
 import { hasManualClassificationResolution } from "@/modules/accounting/manual-resolution";
 import type { DocumentWorkflowState } from "@/modules/documents/workflow-state";
-import { formatCanonicalNextActionLabel } from "@/modules/presentation/product-language";
+import {
+  formatCanonicalNextActionLabel,
+  inferBlockingActionHintFromReasons,
+} from "@/modules/presentation/product-language";
 import type {
   CanonicalResolutionSource,
   CanonicalWorkflowState,
@@ -270,7 +273,9 @@ function buildChecklist(input: {
       explanation: input.blockers.length === 0
         ? "No quedan bloqueos activos."
         : input.blockers.join(" "),
-      actionHint: input.blockers.length === 0 ? undefined : "Resolver blockers visibles",
+      actionHint: input.blockers.length === 0
+        ? undefined
+        : inferBlockingActionHintFromReasons(input.blockers) ?? "Resolver blockers visibles",
     },
     {
       code: "provisional_ready",

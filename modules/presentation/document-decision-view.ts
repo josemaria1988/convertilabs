@@ -8,6 +8,7 @@ import {
   formatCanonicalResolutionSourceLabel,
   formatCanonicalWorkflowStateLabel,
   formatCanonicalWorkflowStateSummary,
+  inferBlockingActionHintFromReasons,
 } from "@/modules/presentation/product-language";
 
 type DecisionTone = "success" | "warning" | "blocking";
@@ -64,6 +65,12 @@ function formatConfidenceLabel(value: number | null) {
 }
 
 function resolveActionHint(decision: EligibilityDecision) {
+  const blockerActionHint = inferBlockingActionHintFromReasons(decision.reasons);
+
+  if (blockerActionHint) {
+    return blockerActionHint;
+  }
+
   const firstMissingCondition = decision.missingConditions[0] ?? null;
 
   if (firstMissingCondition && MISSING_CONDITION_ACTIONS[firstMissingCondition]) {

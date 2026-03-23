@@ -76,6 +76,35 @@ function normalizePositiveRate(value: number | null | undefined) {
     : null;
 }
 
+function buildBcuLookupUnavailableReason(documentDate: string | null | undefined) {
+  return documentDate
+    ? `No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal previo al ${documentDate}.`
+    : "No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal de este documento.";
+}
+
+function isGenericFxFetchFailureMessage(value: string) {
+  return /fetch failed|failed to fetch|networkerror|network request failed|socket hang up|econnreset|enotfound|etimedout|timeout/i
+    .test(value);
+}
+
+function normalizeFxLookupBlockingReason(input: {
+  error: unknown;
+  documentDate: string | null | undefined;
+  fallbackBlockingReason: string;
+}) {
+  if (!(input.error instanceof Error) || !input.error.message.trim()) {
+    return input.fallbackBlockingReason;
+  }
+
+  const message = input.error.message.trim();
+
+  if (isGenericFxFetchFailureMessage(message)) {
+    return buildBcuLookupUnavailableReason(input.documentDate);
+  }
+
+  return message;
+}
+
 function isPersistedDocumentFxSource(value: string | null): value is PersistedDocumentFxSource {
   return value === "document_import" || value === "bcu";
 }
@@ -225,9 +254,11 @@ export async function resolveFiscalFxPolicy(input: {
     });
   } catch (error) {
     blockingReasons.push(
-      error instanceof Error && error.message
-        ? error.message
-        : fallbackBlockingReason,
+      normalizeFxLookupBlockingReason({
+        error,
+        documentDate,
+        fallbackBlockingReason,
+      }),
     );
   }
 

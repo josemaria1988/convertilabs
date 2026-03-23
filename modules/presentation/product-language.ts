@@ -78,6 +78,32 @@ const RESOLUTION_SOURCE_LANGUAGE: Record<CanonicalResolutionSource, string> = {
   unknown: "Pendiente",
 };
 
+function normalizeReasonText(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+export function isFiscalFxBlockingReason(value: string | null | undefined) {
+  const normalized = normalizeReasonText(value);
+
+  return (
+    normalized.includes("mising_fx_rate")
+    || normalized.includes("missing_fx_rate")
+    || normalized.includes("cotizacion bcu")
+    || normalized.includes("tipo de cambio fiscal")
+    || normalized.includes("sin cotizacion")
+  );
+}
+
+export function inferBlockingActionHintFromReasons(
+  reasons: Array<string | null | undefined>,
+) {
+  if (reasons.some((reason) => isFiscalFxBlockingReason(reason))) {
+    return "Resolver tipo de cambio fiscal";
+  }
+
+  return null;
+}
+
 export function formatCanonicalWorkflowStateLabel(
   value: CanonicalWorkflowState | null | undefined,
 ) {
