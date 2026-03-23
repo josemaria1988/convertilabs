@@ -330,6 +330,7 @@ export async function saveDocumentLearningRuleAction(input: {
     return {
       ok: false,
       message: "Tu rol no puede guardar criterios reusables.",
+      ruleId: null,
     };
   }
 

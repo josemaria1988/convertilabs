@@ -264,7 +264,9 @@ export async function runDocumentClassificationFromListAction(input: {
 
   return {
     ok: result.ok,
-    message: result.message,
+    message: result.ok
+      ? "Criterios activos reaplicados sobre este documento."
+      : result.message,
   };
 }
 
@@ -290,7 +292,7 @@ export async function runSelectedDocumentClassificationFromListAction(input: {
       ok: false,
       completedCount: 0,
       failedCount: 0,
-      message: "Selecciona al menos un documento listo para clasificar.",
+      message: "Selecciona al menos un documento listo para reaplicar criterios.",
     };
   }
 
@@ -301,7 +303,7 @@ export async function runSelectedDocumentClassificationFromListAction(input: {
       ok: false,
       completedCount: 0,
       failedCount: uniqueDocumentIds.length,
-      message: "No encontramos documentos validos de esta organizacion para clasificar.",
+      message: "No encontramos documentos validos de esta organizacion para reaplicar criterios.",
     };
   }
 
@@ -325,7 +327,7 @@ export async function runSelectedDocumentClassificationFromListAction(input: {
       ok: false,
       completedCount,
       failedCount,
-      message: failedMessages[0] ?? "No pudimos clasificar los documentos seleccionados.",
+      message: failedMessages[0] ?? "No pudimos reaplicar criterios a los documentos seleccionados.",
     };
   }
 
@@ -338,7 +340,7 @@ export async function runSelectedDocumentClassificationFromListAction(input: {
     ok: failedCount === 0,
     completedCount,
     failedCount,
-    message: `${completedCount}/${uniqueDocumentIds.length} documento(s) quedaron clasificados.${failureSuffix}`.trim(),
+    message: `${completedCount}/${uniqueDocumentIds.length} documento(s) reevaluados con criterios activos.${failureSuffix}`.trim(),
   };
 }
 

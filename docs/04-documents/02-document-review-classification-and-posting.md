@@ -6,6 +6,7 @@ Tomar un draft ya extraido, revisarlo, clasificarlo contable y fiscalmente, perm
 
 ## Superficies activas
 
+- `components/documents/document-review-staged-workspace.tsx`
 - `components/documents/document-review-workspace.tsx`
 - `components/documents/rule-application-card.tsx`
 - `components/documents/accounting-impact-preview.tsx`
@@ -75,6 +76,12 @@ El usuario ve:
 
 Separado del posting principal. El usuario puede guardar o no un criterio reusable.
 
+La superficie staged ahora lo hace visible como decision explicita:
+
+- `Resolver solo este documento` mantiene la resolucion dentro del draft actual;
+- `Guardar como criterio` llama `learning-approval-service.ts` y crea una regla reusable visible en `accounting_rules`;
+- la bandeja documental reaplica esos criterios guardados en lote cuando el usuario ejecuta la accion correspondiente.
+
 ### 7. Posting
 
 Estados de posting soportados:
@@ -103,6 +110,7 @@ Y existe reapertura controlada.
 El reviewer ya puede ver:
 
 - regla aplicada;
+- alcance de aprendizaje reusable sugerido;
 - decision comment;
 - warnings y blockers;
 - rationale del assistant;

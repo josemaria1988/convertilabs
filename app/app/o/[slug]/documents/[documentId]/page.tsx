@@ -26,6 +26,7 @@ import {
   runDocumentClassificationAction,
   resolveDocumentDuplicateAction,
   saveDocumentDraftReviewAction,
+  saveDocumentLearningRuleAction,
 } from "./actions";
 
 type DocumentReviewPageProps = {
@@ -200,6 +201,14 @@ export default async function DocumentReviewPage({
         createReviewAccountAction={async (payload) => {
           "use server";
           return createDocumentReviewOverrideAccountAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        saveLearningRuleAction={async (payload) => {
+          "use server";
+          return saveDocumentLearningRuleAction({
             slug,
             documentId,
             ...payload,

@@ -9,10 +9,12 @@ import type {
 import { AccountingImpactPreview } from "@/components/documents/accounting-impact-preview";
 import { DocumentAccountingAssistantRail } from "@/components/documents/document-accounting-assistant-rail";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import { RuleApplicationCard } from "@/components/documents/rule-application-card";
 import { SettlementMethodCard } from "@/components/documents/settlement-method-card";
 import { TemplatePreviewCard } from "@/components/documents/template-preview-card";
 import type {
   AccountRoleCode,
+  ApprovalLearningInput,
   ManualAccountRoleOverrides,
 } from "@/modules/accounting";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
@@ -79,6 +81,14 @@ type ReviewSimpleAction = () => Promise<{
   message: string;
 }>;
 
+type SaveLearningRuleAction = (input: {
+  learning: ApprovalLearningInput;
+}) => Promise<{
+  ok: boolean;
+  message: string;
+  ruleId: string | null;
+}>;
+
 type ResolveAssistantSuggestionAction = (input: {
   suggestionId: string;
   resolutionStatus: "accepted" | "rejected" | "edited";
@@ -136,6 +146,7 @@ export type DocumentReviewWorkspaceProps = {
   confirmFinalDocumentAction: ConfirmFinalDocumentAction;
   confirmManualAssignmentAction: ConfirmManualAssignmentAction;
   createReviewAccountAction: CreateReviewAccountAction;
+  saveLearningRuleAction: SaveLearningRuleAction;
   resolveDuplicateAction: ResolveDuplicateAction;
   runClassificationAction: ReviewSimpleAction;
   reopenDocumentAction: ReviewSimpleAction;
@@ -158,6 +169,7 @@ type PendingAction =
   | "confirm_manual_assignment"
   | "post_provisional"
   | "confirm_final"
+  | "save_learning"
   | "reopen"
   | null;
 
@@ -662,6 +674,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     confirmFinalDocumentAction,
     confirmManualAssignmentAction,
     createReviewAccountAction,
+    saveLearningRuleAction,
     resolveDuplicateAction,
     runClassificationAction,
     reopenDocumentAction,
@@ -712,6 +725,14 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     code: "",
     name: "",
   });
+  const [learningScope, setLearningScope] = useState<ApprovalLearningInput["scope"]>(
+    pageData.learningSuggestions.recommendedScope,
+  );
+  const [learnedConceptName, setLearnedConceptName] = useState(
+    pageData.derived.accountingContext.learnedConceptName
+    ?? pageData.learningSuggestions.suggestedConceptName
+    ?? "",
+  );
   const [sectionStatus, setSectionStatus] = useState<SectionStatusMap>({
     manualStage1: "",
     accounting: "",
@@ -757,6 +778,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         ?? pageData.derived.settlementContext.settlementEvidenceSource,
     });
     setAvailableAccounts(pageData.accountingOptions.accounts);
+    setLearningScope(pageData.learningSuggestions.recommendedScope);
+    setLearnedConceptName(
+      pageData.derived.accountingContext.learnedConceptName
+      ?? pageData.learningSuggestions.suggestedConceptName
+      ?? "",
+    );
     if (pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final") {
       setShowManualFlow(false);
       setShowCreateAccountStage(false);
@@ -1094,6 +1121,42 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     });
   }
 
+  function runSaveLearningRule() {
+    const selectedLearningOption = pageData.learningSuggestions.options.find((option) =>
+      option.scope === learningScope);
+
+    if (learningScope === "none") {
+      setActionMessage("Selecciona un criterio reusable antes de guardarlo.");
+      return;
+    }
+
+    if (selectedLearningOption?.requiresConceptName && !learnedConceptName.trim()) {
+      setActionMessage("Escribe un nombre canonico para el criterio antes de guardarlo.");
+      return;
+    }
+
+    setPendingAction("save_learning");
+    setActionMessage("Guardando criterio reusable...");
+    startTransition(async () => {
+      try {
+        const result = await saveLearningRuleAction({
+          learning: {
+            scope: learningScope,
+            learnedConceptName: learnedConceptName.trim() || null,
+          },
+        });
+        setActionMessage(result.message);
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setActionMessage(error instanceof Error ? error.message : "Error inesperado.");
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
   function runDuplicateResolution(
     action: "confirmed_duplicate" | "false_positive" | "justified_non_duplicate",
   ) {
@@ -1247,6 +1310,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     && showManualFlow
     && manualAssignmentReady
     && decisionSnapshot.resolutionSource !== "manual";
+  const selectedLearningOption = pageData.learningSuggestions.options.find((option) =>
+    option.scope === learningScope) ?? null;
+  const canSaveLearningRuleNow =
+    pageData.canSaveLearningRule
+    && learningScope !== "none"
+    && (!selectedLearningOption?.requiresConceptName || learnedConceptName.trim().length > 0);
 
   return (
     <div className="space-y-6">
@@ -2188,6 +2257,169 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             >
               Cancelar
             </button>
+          </div>
+        </section>
+      ) : null}
+
+      {!isConfirmedReview ? (
+        <section className="panel p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
+            Paso 5
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
+            Decidir aprendizaje
+          </h3>
+          <p className="mt-2 max-w-4xl text-sm leading-7 text-[color:var(--color-muted)]">
+            Resolver un documento no es lo mismo que ensenarle un criterio reusable al sistema.
+            Este paso hace visible esa diferencia y deja claro si la decision queda solo en este
+            draft o si pasa a formar parte de las reglas que podras reaplicar despues.
+          </p>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                  Resolver solo este documento
+                </p>
+                <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+                  La asignacion manual consolida esta revision puntual. No crea una regla reusable
+                  ni afecta automaticamente otros comprobantes del mismo proveedor o concepto.
+                </p>
+                <p className="mt-3 text-sm font-semibold text-slate-100">
+                  {decisionSnapshot.resolutionSource === "manual"
+                    ? "La resolucion visible ya quedo consolidada como revision manual."
+                    : shouldShowManualAssignmentCta
+                      ? "Todavia puedes confirmar manualmente esta asignacion antes de decidir si la guardas como criterio."
+                      : "Este documento ya tiene una fuente de resolucion visible y no necesita otra confirmacion manual ahora mismo."}
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                      Guardar criterio para similares
+                    </p>
+                    <h4 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-white">
+                      Convertir esta resolucion en regla visible
+                    </h4>
+                  </div>
+                  {pageData.canSaveLearningRule ? (
+                    <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
+                      Listo para guardar
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-100">
+                      Aun no habilitado
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+                  Elige el alcance del criterio reusable. Esto si afecta futuras clasificaciones y
+                  convierte el aprendizaje en una regla gobernable por el equipo.
+                </p>
+
+                {pageData.learningSuggestions.options.length > 0 ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {pageData.learningSuggestions.options.map((option) => (
+                      <button
+                        key={option.scope}
+                        type="button"
+                        onClick={() => {
+                          setLearningScope(option.scope);
+                          if (
+                            !learnedConceptName.trim()
+                            && pageData.learningSuggestions.suggestedConceptName
+                          ) {
+                            setLearnedConceptName(pageData.learningSuggestions.suggestedConceptName);
+                          }
+                        }}
+                        className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                          learningScope === option.scope
+                            ? "border-transparent bg-[color:var(--color-accent)] text-white"
+                            : "border-[color:var(--color-border)] bg-white/80"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-medium">{option.label}</span>
+                          {option.recommended ? (
+                            <span className="rounded-full bg-black/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
+                              recomendado
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className={`mt-2 leading-6 ${
+                          learningScope === option.scope
+                            ? "text-white/85"
+                            : "text-[color:var(--color-muted)]"
+                        }`}>
+                          {option.reason}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-[color:var(--color-border)] px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                    Todavia no hay una resolucion reusable suficientemente estable para convertir
+                    en criterio. Primero deja el documento bien resuelto y luego vuelve a este paso.
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium">Nombre canonico del criterio</span>
+                    <input
+                      value={learnedConceptName}
+                      onChange={(event) => {
+                        setLearnedConceptName(event.target.value);
+                      }}
+                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                      placeholder={pageData.learningSuggestions.suggestedConceptName ?? "Ej. Servicios administrativos"}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!canSaveLearningRuleNow || isPending}
+                    onClick={() => {
+                      runSaveLearningRule();
+                    }}
+                    className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} self-end px-4 py-3 text-sm disabled:opacity-60`}
+                  >
+                    {pendingAction === "save_learning" && isPending ? <InlineSpinner /> : null}
+                    Guardar como criterio
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  {selectedLearningOption
+                    ? `Alcance seleccionado: ${selectedLearningOption.label}. ${selectedLearningOption.reason}`
+                    : "Selecciona un alcance reusable antes de guardar el criterio."}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                  Aplicar en lote desde la bandeja
+                </p>
+                <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+                  Despues de guardar el criterio, la bandeja documental puede reaplicar criterios
+                  guardados a varios documentos seleccionados. Esa accion reejecuta la
+                  clasificacion con las reglas activas; no confirma ni postea documentos por si sola.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <LoadingLink
+                    href={`/app/o/${pageData.organizationSlug}/documents`}
+                    pendingLabel="Abriendo bandeja..."
+                    className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
+                  >
+                    Ir a bandeja documental
+                  </LoadingLink>
+                </div>
+              </div>
+            </div>
+
+            <RuleApplicationCard explanation={pageData.ruleExplanation} />
           </div>
         </section>
       ) : null}

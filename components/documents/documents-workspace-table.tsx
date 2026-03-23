@@ -277,7 +277,7 @@ export function DocumentsWorkspaceTable({
     if (selectedClassifiableIds.length === 0) {
       setNotice({
         tone: "error",
-        message: "Selecciona al menos un documento listo para clasificar.",
+        message: "Selecciona al menos un documento listo para reaplicar criterios.",
       });
       return;
     }
@@ -301,7 +301,7 @@ export function DocumentsWorkspaceTable({
     } catch (error) {
       setNotice({
         tone: "error",
-        message: error instanceof Error ? error.message : "No pudimos clasificar la seleccion.",
+        message: error instanceof Error ? error.message : "No pudimos reaplicar criterios a la seleccion.",
       });
     } finally {
       setBusyAction(null);
@@ -349,7 +349,7 @@ export function DocumentsWorkspaceTable({
     } catch (error) {
       setNotice({
         tone: "error",
-        message: error instanceof Error ? error.message : "No pudimos ejecutar la clasificacion contable.",
+        message: error instanceof Error ? error.message : "No pudimos reaplicar criterios sobre este documento.",
       });
     } finally {
       setBusyAction(null);
@@ -458,7 +458,7 @@ export function DocumentsWorkspaceTable({
         <div>
           <h2 className="text-[16px] font-semibold text-white">Bandeja operativa</h2>
           <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-            Selecciona varios documentos para extraer o clasificar en lote desde la misma bandeja.
+            Selecciona varios documentos para extraer o reaplicar criterios guardados desde la misma bandeja.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -486,7 +486,7 @@ export function DocumentsWorkspaceTable({
               void handleClassifySelected();
             }}
           >
-            {busyAction === "classify:selected" ? "Clasificando..." : "Clasificar seleccionados"}
+            {busyAction === "classify:selected" ? "Aplicando criterios..." : "Aplicar criterios guardados"}
           </button>
           <button
             type="button"
@@ -508,6 +508,14 @@ export function DocumentsWorkspaceTable({
           </div>
         </div>
       ) : null}
+
+      <div className="border-b border-[color:var(--color-border)] px-4 py-3">
+        <div className="rounded-[14px] border border-[color:var(--color-border)] bg-white/5 px-4 py-3 text-[13px] text-[color:var(--color-muted)]">
+          <span className="font-semibold text-white">Aprendizaje visible:</span> aplicar criterios guardados
+          {" "}reejecuta la clasificacion con reglas activas, decisiones aprendidas e IA. No confirma,
+          no postea y no crea reglas nuevas por si solo.
+        </div>
+      </div>
 
       {hasMissingFxDocuments ? (
         <div className="border-b border-[color:var(--color-border)] px-4 py-3">
@@ -676,11 +684,11 @@ export function DocumentsWorkspaceTable({
                             }}
                           >
                             {classifyBusy
-                              ? "Clasificando..."
+                              ? "Aplicando..."
                               : document.classificationStatus === "failed"
                                   || document.classificationStatus === "stale"
-                                ? "Reintentar clasificacion"
-                                : "Clasificar"}
+                                ? "Reaplicar criterios"
+                                : "Aplicar criterios"}
                           </button>
                         ) : null}
                       </div>
