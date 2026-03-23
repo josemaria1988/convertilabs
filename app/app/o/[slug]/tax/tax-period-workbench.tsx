@@ -10,6 +10,7 @@ import {
   runTaxWorkbenchDocumentAction,
   saveTaxPeriodDocumentSelectionAction,
 } from "./actions";
+import { TaxWorkbenchManualResolveModal } from "./tax-workbench-manual-resolve-modal";
 
 type TaxPeriodWorkbenchProps = {
   slug: string;
@@ -18,6 +19,7 @@ type TaxPeriodWorkbenchProps = {
   period: string;
   workbench: TaxPeriodWorkbenchData;
   isClosedRun: boolean;
+  manualResolveDocumentId: string | null;
 };
 
 const STATE_FILTERS: Array<{
@@ -45,6 +47,7 @@ function buildTaxWorkbenchHref(input: {
   month: number;
   workbench: TaxPeriodWorkbenchData["filters"];
   overrides?: Partial<TaxPeriodWorkbenchData["filters"]>;
+  modal?: "manual_assignment" | null;
 }) {
   const next = {
     ...input.workbench,
@@ -79,6 +82,10 @@ function buildTaxWorkbenchHref(input: {
     params.set("focusDocumentId", next.focusDocumentId);
   }
 
+  if (input.modal) {
+    params.set("workbenchModal", input.modal);
+  }
+
   return `/app/o/${input.slug}/tax?${params.toString()}`;
 }
 
@@ -103,6 +110,7 @@ function renderQuickActionButtons(input: {
   period: string;
   item: TaxPeriodWorkbenchItem;
   isClosedRun: boolean;
+  manualResolveHref?: string | null;
 }) {
   const disabledByClosedRun = input.isClosedRun;
 
@@ -124,25 +132,19 @@ function renderQuickActionButtons(input: {
         </SubmitButton>
       </form>
 
-      <form
-        action={async () => {
-          "use server";
-          await runTaxWorkbenchDocumentAction({
-            slug: input.slug,
-            period: input.period,
-            documentIds: [input.item.documentId],
-            action: "confirm_manual",
-          });
-        }}
-      >
-        <SubmitButton
-          pendingLabel="Resolviendo..."
-          className="ui-button ui-button--secondary min-h-[30px] px-3 text-[12px]"
-          disabled={!input.item.canConfirmManual || disabledByClosedRun}
+      {input.manualResolveHref ? (
+        <LoadingLink
+          href={input.manualResolveHref}
+          pendingLabel="Abriendo..."
+          className={`ui-button ui-button--secondary min-h-[30px] px-3 text-[12px] ${
+            disabledByClosedRun
+              ? "pointer-events-none opacity-60"
+              : ""
+          }`}
         >
           Resolver manualmente
-        </SubmitButton>
-      </form>
+        </LoadingLink>
+      ) : null}
 
       <form
         action={async () => {
@@ -226,6 +228,19 @@ function renderFocusDrawer(input: {
       focusDocumentId: null,
     },
   });
+  const manualResolveHref = buildTaxWorkbenchHref({
+    slug: input.slug,
+    year: input.selectedYear,
+    month: input.selectedMonth,
+    workbench: input.workbench.filters,
+    overrides: {
+      focusDocumentId: input.item.documentId,
+    },
+    modal: "manual_assignment",
+  });
+  const availableManualResolveHref = input.item.canOpenManualResolve
+    ? manualResolveHref
+    : null;
 
   return (
     <aside className="ui-panel h-fit xl:sticky xl:top-4">
@@ -321,6 +336,7 @@ function renderFocusDrawer(input: {
               period: input.period,
               item: input.item,
               isClosedRun: input.isClosedRun,
+              manualResolveHref: availableManualResolveHref,
             })}
             <LoadingLink
               href={input.item.reviewHref}
@@ -337,6 +353,32 @@ function renderFocusDrawer(input: {
 }
 
 export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
+  const manualResolveActive =
+    Boolean(props.manualResolveDocumentId)
+    && props.workbench.focusItem?.documentId === props.manualResolveDocumentId
+    && props.workbench.focusPageData?.document.id === props.manualResolveDocumentId;
+  const manualResolveCloseHref = props.workbench.focusItem
+    ? buildTaxWorkbenchHref({
+      slug: props.slug,
+      year: props.selectedYear,
+      month: props.selectedMonth,
+      workbench: props.workbench.filters,
+      overrides: {
+        focusDocumentId: props.workbench.focusItem.documentId,
+      },
+      modal: null,
+    })
+    : buildTaxWorkbenchHref({
+      slug: props.slug,
+      year: props.selectedYear,
+      month: props.selectedMonth,
+      workbench: props.workbench.filters,
+      overrides: {
+        focusDocumentId: null,
+      },
+      modal: null,
+    });
+
   return (
     <section className="ui-panel">
       <div className="ui-panel-header">
@@ -561,6 +603,19 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                     focusDocumentId: item.documentId,
                   },
                 });
+                const manualResolveHref = buildTaxWorkbenchHref({
+                  slug: props.slug,
+                  year: props.selectedYear,
+                  month: props.selectedMonth,
+                  workbench: props.workbench.filters,
+                  overrides: {
+                    focusDocumentId: item.documentId,
+                  },
+                  modal: "manual_assignment",
+                });
+                const availableManualResolveHref = item.canOpenManualResolve
+                  ? manualResolveHref
+                  : null;
 
                 return (
                   <div key={item.documentId} className="grid grid-cols-[32px_minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 px-4 py-4">
@@ -619,6 +674,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         period: props.period,
                         item,
                         isClosedRun: props.isClosedRun,
+                        manualResolveHref: availableManualResolveHref,
                       })}
                     </div>
                   </div>
@@ -721,6 +777,37 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
           </aside>
         )}
       </div>
+
+      {manualResolveActive && props.workbench.focusItem && props.workbench.focusPageData ? (
+        <TaxWorkbenchManualResolveModal
+          slug={props.slug}
+          closeHref={manualResolveCloseHref}
+          reviewHref={props.workbench.focusItem.reviewHref}
+          title={props.workbench.focusItem.display.title}
+          subtitle={props.workbench.focusItem.display.subtitle}
+          pageData={{
+            documentId: props.workbench.focusPageData.document.id,
+            accountRoleAssignments: props.workbench.focusPageData.accountRoleAssignments,
+            accounts: props.workbench.focusPageData.accountingOptions.accounts,
+            primaryAccountRole:
+              props.workbench.focusPageData.derived.settlementContext.primaryAccountRole ?? null,
+            manualRoleOverrides:
+              props.workbench.focusPageData.derived.accountingContext.manualRoleOverrides ?? null,
+            manualOverrideAccountId:
+              props.workbench.focusPageData.derived.accountingContext.manualOverrideAccountId ?? null,
+            currentMainAccount:
+              props.workbench.focusPageData.accountingImpactPreview.summary.mainAccount ?? null,
+            currentVatAccount:
+              props.workbench.focusPageData.accountingImpactPreview.summary.vatAccount ?? null,
+            isBalanced:
+              props.workbench.focusPageData.accountingImpactPreview.journal.isBalanced,
+            totalDebit:
+              props.workbench.focusPageData.accountingImpactPreview.journal.totalDebit,
+            totalCredit:
+              props.workbench.focusPageData.accountingImpactPreview.journal.totalCredit,
+          }}
+        />
+      ) : null}
     </section>
   );
 }

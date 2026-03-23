@@ -66,6 +66,7 @@ export type TaxPeriodWorkbenchItem = {
   taxStateSummary: string;
   nextBestAction: string | null;
   canRunClassification: boolean;
+  canOpenManualResolve: boolean;
   canConfirmManual: boolean;
   canPostProvisional: boolean;
   canConfirmForPeriod: boolean;
@@ -329,6 +330,7 @@ function buildWorkbenchItem(input: {
     taxStateSummary: workbenchState.taxStateSummary,
     nextBestAction: input.pageData.decisionSnapshot.nextBestAction,
     canRunClassification: input.pageData.canRunClassification,
+    canOpenManualResolve: true,
     canConfirmManual:
       input.pageData.decisionSnapshot.classificationResolved
       && input.pageData.decisionSnapshot.resolutionSource !== "manual",
@@ -396,6 +398,7 @@ function buildFallbackWorkbenchItem(input: {
         ? "Abrir reviewer completo"
         : "Resolver clasificacion",
     canRunClassification: Boolean(input.document.draftId),
+    canOpenManualResolve: false,
     canConfirmManual: false,
     canPostProvisional: false,
     canConfirmForPeriod: false,

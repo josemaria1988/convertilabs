@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { ManualAccountRoleOverrides } from "@/modules/accounting";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { createVatRunExport } from "@/modules/exports";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -215,4 +216,32 @@ export async function runTaxWorkbenchDocumentAction(input: {
           ? `${documentIds.length} documento(s) consolidados como revision manual.`
           : `${documentIds.length} documento(s) posteados provisionalmente.`,
   };
+}
+
+export async function confirmTaxWorkbenchManualAssignmentAction(input: {
+  slug: string;
+  documentId: string;
+  manualRoleOverrides?: ManualAccountRoleOverrides | null;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!canOperateTaxWorkbench(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede resolver manualmente este documento desde Impuestos.",
+    };
+  }
+
+  const result = await confirmDocumentManualAssignment({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorId: authState.user?.id ?? null,
+    manualRoleOverrides: input.manualRoleOverrides ?? null,
+  });
+
+  revalidatePath(taxPath(input.slug));
+  revalidatePath(documentPath(input.slug, input.documentId));
+
+  return result;
 }

@@ -36,6 +36,7 @@ type OrganizationTaxPageProps = {
     workbenchQuery?: string;
     workbenchPage?: string;
     focusDocumentId?: string;
+    workbenchModal?: string;
   }>;
 };
 
@@ -395,6 +396,11 @@ export default async function OrganizationTaxPage({
             period={selectedPeriod}
             workbench={workbenchData}
             isClosedRun={isClosedRun}
+            manualResolveDocumentId={
+              resolvedSearchParams.workbenchModal === "manual_assignment"
+                ? resolvedSearchParams.focusDocumentId ?? null
+                : null
+            }
           />
 
           {isClosedRun ? (
