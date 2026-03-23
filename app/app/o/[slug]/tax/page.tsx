@@ -13,8 +13,10 @@ import {
   describeVatPeriodOperationalStatus,
   loadVatPeriodUniverse,
 } from "@/modules/tax/vat-period-universe";
+import { loadTaxPeriodWorkbenchData } from "@/modules/tax/tax-period-workbench";
 import { buildVatRunPreview } from "@/modules/tax/vat-run-preview";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
+import { TaxPeriodWorkbench } from "./tax-period-workbench";
 import {
   createVatRunExportAction,
   generateVatRunDefinitiveAction,
@@ -28,6 +30,12 @@ type OrganizationTaxPageProps = {
   searchParams?: Promise<{
     periodYear?: string;
     periodMonth?: string;
+    workbenchState?: string;
+    workbenchDirection?: string;
+    workbenchManualResolution?: string;
+    workbenchQuery?: string;
+    workbenchPage?: string;
+    focusDocumentId?: string;
   }>;
 };
 
@@ -99,6 +107,16 @@ function normalizePeriodMonth(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value ?? "", 10);
 
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function normalizePositiveInt(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
     return fallback;
   }
 
@@ -181,6 +199,46 @@ export default async function OrganizationTaxPage({
       month: selectedMonth,
     }),
   ]);
+  const workbenchData = await loadTaxPeriodWorkbenchData({
+    organizationId: organization.id,
+    organizationSlug: organization.slug,
+    userRole: organization.role as
+      | "owner"
+      | "admin"
+      | "admin_processing"
+      | "accountant"
+      | "reviewer"
+      | "operator"
+      | "viewer"
+      | "developer",
+    actorId: authState.user?.id ?? null,
+    period: selectedPeriod,
+    selectedRun,
+    filters: {
+      state:
+        resolvedSearchParams.workbenchState === "detected"
+        || resolvedSearchParams.workbenchState === "needs_review"
+        || resolvedSearchParams.workbenchState === "eligible"
+        || resolvedSearchParams.workbenchState === "confirmed"
+        || resolvedSearchParams.workbenchState === "excluded"
+        || resolvedSearchParams.workbenchState === "included_in_run"
+          ? resolvedSearchParams.workbenchState
+          : "all",
+      direction:
+        resolvedSearchParams.workbenchDirection === "purchase"
+        || resolvedSearchParams.workbenchDirection === "sale"
+          ? resolvedSearchParams.workbenchDirection
+          : "all",
+      manualResolution:
+        resolvedSearchParams.workbenchManualResolution === "without_manual"
+          ? "without_manual"
+          : "all",
+      query: resolvedSearchParams.workbenchQuery ?? "",
+      page: normalizePositiveInt(resolvedSearchParams.workbenchPage, 1),
+      pageSize: 25,
+      focusDocumentId: resolvedSearchParams.focusDocumentId ?? null,
+    },
+  });
   const selectedExportDataset = selectedRun
     ? await loadVatRunExportDataset(supabase, organization.id, selectedRun.id)
     : null;
@@ -283,74 +341,6 @@ export default async function OrganizationTaxPage({
             </form>
           </section>
 
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h2 className="text-[16px] font-semibold text-white">Universo fiscal del periodo</h2>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Antes de leer importes, aqui ves cuantos documentos del mes existen, cuantos entran al preview y cuantos ya cumplen condiciones para la corrida oficial.
-                </p>
-              </div>
-              <span className="ui-filter">{vatUniverse.period}</span>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-5">
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-[13px] text-[color:var(--color-muted)]">Documentos del periodo</p>
-                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.documentsInPeriod}</p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-[13px] text-[color:var(--color-muted)]">Elegibles VAT preview</p>
-                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.eligibleForVatPreviewCount}</p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-[13px] text-[color:var(--color-muted)]">Excluidos preview</p>
-                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.excludedFromVatPreviewCount}</p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-[13px] text-[color:var(--color-muted)]">Elegibles VAT run</p>
-                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.eligibleForVatRunCount}</p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-[13px] text-[color:var(--color-muted)]">Excluidos run</p>
-                <p className="mt-2 text-lg font-semibold text-white">{vatUniverse.excludedFromVatRunCount}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-sm font-semibold text-white">Excluidos del VAT preview</p>
-                <div className="mt-3 max-h-72 space-y-2 overflow-auto">
-                  {vatUniverse.excludedFromVatPreview.length > 0 ? vatUniverse.excludedFromVatPreview.map((document) => (
-                    <div key={`preview-${document.documentId}`} className="ui-subtle-row">
-                      <span>{document.documentId}</span>
-                      <span>{document.reason}</span>
-                    </div>
-                  )) : (
-                    <div className="text-sm text-[color:var(--color-muted)]">
-                      No hay exclusiones para el preview del periodo.
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
-                <p className="text-sm font-semibold text-white">Excluidos del VAT run oficial</p>
-                <div className="mt-3 max-h-72 space-y-2 overflow-auto">
-                  {vatUniverse.excludedFromVatRun.length > 0 ? vatUniverse.excludedFromVatRun.map((document) => (
-                    <div key={`run-${document.documentId}`} className="ui-subtle-row">
-                      <span>{document.documentId}</span>
-                      <span>{document.reason}</span>
-                    </div>
-                  )) : (
-                    <div className="text-sm text-[color:var(--color-muted)]">
-                      No hay exclusiones para la corrida oficial del periodo.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
           <section className="grid gap-3 md:grid-cols-4">
             <article className="metric-card">
               <span className="metric-card__label">Debito Fiscal</span>
@@ -397,6 +387,15 @@ export default async function OrganizationTaxPage({
               </p>
             </article>
           </section>
+
+          <TaxPeriodWorkbench
+            slug={slug}
+            selectedYear={selectedYear}
+            selectedMonth={selectedMonth}
+            period={selectedPeriod}
+            workbench={workbenchData}
+            isClosedRun={isClosedRun}
+          />
 
           {isClosedRun ? (
             <section className="ui-panel">

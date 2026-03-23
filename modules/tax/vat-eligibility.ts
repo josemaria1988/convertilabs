@@ -8,6 +8,8 @@ export type VatEligibilityReasonCode =
   | "missing_vat_bucket"
   | "reopened_document"
   | "archived_or_duplicate"
+  | "not_confirmed_for_period"
+  | "excluded_by_period_decision"
   | "insufficient_posting_for_preview"
   | "insufficient_posting_for_run";
 

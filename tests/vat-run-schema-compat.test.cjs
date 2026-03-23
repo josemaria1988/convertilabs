@@ -318,6 +318,7 @@ test("rebuildMonthlyVatRunFromConfirmations retries updates without import colum
 
     if (
       query.table === "document_confirmations"
+      || query.table === "tax_period_document_selections"
       || query.table === "organization_import_operations"
     ) {
       return {
@@ -480,6 +481,13 @@ test("rebuildMonthlyVatRunFromConfirmations uses declarative VAT run eligibility
       };
     }
 
+    if (query.table === "tax_period_document_selections" && query.mode === "execute") {
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
     if (
       query.table === "organization_import_operations"
       || query.table === "organization_import_operation_taxes"
@@ -540,4 +548,186 @@ test("rebuildMonthlyVatRunFromConfirmations uses declarative VAT run eligibility
     eligibleForVatRun: 1,
     excludedFromVatRun: 1,
   });
+});
+
+test("rebuildMonthlyVatRunFromConfirmations respects confirmed and excluded period selections", async () => {
+  const insertPayloads = [];
+  const supabase = createSupabaseStub((query) => {
+    if (query.table === "tax_periods" && query.mutation === "upsert" && query.mode === "single") {
+      return {
+        data: {
+          id: "period-1",
+          period_year: 2026,
+          period_month: 3,
+          start_date: "2026-03-01",
+          end_date: "2026-03-31",
+          status: "open",
+        },
+        error: null,
+      };
+    }
+
+    if (query.table === "vat_runs" && query.mode === "maybeSingle") {
+      return {
+        data: null,
+        error: null,
+      };
+    }
+
+    if (query.table === "documents" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "doc-confirmed",
+            current_draft_id: "draft-confirmed",
+            direction: "purchase",
+            status: "classified",
+            posting_status: "posted_provisional",
+            document_date: "2026-03-10",
+          },
+          {
+            id: "doc-excluded",
+            current_draft_id: "draft-excluded",
+            direction: "purchase",
+            status: "classified",
+            posting_status: "posted_provisional",
+            document_date: "2026-03-12",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_drafts" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "draft-confirmed",
+            document_id: "doc-confirmed",
+            document_role: "purchase",
+            status: "confirmed",
+            fields_json: {
+              facts: {
+                subtotal: 100,
+                tax_amount: 22,
+              },
+            },
+            tax_treatment_json: {
+              ready: true,
+              vat_bucket: "input_creditable",
+              taxable_amount_uyu: 100,
+              tax_amount_uyu: 22,
+              warnings: [],
+              blockingReasons: [],
+            },
+          },
+          {
+            id: "draft-excluded",
+            document_id: "doc-excluded",
+            document_role: "purchase",
+            status: "confirmed",
+            fields_json: {
+              facts: {
+                subtotal: 80,
+                tax_amount: 17.6,
+              },
+            },
+            tax_treatment_json: {
+              ready: true,
+              vat_bucket: "input_creditable",
+              taxable_amount_uyu: 80,
+              tax_amount_uyu: 17.6,
+              warnings: [],
+              blockingReasons: [],
+            },
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "document_invoice_identities" && query.mode === "execute") {
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "tax_period_document_selections" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            document_id: "doc-confirmed",
+            selection_status: "confirmed_for_period",
+            note: null,
+            decided_by: "user-1",
+            decided_at: "2026-03-20T10:00:00.000Z",
+            metadata_json: {},
+          },
+          {
+            document_id: "doc-excluded",
+            selection_status: "excluded_from_period",
+            note: "Fuera de liquidacion por ajuste pendiente",
+            decided_by: "user-1",
+            decided_at: "2026-03-20T10:00:00.000Z",
+            metadata_json: {},
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (
+      query.table === "organization_import_operations"
+      || query.table === "organization_import_operation_taxes"
+    ) {
+      return {
+        data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "vat_runs" && query.mutation === "insert" && query.mode === "single") {
+      insertPayloads.push(query.payload);
+
+      return {
+        data: {
+          id: "run-3",
+        },
+        error: null,
+      };
+    }
+
+    if (query.table === "tax_periods" && query.mutation === "update" && query.mode === "execute") {
+      return {
+        data: null,
+        error: null,
+      };
+    }
+
+    throw new Error(`Unexpected query: ${query.table}/${query.mode}/${query.mutation ?? "read"}`);
+  });
+
+  const runId = await rebuildMonthlyVatRunFromConfirmations(
+    supabase,
+    "org-1",
+    "2026-03",
+    "user-1",
+  );
+
+  assert.equal(runId, "run-3");
+  assert.equal(insertPayloads.length, 1);
+  assert.deepEqual(
+    insertPayloads[0].input_snapshot_json.documents.map((document) => document.documentId),
+    ["doc-confirmed"],
+  );
+  assert.equal(insertPayloads[0].input_snapshot_json.excluded_from_run.length, 1);
+  assert.equal(
+    insertPayloads[0].input_snapshot_json.excluded_from_run[0].reasonCode,
+    "excluded_by_period_decision",
+  );
+  assert.match(
+    insertPayloads[0].input_snapshot_json.excluded_from_run[0].reason,
+    /Fuera de liquidacion/i,
+  );
 });

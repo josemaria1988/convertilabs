@@ -61,6 +61,26 @@ create table if not exists public.tax_periods (
   unique (organization_id, tax_type, period_year, period_month)
 );
 
+create table if not exists public.tax_period_document_selections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  period_id uuid not null references public.tax_periods(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  selection_status text not null,
+  note text,
+  metadata_json jsonb not null default '{}'::jsonb,
+  decided_by uuid references public.profiles(id),
+  decided_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tax_period_document_selections_status_check
+    check (selection_status in ('confirmed_for_period', 'excluded_from_period')),
+  unique (organization_id, period_id, document_id)
+);
+
+create index if not exists idx_tax_period_document_selections_period_status
+  on public.tax_period_document_selections (organization_id, period_id, selection_status, decided_at desc);
+
 create table if not exists public.vat_runs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

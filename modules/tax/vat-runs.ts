@@ -4,8 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissingDocumentStep5ColumnError } from "@/modules/accounting/step5-schema-compat";
 import type { VatEligibilityReasonCode } from "@/modules/tax/vat-eligibility";
 import {
+  ensureVatPeriodRecord,
+  loadTaxPeriodDocumentSelections,
+  type TaxPeriodDocumentSelection,
+} from "@/modules/tax/tax-period-decisions";
+import {
   loadVatPeriodUniverse,
-  selectVatUniverseDocumentsForRun,
   type VatPeriodUniverseDocument,
 } from "@/modules/tax/vat-period-universe";
 import {
@@ -28,15 +32,6 @@ type ConfirmedDraftRow = {
   fields_json: JsonRecord | null;
   tax_treatment_json: JsonRecord | null;
   journal_suggestion_json: JsonRecord | null;
-};
-
-type TaxPeriodRow = {
-  id: string;
-  period_year: number;
-  period_month: number | null;
-  start_date: string;
-  end_date: string;
-  status: string;
 };
 
 type VatRunRow = {
@@ -214,6 +209,19 @@ function buildVatDocumentSnapshotFromUniverseDocument(
   };
 }
 
+function buildPeriodDecisionExclusion(
+  documentId: string,
+  selection: TaxPeriodDocumentSelection,
+) {
+  return {
+    documentId,
+    reasonCode: "excluded_by_period_decision" satisfies VatEligibilityReasonCode,
+    reason: selection.note?.trim()
+      ? `Excluido del periodo: ${selection.note.trim()}`
+      : "El documento fue excluido manualmente de la liquidacion del periodo.",
+  } satisfies VatRunExcludedDocument;
+}
+
 function mapVatRunStatusToTaxPeriodStatus(status: VatRunStatus) {
   switch (status) {
     case "draft":
@@ -252,42 +260,6 @@ async function recordAuditEvent(
   if (error) {
     throw new Error(error.message);
   }
-}
-
-async function ensureVatPeriod(
-  supabase: SupabaseClient,
-  organizationId: string,
-  year: number,
-  month: number,
-) {
-  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-  const endDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from("tax_periods")
-    .upsert(
-      {
-        organization_id: organizationId,
-        tax_type: "VAT",
-        period_year: year,
-        period_month: month,
-        start_date: startDate,
-        end_date: endDate,
-        status: "open",
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "organization_id,tax_type,period_year,period_month",
-      },
-    )
-    .select("id, period_year, period_month, start_date, end_date, status")
-    .limit(1)
-    .single();
-
-  if (error || !data?.id) {
-    throw new Error(error?.message ?? "No se pudo asegurar el periodo IVA.");
-  }
-
-  return data as TaxPeriodRow;
 }
 
 async function loadLatestConfirmedDrafts(
@@ -395,14 +367,52 @@ async function loadVatRunDocumentSelection(
       organizationId,
       period,
     });
-    const runSelection = selectVatUniverseDocumentsForRun(universe);
+    const { selections } = await loadTaxPeriodDocumentSelections(supabase, {
+      organizationId,
+      period,
+    });
+    const selectionsByDocumentId = new Map(
+      selections.map((selection) => [selection.documentId, selection]),
+    );
+    const hasExplicitPeriodSelection = selections.length > 0;
+    const includedUniverseDocuments: VatPeriodUniverseDocument[] = [];
+    const excludedFromRun: VatRunExcludedDocument[] = [];
+
+    for (const document of universe.documents) {
+      const selection = selectionsByDocumentId.get(document.documentId) ?? null;
+
+      if (selection?.selectionStatus === "excluded_from_period") {
+        excludedFromRun.push(buildPeriodDecisionExclusion(document.documentId, selection));
+        continue;
+      }
+
+      if (!document.runDecision.ok) {
+        excludedFromRun.push({
+          documentId: document.documentId,
+          reasonCode: document.runDecision.reasonCode,
+          reason: document.runDecision.reason ?? "Excluido del VAT run oficial.",
+        });
+        continue;
+      }
+
+      if (hasExplicitPeriodSelection && selection?.selectionStatus !== "confirmed_for_period") {
+        excludedFromRun.push({
+          documentId: document.documentId,
+          reasonCode: "not_confirmed_for_period",
+          reason: "El documento aun no fue confirmado para la liquidacion de este periodo.",
+        });
+        continue;
+      }
+
+      includedUniverseDocuments.push(document);
+    }
 
     return {
-      includedDocuments: runSelection.includedDocuments
+      includedDocuments: includedUniverseDocuments
         .map((document) => buildVatDocumentSnapshotFromUniverseDocument(document))
         .filter((document): document is VatDocumentSnapshot => document !== null),
       excludedFromPreview: universe.excludedFromVatPreview,
-      excludedFromRun: runSelection.excludedDocuments,
+      excludedFromRun,
       eligibilitySummary: {
         documentsInPeriod: universe.documentsInPeriod,
         eligibleForVatPreview: universe.eligibleForVatPreviewCount,
@@ -562,7 +572,11 @@ export async function assertVatPeriodMutableForDocument(
     return;
   }
 
-  const periodRecord = await ensureVatPeriod(supabase, organizationId, year, month);
+  const periodRecord = await ensureVatPeriodRecord(
+    supabase,
+    organizationId,
+    `${year}-${String(month).padStart(2, "0")}`,
+  );
   const existingRun = await loadLatestVatRun(supabase, organizationId, periodRecord.id);
 
   if (existingRun?.status === "finalized" || existingRun?.status === "locked") {
@@ -585,7 +599,11 @@ export async function rebuildMonthlyVatRunFromConfirmations(
     throw new Error("La fecha del documento no es valida para reconstruir IVA mensual.");
   }
 
-  const periodRecord = await ensureVatPeriod(supabase, organizationId, year, month);
+  const periodRecord = await ensureVatPeriodRecord(
+    supabase,
+    organizationId,
+    `${year}-${String(month).padStart(2, "0")}`,
+  );
   const existingRun = await loadLatestVatRun(supabase, organizationId, periodRecord.id);
 
   if (existingRun?.status === "finalized" || existingRun?.status === "locked") {

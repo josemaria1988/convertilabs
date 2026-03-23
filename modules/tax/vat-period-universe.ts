@@ -51,6 +51,15 @@ export type VatPeriodUniverseDocument = {
   taxableAmountUyu: number;
   taxAmountUyu: number;
   reviewFlags: string[];
+  display: {
+    counterpartyName: string | null;
+    issuerName: string | null;
+    receiverName: string | null;
+    documentNumber: string | null;
+    documentType: string | null;
+    currencyCode: string | null;
+    totalAmount: number;
+  };
   previewDecision: VatEligibilityDecision;
   runDecision: VatEligibilityDecision;
 };
@@ -197,6 +206,22 @@ function buildUniverseDocument(input: {
       ...asStringArray(taxJson.warnings),
       ...asStringArray(taxJson.blockingReasons),
     ],
+    display: {
+      counterpartyName:
+        input.draft?.document_role === "sale"
+          ? asString(facts.receiver_name)
+          : asString(facts.issuer_name),
+      issuerName: asString(facts.issuer_name),
+      receiverName: asString(facts.receiver_name),
+      documentNumber:
+        [asString(facts.series), asString(facts.document_number)]
+          .filter((value): value is string => Boolean(value))
+          .join("-")
+        || asString(facts.document_number),
+      documentType: asString(facts.document_type) ?? asString(facts.cfe_type) ?? null,
+      currencyCode: asString(facts.currency_code),
+      totalAmount: asNumber(facts.total_amount),
+    },
     previewDecision,
     runDecision,
   } satisfies VatPeriodUniverseDocument;

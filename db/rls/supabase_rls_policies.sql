@@ -103,6 +103,7 @@ alter table public.normative_packages enable row level security;
 alter table public.normative_documents enable row level security;
 alter table public.tax_rules enable row level security;
 alter table public.tax_periods enable row level security;
+alter table public.tax_period_document_selections enable row level security;
 alter table public.vat_runs enable row level security;
 alter table public.exports enable row level security;
 alter table public.api_clients enable row level security;
@@ -1267,6 +1268,55 @@ drop policy if exists "vat_runs_insert_accounting_roles" on public.vat_runs;
 create policy "vat_runs_insert_accounting_roles"
 on public.vat_runs
 for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "tax_period_document_selections_select_member" on public.tax_period_document_selections;
+create policy "tax_period_document_selections_select_member"
+on public.tax_period_document_selections
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "tax_period_document_selections_insert_accounting_roles" on public.tax_period_document_selections;
+create policy "tax_period_document_selections_insert_accounting_roles"
+on public.tax_period_document_selections
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "tax_period_document_selections_update_accounting_roles" on public.tax_period_document_selections;
+create policy "tax_period_document_selections_update_accounting_roles"
+on public.tax_period_document_selections
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
 with check (
   public.has_org_role(
     organization_id,
