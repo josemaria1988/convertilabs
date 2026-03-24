@@ -1029,7 +1029,7 @@ export default async function OrganizationSettingsPage({
         title="Atajos de soporte y salidas"
         description="Accesos rapidos para importar o exportar el plan, revisar planillas auxiliares y saltar al carril documental correcto sin mezclar operatoria economica con soporte."
       >
-        <div className="grid gap-4 xl:grid-cols-5">
+        <div className="grid gap-4 xl:grid-cols-6">
           <form action={importOrganizationChartSpreadsheetAction} className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
             <input type="hidden" name="slug" value={organization.slug} />
             <div className="space-y-1">
@@ -1051,6 +1051,24 @@ export default async function OrganizationSettingsPage({
               Importar plan desde planilla
             </SubmitButton>
           </form>
+
+          <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
+            <div className="space-y-1">
+              <p className="font-semibold text-white">Reglas contables</p>
+              <p>
+                Abre la superficie dedicada para listar, auditar, pausar y reactivar criterios automáticos sin borrar trazabilidad.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <LoadingLink
+                href={`/app/o/${organization.slug}/settings/accounting-rules`}
+                pendingLabel="Abriendo reglas..."
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+              >
+                Abrir reglas
+              </LoadingLink>
+            </div>
+          </div>
 
           <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
             <div className="space-y-1">

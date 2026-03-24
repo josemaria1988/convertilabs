@@ -1,6 +1,10 @@
 create table if not exists public.accounting_rules (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
+  stable_family_code text not null default ('rule_family_' || gen_random_uuid()::text),
+  version_number integer not null default 1,
+  name text,
+  description text,
   scope text not null,
   document_id uuid references public.documents(id) on delete cascade,
   source_document_id uuid references public.documents(id) on delete cascade,
@@ -14,13 +18,26 @@ create table if not exists public.accounting_rules (
   linked_operation_type text,
   template_code text,
   status public.accounting_rule_status not null default 'approved',
+  lifecycle_status public.accounting_rule_lifecycle_status not null default 'active',
   times_reused integer not null default 0,
   times_corrected integer not null default 0,
+  times_matched integer not null default 0,
+  times_applied integer not null default 0,
   priority integer not null default 0,
   source text not null default 'manual',
+  created_from text,
+  explainability_json jsonb not null default '{}'::jsonb,
+  supersedes_rule_id uuid references public.accounting_rules(id) on delete set null,
+  superseded_by_rule_id uuid references public.accounting_rules(id) on delete set null,
+  pause_reason text,
+  supersession_reason text,
   created_by uuid references public.profiles(id),
   approved_by uuid references public.profiles(id),
   is_active boolean not null default true,
+  activated_at timestamptz,
+  paused_at timestamptz,
+  retired_at timestamptz,
+  last_matched_at timestamptz,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -32,8 +49,28 @@ create index if not exists idx_accounting_rules_org_scope_active
 create index if not exists idx_accounting_rules_org_status_scope
   on public.accounting_rules (organization_id, status, scope, is_active, priority desc);
 
+create index if not exists idx_accounting_rules_org_lifecycle_scope
+  on public.accounting_rules (organization_id, lifecycle_status, scope, priority desc);
+
 create index if not exists idx_accounting_rules_org_vendor_concept
   on public.accounting_rules (organization_id, vendor_id, concept_id, document_role);
+
+create index if not exists idx_accounting_rules_family_version
+  on public.accounting_rules (organization_id, stable_family_code, version_number desc);
+
+create table if not exists public.accounting_rule_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  rule_id uuid not null references public.accounting_rules(id) on delete cascade,
+  event_type text not null,
+  actor_user_id uuid references public.profiles(id) on delete set null,
+  reason text,
+  payload_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_accounting_rule_events_org_rule_created
+  on public.accounting_rule_events (organization_id, rule_id, created_at desc);
 
 create table if not exists public.accounting_suggestions (
   id uuid primary key default gen_random_uuid(),

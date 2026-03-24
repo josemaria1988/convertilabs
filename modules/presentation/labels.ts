@@ -344,10 +344,20 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
   switch (value) {
     case "active":
       return "Activa";
+    case "paused":
+      return "Pausada";
     case "superseded":
       return "Reemplazada";
+    case "deleted_if_unused":
+      return "Eliminada sin uso";
     case "draft":
       return "Borrador";
+    case "candidate":
+      return "Candidata";
+    case "provisional":
+      return "Provisional";
+    case "approved":
+      return "Aprobada";
     case "reviewed":
       return "Revisada";
     case "finalized":
@@ -398,6 +408,26 @@ export function formatLifecycleStatusLabel(value: string | null | undefined) {
       return "Sugerido";
     default:
       return value ? value.replace(/_/g, " ") : "Sin estado";
+  }
+}
+
+export function formatAccountingRuleCreatedFromLabel(value: string | null | undefined) {
+  switch (value) {
+    case "manual":
+      return "Manual";
+    case "learned_from_approval":
+    case "learning_approval":
+      return "Aprendida desde documento";
+    case "migration":
+    case "migrated":
+      return "Migrada";
+    case "import":
+    case "imported":
+      return "Importada";
+    case "assistant_draft":
+      return "Borrador asistido";
+    default:
+      return value ? value.replace(/_/g, " ") : "Sin origen";
   }
 }
 

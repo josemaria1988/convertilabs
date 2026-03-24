@@ -151,6 +151,14 @@ create type public.accounting_rule_status as enum (
   'approved'
 );
 
+create type public.accounting_rule_lifecycle_status as enum (
+  'draft',
+  'active',
+  'paused',
+  'superseded',
+  'deleted_if_unused'
+);
+
 create type public.account_type as enum (
   'asset',
   'liability',

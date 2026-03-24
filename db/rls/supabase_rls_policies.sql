@@ -95,6 +95,7 @@ alter table public.documents enable row level security;
 alter table public.document_extractions enable row level security;
 alter table public.document_relations enable row level security;
 alter table public.accounting_rules enable row level security;
+alter table public.accounting_rule_events enable row level security;
 alter table public.accounting_suggestions enable row level security;
 alter table public.accounting_suggestion_lines enable row level security;
 alter table public.journal_entries enable row level security;
@@ -833,6 +834,27 @@ with check (
       'admin'::public.member_role,
       'accountant'::public.member_role,
       'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rule_events_select_member" on public.accounting_rule_events;
+create policy "accounting_rule_events_select_member"
+on public.accounting_rule_events
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "accounting_rule_events_insert_accounting_roles" on public.accounting_rule_events;
+create policy "accounting_rule_events_insert_accounting_roles"
+on public.accounting_rule_events
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
     ]
   )
 );

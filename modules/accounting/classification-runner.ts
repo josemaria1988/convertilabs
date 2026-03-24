@@ -2,7 +2,10 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
 import {
   formatOperationKindLabel,
   formatPaymentTermsLabel,
@@ -294,6 +297,98 @@ async function updateAssignmentRun(
   }
 }
 
+async function incrementAppliedRuleCounters(
+  supabase: SupabaseClient,
+  input: {
+    ruleId: string | null;
+  },
+) {
+  if (!input.ruleId) {
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("accounting_rules")
+    .select("id, times_reused, times_matched, times_applied")
+    .eq("id", input.ruleId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error && isMissingSupabaseColumnError(error, "accounting_rules")) {
+    const legacyResult = await supabase
+      .from("accounting_rules")
+      .select("id, times_reused")
+      .eq("id", input.ruleId)
+      .limit(1)
+      .maybeSingle();
+
+    if (legacyResult.error || !legacyResult.data?.id) {
+      if (legacyResult.error) {
+        throw new Error(legacyResult.error.message);
+      }
+
+      return;
+    }
+
+    const legacyPatch = {
+      times_reused:
+        ((legacyResult.data.times_reused as number | null | undefined) ?? 0) + 1,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: legacyUpdateError } = await supabase
+      .from("accounting_rules")
+      .update(legacyPatch)
+      .eq("id", input.ruleId);
+
+    if (legacyUpdateError) {
+      throw new Error(legacyUpdateError.message);
+    }
+
+    return;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data?.id) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const patch = {
+    times_reused: ((data.times_reused as number | null | undefined) ?? 0) + 1,
+    times_matched: ((data.times_matched as number | null | undefined) ?? 0) + 1,
+    times_applied: ((data.times_applied as number | null | undefined) ?? 0) + 1,
+    last_matched_at: now,
+    updated_at: now,
+  };
+  const { error: updateError } = await supabase
+    .from("accounting_rules")
+    .update(patch)
+    .eq("id", input.ruleId);
+
+  if (updateError && isMissingSupabaseColumnError(updateError, "accounting_rules")) {
+    const { error: fallbackError } = await supabase
+      .from("accounting_rules")
+      .update({
+        times_reused: patch.times_reused,
+        updated_at: now,
+      })
+      .eq("id", input.ruleId);
+
+    if (fallbackError) {
+      throw new Error(fallbackError.message);
+    }
+
+    return;
+  }
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+}
+
 export async function markDocumentAssignmentRunsStale(
   supabase: SupabaseClient,
   input: {
@@ -564,6 +659,9 @@ export async function runDocumentClassification(input: {
       throw new Error(documentError.message);
     }
 
+    await incrementAppliedRuleCounters(supabase, {
+      ruleId: derived.appliedRule.ruleId,
+    });
     await markDocumentAssignmentRunsStale(supabase, {
       documentId: context.document.id,
       excludeRunId: startedRun?.id ?? null,

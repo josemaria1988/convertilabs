@@ -440,9 +440,20 @@ export type AccountingRuleScope =
   | "concept_global"
   | "vendor_default";
 
+export type AccountingRuleLifecycleStatus =
+  | "draft"
+  | "active"
+  | "paused"
+  | "superseded"
+  | "deleted_if_unused";
+
 export type AccountingRuleRecord = {
   id: string;
   organization_id: string;
+  stable_family_code?: string | null;
+  version_number?: number | null;
+  name?: string | null;
+  description?: string | null;
   scope: AccountingRuleScope;
   document_id: string | null;
   source_document_id: string | null;
@@ -451,6 +462,7 @@ export type AccountingRuleRecord = {
   document_role: DocumentRoleCandidate;
   account_id: string;
   status: "candidate" | "provisional" | "approved";
+  lifecycle_status?: AccountingRuleLifecycleStatus | null;
   vat_profile_json: JsonRecord | null;
   tax_profile_code: string | null;
   operation_category: string | null;
@@ -458,11 +470,24 @@ export type AccountingRuleRecord = {
   template_code: string | null;
   times_reused: number;
   times_corrected: number;
+  times_matched?: number | null;
+  times_applied?: number | null;
   priority: number;
   source: string;
+  created_from?: string | null;
   is_active: boolean;
+  explainability_json?: JsonRecord | null;
+  supersedes_rule_id?: string | null;
+  superseded_by_rule_id?: string | null;
+  pause_reason?: string | null;
+  supersession_reason?: string | null;
+  activated_at?: string | null;
+  paused_at?: string | null;
+  retired_at?: string | null;
+  last_matched_at?: string | null;
   metadata: JsonRecord | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type ResolvedAccountingRule = {
