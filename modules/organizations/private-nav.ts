@@ -5,6 +5,7 @@ export type OrganizationPrivateSection =
   | "accounting"
   | "tax"
   | "chart-map"
+  | "rules"
   | "settings";
 
 export function buildOrganizationPrivateNavItems(
@@ -47,6 +48,12 @@ export function buildOrganizationPrivateNavItems(
       label: "Mapa contable",
       description: "Arbol, impacto y documentos reales",
       current: currentSection === "chart-map",
+    },
+    {
+      href: `/app/o/${organizationSlug}/rules`,
+      label: "Reglas contables",
+      description: "Gobernanza, simulacion, prioridad y chat consultivo",
+      current: currentSection === "rules",
     },
     {
       href: `/app/o/${organizationSlug}/settings`,

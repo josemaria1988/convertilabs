@@ -1881,7 +1881,11 @@ export function DocumentReviewWorkspace({
           </div>
         </article>
 
-        <RuleApplicationCard explanation={pageData.ruleExplanation} />
+        <RuleApplicationCard
+          explanation={pageData.ruleExplanation}
+          organizationSlug={pageData.organizationSlug}
+          documentId={pageData.document.id}
+        />
 
         <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
 

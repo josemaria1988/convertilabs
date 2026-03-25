@@ -3,8 +3,12 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   deriveAccountingRuleLifecycleStatus,
+  enrichRuleItemsWithConflicts,
+  evaluateDeleteUnusedGuard,
   matchesAccountingRuleSourceFilter,
   normalizeAccountingRulesAdminFilters,
+  resolvePrioritySwapTarget,
+  resolveSupersedingRuleScopeFields,
   sortAccountingRuleListItems,
 } = require("@/modules/accounting/rules-admin");
 
@@ -21,6 +25,11 @@ test("accounting rules admin normalizes filters conservatively", () => {
     status: "paused",
     scope: "vendor_concept",
     source: "learning",
+    vendorId: "all",
+    accountId: "all",
+    operationCategory: "all",
+    onlyWithConflicts: false,
+    onlyUnused: false,
   });
   assert.deepEqual(
     normalizeAccountingRulesAdminFilters({
@@ -33,6 +42,11 @@ test("accounting rules admin normalizes filters conservatively", () => {
       status: "all",
       scope: "all",
       source: "all",
+      vendorId: "all",
+      accountId: "all",
+      operationCategory: "all",
+      onlyWithConflicts: false,
+      onlyUnused: false,
     },
   );
 });
@@ -186,4 +200,228 @@ test("accounting rules admin matches created_from/source filters", () => {
     ),
     false,
   );
+});
+
+test("accounting rules admin resolves scoped fields for superseding versions", () => {
+  assert.deepEqual(
+    resolveSupersedingRuleScopeFields({
+      scope: "vendor_concept_operation_category",
+      currentDocumentId: "doc-1",
+      vendorId: "vendor-1",
+      conceptId: "concept-1",
+      operationCategory: "goods",
+    }),
+    {
+      documentId: null,
+      vendorId: "vendor-1",
+      conceptId: "concept-1",
+      operationCategory: "goods",
+      errors: [],
+    },
+  );
+
+  const invalid = resolveSupersedingRuleScopeFields({
+    scope: "document_override",
+    currentDocumentId: null,
+    vendorId: null,
+    conceptId: null,
+    operationCategory: null,
+  });
+
+  assert.equal(invalid.documentId, null);
+  assert.equal(invalid.errors.length, 1);
+  assert.match(invalid.errors[0], /document override/i);
+});
+
+test("accounting rules admin blocks delete-unused when there is traceability or descendants", () => {
+  assert.deepEqual(
+    evaluateDeleteUnusedGuard({
+      documentsAppliedCount: 0,
+      matchesCount: 0,
+      hasAssignmentUsage: false,
+      hasDecisionLogUsage: false,
+      hasActiveDescendant: false,
+    }),
+    {
+      allowed: true,
+      reason: null,
+    },
+  );
+
+  assert.equal(
+    evaluateDeleteUnusedGuard({
+      documentsAppliedCount: 1,
+      matchesCount: 0,
+      hasAssignmentUsage: false,
+      hasDecisionLogUsage: false,
+      hasActiveDescendant: false,
+    }).allowed,
+    false,
+  );
+
+  assert.equal(
+    evaluateDeleteUnusedGuard({
+      documentsAppliedCount: 0,
+      matchesCount: 0,
+      hasAssignmentUsage: false,
+      hasDecisionLogUsage: false,
+      hasActiveDescendant: true,
+    }).reason,
+    "No se puede eliminar porque ya tiene una sucesora activa en la misma familia.",
+  );
+});
+
+test("accounting rules admin enriches visible conflicts within overlapping segments", () => {
+  const items = enrichRuleItemsWithConflicts([
+    {
+      id: "rule-op",
+      stableFamilyCode: null,
+      versionNumber: 1,
+      lifecycleStatus: "active",
+      approvalStatus: "approved",
+      name: "Proveedor + concepto + op",
+      description: null,
+      scope: "vendor_concept_operation_category",
+      documentRole: "purchase",
+      priority: 900,
+      vendorId: "vendor-1",
+      conceptId: "concept-1",
+      accountId: "account-1",
+      operationCategory: "goods",
+      source: "manual",
+      createdFrom: "manual",
+      vendorName: "Proveedor 1",
+      conceptName: "Compras",
+      accountLabel: "6101",
+      conditionSummary: [],
+      resultSummary: [],
+      documentsAppliedCount: 0,
+      matchesCount: 0,
+      lastMatchedAt: null,
+      lastEditedAt: null,
+      pauseReason: null,
+      sourceDocumentId: null,
+      sourceDocumentLabel: null,
+      supersedesRuleId: null,
+      supersededByRuleId: null,
+      hasConflicts: false,
+      conflictCount: 0,
+      conflictSummary: null,
+      segmentKey: "vendor-1::concept-1::goods",
+      searchableText: "proveedor",
+    },
+    {
+      id: "rule-vendor-concept",
+      stableFamilyCode: null,
+      versionNumber: 1,
+      lifecycleStatus: "active",
+      approvalStatus: "approved",
+      name: "Proveedor + concepto",
+      description: null,
+      scope: "vendor_concept",
+      documentRole: "purchase",
+      priority: 800,
+      vendorId: "vendor-1",
+      conceptId: "concept-1",
+      accountId: "account-2",
+      operationCategory: null,
+      source: "manual",
+      createdFrom: "manual",
+      vendorName: "Proveedor 1",
+      conceptName: "Compras",
+      accountLabel: "6102",
+      conditionSummary: [],
+      resultSummary: [],
+      documentsAppliedCount: 0,
+      matchesCount: 0,
+      lastMatchedAt: null,
+      lastEditedAt: null,
+      pauseReason: null,
+      sourceDocumentId: null,
+      sourceDocumentLabel: null,
+      supersedesRuleId: null,
+      supersededByRuleId: null,
+      hasConflicts: false,
+      conflictCount: 0,
+      conflictSummary: null,
+      segmentKey: "vendor-1::concept-1",
+      searchableText: "proveedor",
+    },
+  ]);
+
+  assert.equal(items[0].hasConflicts, true);
+  assert.equal(items[1].hasConflicts, true);
+});
+
+test("accounting rules admin resolves the adjacent priority swap target inside one segment", () => {
+  const baseRule = {
+    id: "rule-2",
+    scope: "vendor_concept",
+    document_id: null,
+    vendor_id: "vendor-1",
+    concept_id: "concept-1",
+    operation_category: null,
+    document_role: "purchase",
+  };
+  const result = resolvePrioritySwapTarget({
+    rules: [
+      {
+        id: "rule-1",
+        organization_id: "org-1",
+        scope: "vendor_concept",
+        document_id: null,
+        source_document_id: null,
+        vendor_id: "vendor-1",
+        concept_id: "concept-1",
+        document_role: "purchase",
+        account_id: "account-1",
+        status: "approved",
+        vat_profile_json: {},
+        tax_profile_code: null,
+        operation_category: null,
+        linked_operation_type: null,
+        template_code: null,
+        times_reused: 0,
+        times_corrected: 0,
+        times_matched: 0,
+        times_applied: 0,
+        priority: 900,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+        created_at: "2026-03-24T10:00:00Z",
+      },
+      {
+        id: "rule-2",
+        organization_id: "org-1",
+        scope: "vendor_concept",
+        document_id: null,
+        source_document_id: null,
+        vendor_id: "vendor-1",
+        concept_id: "concept-1",
+        document_role: "purchase",
+        account_id: "account-2",
+        status: "approved",
+        vat_profile_json: {},
+        tax_profile_code: null,
+        operation_category: null,
+        linked_operation_type: null,
+        template_code: null,
+        times_reused: 0,
+        times_corrected: 0,
+        times_matched: 0,
+        times_applied: 0,
+        priority: 800,
+        source: "manual",
+        is_active: true,
+        metadata: {},
+        created_at: "2026-03-24T10:00:00Z",
+      },
+    ],
+    baseRule,
+    currentRuleId: "rule-2",
+    direction: "up",
+  });
+
+  assert.equal(result.otherRule.id, "rule-1");
 });

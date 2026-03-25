@@ -1061,7 +1061,7 @@ export default async function OrganizationSettingsPage({
             </div>
             <div className="flex flex-wrap gap-3">
               <LoadingLink
-                href={`/app/o/${organization.slug}/settings/accounting-rules`}
+                href={`/app/o/${organization.slug}/rules`}
                 pendingLabel="Abriendo reglas..."
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
               >

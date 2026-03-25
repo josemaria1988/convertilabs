@@ -96,6 +96,9 @@ alter table public.document_extractions enable row level security;
 alter table public.document_relations enable row level security;
 alter table public.accounting_rules enable row level security;
 alter table public.accounting_rule_events enable row level security;
+alter table public.accounting_rule_simulations enable row level security;
+alter table public.accounting_rule_ai_threads enable row level security;
+alter table public.accounting_rule_ai_messages enable row level security;
 alter table public.accounting_suggestions enable row level security;
 alter table public.accounting_suggestion_lines enable row level security;
 alter table public.journal_entries enable row level security;
@@ -856,6 +859,122 @@ with check (
       'admin'::public.member_role,
       'accountant'::public.member_role
     ]
+  )
+);
+
+drop policy if exists "accounting_rule_simulations_select_member" on public.accounting_rule_simulations;
+create policy "accounting_rule_simulations_select_member"
+on public.accounting_rule_simulations
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "accounting_rule_simulations_insert_accounting_roles" on public.accounting_rule_simulations;
+create policy "accounting_rule_simulations_insert_accounting_roles"
+on public.accounting_rule_simulations
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rule_ai_threads_select_consultive_roles" on public.accounting_rule_ai_threads;
+create policy "accounting_rule_ai_threads_select_consultive_roles"
+on public.accounting_rule_ai_threads
+for select
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rule_ai_threads_insert_consultive_roles" on public.accounting_rule_ai_threads;
+create policy "accounting_rule_ai_threads_insert_consultive_roles"
+on public.accounting_rule_ai_threads
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rule_ai_threads_update_consultive_roles" on public.accounting_rule_ai_threads;
+create policy "accounting_rule_ai_threads_update_consultive_roles"
+on public.accounting_rule_ai_threads
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'accountant'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "accounting_rule_ai_messages_select_consultive_roles" on public.accounting_rule_ai_messages;
+create policy "accounting_rule_ai_messages_select_consultive_roles"
+on public.accounting_rule_ai_messages
+for select
+using (
+  exists (
+    select 1
+    from public.accounting_rule_ai_threads as t
+    where t.id = thread_id
+      and public.has_org_role(
+        t.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'accountant'::public.member_role
+        ]
+      )
+  )
+);
+
+drop policy if exists "accounting_rule_ai_messages_insert_consultive_roles" on public.accounting_rule_ai_messages;
+create policy "accounting_rule_ai_messages_insert_consultive_roles"
+on public.accounting_rule_ai_messages
+for insert
+with check (
+  exists (
+    select 1
+    from public.accounting_rule_ai_threads as t
+    where t.id = thread_id
+      and public.has_org_role(
+        t.organization_id,
+        array[
+          'owner'::public.member_role,
+          'admin'::public.member_role,
+          'accountant'::public.member_role
+        ]
+      )
   )
 );
 

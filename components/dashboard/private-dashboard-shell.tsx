@@ -165,6 +165,26 @@ function ChartMapIcon({ className }: IconProps) {
   );
 }
 
+function RulesIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 5.5h12" />
+      <path d="M6 10.5h12" />
+      <path d="M6 15.5h8" />
+      <path d="M17.5 15.5 19 17l2.5-3" />
+    </svg>
+  );
+}
+
 function CaretIcon({ className }: IconProps) {
   return (
     <svg
@@ -190,6 +210,8 @@ function getNavIcon(label: string) {
       return TaxIcon;
     case "Mapa contable":
       return ChartMapIcon;
+    case "Reglas contables":
+      return RulesIcon;
     case "Configuracion":
       return SettingsIcon;
     default:

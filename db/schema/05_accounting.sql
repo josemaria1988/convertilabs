@@ -43,6 +43,54 @@ create table if not exists public.accounting_rules (
   updated_at timestamptz not null default now()
 );
 
+alter table public.accounting_rules
+  add column if not exists stable_family_code text,
+  add column if not exists version_number integer not null default 1,
+  add column if not exists name text,
+  add column if not exists description text,
+  add column if not exists lifecycle_status public.accounting_rule_lifecycle_status not null default 'active',
+  add column if not exists times_matched integer not null default 0,
+  add column if not exists times_applied integer not null default 0,
+  add column if not exists created_from text,
+  add column if not exists explainability_json jsonb not null default '{}'::jsonb,
+  add column if not exists supersedes_rule_id uuid references public.accounting_rules(id) on delete set null,
+  add column if not exists superseded_by_rule_id uuid references public.accounting_rules(id) on delete set null,
+  add column if not exists pause_reason text,
+  add column if not exists supersession_reason text,
+  add column if not exists activated_at timestamptz,
+  add column if not exists paused_at timestamptz,
+  add column if not exists retired_at timestamptz,
+  add column if not exists last_matched_at timestamptz;
+
+alter table public.accounting_rules
+  alter column stable_family_code set default ('rule_family_' || gen_random_uuid()::text);
+
+update public.accounting_rules
+set
+  stable_family_code = coalesce(stable_family_code, 'rule_family_' || id::text),
+  version_number = coalesce(version_number, 1),
+  created_from = coalesce(nullif(created_from, ''), nullif(source, ''), 'manual'),
+  lifecycle_status = case
+    when coalesce(is_active, true) = true then 'active'::public.accounting_rule_lifecycle_status
+    when status = 'candidate'::public.accounting_rule_status then 'draft'::public.accounting_rule_lifecycle_status
+    else 'paused'::public.accounting_rule_lifecycle_status
+  end,
+  times_applied = greatest(coalesce(times_applied, 0), coalesce(times_reused, 0)),
+  times_matched = greatest(coalesce(times_matched, 0), coalesce(times_reused, 0)),
+  activated_at = case
+    when coalesce(is_active, true) = true then coalesce(activated_at, created_at, now())
+    else activated_at
+  end,
+  paused_at = case
+    when coalesce(is_active, true) = false
+      and status <> 'candidate'::public.accounting_rule_status then coalesce(paused_at, updated_at, created_at, now())
+    else paused_at
+  end
+where true;
+
+alter table public.accounting_rules
+  alter column stable_family_code set not null;
+
 create index if not exists idx_accounting_rules_org_scope_active
   on public.accounting_rules (organization_id, scope, is_active, priority desc);
 
@@ -71,6 +119,91 @@ create table if not exists public.accounting_rule_events (
 
 create index if not exists idx_accounting_rule_events_org_rule_created
   on public.accounting_rule_events (organization_id, rule_id, created_at desc);
+
+insert into public.accounting_rule_events (
+  organization_id,
+  rule_id,
+  event_type,
+  reason,
+  payload_json,
+  created_at
+)
+select
+  rule.organization_id,
+  rule.id,
+  'migrated',
+  'Backfill inicial de administracion de reglas',
+  jsonb_build_object(
+    'scope',
+    rule.scope,
+    'priority',
+    rule.priority,
+    'source',
+    rule.source,
+    'created_from',
+    rule.created_from,
+    'lifecycle_status',
+    rule.lifecycle_status
+  ),
+  coalesce(rule.created_at, now())
+from public.accounting_rules as rule
+where not exists (
+  select 1
+  from public.accounting_rule_events as event
+  where event.rule_id = rule.id
+    and event.event_type = 'migrated'
+);
+
+create table if not exists public.accounting_rule_simulations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  base_rule_id uuid references public.accounting_rules(id) on delete set null,
+  candidate_rule_id uuid references public.accounting_rules(id) on delete set null,
+  simulation_type text not null,
+  sample_size integer not null default 0,
+  affected_documents_count integer not null default 0,
+  affected_recent_documents_count integer not null default 0,
+  summary_json jsonb not null default '{}'::jsonb,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_accounting_rule_simulations_org_rule_created
+  on public.accounting_rule_simulations (organization_id, base_rule_id, created_at desc);
+
+create table if not exists public.accounting_rule_ai_threads (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  title text not null,
+  context_scope text not null default 'global',
+  context_rule_id uuid references public.accounting_rules(id) on delete set null,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+
+create index if not exists idx_accounting_rule_ai_threads_org_created
+  on public.accounting_rule_ai_threads (organization_id, archived_at, created_at desc);
+
+create table if not exists public.accounting_rule_ai_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references public.accounting_rule_ai_threads(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  role text not null,
+  message_text text not null,
+  structured_payload_json jsonb not null default '{}'::jsonb,
+  referenced_rule_ids uuid[] not null default '{}'::uuid[],
+  referenced_document_ids uuid[] not null default '{}'::uuid[],
+  provider text,
+  model text,
+  tokens_input integer,
+  tokens_output integer,
+  estimated_cost numeric(18,8),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_accounting_rule_ai_messages_thread_created
+  on public.accounting_rule_ai_messages (thread_id, created_at desc);
 
 create table if not exists public.accounting_suggestions (
   id uuid primary key default gen_random_uuid(),

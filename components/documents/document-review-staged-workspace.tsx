@@ -2419,7 +2419,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </div>
             </div>
 
-            <RuleApplicationCard explanation={pageData.ruleExplanation} />
+            <RuleApplicationCard
+              explanation={pageData.ruleExplanation}
+              organizationSlug={pageData.organizationSlug}
+              documentId={pageData.document.id}
+            />
           </div>
         </section>
       ) : null}

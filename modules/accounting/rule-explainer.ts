@@ -6,6 +6,7 @@ import type {
 } from "@/modules/accounting/types";
 
 export type RuleApplicationExplanation = {
+  ruleId: string | null;
   title: string;
   summary: string;
   matchedPredicates: string[];
@@ -78,6 +79,7 @@ export function buildRuleApplicationExplanation(input: {
   ].filter((value): value is string => Boolean(value));
 
   return {
+    ruleId: input.appliedRule.ruleId,
     title: `Regla aplicada: ${formatScopeLabel(input.appliedRule.scope)}`,
     summary:
       input.appliedRule.scope === "manual_review"

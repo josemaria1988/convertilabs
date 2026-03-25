@@ -157,7 +157,11 @@ export default async function OrganizationChartMapPage({
               pageData.document ? (
                 <>
                   <DocumentImpactBanner document={pageData.document} />
-                  <RuleApplicationCard explanation={pageData.document.ruleExplanation} />
+                  <RuleApplicationCard
+                    explanation={pageData.document.ruleExplanation}
+                    organizationSlug={organization.slug}
+                    documentId={pageData.document.documentId}
+                  />
                   <AccountingImpactPreview preview={pageData.document.accountingImpactPreview} />
                   <ChartTreePanel
                     organizationSlug={organization.slug}

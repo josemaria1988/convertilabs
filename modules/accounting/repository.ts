@@ -182,6 +182,37 @@ async function recordAuditEvent(
   }
 }
 
+async function recordAccountingRuleLifecycleEvent(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    ruleId: string;
+    actorId: string | null;
+    eventType: string;
+    reason?: string | null;
+    payload?: Record<string, unknown>;
+  },
+) {
+  const { error } = await supabase
+    .from("accounting_rule_events")
+    .insert({
+      organization_id: input.organizationId,
+      rule_id: input.ruleId,
+      actor_user_id: input.actorId,
+      event_type: input.eventType,
+      reason: input.reason ?? null,
+      payload_json: input.payload ?? {},
+    });
+
+  if (error && isMissingSupabaseRelationError(error, "accounting_rule_events")) {
+    return;
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function loadOrganizationVendors(
   supabase: SupabaseClient,
   organizationId: string,
@@ -2552,6 +2583,7 @@ export async function createRuleFromApproval(
     }
   }
 
+  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("accounting_rules")
     .insert({
@@ -2579,8 +2611,11 @@ export async function createRuleFromApproval(
       operation_category: input.operationCategory,
       linked_operation_type: input.linkedOperationType,
       template_code: input.templateCode ?? null,
+      lifecycle_status: "active",
       times_reused: 0,
       times_corrected: 0,
+      times_matched: 0,
+      times_applied: 0,
       priority:
         input.learning.scope === "document_override"
           ? 1000
@@ -2592,8 +2627,10 @@ export async function createRuleFromApproval(
               ? 800
               : 700,
       source: "learned_from_approval",
+      created_from: "learning_approval",
       created_by: input.actorId,
       approved_by: input.actorId,
+      activated_at: now,
       metadata: {
         rationale: input.rationale,
         operation_kind: input.operationKind ?? null,
@@ -2627,11 +2664,11 @@ export async function createRuleFromApproval(
   }
 
   await recordAuditEvent(supabase, {
-    organizationId: input.organizationId,
-    actorId: input.actorId,
-    entityType: "accounting_rule",
-    entityId: data.id as string,
-    action: `learned_rule:${input.learning.scope}`,
+      organizationId: input.organizationId,
+      actorId: input.actorId,
+      entityType: "accounting_rule",
+      entityId: data.id as string,
+      action: `learned_rule:${input.learning.scope}`,
     afterJson: {
       scope: input.learning.scope,
       vendor_id: input.vendorId,
@@ -2644,6 +2681,18 @@ export async function createRuleFromApproval(
     },
     metadata: {
       document_id: input.documentId,
+    },
+  });
+  await recordAccountingRuleLifecycleEvent(supabase, {
+    organizationId: input.organizationId,
+    ruleId: data.id as string,
+    actorId: input.actorId,
+    eventType: "created",
+    reason: input.rationale,
+    payload: {
+      created_from: "learning_approval",
+      learning_scope: input.learning.scope,
+      source_document_id: input.documentId,
     },
   });
 

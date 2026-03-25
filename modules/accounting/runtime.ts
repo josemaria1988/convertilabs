@@ -28,6 +28,7 @@ import { resolveVendorFromFacts } from "@/modules/accounting/vendor-resolution";
 import type {
   AccountingAssistantResult,
   AccountingContextResolution,
+  AccountingRuleRecord,
   AccountingSuggestionContext,
   DocumentAccountingContextRecord,
   DocumentIntakeAmountBreakdown,
@@ -141,6 +142,7 @@ export async function deriveDocumentAccountingState(input: {
   invoiceIdentity: AccountingSuggestionContext["invoiceIdentity"];
   storedContext?: DocumentAccountingContextRecord | null;
   runAssistant?: boolean;
+  activeRulesOverride?: AccountingRuleRecord[] | null;
 }) {
   const functionalCurrencyCode = await loadOrganizationFunctionalCurrency(
     input.supabase,
@@ -188,7 +190,7 @@ export async function deriveDocumentAccountingState(input: {
     documentRole: input.documentRole,
     vendorResolution,
     conceptResolution,
-    activeRules: runtimeContext.activeRules,
+    activeRules: input.activeRulesOverride ?? runtimeContext.activeRules,
     operationCategory: input.operationCategory,
     storedContext,
     locationSignal: {
@@ -304,7 +306,7 @@ export async function deriveDocumentAccountingState(input: {
     assistantSuggestion,
     accounts: runtimeContext.accounts,
     accountRoleBindings: runtimeContext.accountRoleBindings,
-    activeRules: runtimeContext.activeRules,
+    activeRules: input.activeRulesOverride ?? runtimeContext.activeRules,
   });
 
   return {

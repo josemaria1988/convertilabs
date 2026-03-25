@@ -1,12 +1,25 @@
 "use client";
 
+import { LoadingLink } from "@/components/ui/loading-link";
 import type { RuleApplicationExplanation } from "@/modules/accounting/rule-explainer";
 
 type RuleApplicationCardProps = {
   explanation: RuleApplicationExplanation;
+  organizationSlug?: string;
+  documentId?: string | null;
 };
 
-export function RuleApplicationCard({ explanation }: RuleApplicationCardProps) {
+export function RuleApplicationCard({
+  explanation,
+  organizationSlug,
+  documentId,
+}: RuleApplicationCardProps) {
+  const hasRuleLink = Boolean(organizationSlug && explanation.ruleId);
+  const analysisPrompt =
+    explanation.ruleId && documentId
+      ? `Analiza por que el documento ${documentId} cayo en esta regla, que conflictos tiene y que cambios manuales convendria evaluar.`
+      : null;
+
   return (
     <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
       <div className="flex items-start justify-between gap-3">
@@ -20,6 +33,34 @@ export function RuleApplicationCard({ explanation }: RuleApplicationCardProps) {
           Explainability
         </span>
       </div>
+
+      {hasRuleLink ? (
+        <div className="mt-4 flex flex-wrap gap-3">
+          <LoadingLink
+            href={`/app/o/${organizationSlug}/rules/${explanation.ruleId}`}
+            pendingLabel="Abriendo regla..."
+            className="ui-button ui-button--secondary"
+          >
+            Ver esta regla en administracion
+          </LoadingLink>
+          <LoadingLink
+            href={`/app/o/${organizationSlug}/rules/${explanation.ruleId}?tab=conflicts`}
+            pendingLabel="Abriendo conflictos..."
+            className="ui-button ui-button--secondary"
+          >
+            Ver reglas competidoras
+          </LoadingLink>
+          {analysisPrompt ? (
+            <LoadingLink
+              href={`/app/o/${organizationSlug}/rules/${explanation.ruleId}?tab=audit&assistant=1&prompt=${encodeURIComponent(analysisPrompt)}`}
+              pendingLabel="Abriendo analisis..."
+              className="ui-button ui-button--secondary"
+            >
+              Abrir analisis en chat IA
+            </LoadingLink>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div>

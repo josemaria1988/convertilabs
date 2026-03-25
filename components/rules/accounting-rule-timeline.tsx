@@ -31,7 +31,7 @@ export function AccountingRuleTimeline({ items }: AccountingRuleTimelineProps) {
             <div>
               <p className="text-sm font-semibold text-white">{item.label}</p>
               <p className="mt-1 text-xs text-[color:var(--color-muted)]">
-                {item.actorDisplay ?? "Sistema"} · {formatDateTime(item.createdAt)}
+                {item.actorDisplay ?? "Sistema"} / {formatDateTime(item.createdAt)}
               </p>
             </div>
             <span className="ui-filter">
