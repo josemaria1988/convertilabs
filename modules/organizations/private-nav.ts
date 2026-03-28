@@ -1,65 +1,73 @@
 export type OrganizationPrivateSection =
+  | "home"
   | "documents"
-  | "audit"
+  | "review"
   | "close"
-  | "accounting"
   | "tax"
-  | "chart-map"
-  | "rules"
-  | "settings";
+  | "settings"
+  | "advanced";
+
+type OrganizationPrivateNavItem = {
+  href: string;
+  label: string;
+  description: string;
+  icon: "home" | "documents" | "review" | "tax" | "close" | "settings" | "advanced";
+  current: boolean;
+};
 
 export function buildOrganizationPrivateNavItems(
   organizationSlug: string,
   currentSection: OrganizationPrivateSection,
-) {
+): OrganizationPrivateNavItem[] {
   return [
+    {
+      href: `/app/o/${organizationSlug}/dashboard`,
+      label: "Inicio",
+      description: "Centro de trabajo y prioridades del dia",
+      icon: "home",
+      current: currentSection === "home",
+    },
     {
       href: `/app/o/${organizationSlug}/documents`,
       label: "Documentos",
-      description: "Bandeja operativa, revision y posting",
+      description: "Carga de originales e ingreso asistido",
+      icon: "documents",
       current: currentSection === "documents",
     },
     {
-      href: `/app/o/${organizationSlug}/audit`,
-      label: "Auditoria",
-      description: "Imports auditados, preview y trazabilidad",
-      current: currentSection === "audit",
-    },
-    {
-      href: `/app/o/${organizationSlug}/close`,
-      label: "Cierre",
-      description: "Cockpit mensual, validator y locks",
-      current: currentSection === "close",
-    },
-    {
-      href: `/app/o/${organizationSlug}/trial-balance`,
-      label: "Contabilidad",
-      description: "Balance, diario y open items",
-      current: currentSection === "accounting",
+      href: `/app/o/${organizationSlug}/review`,
+      label: "Revision",
+      description: "Cola principal por estados operativos",
+      icon: "review",
+      current: currentSection === "review",
     },
     {
       href: `/app/o/${organizationSlug}/tax`,
       label: "Impuestos",
-      description: "IVA mensual, lifecycle y comparacion DGI base",
+      description: "Periodo IVA guiado y alertas fiscales",
+      icon: "tax",
       current: currentSection === "tax",
     },
     {
-      href: `/app/o/${organizationSlug}/chart-map`,
-      label: "Mapa contable",
-      description: "Arbol, impacto y documentos reales",
-      current: currentSection === "chart-map",
-    },
-    {
-      href: `/app/o/${organizationSlug}/rules`,
-      label: "Reglas contables",
-      description: "Gobernanza, simulacion, prioridad y chat consultivo",
-      current: currentSection === "rules",
+      href: `/app/o/${organizationSlug}/close`,
+      label: "Cierre",
+      description: "Validator mensual y transiciones formales",
+      icon: "close",
+      current: currentSection === "close",
     },
     {
       href: `/app/o/${organizationSlug}/settings`,
       label: "Configuracion",
-      description: "Perfil fiscal, presets y plan de cuentas",
+      description: "Empresa, perfil fiscal e integraciones",
+      icon: "settings",
       current: currentSection === "settings",
+    },
+    {
+      href: `/app/o/${organizationSlug}/advanced`,
+      label: "Avanzado",
+      description: "Importacion masiva, contabilidad y salidas expertas",
+      icon: "advanced",
+      current: currentSection === "advanced",
     },
   ];
 }

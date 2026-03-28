@@ -22,7 +22,7 @@ type OrganizationAuditPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Auditoria",
+  title: "Importacion masiva",
 };
 
 function formatDateTime(value: string | null | undefined) {
@@ -59,17 +59,17 @@ export default async function OrganizationAuditPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Auditoria"
-      toolbarLabel="Auditoria"
-      description="Ingreso masivo auditado con preview estructurado, decisiones controladas e historico trazable por usuario y fecha."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "audit")}
+      title="Importacion masiva"
+      toolbarLabel="Importacion masiva"
+      description="Ingreso masivo guiado con preview estructurado, decisiones controladas e historico trazable por usuario y fecha."
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-4">
           <section className="ui-panel">
             <div className="ui-panel-header">
               <div>
-                <h1 className="text-[22px] font-semibold text-white">Auditoria</h1>
+                <h1 className="text-[22px] font-semibold text-white">Importacion masiva</h1>
                 <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                   Este modulo separa la importacion documental masiva del flujo diario de `Documentos`.
                   Primero genera un staging auditable y despues materializa solo lo que apruebes.
@@ -95,7 +95,7 @@ export default async function OrganizationAuditPage({
             <div className="mt-4 space-y-3">
               {runs.length === 0 ? (
                 <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/6 p-4 text-sm text-[color:var(--color-muted)]">
-                  Todavia no hay auditorias documentales en esta organizacion.
+                  Todavia no hay corridas de importacion masiva en esta organizacion.
                 </div>
               ) : (
                 runs.map((run) => {

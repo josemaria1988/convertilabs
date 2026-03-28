@@ -268,7 +268,7 @@ export default async function OrganizationImportsPage({
       title="Planillas de soporte"
       toolbarLabel="Planillas de soporte"
       description="Carga auxiliar de planillas para plan de cuentas, plantillas contables e historicos IVA, separada de la operatoria economica diaria."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">

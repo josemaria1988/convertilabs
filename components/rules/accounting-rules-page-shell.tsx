@@ -30,7 +30,7 @@ export function AccountingRulesPageShell({
       title={title}
       toolbarLabel="Reglas contables"
       description={description}
-      navItems={buildOrganizationPrivateNavItems(organizationSlug, "rules")}
+      navItems={buildOrganizationPrivateNavItems(organizationSlug, "advanced")}
     >
       {children}
     </PrivateDashboardShell>

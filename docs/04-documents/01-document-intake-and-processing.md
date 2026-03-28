@@ -10,10 +10,12 @@ Capturar documentos reales, guardarlos en storage privado, extraer hechos estruc
 
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/documents/pending-assignment`
 - `/app/o/[slug]/audit`
 - `components/documents/upload-button.tsx`
 - `components/documents/upload-dropzone.tsx`
 - `components/documents/documents-workspace-table.tsx`
+- `components/documents/document-original-modal-trigger.tsx`
 - `components/audit/document-audit-upload-panel.tsx`
 - `components/audit/document-audit-preview-workspace.tsx`
 
@@ -23,6 +25,7 @@ Capturar documentos reales, guardarlos en storage privado, extraer hechos estruc
 - `modules/documents/processing.ts`
 - `modules/documents/spreadsheet-batch-import.ts`
 - `modules/documents/spreadsheet-import-background.ts`
+- `modules/launch/scope.ts`
 - `modules/documents/inngest-function.ts`
 - `app/api/inngest/route.ts`
 - `app/api/v1/documents/[documentId]/processing-status/route.ts`
@@ -39,8 +42,15 @@ Estado real hoy:
 
 La arquitectura visible hoy ya separa dos carriles:
 
-- `Documentos` para upload privado de comprobantes binarios e intake IA clasico;
-- `Auditoria` para planillas mensuales que primero generan staging auditable y solo despues materializan documentos sinteticos.
+- `Documentos` para upload privado de comprobantes binarios, resumen del ultimo lote y derivacion rapida hacia `Revision`;
+- `Revision` como cola principal humana donde se agrupan buckets operativos y se entra al reviewer;
+- `Importacion masiva` en `/audit` para planillas mensuales que primero generan staging auditable y solo despues materializan documentos sinteticos.
+
+Ademas, el workspace ya separa soporte operativo por alcance:
+
+- `automatic` para el perimetro conservador del MVP;
+- `assisted_only` para perfiles o documentos fuera de alcance automatico;
+- `blocked` cuando faltan datos minimos, FX confiable o hay bloqueo fuerte de duplicado/scope.
 
 ## Flujos operativos
 
@@ -61,15 +71,17 @@ La arquitectura visible hoy ya separa dos carriles:
 7. se crea `document_draft` y sus pasos;
 8. el documento queda listo para revision.
 
-### Auditoria documental por planilla
+Si el documento queda en estados de clasificacion pendientes o vencidos, el usuario puede derivarlo a la cola dedicada `/documents/pending-assignment`.
+
+### Importacion masiva documental por planilla
 
 1. el usuario entra a `/app/o/[slug]/audit`, elige compras o ventas y sube una planilla mensual;
 2. el sistema hace preflight, valida limite del flujo estandar y encola un `document_batch_import`;
 3. la corrida de background detecta headers, aplica normalizadores deterministas cuando reconoce layouts como Zetasoftware compras o ventas, extrae filas importables y deja la corrida en `preview_ready` dentro de `organization_spreadsheet_import_runs`;
 4. el usuario revisa el preview, acepta o rechaza todo o subconjuntos del batch;
 5. solo las filas aceptadas materializan documentos `source_type = spreadsheet_import`;
-6. esos documentos vuelven al workspace de `Documentos` para revision, clasificacion y posting;
-7. el historico de `Auditoria` conserva archivo, usuario, fechas y documentos creados por la corrida.
+6. esos documentos vuelven a `Revision` para clasificacion y posting, mientras `Documentos` conserva el rol de ingreso;
+7. el historico de `Importacion masiva` conserva archivo, usuario, fechas y documentos creados por la corrida.
 
 ## Contrato IA de intake
 
@@ -103,6 +115,7 @@ Campos principales del contrato:
 - `document_invoice_identities`
 - `document_accounting_contexts`
 - `ai_decision_logs`
+- `organization_spreadsheet_import_runs`
 
 ## Estados visibles
 
@@ -142,8 +155,8 @@ El rector propone un pipeline mas expresivo (`ready_for_assignment`, `posted_pro
 
 ## Lo que sigue parcial
 
-- aun no existe una cola dedicada y explicitamente nombrada como "Procesados pendientes de asignacion";
-- la separacion operativa ya existe entre `Documentos` y `Auditoria`, pero todavia faltan colas y vistas especializadas equivalentes para otros canales de entrada;
+- ya existe una cola dedicada `pending-assignment`, pero aun no es un workspace masivo top-level ni cubre todos los canales de entrada;
+- la separacion operativa ya existe entre `Documentos`, `Revision` e `Importacion masiva`, pero todavia faltan colas y vistas especializadas equivalentes para otros canales de entrada;
 - faltan mas conectores externos de entrada ademas del upload y las planillas;
 - el flujo auditado ya existe, pero todavia faltan herramientas mas finas para reproceso, diff entre preview y materializado y operaciones sobre subconjuntos mas complejos;
 - la auditoria expandida hoy se concentra en imports documentales por planilla, no en todas las superficies del producto.

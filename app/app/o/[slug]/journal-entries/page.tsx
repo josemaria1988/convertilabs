@@ -115,7 +115,7 @@ export default async function OrganizationJournalEntriesPage({
       title="Libro diario"
       toolbarLabel="Libro diario"
       description="Consulta read-only del journal inmutable con linaje de reversas y ajustes anclado al kernel."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "accounting")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <div className="space-y-4">
         <AccountingWorkspaceTabs organizationSlug={organization.slug} current="journal-entries" />

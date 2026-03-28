@@ -113,7 +113,7 @@ export default async function OrganizationOpenItemsPage({
       title="Open items"
       toolbarLabel="Open items"
       description="Partidas vivas del ledger para cuentas a cobrar, cuentas a pagar y saldos residuales sin depender del estado del documento."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "accounting")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <div className="space-y-4">
         <AccountingWorkspaceTabs organizationSlug={organization.slug} current="open-items" />

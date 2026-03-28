@@ -101,7 +101,7 @@ export default async function OrganizationTrialBalancePage({
       title="Contabilidad"
       toolbarLabel="Contabilidad"
       description="Balance de comprobacion, mayor por cuenta y agregados del journal real para inspeccionar el kernel sin tocar asientos."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "accounting")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <div className="space-y-4">
         <AccountingWorkspaceTabs organizationSlug={organization.slug} current="trial-balance" />

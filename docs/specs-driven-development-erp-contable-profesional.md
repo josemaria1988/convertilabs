@@ -2,6 +2,7 @@
 
 **Estado editorial:** propuesto / no implementado salvo donde se indique explícitamente  
 **Fecha:** 2026-03-20  
+**Estado editorial 2026-03-28:** hoy funciona como roadmap de fase posterior. El cierre base, los threads del asistente y el admin de reglas ya quedaron absorbidos por la documentacion oficial y el codigo.  
 **Estado actual 2026-03-20:** la epica inmediata de cierre base ya fue absorbida por la documentacion oficial y materializada en cockpit, validator, estados de periodo y trazabilidad IA transversal.  
 **Objetivo:** consolidar, en un único documento de trabajo para Codex, el salto de Convertilabs desde un kernel contable-fiscal document-driven hacia una plataforma de cierre contable-fiscal y auditoría externa asistida por IA, con trazabilidad completa, human-in-the-loop y foco de producto en Uruguay.
 

@@ -1,15 +1,19 @@
 # Convertilabs
 
-Convertilabs es una plataforma contable y fiscal para Uruguay centrada en tres motores: ingreso documental, decision contable y liquidacion fiscal revisable.
+Convertilabs es una plataforma contable y fiscal document-driven para Uruguay, centrada en intake documental, decision contable explicable e IVA revisable.
 
-## Estado actual del proyecto
+## Estado operativo real
 
-- onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets base o hibrida con IA;
-- workspace documental con upload privado, procesamiento por Inngest + OpenAI, revision humana, posting y carril separado para operaciones internacionales;
-- workspace contable read-only con balance de comprobacion, libro diario, open items y mapa contable explicable;
-- workspace fiscal con VAT preview, VAT runs, exportes fiscales y conciliacion DGI base manual por buckets;
-- carriles de soporte para planillas de plan de cuentas, historicos IVA, plantillas contables y bridge de exportacion contable hacia sistemas externos;
-- settings con perfil fiscal versionado, plan de cuentas, conexiones de email CFE y capacidades por organizacion.
+- onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets por reglas o IA;
+- `Inicio` como centro de trabajo real con prioridades, guardrails y CTAs al flujo principal;
+- workspace `Documentos` reducido al ingreso documental: upload privado, resumen del ultimo lote y CTA fuerte hacia `Revision`;
+- workspace `Revision` como cola principal por buckets operativos y acceso al reviewer paso a paso;
+- `Importacion masiva` en `/audit` para planillas mensuales con preview estructurado, aceptar/rechazar parcial y trazabilidad por corrida;
+- admin de `Reglas contables` con listado, lifecycle, versionado forward-only, simulaciones, conflictos y chat consultivo;
+- workspaces contables read-only con balance, diario, open items y mapa contable explicable;
+- workspace fiscal con VAT preview, VAT runs, workbench por periodo, conciliacion DGI base y exportes fiscales;
+- cockpit de `Cierre` con estados formales del periodo, validator deterministico y locks efectivos;
+- carriles de soporte para imports de planillas, exportacion contable/fiscal y configuracion fiscal versionada por organizacion.
 
 ## Superficies activas
 
@@ -22,21 +26,32 @@ Convertilabs es una plataforma contable y fiscal para Uruguay centrada en tres m
 - `/auth/confirm`
 - `/onboarding`
 
-### Privadas por organizacion
+### Privadas del top nav por organizacion
 
+- `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/documents`
+- `/app/o/[slug]/review`
+- `/app/o/[slug]/tax`
+- `/app/o/[slug]/close`
+- `/app/o/[slug]/settings`
+- `/app/o/[slug]/advanced`
+
+### Privadas expertas o de soporte por organizacion
+
 - `/app/o/[slug]/documents/[documentId]`
+- `/app/o/[slug]/audit`
 - `/app/o/[slug]/trial-balance`
+- `/app/o/[slug]/chart-map`
+- `/app/o/[slug]/rules`
+- `/app/o/[slug]/documents/pending-assignment`
+- `/app/o/[slug]/documents/[documentId]/original`
 - `/app/o/[slug]/journal-entries`
 - `/app/o/[slug]/open-items`
-- `/app/o/[slug]/tax`
-- `/app/o/[slug]/tax/reconciliation`
-- `/app/o/[slug]/chart-map`
-- `/app/o/[slug]/settings`
 - `/app/o/[slug]/imports`
 - `/app/o/[slug]/exports`
+- `/app/o/[slug]/tax/reconciliation`
 
-Las rutas cortas `/documents`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario.
+Las rutas cortas `/dashboard`, `/documents`, `/review`, `/advanced`, `/close`, `/rules`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario.
 
 ## Stack operativo
 
@@ -109,14 +124,24 @@ npm run documents:repair:stale-processing
 - [docs/README.md](docs/README.md)
 - [docs/beta_privada_alcance_y_operacion.md](docs/beta_privada_alcance_y_operacion.md)
 - [docs/00-foundations/01-mapa-del-repo-y-rutas.md](docs/00-foundations/01-mapa-del-repo-y-rutas.md)
+- [docs/00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-28.md](docs/00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-28.md)
 - [docs/04-documents/01-document-intake-and-processing.md](docs/04-documents/01-document-intake-and-processing.md)
+- [docs/04-documents/02-document-review-classification-and-posting.md](docs/04-documents/02-document-review-classification-and-posting.md)
+- [docs/03-accounting/accounting-rules-admin-and-learning.md](docs/03-accounting/accounting-rules-admin-and-learning.md)
 - [docs/04-documents/03-document-settlement-and-multi-line-posting.md](docs/04-documents/03-document-settlement-and-multi-line-posting.md)
 - [docs/07-platform/database-api-background-jobs-and-observability.md](docs/07-platform/database-api-background-jobs-and-observability.md)
+
+## Specs activas de implementacion
+
+- [docs/convertilabs_mvp_launch_hardening_sdd_codex_prompt.md](docs/convertilabs_mvp_launch_hardening_sdd_codex_prompt.md)
+- [docs/specs-driven-development-admin-reglas-y-aprendizaje.md](docs/specs-driven-development-admin-reglas-y-aprendizaje.md)
+- [docs/specs-driven-development-asistente-contable.md](docs/specs-driven-development-asistente-contable.md)
+- [docs/spec_ui_refactor_explainability_convertilabs.md](docs/spec_ui_refactor_explainability_convertilabs.md)
 
 ## Alcance operativo hoy
 
 - Uruguay only;
-- foco operativo en documentos, decision contable, IVA y bridge externo;
+- foco operativo en documentos, reglas, decision contable, IVA y bridge externo;
 - conciliacion DGI base manual asistida, no filing automatico;
 - sin payroll/BPS, conciliacion bancaria end-to-end ni multi-country operativo.
 

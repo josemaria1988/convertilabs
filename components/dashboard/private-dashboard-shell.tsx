@@ -8,6 +8,7 @@ export type PrivateDashboardNavItem = {
   href: string;
   label: string;
   description: string;
+  icon?: "home" | "documents" | "review" | "tax" | "close" | "settings" | "advanced";
   current?: boolean;
 };
 
@@ -67,7 +68,7 @@ function DocumentIcon({ className }: IconProps) {
   );
 }
 
-function AuditIcon({ className }: IconProps) {
+function ReviewIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -79,8 +80,10 @@ function AuditIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12 3.5 5.5 6v5.4c0 4.2 2.6 7.8 6.5 9.1 3.9-1.3 6.5-4.9 6.5-9.1V6Z" />
-      <path d="m9.2 11.8 1.8 1.8 4-4" />
+      <path d="M5 6.5h14" />
+      <path d="M5 12h8" />
+      <path d="M5 17.5h10" />
+      <path d="m16.8 15.8 1.6 1.6 2.8-3.3" />
     </svg>
   );
 }
@@ -103,7 +106,7 @@ function TaxIcon({ className }: IconProps) {
   );
 }
 
-function AccountingIcon({ className }: IconProps) {
+function CloseIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -115,12 +118,11 @@ function AccountingIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M5 6.5h14" />
-      <path d="M5 12h14" />
-      <path d="M5 17.5h9" />
-      <path d="M17 17.5h2" />
-      <path d="M7 5v14" />
-      <path d="M15 5v9" />
+      <path d="M6 4.5h12v15H6z" />
+      <path d="M9 2.5v4" />
+      <path d="M15 2.5v4" />
+      <path d="M9 11.5h6" />
+      <path d="M9 15.5h4" />
     </svg>
   );
 }
@@ -143,7 +145,7 @@ function SettingsIcon({ className }: IconProps) {
   );
 }
 
-function ChartMapIcon({ className }: IconProps) {
+function AdvancedIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -155,32 +157,9 @@ function ChartMapIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <circle cx="6" cy="7" r="2.2" />
-      <circle cx="18" cy="6" r="2.2" />
-      <circle cx="12" cy="17" r="2.2" />
-      <path d="M8 7h7.7" />
-      <path d="M7.4 8.8 10.6 15" />
-      <path d="M16.6 7.8 13.4 15" />
-    </svg>
-  );
-}
-
-function RulesIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M6 5.5h12" />
-      <path d="M6 10.5h12" />
-      <path d="M6 15.5h8" />
-      <path d="M17.5 15.5 19 17l2.5-3" />
+      <path d="M12 3.5 14 7.5l4.5.7-3.2 3.1.8 4.7-4.1-2.1-4.1 2.1.8-4.7-3.2-3.1 4.5-.7Z" />
+      <path d="M18.5 16.5 20.5 18.5" />
+      <path d="M3.5 18.5 5.5 16.5" />
     </svg>
   );
 }
@@ -198,22 +177,21 @@ function CaretIcon({ className }: IconProps) {
   );
 }
 
-function getNavIcon(label: string) {
-  switch (label) {
-    case "Documentos":
+function getNavIcon(iconKey?: PrivateDashboardNavItem["icon"]) {
+  switch (iconKey) {
+    case "documents":
       return DocumentIcon;
-    case "Auditoria":
-      return AuditIcon;
-    case "Contabilidad":
-      return AccountingIcon;
-    case "Impuestos":
+    case "review":
+      return ReviewIcon;
+    case "tax":
       return TaxIcon;
-    case "Mapa contable":
-      return ChartMapIcon;
-    case "Reglas contables":
-      return RulesIcon;
-    case "Configuracion":
+    case "close":
+      return CloseIcon;
+    case "settings":
       return SettingsIcon;
+    case "advanced":
+      return AdvancedIcon;
+    case "home":
     default:
       return HomeIcon;
   }
@@ -229,6 +207,8 @@ export function PrivateDashboardShell({
   children,
 }: PrivateDashboardShellProps) {
   const sectionLabel = toolbarLabel ?? title;
+  const currentItem = navItems.find((item) => item.current) ?? null;
+  const CurrentIcon = getNavIcon(currentItem?.icon);
 
   return (
     <div className="app-shell">
@@ -243,7 +223,7 @@ export function PrivateDashboardShell({
 
           <nav className="app-sidebar-nav">
             {navItems.map((item) => {
-              const Icon = getNavIcon(item.label);
+              const Icon = getNavIcon(item.icon);
 
               return (
                 <LoadingLink
@@ -269,7 +249,7 @@ export function PrivateDashboardShell({
         <div className="app-topbar">
           <div className="app-topbar__section">
             <span className="flex h-4 w-4 items-center justify-center text-[color:var(--color-muted)]">
-              <DocumentIcon className="h-[12px] w-[12px]" />
+              <CurrentIcon className="h-[12px] w-[12px]" />
             </span>
             <span className="truncate">{sectionLabel}</span>
             <CaretIcon className="h-[11px] w-[11px] text-[color:var(--color-muted)]" />

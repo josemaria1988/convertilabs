@@ -2605,49 +2605,47 @@ export async function listOrganizationWorkspaceDocuments(input: {
   organizationId: string;
   organizationSlug: string;
 }) {
+  return listAllOrganizationWorkspaceDocuments({
+    organizationId: input.organizationId,
+    organizationSlug: input.organizationSlug,
+    limit: 30,
+    sortOrder: "date_desc",
+  });
+}
+
+export async function listAllOrganizationWorkspaceDocuments(input: {
+  organizationId: string;
+  organizationSlug: string;
+  directionFilter?: DocumentWorkspaceDirectionFilter | null;
+  sortOrder?: DocumentWorkspaceSortOrder | null;
+  limit?: number | null;
+}) {
   const supabase = getSupabaseServiceRoleClient();
+  const directionFilter = normalizeDocumentWorkspaceDirectionFilter(input.directionFilter);
+  const sortOrder = normalizeDocumentWorkspaceSortOrder(input.sortOrder);
+  const normalizedLimit =
+    typeof input.limit === "number" && Number.isFinite(input.limit) && input.limit > 0
+      ? Math.floor(input.limit)
+      : null;
 
   await reconcileStaleDocumentProcessingRuns({
     supabase,
     organizationId: input.organizationId,
   });
 
-  const primaryResult = await supabase
-    .from("documents")
-    .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-    )
-    .eq("organization_id", input.organizationId)
-    .order("created_at", { ascending: false })
-    .limit(30);
-  let data = primaryResult.data as unknown;
-  let error = primaryResult.error;
-
-  if (error && isMissingDocumentStep5ColumnError(error)) {
-    const legacyResult = await supabase
-      .from("documents")
-      .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
-      )
-      .eq("organization_id", input.organizationId)
-      .order("created_at", { ascending: false })
-      .limit(30);
-    data = legacyResult.data as unknown;
-    error = legacyResult.error;
-  }
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = mapDocumentWorkspaceRows(data as Array<Record<string, unknown>> | null);
-
-  return buildOrganizationWorkspaceDocumentList({
+  const rows = await loadAllWorkspaceDocumentRows({
+    supabase,
+    organizationId: input.organizationId,
+    directionFilter,
+  });
+  const items = sortDocumentWorkspaceItems(await buildOrganizationWorkspaceDocumentList({
     supabase,
     organizationId: input.organizationId,
     organizationSlug: input.organizationSlug,
     rows,
-  });
+  }), sortOrder);
+
+  return normalizedLimit ? items.slice(0, normalizedLimit) : items;
 }
 
 async function loadPaginatedWorkspaceDocumentRows(input: {

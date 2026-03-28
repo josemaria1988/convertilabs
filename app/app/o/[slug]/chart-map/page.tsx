@@ -70,7 +70,7 @@ export default async function OrganizationChartMapPage({
       title="Mapa contable"
       toolbarLabel="Mapa contable"
       description="Vista coordinada del plan, las reglas reutilizables y el impacto de documentos reales sin mezclar estructura con historicos."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "chart-map")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
     >
       <ChartMapShell
         summaryCards={(

@@ -1,5 +1,7 @@
 # Spec — Refactor de UI y Explainability
 
+Estado editorial 2026-03-28: parcial. Ya aterrizaron piezas del vocabulario canonico, `pending-assignment`, help hints, decision comments, audit preview y explainability documental, pero el refactor transversal completo sigue abierto.
+
 ## Objetivo
 
 Refactorizar la UI de Convertilabs para que el sistema sea entendible, operable e intuitivo para un usuario real sin necesidad de reconstruir mentalmente lógica oculta del backend.

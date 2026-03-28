@@ -2,6 +2,7 @@
 
 **Estado editorial:** propuesto / implementacion en curso solo donde se indique explicitamente  
 **Fecha:** 2026-03-22  
+**Estado actual 2026-03-28:** el Asistente Contable ya existe como rail consultivo en `Documentos`; sigue acotado a analisis, refresh y sugerencias resolubles, sin mutaciones contables libres.  
 **Objetivo:** formalizar la capa visible y auditable del Asistente Contable dentro de Convertilabs, sin mezclar la IA con el modelo de acceso humano ni darle capacidad de ejecutar mutaciones contables por fuera del dominio.
 
 ---

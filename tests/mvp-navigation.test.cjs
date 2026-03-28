@@ -2,13 +2,14 @@
 const { test, assert } = require("./testkit.cjs");
 
 const {
+  resolveOrganizationDashboardPath,
   resolveOrganizationDocumentsPath,
   resolvePostAuthDestination,
 } = require("@/modules/auth/server-auth");
 const { buildOrganizationPrivateNavItems } = require("@/modules/organizations/private-nav");
 const { marketingNav, workspaceNav } = require("@/lib/navigation");
 
-test("post auth destination defaults to the documents workspace", () => {
+test("post auth destination defaults to the dashboard workspace", () => {
   const authState = {
     hasMembership: true,
     primaryOrganization: {
@@ -21,7 +22,7 @@ test("post auth destination defaults to the documents workspace", () => {
 
   assert.equal(
     resolvePostAuthDestination(authState),
-    resolveOrganizationDocumentsPath("rontil"),
+    resolveOrganizationDashboardPath("rontil"),
   );
   assert.equal(
     resolvePostAuthDestination(authState, "/app/o/rontil/tax"),
@@ -29,32 +30,31 @@ test("post auth destination defaults to the documents workspace", () => {
   );
 });
 
-test("private navigation exposes close, audit, chart map and rules routes", () => {
+test("private navigation exposes the guided workspace and advanced entrypoint", () => {
   const navItems = buildOrganizationPrivateNavItems("rontil", "documents");
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Documentos", "Auditoria", "Cierre", "Contabilidad", "Impuestos", "Mapa contable", "Reglas contables", "Configuracion"],
+    ["Inicio", "Documentos", "Revision", "Impuestos", "Cierre", "Configuracion", "Avanzado"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
     [
+      "/app/o/rontil/dashboard",
       "/app/o/rontil/documents",
-      "/app/o/rontil/audit",
-      "/app/o/rontil/close",
-      "/app/o/rontil/trial-balance",
+      "/app/o/rontil/review",
       "/app/o/rontil/tax",
-      "/app/o/rontil/chart-map",
-      "/app/o/rontil/rules",
+      "/app/o/rontil/close",
       "/app/o/rontil/settings",
+      "/app/o/rontil/advanced",
     ],
   );
 });
 
-test("public and workspace navigation include audit, chart map and rules in private workspace", () => {
+test("public and workspace navigation mirror the guided primary sections", () => {
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Documentos", "Auditoria", "Cierre", "Contabilidad", "Impuestos", "Mapa contable", "Reglas contables", "Configuracion"],
+    ["Inicio", "Documentos", "Revision", "Impuestos", "Cierre", "Configuracion", "Avanzado"],
   );
 });

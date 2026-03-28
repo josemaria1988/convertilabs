@@ -35,7 +35,15 @@ Traducir la identidad registral y operativa de la empresa a un perfil de negocio
 
 ### Version fiscal
 
-Ademas del business profile, settings mantiene un perfil fiscal versionado con campos como:
+Ademas del business profile, `settings` ahora se presenta en tabs operativas:
+
+- `Empresa`
+- `Perfil fiscal`
+- `Plan contable`
+- `Integraciones`
+- `Avanzado`
+
+Dentro de esa estructura, settings mantiene un perfil fiscal versionado con campos como:
 
 - direccion fiscal
 - departamento
@@ -70,7 +78,7 @@ Definidas en `modules/organizations/feature-flags.ts`:
 Defaults actuales:
 
 - presets por actividad: `true`
-- preset IA: `false`
+- preset IA: `true`
 - help hints: `true`
 
 ## Persistencia del perfil
@@ -128,7 +136,9 @@ Settings concentra:
 - datos base de organizacion;
 - business profile y recomendacion de plan;
 - perfil fiscal versionado;
-- administracion del chart of accounts.
+- administracion del chart of accounts;
+- conexiones CFE y export del plan;
+- acceso al workspace dedicado de `Reglas contables` via ruta legacy redirigida.
 
 ## Politica de historia
 

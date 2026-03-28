@@ -4,16 +4,22 @@
 
 Tomar un draft ya extraido, revisarlo, clasificarlo contable y fiscalmente, permitir overrides y aprendizaje, mostrar preview y terminar en posting provisional o final sin mezclar todo en una sola caja negra.
 
+Desde `2026-03-28`, esta capacidad ya no entra por `Documentos`: la cola principal vive en `/app/o/[slug]/review` y el detalle sigue en `/app/o/[slug]/documents/[documentId]` con UX guiada por pasos, rail del asistente opcional y detalles tecnicos colapsados.
+
 ## Superficies activas
 
+- `app/app/o/[slug]/documents/pending-assignment/page.tsx`
 - `components/documents/document-review-staged-workspace.tsx`
 - `components/documents/document-review-workspace.tsx`
+- `components/documents/document-accounting-assistant-rail.tsx`
 - `components/documents/rule-application-card.tsx`
 - `components/documents/accounting-impact-preview.tsx`
 - `modules/documents/review.ts`
 - `modules/documents/workflow-state.ts`
 - `modules/accounting/classification-runner.ts`
 - `modules/accounting/learning-approval-service.ts`
+- `modules/accounting/rules-admin.ts`
+- `modules/assistant/document-assistant.ts`
 - `modules/assistant/runs.ts`
 - `modules/documents/post-provisional-service.ts`
 - `modules/documents/confirm-final-service.ts`
@@ -44,18 +50,20 @@ Si la clasificacion necesita contexto adicional, el sistema pide:
 
 El orden de precedencia actual en `modules/accounting/rule-engine.ts` es:
 
-1. `document_override`
-2. `vendor_concept_operation_category`
-3. `vendor_concept`
-4. `concept_global`
-5. `vendor_default`
-6. defaults del proveedor
-7. assistant second pass
+1. `manual_override`
+2. `document_override`
+3. `vendor_concept_operation_category`
+4. `vendor_concept`
+5. `concept_global`
+6. `vendor_default`
+7. `assistant`
 8. `manual_review`
 
 Esto ya refleja el scope nuevo recomendado por el rector:
 
-- `vendor_concept_operation_category`
+- primero gana la decision manual visible;
+- despues entran reglas reutilizables y auditables;
+- la IA queda tarde y acotada, no como bypass del dominio.
 
 ### 4. Tratamiento fiscal
 
@@ -162,6 +170,8 @@ Adicionalmente, `assistant_runs` deja trazabilidad transversal de:
 - sugerencia pendiente;
 - resolucion humana posterior.
 
+Desde `20260322_doc017_*`, esa capa ya tiene ademas `assistant_threads` y `assistant_messages`, lo que permite UI consultiva visible en el rail documental.
+
 ## Posting provisional y final
 
 ### Regla operativa
@@ -200,7 +210,7 @@ Esto esta alineado con el rector y es una de las reglas mas importantes del prod
 
 ## Gaps actuales frente al rector
 
-- falta una cola dedicada, filtrable y masiva de "pendientes de asignacion";
+- existe una cola dedicada `pending-assignment`, pero la operativa masiva sigue siendo acotada y no cubre todos los casos por lote;
 - falta session rule para lotes grandes;
 - la relacion con jobs/cost centers aun no existe como modulo productivo completo;
 - explainability aun no es uniforme en todas las vistas privadas.

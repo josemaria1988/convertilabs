@@ -127,7 +127,11 @@ export function resolvePostAuthDestination(
     return "/onboarding";
   }
 
-  return safeNext ?? resolveOrganizationDocumentsPath(authState.primaryOrganization.slug);
+  return safeNext ?? resolveOrganizationDashboardPath(authState.primaryOrganization.slug);
+}
+
+export function resolveOrganizationDashboardPath(slug: string) {
+  return `/app/o/${slug}/dashboard`;
 }
 
 export function resolveOrganizationDocumentsPath(slug: string) {
@@ -191,7 +195,7 @@ export async function requireOnboardingPage() {
 
 export async function requireOrganizationAppPage(
   slug: string,
-  pathname = resolveOrganizationDocumentsPath(slug),
+  pathname = resolveOrganizationDashboardPath(slug),
 ) {
   const authState = await requirePrivateAppPage(pathname);
   const user = authState.user;

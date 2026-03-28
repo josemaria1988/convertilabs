@@ -118,7 +118,7 @@ export default async function PendingAssignmentPage({
       userRole={organization.role}
       title="Pendientes de asignacion"
       description="Cola dedicada para revisar documentos que todavia requieren clasificacion o rerun contable."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
       <section className="space-y-6">
         <div className="ui-panel">

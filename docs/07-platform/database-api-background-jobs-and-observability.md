@@ -18,6 +18,10 @@ Migraciones recientes que cambian el mapa operativo actual:
 - `20260317_int002_cfe_email_connections.sql`
 - `20260318_doc013_accounting_read_models.sql`
 - `20260320_close001_period_close_and_assistant_runs.sql`
+- `20260322_doc017_accounting_assistant_threads.sql`
+- `20260322_tax018_period_workbench.sql`
+- `20260324_rule001_accounting_rules_admin_foundations.sql`
+- `20260324_rule002_accounting_rules_admin_simulations_and_ai.sql`
 
 ## Grupos de tablas activos
 
@@ -62,6 +66,10 @@ Migraciones recientes que cambian el mapa operativo actual:
 - `auxiliary_books`
 - `chart_of_accounts`
 - `accounting_rules`
+- `accounting_rule_events`
+- `accounting_rule_simulations`
+- `accounting_rule_ai_threads`
+- `accounting_rule_ai_messages`
 - `accounting_suggestions`
 - `journal_entries`
 - `journal_entry_lines`
@@ -96,6 +104,8 @@ Estas vistas leen el ledger posteado e inmutable y alimentan las superficies `/t
 - `organization_cfe_email_connections`
 - `system_actors`
 - `assistant_runs`
+- `assistant_threads`
+- `assistant_messages`
 - `assistant_run_evidence_refs`
 - `assistant_suggestions`
 - `audit_log`
@@ -189,6 +199,8 @@ Se usan para:
 - settings;
 - conexiones CFE;
 - posting;
+- rules admin y simulaciones;
+- refresh y resolucion del Asistente Contable;
 - exportaciones;
 - consultas IA de presets;
 - conciliacion DGI;
@@ -201,7 +213,8 @@ Se usan para:
 
 - `audit_log` para eventos funcionales;
 - `ai_decision_logs` para decisiones IA/documentales;
-- `assistant_runs`, `assistant_run_evidence_refs` y `assistant_suggestions` como estandar transversal de sugerencias IA nuevas;
+- `assistant_runs`, `assistant_threads`, `assistant_messages`, `assistant_run_evidence_refs` y `assistant_suggestions` como estandar transversal de sugerencias IA nuevas;
+- `accounting_rule_events`, `accounting_rule_simulations`, `accounting_rule_ai_threads` y `accounting_rule_ai_messages` para el admin de reglas;
 - `close_check_runs`, `close_check_results` y `fiscal_period_transition_logs` para trazabilidad formal del cierre;
 - `document_assignment_runs`;
 - `organization_preset_ai_runs`;

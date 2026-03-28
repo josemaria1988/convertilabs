@@ -4,7 +4,8 @@
 
 ## Relacion con otras carpetas
 
-- `docs/doc_supabase_schema.md` conserva el razonamiento de diseno y el contexto funcional.
+- `docs/07-platform/database-api-background-jobs-and-observability.md` documenta el encaje funcional del schema, las APIs y la observabilidad.
+- `docs/00-foundations/01-mapa-del-repo-y-rutas.md` resume rutas, migraciones y capas activas del producto.
 - `db/schema/*.sql` contiene el schema ejecutable dividido por capas.
 - `db/rls/supabase_rls_policies.sql` contiene las politicas de seguridad y RLS listas para ejecutar en Supabase.
 - `supabase/migrations/` se mantiene como historial de despliegue existente en esta etapa.
@@ -23,6 +24,11 @@
 10. `db/schema/09_accounting_read_models.sql`
 11. `db/rls/supabase_rls_policies.sql`
 
+Nota operativa:
+
+- `db/schema/09_accounting_read_models.sql` es canonico para las vistas contables read-only;
+- el generador `npm run db:generate:migration` hoy sigue armando la migracion consolidada desde `00..08 + RLS`, porque `scripts/supabase/canonical-schema.mjs` aun no incorpora `09_accounting_read_models.sql` al archivo generado.
+
 ## Regla de mantenimiento
 
 Si cambia el schema o la estrategia de RLS:
@@ -39,3 +45,11 @@ Si cambia el schema o la estrategia de RLS:
 - `npm run db:smoke:organization-onboarding` crea usuarios temporales para verificar el RPC de onboarding, la membership owner y la resolucion de colision de slug.
 - `npm run db:smoke:private-dashboard` crea un tenant temporal y un documento real para verificar el conteo SSR y el RPC `list_dashboard_documents`.
 - `npm run db:smoke:document-upload` crea un usuario y tenant temporales, prepara metadata con `prepare_document_upload`, sube un PDF real a `documents-private`, finaliza el estado y valida que el dashboard lo liste.
+
+## Estado real del schema hoy
+
+Las ultimas migraciones activas del repo ya extienden:
+
+- assistant threads y messages documentales;
+- tax workbench por periodo;
+- admin de reglas contables con eventos, simulaciones y chat consultivo.

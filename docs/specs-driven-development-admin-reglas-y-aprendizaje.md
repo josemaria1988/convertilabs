@@ -1,6 +1,7 @@
 # Specs-driven development — Administración de reglas contables y aprendizaje
 
 Fecha: 2026-03-23  
+Estado editorial 2026-03-28: implementado en base en `/app/o/[slug]/rules`, con lifecycle, versionado, simulaciones y chat consultivo ya visibles; quedan mejoras de ergonomia y rollout.  
 Estado: propuesto para implementación  
 Ámbito: V1.1 sobre el workflow documental ya existente
 

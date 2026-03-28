@@ -96,15 +96,15 @@ export default async function OrganizationClosePage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Cierre"
-      toolbarLabel="Cockpit de cierre"
-      description="Estado operativo del mes, validator deterministico y transiciones formales del periodo contable."
+      toolbarLabel="Flujo guiado de cierre"
+      description="Recorrido de cierre mensual: elegir periodo, validar bloqueos y ejecutar transiciones formales."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "close")}
     >
       {!workspace.isAvailable || !workspace.selectedPeriod || !workspace.preview ? (
         <section className="ui-panel">
           <div className="ui-panel-header">
             <div>
-              <h1 className="text-[22px] font-semibold text-white">Cockpit de cierre</h1>
+              <h1 className="text-[22px] font-semibold text-white">Flujo guiado de cierre</h1>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                 Todavia no hay periodos contables abiertos en esta organizacion.
               </p>
@@ -119,7 +119,7 @@ export default async function OrganizationClosePage({
               <div className="ui-panel-header">
                 <div>
                   <h1 className="text-[22px] font-semibold text-white">
-                    Cockpit de cierre - {workspace.selectedPeriod.code}
+                    Flujo guiado de cierre - {workspace.selectedPeriod.code}
                   </h1>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                     Estado formal del periodo, semaforos del validator y locks operativos sobre el carril documental actual.
@@ -151,6 +151,27 @@ export default async function OrganizationClosePage({
               </form>
             </section>
 
+            <section className="grid gap-3 xl:grid-cols-3">
+              <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold text-white">Paso 1 · Validar el periodo</p>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                  Ejecuta el validator para ver blockers y warnings reales antes de mutar el estado.
+                </p>
+              </article>
+              <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold text-white">Paso 2 · Resolver desbalances</p>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                  Usa los checks, tax y open items como checklist compartido del mes.
+                </p>
+              </article>
+              <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold text-white">Paso 3 · Transicionar</p>
+                <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                  Cambia el estado del periodo solo cuando el validator y el carril documental queden alineados.
+                </p>
+              </article>
+            </section>
+
             <section className="grid gap-3 md:grid-cols-4">
               <article className="metric-card" data-tone={workspace.preview.blockerCount > 0 ? "warning" : "success"}>
                 <span className="metric-card__label">Blockers</span>
@@ -177,7 +198,7 @@ export default async function OrganizationClosePage({
             <section className="ui-panel">
               <div className="ui-panel-header">
                 <div>
-                  <h2 className="text-[16px] font-semibold text-white">Validator deterministico</h2>
+                  <h2 className="text-[16px] font-semibold text-white">Paso 1 · Validator deterministico</h2>
                   <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                     Vista viva del estado del mes. Puedes persistir una corrida formal para dejar trazabilidad del chequeo.
                   </p>
@@ -242,7 +263,7 @@ export default async function OrganizationClosePage({
             <section className="ui-panel">
               <div className="ui-panel-header">
                 <div>
-                  <h2 className="text-[16px] font-semibold text-white">Transiciones</h2>
+                  <h2 className="text-[16px] font-semibold text-white">Paso 3 · Transiciones</h2>
                   <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
                     Las transiciones validan el estado real del periodo antes de mutarlo.
                   </p>

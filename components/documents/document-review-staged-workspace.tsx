@@ -656,6 +656,27 @@ function getChecklistToneClasses(input: {
   };
 }
 
+function getReviewStepClasses(status: "done" | "current" | "pending") {
+  if (status === "done") {
+    return {
+      card: "border-emerald-200 bg-emerald-50/70",
+      badge: "bg-emerald-100 text-emerald-950",
+    };
+  }
+
+  if (status === "current") {
+    return {
+      card: "border-[rgba(124,157,255,0.34)] bg-[rgba(124,157,255,0.08)]",
+      badge: "bg-slate-950 text-white",
+    };
+  }
+
+  return {
+    card: "border-[color:var(--color-border)] bg-white/65",
+    badge: "bg-slate-100 text-slate-900",
+  };
+}
+
 function parseOptionalNumber(value: string) {
   const trimmed = value.trim();
 
@@ -1317,10 +1338,66 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     pageData.canSaveLearningRule
     && learningScope !== "none"
     && (!selectedLearningOption?.requiresConceptName || learnedConceptName.trim().length > 0);
+  const hasSavedContext = Boolean(
+    pageData.derived.accountingContext.operationKind
+    || pageData.derived.accountingContext.userFreeText?.trim()
+    || pageData.derived.accountingContext.businessPurposeNote?.trim(),
+  );
+  const pendingAssistantSuggestionsCount =
+    pageData.assistantRail?.suggestions.filter((suggestion) => suggestion.resolutionStatus === "pending").length
+    ?? 0;
+  const reviewSteps = [
+    {
+      key: "classification",
+      label: "1. Clasificacion",
+      href: "#review-stage-classification",
+      description: "Revisar sugerencia automatica y decidir si basta o hay que abrir manual.",
+      status:
+        isConfirmedReview || pageData.workflowState.classificationStatus === "completed"
+          ? "done"
+          : "current",
+    },
+    {
+      key: "context",
+      label: "2. Contexto",
+      href: "#review-stage-context",
+      description: "Definir operacion, cobro o pago y notas del negocio cuando haga falta.",
+      status:
+        !showManualFlow
+          ? "pending"
+          : hasSavedContext
+            ? "done"
+            : "current",
+    },
+    {
+      key: "accounting",
+      label: "3. Asiento",
+      href: "#review-stage-accounting",
+      description: "Confirmar cuentas por rol, resolver manuales y validar preview contable.",
+      status:
+        !showManualFlow
+          ? "pending"
+          : decisionSnapshot.classificationResolved || manualAssignmentReady
+            ? "done"
+            : "current",
+    },
+    {
+      key: "close",
+      label: "4. Cierre",
+      href: "#review-stage-close",
+      description: "Postear provisional, confirmar final o reabrir la revision.",
+      status:
+        isConfirmedReview
+          ? "done"
+          : decisionSnapshot.canPostProvisional || decisionSnapshot.canConfirmFinal
+            ? "current"
+            : "pending",
+    },
+  ] as const;
 
   return (
     <div className="space-y-6">
-      <section className="panel p-6">
+      <section className="panel p-6" id="review-stage-classification">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
@@ -1393,7 +1470,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-                Header operativo
+                Ruta guiada
               </p>
               <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
                 {operationalHeader.workflowLabel}
@@ -1407,64 +1484,92 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </span>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Estado workflow</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.workflowLabel}</p>
-            </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Fuente de resolucion</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.resolutionSourceLabel}</p>
-            </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Confianza</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.confidenceLabel}</p>
-            </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Estado contable</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.postingStateLabel}</p>
-            </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Provisional</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">
-                {decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado"}
-              </p>
-              <p className="mt-1 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
-            </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-              <p className="font-semibold">Final</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">
-                {decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado"}
-              </p>
-              <p className="mt-1 text-[color:var(--color-muted)]">{finalGate.summary}</p>
-            </div>
+          <div className="mt-5 grid gap-3 xl:grid-cols-4">
+            {reviewSteps.map((step) => {
+              const tone = getReviewStepClasses(step.status);
+
+              return (
+                <a
+                  key={step.key}
+                  href={step.href}
+                  className={`rounded-2xl border p-4 text-sm transition hover:bg-white/90 ${tone.card}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-white">{step.label}</p>
+                    <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${tone.badge}`}>
+                      {step.status === "done" ? "Resuelto" : step.status === "current" ? "En foco" : "Pendiente"}
+                    </span>
+                  </div>
+                  <p className="mt-3 leading-6 text-[color:var(--color-muted)]">{step.description}</p>
+                </a>
+              );
+            })}
           </div>
 
-        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+          <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
           <p className="font-semibold">Siguiente mejor accion</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
             {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
           </p>
-        </div>
-
-        {(pageData.launchScope.supportLevel !== "automatic" || pageData.importReviewPolicy.isImportFlow) ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <p className="font-semibold">
-              {formatLaunchSupportLevelLabel(pageData.launchScope.supportLevel)}
-            </p>
-            {pageData.launchScope.reasons.map((reason) => (
-              <p key={reason} className="mt-2">{reason}</p>
-            ))}
-            {pageData.importReviewPolicy.isImportFlow ? (
-              <>
-                <p className="mt-2 font-semibold">Importacion asistida</p>
-                {pageData.importReviewPolicy.reasons.map((reason) => (
-                  <p key={`import:${reason}`} className="mt-2">{reason}</p>
-                ))}
-              </>
-            ) : null}
           </div>
-        ) : null}
+
+          <details className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/60 p-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Ver estado operativo, readiness y soporte
+            </summary>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Estado workflow</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.workflowLabel}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Fuente de resolucion</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.resolutionSourceLabel}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Confianza</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.confidenceLabel}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Estado contable</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.postingStateLabel}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Provisional</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  {decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado"}
+                </p>
+                <p className="mt-1 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold">Final</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  {decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado"}
+                </p>
+                <p className="mt-1 text-[color:var(--color-muted)]">{finalGate.summary}</p>
+              </div>
+            </div>
+
+            {(pageData.launchScope.supportLevel !== "automatic" || pageData.importReviewPolicy.isImportFlow) ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold">
+                  {formatLaunchSupportLevelLabel(pageData.launchScope.supportLevel)}
+                </p>
+                {pageData.launchScope.reasons.map((reason) => (
+                  <p key={reason} className="mt-2">{reason}</p>
+                ))}
+                {pageData.importReviewPolicy.isImportFlow ? (
+                  <>
+                    <p className="mt-2 font-semibold">Importacion asistida</p>
+                    {pageData.importReviewPolicy.reasons.map((reason) => (
+                      <p key={`import:${reason}`} className="mt-2">{reason}</p>
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </details>
         </div>
 
       {actionMessage ? (
@@ -1628,7 +1733,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       </section>
 
       {!isConfirmedReview && showManualFlow ? (
-        <section className="panel p-6">
+        <section className="panel p-6" id="review-stage-context">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
             Etapa 1
           </p>
@@ -1979,7 +2084,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       ) : null}
 
       {!isConfirmedReview && showManualFlow ? (
-        <section className="panel p-6">
+        <section className="panel p-6" id="review-stage-accounting">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
             Etapa 2
           </p>
@@ -2512,7 +2617,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </section>
       ) : null}
 
-      <section className="panel p-6">
+      <section className="panel p-6" id="review-stage-close">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
           {isConfirmedReview ? "Revision cerrada" : "Cierre"}
         </p>
@@ -2705,11 +2810,20 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </div>
 
         <div className="xl:sticky xl:top-6">
-          <DocumentAccountingAssistantRail
-            assistantRail={pageData.assistantRail}
-            refreshAssistantAction={refreshAssistantAction}
-            resolveAssistantSuggestionAction={resolveAssistantSuggestionAction}
-          />
+          <details className="panel overflow-hidden p-0" open={pendingAssistantSuggestionsCount > 0}>
+            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">
+              {pendingAssistantSuggestionsCount > 0
+                ? `Asistente contable opcional (${pendingAssistantSuggestionsCount} sugerencia(s) pendiente(s))`
+                : "Asistente contable opcional"}
+            </summary>
+            <div className="border-t border-[color:var(--color-border)] p-4">
+              <DocumentAccountingAssistantRail
+                assistantRail={pageData.assistantRail}
+                refreshAssistantAction={refreshAssistantAction}
+                resolveAssistantSuggestionAction={resolveAssistantSuggestionAction}
+              />
+            </div>
+          </details>
         </div>
       </div>
     </div>

@@ -50,7 +50,12 @@ type OrganizationSettingsPageProps = {
   params: Promise<{
     slug: string;
   }>;
+  searchParams?: Promise<{
+    tab?: string;
+  }>;
 };
+
+type SettingsTab = "company" | "fiscal" | "chart" | "integrations" | "advanced";
 
 const chartAccountTypeOptions: ChartAccountType[] = [
   "asset",
@@ -63,14 +68,65 @@ const chartAccountTypeOptions: ChartAccountType[] = [
 
 const normalSideOptions = ["debit", "credit"] as const;
 
+const settingsTabs: Array<{
+  key: SettingsTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "company",
+    label: "Empresa",
+    description: "Datos base y mapa de capacidades",
+  },
+  {
+    key: "fiscal",
+    label: "Perfil fiscal",
+    description: "Versiones, snapshot y perfil de negocio",
+  },
+  {
+    key: "chart",
+    label: "Plan contable",
+    description: "Preset, cuentas y mantenimiento",
+  },
+  {
+    key: "integrations",
+    label: "Integraciones",
+    description: "eFacturas y entradas conectadas",
+  },
+  {
+    key: "advanced",
+    label: "Avanzado",
+    description: "Atajos de soporte y salidas",
+  },
+];
+
 export const metadata: Metadata = {
-  title: "Organizacion",
+  title: "Configuracion",
 };
+
+function normalizeSettingsTab(value: string | undefined): SettingsTab {
+  switch (value) {
+    case "fiscal":
+    case "chart":
+    case "integrations":
+    case "advanced":
+      return value;
+    default:
+      return "company";
+  }
+}
+
+function buildSettingsTabHref(slug: string, tab: SettingsTab) {
+  return `/app/o/${slug}/settings?tab=${tab}`;
+}
 
 export default async function OrganizationSettingsPage({
   params,
+  searchParams,
 }: OrganizationSettingsPageProps) {
   const { slug } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const activeSettingsTab = normalizeSettingsTab(resolvedSearchParams.tab);
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const featureFlags = getOrganizationFeatureFlags();
   const [settings, chart, businessProfile] = await Promise.all([
@@ -111,8 +167,8 @@ export default async function OrganizationSettingsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Organizacion"
-      description="Perfil de la organizacion, configuracion fiscal versionada y gestion del plan de cuentas con importacion y exportacion desde una sola vista."
+      title="Configuracion"
+      description="Configuracion guiada por tabs: empresa, perfil fiscal, plan contable, integraciones y soporte avanzado."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
@@ -182,6 +238,35 @@ export default async function OrganizationSettingsPage({
         </article>
       </section>
 
+      <section className="ui-panel">
+        <div className="ui-panel-header">
+          <div>
+            <h2 className="text-[16px] font-semibold text-white">Configuracion por carriles</h2>
+            <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+              Separamos empresa, perfil fiscal, plan contable, integraciones y soporte experto para que cada vista tenga un foco claro.
+            </p>
+          </div>
+          <span className="ui-filter">{settingsTabs.find((tab) => tab.key === activeSettingsTab)?.label}</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-5">
+          {settingsTabs.map((tab) => (
+            <LoadingLink
+              key={tab.key}
+              href={buildSettingsTabHref(organization.slug, tab.key)}
+              pendingLabel="Abriendo..."
+              className={activeSettingsTab === tab.key ? "rounded-3xl border border-transparent bg-[color:var(--color-accent)] p-4 text-white" : "rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4"}
+            >
+              <p className="text-sm font-semibold">{tab.label}</p>
+              <p className={`mt-2 text-sm ${activeSettingsTab === tab.key ? "text-white/80" : "text-[color:var(--color-muted)]"}`}>
+                {tab.description}
+              </p>
+            </LoadingLink>
+          ))}
+        </div>
+      </section>
+
+      {activeSettingsTab === "company" ? (
       <ExpandableSectionCard
         title="Mapa de configuracion actual"
         description="Resumen de donde vive cada capacidad del sistema hoy, separado entre configuracion, soporte, documentos y salidas contables."
@@ -192,9 +277,11 @@ export default async function OrganizationSettingsPage({
           showBusinessProfile={featureFlags.onboardingActivityBasedPresetsEnabled}
         />
       </ExpandableSectionCard>
+      ) : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-2">
         <div className="contents">
+          {activeSettingsTab === "company" ? (
           <ExpandableSectionCard
             title="Datos base de la organizacion"
             description="Identidad operativa de la organizacion. Estos datos afectan presentacion, moneda base y configuracion general del espacio."
@@ -265,7 +352,9 @@ export default async function OrganizationSettingsPage({
               </SubmitButton>
             </form>
           </ExpandableSectionCard>
+          ) : null}
 
+          {activeSettingsTab === "integrations" ? (
           <ExpandableSectionCard
             title="Conectar email de eFacturas"
             description="Usa esta conexion para recibir en el sistema directamente los CFE de esta organizacion desde la casilla que cada usuario opera."
@@ -366,8 +455,9 @@ export default async function OrganizationSettingsPage({
               </form>
             </div>
           </ExpandableSectionCard>
+          ) : null}
 
-          {featureFlags.onboardingActivityBasedPresetsEnabled ? (
+          {activeSettingsTab === "fiscal" && featureFlags.onboardingActivityBasedPresetsEnabled ? (
             <ExpandableSectionCard
               title="Perfil de negocio y recomendacion de plan"
               description="Actividad economica, rasgos operativos y composicion sugerida del plan de cuentas. Cada cambio crea una nueva version hacia adelante sin tocar historicos."
@@ -385,6 +475,7 @@ export default async function OrganizationSettingsPage({
             </ExpandableSectionCard>
           ) : null}
 
+          {activeSettingsTab === "fiscal" ? (
           <ExpandableSectionCard
             title="Perfil fiscal versionado"
             description="Cada activacion crea una nueva version del perfil y materializa una instantanea nueva. Los borradores anteriores quedan congelados con la version previa."
@@ -590,9 +681,11 @@ export default async function OrganizationSettingsPage({
               </SubmitButton>
             </form>
           </ExpandableSectionCard>
+          ) : null}
         </div>
 
         <div className="contents">
+          {activeSettingsTab === "fiscal" ? (
           <ExpandableSectionCard
             title="Instantanea activa"
             description="La IA recibe el resumen materializado de esta instantanea, no toda la normativa cruda."
@@ -620,7 +713,9 @@ export default async function OrganizationSettingsPage({
               </div>
             )}
           </ExpandableSectionCard>
+          ) : null}
 
+          {activeSettingsTab === "fiscal" ? (
           <ExpandableSectionCard
             title="Historial versionado"
             description="Trazabilidad de perfiles e instantaneas para entender por que un borrador viejo no cambia al modificar configuracion."
@@ -673,9 +768,11 @@ export default async function OrganizationSettingsPage({
               </div>
             </div>
           </ExpandableSectionCard>
+          ) : null}
         </div>
       </div>
 
+      {activeSettingsTab === "chart" ? (
       <ExpandableSectionCard
         title="Plan de cuentas"
         description="Preset activo, cuentas del sistema, cuentas provisionales y alta/edicion directa para sostener el motor contable."
@@ -1024,7 +1121,9 @@ export default async function OrganizationSettingsPage({
           </div>
         </div>
       </ExpandableSectionCard>
+      ) : null}
 
+      {activeSettingsTab === "advanced" ? (
       <ExpandableSectionCard
         title="Atajos de soporte y salidas"
         description="Accesos rapidos para importar o exportar el plan, revisar planillas auxiliares y saltar al carril documental correcto sin mezclar operatoria economica con soporte."
@@ -1156,6 +1255,7 @@ export default async function OrganizationSettingsPage({
           </div>
         </div>
       </ExpandableSectionCard>
+      ) : null}
     </PrivateDashboardShell>
   );
 }

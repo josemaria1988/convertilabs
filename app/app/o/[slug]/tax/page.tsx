@@ -280,8 +280,8 @@ export default async function OrganizationTaxPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Impuestos"
-      toolbarLabel={`Declaracion de IVA - ${periodTitle}`}
-      description="Declaracion mensual de IVA con resumen del periodo, alertas, historial y acciones reales del ciclo de vida."
+      toolbarLabel={`Flujo guiado de IVA - ${periodTitle}`}
+      description="Recorrido guiado del periodo fiscal: elegir mes, revisar elegibilidad documental y cerrar la corrida de IVA."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "tax")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
@@ -289,7 +289,7 @@ export default async function OrganizationTaxPage({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-              Declaracion de IVA - {periodTitle}
+              Flujo guiado de IVA - {periodTitle}
             </h1>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                 {selectedRun
@@ -300,10 +300,31 @@ export default async function OrganizationTaxPage({
             <span className={headerStatusTone}>{headerStatusLabel}</span>
           </div>
 
+          <section className="grid gap-3 xl:grid-cols-3">
+            <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+              <p className="text-sm font-semibold text-white">Paso 1 · Elegir periodo</p>
+              <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                Selecciona el mes de trabajo y define si estas viendo preview o una corrida oficial.
+              </p>
+            </article>
+            <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+              <p className="text-sm font-semibold text-white">Paso 2 · Revisar universo fiscal</p>
+              <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                Resuelve elegibilidad, exclusiones y documentos que todavia no pueden entrar.
+              </p>
+            </article>
+            <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
+              <p className="text-sm font-semibold text-white">Paso 3 · Generar o cerrar corrida</p>
+              <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+                Cuando el periodo quede limpio, genera la corrida definitiva, exporta o reabre.
+              </p>
+            </article>
+          </section>
+
           <section className="ui-panel">
             <div className="ui-panel-header">
               <div>
-                <h2 className="text-[16px] font-semibold text-white">Periodo de trabajo</h2>
+                <h2 className="text-[16px] font-semibold text-white">Paso 1 · Elegir periodo</h2>
                 <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                   Selecciona el mes que quieres liquidar o revisar. Si existe cierre oficial se muestra como reporte; si no existe, queda abierto para trabajar y cerrarlo.
                 </p>
@@ -389,6 +410,18 @@ export default async function OrganizationTaxPage({
             </article>
           </section>
 
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Paso 2 · Revisar documentos del periodo</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Esta bandeja fiscal toma los documentos ya procesados y los ordena segun su elegibilidad para preview o corrida oficial.
+                </p>
+              </div>
+              <span className="ui-filter">Workbench</span>
+            </div>
+          </section>
+
           <TaxPeriodWorkbench
             slug={slug}
             selectedYear={selectedYear}
@@ -407,7 +440,7 @@ export default async function OrganizationTaxPage({
             <section className="ui-panel">
               <div className="ui-panel-header">
                 <div>
-                  <h2 className="text-[16px] font-semibold text-white">Reporte del cierre</h2>
+                  <h2 className="text-[16px] font-semibold text-white">Paso 3 · Resultado del cierre</h2>
                   <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
                     Este periodo ya tiene una corrida cerrada. Se muestra en modo reporte y solo requiere reapertura si necesitas corregir documentos o recalcular.
                   </p>
@@ -460,7 +493,7 @@ export default async function OrganizationTaxPage({
 
           <section className="ui-panel">
             <div className="ui-panel-header">
-              <h2 className="text-[16px] font-semibold text-white">Resumen del Periodo</h2>
+              <h2 className="text-[16px] font-semibold text-white">Paso 3 · Cerrar y exportar</h2>
               <span className="ui-filter">{selectedRun ? "Oficial" : "Preview"}</span>
             </div>
 

@@ -94,7 +94,7 @@ export default async function DocumentReviewPage({
         userRole={organization.role}
         title="Revision documental"
         description="Este documento todavia no tiene draft persistido. Igual podes abrir el original para validar el comprobante real sin salir de la pantalla."
-        navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
+        navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
       >
         <SectionCard
           title={originalPageData.document.originalFilename}
@@ -163,7 +163,7 @@ export default async function DocumentReviewPage({
       userRole={organization.role}
       title="Revision documental"
       description="La revision avanza por etapas: clasificacion automatica, contexto manual solo si hace falta, asignacion contable y cierre."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
       <DocumentReviewStagedWorkspace
         pageData={pageData}
