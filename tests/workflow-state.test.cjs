@@ -55,6 +55,8 @@ test("workflow state marks freshly extracted drafts as pending factual review", 
   });
 
   assert.equal(state.queueCode, "pending_factual_review");
+  assert.equal(state.canonicalState, "needs_review");
+  assert.equal(state.operationalBucket, "review");
   assert.equal(state.nextRecommendedAction, "Completar validacion factual");
 });
 
@@ -95,6 +97,8 @@ test("workflow state marks ready classification with learning choice pending", (
   });
 
   assert.equal(state.queueCode, "pending_learning_decision");
+  assert.equal(state.canonicalState, "ready_final");
+  assert.equal(state.operationalBucket, "ready_to_post");
   assert.equal(state.classificationStatus, "completed");
   assert.equal(state.canCreateLearningRule, true);
 });
@@ -126,6 +130,7 @@ test("workflow state marks extracted drafts as pending assignment when factual s
   });
 
   assert.equal(state.queueCode, "pending_assignment");
+  assert.equal(state.canonicalState, "needs_review");
   assert.equal(state.classificationStatus, "not_started");
   assert.equal(state.stepStatuses.classification, "ready");
   assert.equal(state.canRunClassification, true);
@@ -170,6 +175,7 @@ test("workflow state marks reopened documents for manual remap", () => {
   });
 
   assert.equal(state.queueCode, "reopened_needs_manual_remap");
+  assert.equal(state.canonicalState, "posted_provisional_pending_final");
   assert.equal(state.classificationStatus, "stale");
   assert.match(state.nextRecommendedAction, /Remapear manualmente/i);
 });
@@ -217,6 +223,7 @@ test("workflow state allows rerun when a ready draft has stale classification", 
   });
 
   assert.equal(state.queueCode, "pending_assignment");
+  assert.equal(state.canonicalState, "needs_review");
   assert.equal(state.classificationStatus, "stale");
   assert.equal(state.stepStatuses.classification, "ready");
   assert.equal(state.canRunClassification, true);
@@ -281,5 +288,59 @@ test("workflow state treats manual classification override as resolved even if t
   assert.equal(state.classificationStatus, "completed");
   assert.equal(state.canPostProvisional, true);
   assert.equal(state.canConfirmFinal, true);
+  assert.equal(state.canonicalState, "ready_final");
   assert.equal(state.queueCode, "ready_for_final_confirmation");
+});
+
+test("workflow state marks unresolved duplicates as blocked", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "draft_ready",
+    postingStatus: "draft",
+    draftStatus: "open",
+    steps: [
+      { step_code: "identity", status: "draft_saved", stale_reason: null },
+      { step_code: "fields", status: "draft_saved", stale_reason: null },
+      { step_code: "amounts", status: "draft_saved", stale_reason: null },
+      { step_code: "operation_context", status: "draft_saved", stale_reason: null },
+      { step_code: "accounting_context", status: "draft_saved", stale_reason: null },
+    ],
+    derived: buildDerived(),
+    latestClassificationRun: null,
+    learningOptionCount: 0,
+    duplicateStatus: "suspected_duplicate",
+  });
+
+  assert.equal(state.canonicalState, "blocked_duplicate");
+  assert.equal(state.operationalBucket, "blocked");
+  assert.equal(state.operationalFlags.includes("blocked_duplicate"), true);
+});
+
+test("workflow state marks missing fx as blocked", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "draft_ready",
+    postingStatus: "draft",
+    draftStatus: "open",
+    steps: [
+      { step_code: "identity", status: "draft_saved", stale_reason: null },
+      { step_code: "fields", status: "draft_saved", stale_reason: null },
+      { step_code: "amounts", status: "draft_saved", stale_reason: null },
+      { step_code: "operation_context", status: "draft_saved", stale_reason: null },
+      { step_code: "accounting_context", status: "draft_saved", stale_reason: null },
+    ],
+    derived: buildDerived({
+      validation: {
+        canPostProvisional: false,
+        canConfirmFinal: false,
+        blockers: [
+          "No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal previo al 2026-03-12.",
+        ],
+      },
+    }),
+    latestClassificationRun: null,
+    learningOptionCount: 0,
+  });
+
+  assert.equal(state.canonicalState, "blocked_missing_fx");
+  assert.equal(state.operationalBucket, "blocked");
+  assert.equal(state.nextRecommendedAction, "Resolver tipo de cambio fiscal");
 });

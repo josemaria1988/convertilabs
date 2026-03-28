@@ -16,7 +16,7 @@ export function listAccountingExportLayouts() {
       code: "generic_excel_xml" as const,
       label: "Excel generico",
       description:
-        "Workbook XML compatible con Excel, con hojas para asientos, provisionales y conciliacion DGI.",
+        "Workbook XML compatible con Excel, con hojas para asientos, provisionales y comparacion DGI base.",
       fileExtension: "xml",
       mimeType: "application/xml",
     },

@@ -123,9 +123,16 @@ Regla de uso actual:
 
 ### Auth y health
 
-- `/api/health`
+- `/api/health` para liveness/config barato
+- `/api/ready` para readiness real
 - `/api/v1/auth/signup`
 - `/api/v1/auth/login`
+
+Semantica actual:
+
+- `GET /api/health` no depende de DB y expone estado de configuracion;
+- `GET /api/ready` y `GET /api/health?mode=ready` verifican conectividad minima a DB/Supabase;
+- OpenAI e Inngest se reportan por configuracion, sin pings costosos en cada chequeo.
 
 ### Documentos
 

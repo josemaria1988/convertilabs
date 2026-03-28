@@ -1,4 +1,5 @@
 import { classifyImportDocumentKind, classifyImportTaxLine } from "@/modules/imports/tax-classification";
+import { evaluateImportReviewPolicy } from "@/modules/imports/review-policy";
 import type {
   ImportDocumentIntakeInput,
   ImportDocumentIntakeResult,
@@ -95,6 +96,16 @@ export function interpretImportDocument(
     || documentKind === "local_related_service"
     || normalizedNarrative.includes("honorarios")
     || normalizedNarrative.includes("servicio local");
+  const reviewPolicy = evaluateImportReviewPolicy({
+    documentKind,
+    warnings,
+    duaNumber,
+    referenceCode,
+    currencyCode: input.facts.currency_code ?? null,
+    operationDate: input.facts.document_date ?? null,
+    paymentDate: input.facts.due_date ?? null,
+    looksLikeLocalExpense,
+  });
 
   return {
     documentId: input.documentId,
@@ -114,6 +125,7 @@ export function interpretImportDocument(
     warnings,
     taxes,
     looksLikeLocalExpense,
+    reviewPolicy,
     rawFacts: input.facts,
   } satisfies ImportDocumentIntakeResult;
 }

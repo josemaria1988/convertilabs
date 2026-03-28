@@ -45,7 +45,7 @@ test("decision gate view prioritizes fiscal FX guidance over generic blocker cop
 
 test("document operational header uses canonical language from the snapshot", () => {
   const header = buildDocumentOperationalHeaderView({
-    workflowState: "pending_assignment",
+    workflowState: "needs_review",
     resolutionSource: "manual",
     resolutionConfidence: 0.82,
     factualReviewResolved: true,
@@ -83,7 +83,7 @@ test("document operational header uses canonical language from the snapshot", ()
     checklist: [],
   });
 
-  assert.equal(header.workflowLabel, "Pendiente de asignacion");
+  assert.equal(header.workflowLabel, "Necesita revision");
   assert.equal(header.resolutionSourceLabel, "Revision manual");
   assert.equal(header.postingStateLabel, "Draft operativo");
   assert.equal(header.confidenceLabel, "82%");

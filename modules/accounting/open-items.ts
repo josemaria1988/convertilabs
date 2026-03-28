@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  normalizeCurrencyCode,
   normalizeTaxId,
   normalizeTextToken,
   roundCurrency,
@@ -11,9 +12,32 @@ export type OpenItemStatus = "open" | "partially_settled" | "settled";
 export type ExistingOpenItem = {
   id: string;
   issue_date: string | null;
+  currency_code?: string | null;
+  functional_currency_code?: string | null;
+  fx_rate?: number | null;
+  fx_rate_date?: string | null;
+  fx_rate_source?: string | null;
   outstanding_amount: number;
   settled_amount: number;
   status: string;
+};
+
+export type OpenItemMonetarySnapshotInput = {
+  currencyCode?: string | null;
+  functionalCurrencyCode?: string | null;
+  fxRate?: number | null;
+  fxRateDate?: string | null;
+  fxRateSource?: string | null;
+};
+
+export type OpenItemMonetaryContext = {
+  currencyCode: string;
+  functionalCurrencyCode: string;
+  fxRate: number;
+  fxRateDate: string | null;
+  fxRateSource: string;
+  resolutionSource: "confirmed_snapshot" | "draft_snapshot" | "same_currency";
+  blockingReason: string | null;
 };
 
 export type OpenItemCreatePayload = {
@@ -76,6 +100,168 @@ export type OpenItemMutationPlan = {
   settlementLinks: SettlementLinkPayload[];
 };
 
+const OPEN_ITEM_FUNCTIONAL_TOLERANCE = 0.01;
+
+function normalizeOpenItemCurrency(value: string | null | undefined, fallback: string) {
+  return normalizeCurrencyCode(value) ?? fallback;
+}
+
+function isTrustedForeignCurrencyFxSource(value: string | null | undefined) {
+  return value === "bcu" || value === "document_import" || value === "manual_override" || value === "cfe";
+}
+
+function buildMissingOpenItemFxReason(input: {
+  currencyCode: string;
+  functionalCurrencyCode: string;
+  documentDate: string | null;
+}) {
+  const dateSuffix = input.documentDate ? ` para ${input.documentDate}` : "";
+  return `No hay snapshot FX confiable para generar open items en ${input.currencyCode} contra moneda funcional ${input.functionalCurrencyCode}${dateSuffix}.`;
+}
+
+function buildCrossCurrencySettlementReason(input: {
+  settlementCurrencyCode: string;
+  existingCurrencyCode: string;
+}) {
+  return `El auto-settlement entre ${input.settlementCurrencyCode} y ${input.existingCurrencyCode} no esta soportado en MVP. Resuelve el caso manualmente.`;
+}
+
+function isPositiveRate(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isFunctionalAmountConsistent(originalAmount: number, functionalAmount: number, fxRate: number) {
+  const expected = roundCurrency(originalAmount * fxRate);
+  return Math.abs(expected - functionalAmount) <= OPEN_ITEM_FUNCTIONAL_TOLERANCE;
+}
+
+function assertFunctionalAmountConsistency(input: {
+  originalAmount: number;
+  functionalAmount: number;
+  fxRate: number;
+  label: string;
+}) {
+  if (!isFunctionalAmountConsistent(input.originalAmount, input.functionalAmount, input.fxRate)) {
+    throw new Error(`${input.label} quedo inconsistente con el tipo de cambio aplicado.`);
+  }
+}
+
+function buildResolvedOpenItemMonetaryContext(
+  input: {
+    currencyCode: string | null | undefined;
+    functionalCurrencyCode: string | null | undefined;
+    documentDate: string | null | undefined;
+    snapshot: OpenItemMonetarySnapshotInput;
+    resolutionSource: OpenItemMonetaryContext["resolutionSource"];
+  },
+): OpenItemMonetaryContext | null {
+  const currencyCode = normalizeOpenItemCurrency(input.snapshot.currencyCode ?? input.currencyCode, "UYU");
+  const functionalCurrencyCode = normalizeOpenItemCurrency(
+    input.snapshot.functionalCurrencyCode ?? input.functionalCurrencyCode,
+    "UYU",
+  );
+
+  if (currencyCode === functionalCurrencyCode) {
+    return {
+      currencyCode,
+      functionalCurrencyCode,
+      fxRate: 1,
+      fxRateDate: input.snapshot.fxRateDate ?? input.documentDate ?? null,
+      fxRateSource: "same_currency",
+      resolutionSource: "same_currency",
+      blockingReason: null,
+    } satisfies OpenItemMonetaryContext;
+  }
+
+  if (
+    !isPositiveRate(input.snapshot.fxRate)
+    || !isTrustedForeignCurrencyFxSource(input.snapshot.fxRateSource)
+    || !input.snapshot.fxRateDate
+  ) {
+    return null;
+  }
+
+  return {
+    currencyCode,
+    functionalCurrencyCode,
+    fxRate: input.snapshot.fxRate!,
+    fxRateDate: input.snapshot.fxRateDate,
+    fxRateSource: input.snapshot.fxRateSource!,
+    resolutionSource: input.resolutionSource,
+    blockingReason: null,
+  } satisfies OpenItemMonetaryContext;
+}
+
+export function resolveOpenItemMonetaryContext(input: {
+  currencyCode: string | null | undefined;
+  functionalCurrencyCode: string | null | undefined;
+  documentDate: string | null | undefined;
+  confirmedSnapshot?: OpenItemMonetarySnapshotInput | null;
+  draftSnapshot?: OpenItemMonetarySnapshotInput | null;
+}) {
+  const normalizedCurrencyCode = normalizeOpenItemCurrency(input.currencyCode, "UYU");
+  const normalizedFunctionalCurrencyCode = normalizeOpenItemCurrency(
+    input.functionalCurrencyCode,
+    "UYU",
+  );
+
+  const confirmedContext =
+    input.confirmedSnapshot
+      ? buildResolvedOpenItemMonetaryContext({
+          currencyCode: normalizedCurrencyCode,
+          functionalCurrencyCode: normalizedFunctionalCurrencyCode,
+          documentDate: input.documentDate,
+          snapshot: input.confirmedSnapshot,
+          resolutionSource: "confirmed_snapshot",
+        })
+      : null;
+
+  if (confirmedContext) {
+    return confirmedContext;
+  }
+
+  const draftContext =
+    input.draftSnapshot
+      ? buildResolvedOpenItemMonetaryContext({
+          currencyCode: normalizedCurrencyCode,
+          functionalCurrencyCode: normalizedFunctionalCurrencyCode,
+          documentDate: input.documentDate,
+          snapshot: input.draftSnapshot,
+          resolutionSource: "draft_snapshot",
+        })
+      : null;
+
+  if (draftContext) {
+    return draftContext;
+  }
+
+  if (normalizedCurrencyCode === normalizedFunctionalCurrencyCode) {
+    return {
+      currencyCode: normalizedCurrencyCode,
+      functionalCurrencyCode: normalizedFunctionalCurrencyCode,
+      fxRate: 1,
+      fxRateDate: input.documentDate ?? null,
+      fxRateSource: "same_currency",
+      resolutionSource: "same_currency",
+      blockingReason: null,
+    } satisfies OpenItemMonetaryContext;
+  }
+
+  return {
+    currencyCode: normalizedCurrencyCode,
+    functionalCurrencyCode: normalizedFunctionalCurrencyCode,
+    fxRate: 0,
+    fxRateDate: null,
+    fxRateSource: "missing_snapshot",
+    resolutionSource: "draft_snapshot",
+    blockingReason: buildMissingOpenItemFxReason({
+      currencyCode: normalizedCurrencyCode,
+      functionalCurrencyCode: normalizedFunctionalCurrencyCode,
+      documentDate: input.documentDate ?? null,
+    }),
+  } satisfies OpenItemMonetaryContext;
+}
+
 function getSubtypeKind(documentType: string | null | undefined) {
   const normalized = (documentType ?? "").toLowerCase();
 
@@ -114,12 +300,31 @@ export function buildOpenItemMutationPlan(input: {
   fxRate: number;
   fxRateDate: string | null;
   fxRateSource: string;
+  monetaryContextSource?: OpenItemMonetaryContext["resolutionSource"];
   totalAmount: number;
   existingOpenItems?: ExistingOpenItem[];
 }) {
+  const monetaryContext = resolveOpenItemMonetaryContext({
+    currencyCode: input.currencyCode,
+    functionalCurrencyCode: input.functionalCurrencyCode,
+    documentDate: input.issueDate,
+    confirmedSnapshot: {
+      currencyCode: input.currencyCode,
+      functionalCurrencyCode: input.functionalCurrencyCode,
+      fxRate: input.fxRate,
+      fxRateDate: input.fxRateDate,
+      fxRateSource: input.fxRateSource,
+    },
+  });
+
+  if (monetaryContext.blockingReason) {
+    throw new Error(monetaryContext.blockingReason);
+  }
+
   const subtypeKind = getSubtypeKind(input.documentType);
   const originalAmount = roundCurrency(input.totalAmount);
-  const functionalAmount = roundCurrency(originalAmount * input.fxRate);
+  const functionalAmount = roundCurrency(originalAmount * monetaryContext.fxRate);
+  const normalizedCurrencyCode = monetaryContext.currencyCode;
   const basePayload = {
     organization_id: input.organizationId,
     counterparty_type: input.counterpartyType,
@@ -137,17 +342,25 @@ export function buildOpenItemMutationPlan(input: {
     document_type: input.documentType,
     issue_date: input.issueDate,
     due_date: input.dueDate,
-    currency_code: input.currencyCode,
-    fx_rate: input.fxRate,
-    fx_rate_date: input.fxRateDate,
-    fx_rate_source: input.fxRateSource,
-    functional_currency_code: input.functionalCurrencyCode,
+    currency_code: monetaryContext.currencyCode,
+    fx_rate: monetaryContext.fxRate,
+    fx_rate_date: monetaryContext.fxRateDate,
+    fx_rate_source: monetaryContext.fxRateSource,
+    functional_currency_code: monetaryContext.functionalCurrencyCode,
     journal_entry_id: input.journalEntryId,
     opening_journal_entry_line_id: null,
     metadata: {
       kind: input.openItemKind ?? null,
+      monetary_context_source: input.monetaryContextSource ?? monetaryContext.resolutionSource,
     },
   };
+
+  assertFunctionalAmountConsistency({
+    originalAmount,
+    functionalAmount,
+    fxRate: monetaryContext.fxRate,
+    label: "El open item base",
+  });
 
   if (subtypeKind === "invoice") {
     return {
@@ -181,6 +394,26 @@ export function buildOpenItemMutationPlan(input: {
   let remainingAmount = Math.abs(originalAmount);
   const updateOpenItems: OpenItemUpdatePayload[] = [];
   const settlementLinks: SettlementLinkPayload[] = [];
+  const crossCurrencyExistingItem =
+    subtypeKind === "credit_note" || subtypeKind === "receipt" || subtypeKind === "payment_support"
+      ? (input.existingOpenItems ?? []).find((item) => {
+          const itemCurrencyCode = normalizeOpenItemCurrency(item.currency_code, normalizedCurrencyCode);
+          return itemCurrencyCode !== normalizedCurrencyCode;
+        })
+      : null;
+
+  if (crossCurrencyExistingItem) {
+    throw new Error(
+      buildCrossCurrencySettlementReason({
+        settlementCurrencyCode: normalizedCurrencyCode,
+        existingCurrencyCode: normalizeOpenItemCurrency(
+          crossCurrencyExistingItem.currency_code,
+          normalizedCurrencyCode,
+        ),
+      }),
+    );
+  }
+
   const existingItems = [...(input.existingOpenItems ?? [])]
     .filter((item) => item.outstanding_amount > 0)
     .sort((left, right) => {
@@ -218,13 +451,16 @@ export function buildOpenItemMutationPlan(input: {
         source_document_id: input.documentId,
         journal_entry_id: input.journalEntryId,
       },
-      currency_code: input.currencyCode,
-      fx_rate: input.fxRate,
-      fx_rate_date: input.fxRateDate,
+      currency_code: monetaryContext.currencyCode,
+      fx_rate: monetaryContext.fxRate,
+      fx_rate_date: monetaryContext.fxRateDate,
       amount: appliedAmount,
-      functional_amount: roundCurrency(appliedAmount * input.fxRate),
+      functional_amount: roundCurrency(appliedAmount * monetaryContext.fxRate),
       metadata_json: {
         source_document_type: input.documentType,
+        functional_currency_code: monetaryContext.functionalCurrencyCode,
+        fx_rate_source: monetaryContext.fxRateSource,
+        monetary_context_source: input.monetaryContextSource ?? monetaryContext.resolutionSource,
       },
     });
   }
@@ -235,17 +471,36 @@ export function buildOpenItemMutationPlan(input: {
           {
             ...basePayload,
             original_amount: roundCurrency(-remainingAmount),
-            functional_amount: roundCurrency(-remainingAmount * input.fxRate),
+            functional_amount: roundCurrency(-remainingAmount * monetaryContext.fxRate),
             settled_amount: 0,
             outstanding_amount: roundCurrency(-remainingAmount),
             status: "open" as const,
             metadata: {
               kind: input.openItemKind ?? null,
               residual_credit_balance: true,
+              monetary_context_source: input.monetaryContextSource ?? monetaryContext.resolutionSource,
             },
           },
         ]
       : [];
+
+  for (const createdOpenItem of createOpenItems) {
+    assertFunctionalAmountConsistency({
+      originalAmount: createdOpenItem.original_amount,
+      functionalAmount: createdOpenItem.functional_amount,
+      fxRate: createdOpenItem.fx_rate,
+      label: "El open item creado",
+    });
+  }
+
+  for (const settlementLink of settlementLinks) {
+    assertFunctionalAmountConsistency({
+      originalAmount: settlementLink.amount,
+      functionalAmount: settlementLink.functional_amount,
+      fxRate: settlementLink.fx_rate,
+      label: "El settlement link",
+    });
+  }
 
   return {
     createOpenItems,
@@ -427,9 +682,8 @@ export async function syncApprovedDocumentOpenItems(input: {
   dueDate: string | null;
   currencyCode: string | null;
   functionalCurrencyCode: string | null;
-  fxRate: number | null;
-  fxRateDate: string | null;
-  fxRateSource: string | null;
+  confirmedMonetarySnapshot?: OpenItemMonetarySnapshotInput | null;
+  draftMonetarySnapshot?: OpenItemMonetarySnapshotInput | null;
   totalAmount: number | null;
   vendorId: string | null;
   issuerName: string | null;
@@ -456,15 +710,18 @@ export async function syncApprovedDocumentOpenItems(input: {
       input.supabase,
       input.organizationId,
     );
-  const currencyCode = input.currencyCode?.trim().toUpperCase() || functionalCurrencyCode;
-  const fxRate =
-    typeof input.fxRate === "number" && Number.isFinite(input.fxRate) && input.fxRate > 0
-      ? input.fxRate
-      : 1;
-  const fxRateDate = input.fxRateDate ?? input.documentDate ?? null;
-  const fxRateSource =
-    input.fxRateSource?.trim()
-    || (currencyCode === functionalCurrencyCode ? "same_currency" : "document_default");
+  const monetaryContext = resolveOpenItemMonetaryContext({
+    currencyCode: input.currencyCode,
+    functionalCurrencyCode,
+    documentDate: input.documentDate,
+    confirmedSnapshot: input.confirmedMonetarySnapshot ?? null,
+    draftSnapshot: input.draftMonetarySnapshot ?? null,
+  });
+
+  if (monetaryContext.blockingReason) {
+    throw new Error(monetaryContext.blockingReason);
+  }
+
   const counterpartyType = input.documentRole === "purchase" ? "vendor" : "customer";
   const counterpartyId =
     counterpartyType === "vendor"
@@ -492,7 +749,7 @@ export async function syncApprovedDocumentOpenItems(input: {
 
   const { data: openItemRows, error: openItemsError } = await input.supabase
     .from("ledger_open_items")
-    .select("id, issue_date, outstanding_amount, settled_amount, status, metadata")
+    .select("id, issue_date, currency_code, functional_currency_code, fx_rate, fx_rate_date, fx_rate_source, outstanding_amount, settled_amount, status, metadata")
     .eq("organization_id", input.organizationId)
     .eq("counterparty_type", counterpartyType)
     .eq("counterparty_id", counterpartyId)
@@ -507,10 +764,18 @@ export async function syncApprovedDocumentOpenItems(input: {
   const existingItems = ((openItemRows as Array<ExistingOpenItem & {
     metadata?: Record<string, unknown> | null;
   }> | null) ?? []).filter((item) => {
+    const itemCurrencyCode = normalizeOpenItemCurrency(
+      item.currency_code,
+      monetaryContext.currencyCode,
+    );
     const metadataKind =
       typeof item.metadata?.kind === "string"
         ? item.metadata.kind
         : null;
+
+    if (itemCurrencyCode !== monetaryContext.currencyCode) {
+      return isSettlementDocument;
+    }
 
     if (isSettlementDocument) {
       return metadataKind === (input.documentRole === "sale" ? "receivable" : "payable");
@@ -537,11 +802,12 @@ export async function syncApprovedDocumentOpenItems(input: {
     journalEntryId: input.journalEntryId,
     issueDate: input.documentDate,
     dueDate: input.dueDate,
-    currencyCode,
-    functionalCurrencyCode,
-    fxRate,
-    fxRateDate,
-    fxRateSource,
+    currencyCode: monetaryContext.currencyCode,
+    functionalCurrencyCode: monetaryContext.functionalCurrencyCode,
+    fxRate: monetaryContext.fxRate,
+    fxRateDate: monetaryContext.fxRateDate,
+    fxRateSource: monetaryContext.fxRateSource,
+    monetaryContextSource: monetaryContext.resolutionSource,
     totalAmount: input.totalAmount,
     existingOpenItems: existingItems,
   });

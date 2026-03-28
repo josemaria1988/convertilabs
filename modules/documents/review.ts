@@ -76,14 +76,26 @@ import {
 import { resolveAssistantSuggestionsForTarget } from "@/modules/assistant/runs";
 import { assertFiscalPeriodAllowsDocumentMutation } from "@/modules/close/service";
 import {
+  evaluateDocumentLaunchScope,
+  type LaunchSupportAssessment,
+} from "@/modules/launch/scope";
+import {
   canRunDocumentClassificationAction,
+  deriveCanonicalDocumentState,
   deriveDocumentWorkflowState,
+  type CanonicalDocumentState,
+  type DocumentOperationalBucket,
+  type DocumentOperationalFlagCode,
 } from "@/modules/documents/workflow-state";
 import { buildDocumentDecisionSnapshot } from "@/modules/documents/document-decision-snapshot";
 import {
   isDocumentProcessingStaleReason,
   reconcileStaleDocumentProcessingRuns,
 } from "@/modules/documents/processing";
+import {
+  interpretImportDocument,
+  type ImportReviewPolicyResult,
+} from "@/modules/imports";
 
 type OrganizationMemberRole =
   | "owner"
@@ -261,6 +273,10 @@ export type DocumentWorkspaceListItem = {
   mimeType: string | null;
   previewUrl: string | null;
   status: string;
+  canonicalState: CanonicalDocumentState;
+  operationalBucket: DocumentOperationalBucket;
+  operationalFlags: DocumentOperationalFlagCode[];
+  blockingReason: string | null;
   role: DocumentDirection;
   documentType: string | null;
   createdAt: string;
@@ -296,6 +312,18 @@ export type DocumentWorkspaceListItem = {
 
 export type DocumentWorkspaceDirectionFilter = "all" | "purchase" | "sale";
 
+export type DocumentWorkspaceStateFilter =
+  | "all"
+  | "processing"
+  | "review"
+  | "blocked_duplicate"
+  | "blocked_missing_fx"
+  | "blocked_scope"
+  | "imports_assisted"
+  | "ready_provisional"
+  | "ready_final"
+  | "posted_final";
+
 export type DocumentWorkspaceSortOrder =
   | "date_desc"
   | "date_asc"
@@ -313,6 +341,7 @@ export type PaginatedDocumentWorkspaceListResult = {
   hasPreviousPage: boolean;
   hasNextPage: boolean;
   directionFilter: DocumentWorkspaceDirectionFilter;
+  stateFilter: DocumentWorkspaceStateFilter;
   sortOrder: DocumentWorkspaceSortOrder;
 };
 
@@ -383,6 +412,8 @@ export type DocumentReviewPageData = {
     countryCode: string;
     taxId: string;
   } | null;
+  launchScope: LaunchSupportAssessment;
+  importReviewPolicy: ImportReviewPolicyResult;
   processingRun: ProcessingRunRow | null;
   revision: RevisionRow | null;
   confirmations: Array<{
@@ -649,6 +680,63 @@ function parseTransactionFamilyResolution(value: JsonRecord | null) {
     shouldReview: resolution.shouldReview === true,
     warnings: asStringArray(resolution.warnings),
     evidence: asStringArray(resolution.evidence),
+  };
+}
+
+function buildOperationalAssessments(input: {
+  profileVersion: ProfileVersionRow | null;
+  draft: Pick<DraftRow, "document_role" | "document_type" | "extracted_text">;
+  facts: DocumentIntakeFactMap;
+  amountBreakdown: DocumentIntakeAmountBreakdown[];
+  lineItems: DocumentIntakeLineItem[];
+  derived: DerivedDraftArtifacts;
+  duplicateStatus: string | null;
+}) {
+  const importDocument = interpretImportDocument({
+    documentId: "document",
+    documentType: input.draft.document_type,
+    facts: input.facts,
+    amountBreakdown: input.amountBreakdown,
+    lineItems: input.lineItems,
+    extractedText: input.draft.extracted_text,
+  });
+  const launchScope = evaluateDocumentLaunchScope({
+    countryCode: input.profileVersion?.country_code ?? "UY",
+    legalEntityType: input.profileVersion?.legal_entity_type ?? null,
+    taxRegimeCode: input.profileVersion?.tax_regime_code ?? null,
+    vatRegime: input.profileVersion?.vat_regime ?? null,
+    documentRole: input.draft.document_role,
+    documentType: input.draft.document_type,
+    currencyCode:
+      input.derived.monetarySnapshot?.currencyCode
+      ?? input.facts.currency_code
+      ?? input.derived.journalSuggestion.currencyCode,
+    functionalCurrencyCode: input.derived.journalSuggestion.functionalCurrencyCode,
+    hasTrustedFxSnapshot:
+      (
+        input.derived.monetarySnapshot?.currencyCode
+        ?? input.facts.currency_code
+        ?? input.derived.journalSuggestion.currencyCode
+        ?? input.derived.journalSuggestion.functionalCurrencyCode
+      ) === input.derived.journalSuggestion.functionalCurrencyCode
+      || (
+        typeof input.derived.journalSuggestion.fxRate === "number"
+        && input.derived.journalSuggestion.fxRate > 0
+        && input.derived.journalSuggestion.fxRateSource !== "document_default"
+      ),
+    duplicateStatus: input.duplicateStatus,
+    isImportOperation: importDocument.reviewPolicy.isImportFlow,
+    hasImportWarnings:
+      importDocument.reviewPolicy.status === "manual_required"
+      || importDocument.reviewPolicy.status === "blocked",
+    requiresCrossCurrencySettlement:
+      input.derived.settlementContext.warnings.some((warning) =>
+        warning.toLowerCase().includes("cross-currency")),
+  });
+
+  return {
+    launchScope,
+    importReviewPolicy: importDocument.reviewPolicy,
   };
 }
 
@@ -1697,6 +1785,9 @@ async function persistDraftArtifacts(
   draft: DraftRow,
   actorId: string | null,
   derived: DerivedDraftArtifacts,
+  options?: {
+    profileVersion?: ProfileVersionRow | null;
+  },
 ) {
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
@@ -1775,6 +1866,44 @@ async function persistDraftArtifacts(
     operationCategory,
     derived,
   );
+  const operationalAssessments = buildOperationalAssessments({
+    profileVersion: options?.profileVersion ?? null,
+    draft,
+    facts,
+    amountBreakdown,
+    lineItems,
+    derived,
+    duplicateStatus: derived.invoiceIdentity?.duplicateStatus ?? null,
+  });
+  const importReviewStatus =
+    operationalAssessments.importReviewPolicy.status === "assisted_ok"
+    || operationalAssessments.importReviewPolicy.status === "manual_required"
+    || operationalAssessments.importReviewPolicy.status === "blocked"
+      ? operationalAssessments.importReviewPolicy.status
+      : null;
+  const operationalSignals = deriveCanonicalDocumentState({
+    documentStatus: nextDocumentStatus,
+    postingStatus: nextPostingStatus,
+    hasDraft: true,
+    factualReady: true,
+    classificationUpToDate: Boolean(derived.appliedRule.accountId),
+    canPostProvisional:
+      derived.validation.canPostProvisional
+      && operationalAssessments.launchScope.allowedActions.canPostProvisional,
+    canConfirmFinal:
+      derived.validation.canConfirmFinal
+      && operationalAssessments.launchScope.allowedActions.canConfirmFinal,
+    visibleWarnings: unique([
+      ...derived.validation.blockers,
+      ...derived.taxTreatment.warnings,
+      ...derived.accountingContext.blockingReasons,
+      ...operationalAssessments.importReviewPolicy.reasons,
+      ...operationalAssessments.launchScope.reasons,
+    ]),
+    duplicateStatus: derived.invoiceIdentity?.duplicateStatus ?? null,
+    supportLevel: operationalAssessments.launchScope.supportLevel,
+    importReviewStatus,
+  });
 
   await updateDocumentWithCompat(supabase, document.id, {
     direction: draft.document_role,
@@ -1833,14 +1962,31 @@ async function persistDraftArtifacts(
       accounting_context_required: derived.accountingContext.status !== "not_required",
       matched_concept_count: derived.conceptResolution.matchedConceptIds.length,
       merchant_category_hints: facts.merchant_category_hints,
-      provisional_posting_ready: derived.validation.canPostProvisional,
-      final_posting_ready: derived.validation.canConfirmFinal,
+      provisional_posting_ready:
+        derived.validation.canPostProvisional
+        && operationalAssessments.launchScope.allowedActions.canPostProvisional,
+      final_posting_ready:
+        derived.validation.canConfirmFinal
+        && operationalAssessments.launchScope.allowedActions.canConfirmFinal
+        && importReviewStatus === null,
+      operational_flags: operationalSignals.operationalFlags,
+      operational_state: operationalSignals.canonicalState,
+      support_level: operationalAssessments.launchScope.supportLevel,
+      support_level_reasons: operationalAssessments.launchScope.reasons,
+      import_review_status: operationalAssessments.importReviewPolicy.status,
+      import_review_reasons: operationalAssessments.importReviewPolicy.reasons,
     },
     updated_at: new Date().toISOString(),
   });
 }
 
 const DEFAULT_DOCUMENT_WORKSPACE_PAGE_SIZE = 30;
+
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value && value.trim()))),
+  );
+}
 
 function normalizeDocumentWorkspacePage(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -1866,6 +2012,25 @@ function normalizeDocumentWorkspaceDirectionFilter(
   }
 
   return "all";
+}
+
+function normalizeDocumentWorkspaceStateFilter(
+  value: string | null | undefined,
+): DocumentWorkspaceStateFilter {
+  switch (value) {
+    case "processing":
+    case "review":
+    case "blocked_duplicate":
+    case "blocked_missing_fx":
+    case "blocked_scope":
+    case "imports_assisted":
+    case "ready_provisional":
+    case "ready_final":
+    case "posted_final":
+      return value;
+    default:
+      return "all";
+  }
 }
 
 function normalizeDocumentWorkspaceSortOrder(
@@ -2005,6 +2170,52 @@ function sortDocumentWorkspaceItems(
   return sorted;
 }
 
+function matchesWorkspaceStateFilter(input: {
+  item: DocumentWorkspaceListItem;
+  stateFilter: DocumentWorkspaceStateFilter;
+}) {
+  if (input.stateFilter === "all") {
+    return true;
+  }
+
+  if (input.stateFilter === "processing") {
+    return input.item.operationalBucket === "processing";
+  }
+
+  if (input.stateFilter === "review") {
+    return input.item.operationalBucket === "review";
+  }
+
+  if (input.stateFilter === "imports_assisted") {
+    return input.item.operationalFlags.includes("imports_assisted");
+  }
+
+  if (
+    input.stateFilter === "blocked_duplicate"
+    || input.stateFilter === "blocked_missing_fx"
+    || input.stateFilter === "blocked_scope"
+  ) {
+    return input.item.operationalFlags.includes(input.stateFilter);
+  }
+
+  if (input.stateFilter === "ready_provisional") {
+    return input.item.canonicalState === "ready_provisional";
+  }
+
+  if (input.stateFilter === "ready_final") {
+    return (
+      input.item.canonicalState === "ready_final"
+      || input.item.canonicalState === "posted_provisional_pending_final"
+    );
+  }
+
+  if (input.stateFilter === "posted_final") {
+    return input.item.canonicalState === "posted_final";
+  }
+
+  return true;
+}
+
 function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | undefined) {
   return (((data as Array<Record<string, unknown>> | null) ?? [])).map((row) => ({
     id: String(row.id),
@@ -2025,6 +2236,61 @@ function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | 
     last_processed_at: typeof row.last_processed_at === "string" ? row.last_processed_at : null,
     metadata: asRecord(row.metadata),
   })) satisfies DocumentListRow[];
+}
+
+function parseDocumentOperationalFlags(metadata: JsonRecord | null) {
+  const values = Array.isArray(metadata?.operational_flags)
+    ? metadata.operational_flags
+    : [];
+
+  return unique(values.map((value) => asString(value))) as DocumentOperationalFlagCode[];
+}
+
+function buildWorkspaceOperationalState(input: {
+  row: DocumentListRow;
+  duplicateStatus: string | null;
+  operationalFlags: DocumentOperationalFlagCode[];
+}) {
+  const metadata = asRecord(input.row.metadata);
+  const provisionalReady = metadata.provisional_posting_ready === true;
+  const finalReady = metadata.final_posting_ready === true;
+  const supportLevel = asString(metadata.support_level) as
+    | "automatic"
+    | "assisted_only"
+    | "blocked"
+    | null;
+  const importReviewStatus = asString(metadata.import_review_status) as
+    | "assisted_ok"
+    | "manual_required"
+    | "blocked"
+    | null;
+  const visibleWarnings = unique([
+    input.operationalFlags.includes("blocked_missing_fx")
+      ? "Falta tipo de cambio fiscal confiable."
+      : null,
+    input.operationalFlags.includes("blocked_scope")
+      ? "Fuera de alcance automatico del MVP."
+      : null,
+    input.duplicateStatus === "suspected_duplicate"
+      ? "Duplicado pendiente de resolver."
+      : input.duplicateStatus === "confirmed_duplicate"
+        ? "Duplicado confirmado."
+        : null,
+  ]);
+
+  return deriveCanonicalDocumentState({
+    documentStatus: input.row.status,
+    postingStatus: input.row.posting_status,
+    hasDraft: Boolean(input.row.current_draft_id),
+    factualReady: Boolean(input.row.current_draft_id),
+    classificationUpToDate: provisionalReady || finalReady || input.row.posting_status === "posted_provisional",
+    canPostProvisional: provisionalReady,
+    canConfirmFinal: finalReady,
+    visibleWarnings,
+    duplicateStatus: input.duplicateStatus,
+    supportLevel,
+    importReviewStatus,
+  });
 }
 
 async function buildOrganizationWorkspaceDocumentList(input: {
@@ -2226,12 +2492,23 @@ async function buildOrganizationWorkspaceDocumentList(input: {
     })(),
     ...(() => {
       const decision = latestDecisionLogByDocumentId.get(row.id);
+      const duplicateStatus = duplicateStatusByDocumentId.get(row.id) ?? null;
+      const operationalFlags = parseDocumentOperationalFlags(row.metadata);
+      const operationalState = buildWorkspaceOperationalState({
+        row,
+        duplicateStatus,
+        operationalFlags,
+      });
 
       return {
         certaintyLevel: decision?.certainty_level ?? null,
         certaintyConfidence: decision?.confidence_score ?? null,
-        duplicateStatus: duplicateStatusByDocumentId.get(row.id) ?? null,
+        duplicateStatus,
         decisionSource: decision?.decision_source ?? null,
+        canonicalState: operationalState.canonicalState,
+        operationalBucket: operationalState.operationalBucket,
+        operationalFlags: operationalState.operationalFlags,
+        blockingReason: operationalState.blockingReason,
         manualInterventionBy:
           row.current_draft_id && manualInterventionActorIdByDraftId.has(row.current_draft_id)
             ? (() => {
@@ -2480,58 +2757,86 @@ export async function listPaginatedOrganizationWorkspaceDocuments(input: {
   page?: number | null;
   pageSize?: number | null;
   directionFilter?: DocumentWorkspaceDirectionFilter | null;
+  stateFilter?: DocumentWorkspaceStateFilter | null;
   sortOrder?: DocumentWorkspaceSortOrder | null;
 }): Promise<PaginatedDocumentWorkspaceListResult> {
   const supabase = getSupabaseServiceRoleClient();
   const requestedPage = normalizeDocumentWorkspacePage(input.page);
   const pageSize = normalizeDocumentWorkspacePageSize(input.pageSize);
   const directionFilter = normalizeDocumentWorkspaceDirectionFilter(input.directionFilter);
+  const stateFilter = normalizeDocumentWorkspaceStateFilter(input.stateFilter);
   const sortOrder = normalizeDocumentWorkspaceSortOrder(input.sortOrder);
   const sortAscending = sortOrder === "date_asc";
-  const useComputedSort = sortOrder !== "date_desc" && sortOrder !== "date_asc";
+  const useComputedSort =
+    sortOrder !== "date_desc"
+    && sortOrder !== "date_asc";
+  const requiresComputedFiltering = stateFilter !== "all";
 
   await reconcileStaleDocumentProcessingRuns({
     supabase,
     organizationId: input.organizationId,
   });
 
-  let countQuery = supabase
-    .from("documents")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", input.organizationId);
-
-  if (directionFilter !== "all") {
-    countQuery = countQuery.eq("direction", directionFilter);
-  }
-
-  const countResult = await countQuery;
-
-  if (countResult.error) {
-    throw new Error(countResult.error.message);
-  }
-
-  const totalItems = countResult.count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const page = totalItems === 0 ? 1 : Math.min(requestedPage, totalPages);
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
+  let totalItems = 0;
   let items: DocumentWorkspaceListItem[];
 
-  if (useComputedSort) {
+  if (useComputedSort || requiresComputedFiltering) {
     const rows = await loadAllWorkspaceDocumentRows({
       supabase,
       organizationId: input.organizationId,
       directionFilter,
     });
-    const allItems = await buildOrganizationWorkspaceDocumentList({
+    const allItems = (await buildOrganizationWorkspaceDocumentList({
       supabase,
       organizationId: input.organizationId,
       organizationSlug: input.organizationSlug,
       rows,
-    });
+    }))
+      .filter((item) =>
+        matchesWorkspaceStateFilter({
+          item,
+          stateFilter,
+        }));
+    totalItems = allItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const page = totalItems === 0 ? 1 : Math.min(requestedPage, totalPages);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
     items = sortDocumentWorkspaceItems(allItems, sortOrder).slice(from, to + 1);
+
+    return {
+      items,
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasPreviousPage: page > 1,
+      hasNextPage: page < totalPages,
+      directionFilter,
+      stateFilter,
+      sortOrder,
+    };
   } else {
+    let countQuery = supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", input.organizationId);
+
+    if (directionFilter !== "all") {
+      countQuery = countQuery.eq("direction", directionFilter);
+    }
+
+    const countResult = await countQuery;
+
+    if (countResult.error) {
+      throw new Error(countResult.error.message);
+    }
+
+    totalItems = countResult.count ?? 0;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const page = totalItems === 0 ? 1 : Math.min(requestedPage, totalPages);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
     const rows = await loadPaginatedWorkspaceDocumentRows({
       supabase,
       organizationId: input.organizationId,
@@ -2546,19 +2851,20 @@ export async function listPaginatedOrganizationWorkspaceDocuments(input: {
       organizationSlug: input.organizationSlug,
       rows,
     });
-  }
 
-  return {
-    items,
-    page,
-    pageSize,
-    totalItems,
-    totalPages,
-    hasPreviousPage: page > 1,
-    hasNextPage: page < totalPages,
-    directionFilter,
-    sortOrder,
-  };
+    return {
+      items,
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasPreviousPage: page > 1,
+      hasNextPage: page < totalPages,
+      directionFilter,
+      stateFilter,
+      sortOrder,
+    };
+  }
 }
 
 export async function loadDocumentOriginalPageData(input: {
@@ -2660,6 +2966,15 @@ export async function loadDocumentReviewPageData(input: {
     draft.source_confidence,
     asStringArray(draft.warnings_json),
   );
+  const operationalAssessments = buildOperationalAssessments({
+    profileVersion,
+    draft,
+    facts,
+    amountBreakdown,
+    lineItems,
+    derived,
+    duplicateStatus: invoiceIdentity.duplicateStatus,
+  });
   const learningSuggestions = buildAccountingLearningSuggestions({
     accountingContext: derived.accountingContext,
     conceptResolution: derived.conceptResolution,
@@ -2687,6 +3002,14 @@ export async function loadDocumentReviewPageData(input: {
     derived,
     latestClassificationRun,
     learningOptionCount: learningSuggestions.options.length,
+    duplicateStatus: invoiceIdentity.duplicateStatus,
+    supportLevel: operationalAssessments.launchScope.supportLevel,
+    importReviewStatus:
+      operationalAssessments.importReviewPolicy.status === "assisted_ok"
+      || operationalAssessments.importReviewPolicy.status === "manual_required"
+      || operationalAssessments.importReviewPolicy.status === "blocked"
+        ? operationalAssessments.importReviewPolicy.status
+        : null,
   });
   const canRunClassificationByRole =
     ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole);
@@ -2798,6 +3121,8 @@ export async function loadDocumentReviewPageData(input: {
           taxId: profileVersion.tax_id,
         }
       : null,
+    launchScope: operationalAssessments.launchScope,
+    importReviewPolicy: operationalAssessments.importReviewPolicy,
     processingRun,
     revision,
     confirmations,
@@ -2851,7 +3176,7 @@ export async function loadDocumentReviewPageData(input: {
       && draft.status !== "confirmed",
     canReopen:
       ["owner", "admin"].includes(input.userRole)
-      && (document.status === "classified" || draft.status === "confirmed"),
+      && workflowState.canReopen,
     canRunClassification,
     canSaveLearningRule:
       ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(input.userRole)
@@ -3001,7 +3326,9 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
     throw new Error(autosaveError.message);
   }
 
-  await persistDraftArtifacts(supabase, document, nextDraft, input.actorId, derived);
+  await persistDraftArtifacts(supabase, document, nextDraft, input.actorId, derived, {
+    profileVersion,
+  });
   await markDocumentAssignmentRunsStale(supabase, {
     documentId: document.id,
   });
@@ -3144,6 +3471,9 @@ export async function confirmDocumentManualAssignment(input: {
     draft,
     input.actorId,
     confirmedAccountingState.derived,
+    {
+      profileVersion,
+    },
   );
   const { error: autosaveError } = await supabase
     .from("document_draft_autosaves")
@@ -3303,18 +3633,49 @@ async function postDocumentReviewInternal(input: {
     runAssistant: true,
   });
   const derived = accountingState.derived;
+  const operationalAssessments = buildOperationalAssessments({
+    profileVersion,
+    draft,
+    facts,
+    amountBreakdown,
+    lineItems,
+    derived,
+    duplicateStatus: invoiceIdentity.duplicateStatus,
+  });
 
-  if (input.mode === "provisional" && !derived.validation.canPostProvisional) {
+  if (
+    input.mode === "provisional"
+    && (
+      !derived.validation.canPostProvisional
+      || !operationalAssessments.launchScope.allowedActions.canPostProvisional
+      || operationalAssessments.importReviewPolicy.canPostProvisional === false
+    )
+  ) {
     return {
       ok: false,
-      message: derived.validation.blockers.join(" "),
+      message: unique([
+        ...derived.validation.blockers,
+        ...operationalAssessments.launchScope.reasons,
+        ...operationalAssessments.importReviewPolicy.reasons,
+      ]).join(" "),
     };
   }
 
-  if (input.mode === "final" && !derived.validation.canConfirmFinal) {
+  if (
+    input.mode === "final"
+    && (
+      !derived.validation.canConfirmFinal
+      || !operationalAssessments.launchScope.allowedActions.canConfirmFinal
+      || operationalAssessments.importReviewPolicy.canConfirmFinal === false
+    )
+  ) {
     return {
       ok: false,
-      message: derived.validation.blockers.join(" "),
+      message: unique([
+        ...derived.validation.blockers,
+        ...operationalAssessments.launchScope.reasons,
+        ...operationalAssessments.importReviewPolicy.reasons,
+      ]).join(" "),
     };
   }
 
@@ -3331,7 +3692,9 @@ async function postDocumentReviewInternal(input: {
     );
   }
 
-  await persistDraftArtifacts(supabase, document, draft, input.actorId, derived);
+  await persistDraftArtifacts(supabase, document, draft, input.actorId, derived, {
+    profileVersion,
+  });
   const accountingArtifacts = await persistApprovedAccountingArtifacts(
     supabase,
     buildAccountingArtifactsInput({
@@ -3445,9 +3808,26 @@ async function postDocumentReviewInternal(input: {
     dueDate: facts.due_date,
     currencyCode: facts.currency_code,
     functionalCurrencyCode: derived.journalSuggestion.functionalCurrencyCode,
-    fxRate: derived.journalSuggestion.fxRate,
-    fxRateDate: derived.journalSuggestion.fxRateDate,
-    fxRateSource: derived.journalSuggestion.fxRateSource,
+    confirmedMonetarySnapshot: {
+      currencyCode: derived.journalSuggestion.currencyCode,
+      functionalCurrencyCode: derived.journalSuggestion.functionalCurrencyCode,
+      fxRate: derived.journalSuggestion.fxRate,
+      fxRateDate: derived.journalSuggestion.fxRateDate,
+      fxRateSource: derived.journalSuggestion.fxRateSource,
+    },
+    draftMonetarySnapshot: derived.monetarySnapshot
+      ? {
+          currencyCode: derived.monetarySnapshot.currencyCode,
+          functionalCurrencyCode: derived.monetarySnapshot.fx.functionalCurrencyCode,
+          fxRate: derived.monetarySnapshot.fx.rate,
+          fxRateDate:
+            derived.monetarySnapshot.fx.bcuDateUsed
+            ?? derived.monetarySnapshot.fx.documentDate
+            ?? facts.document_date
+            ?? null,
+          fxRateSource: derived.monetarySnapshot.fx.source,
+        }
+      : null,
     totalAmount: facts.total_amount,
     vendorId: derived.vendorResolution.vendorId,
     issuerName: facts.issuer_name,
@@ -3947,7 +4327,9 @@ export async function rederiveDocumentDraftArtifacts(input: {
     runAssistant: input.runAssistant ?? false,
   });
 
-  await persistDraftArtifacts(supabase, document, draft, input.actorId, accountingState.derived);
+  await persistDraftArtifacts(supabase, document, draft, input.actorId, accountingState.derived, {
+    profileVersion,
+  });
 
   if (input.preserveDocumentStatus ?? false) {
     await updateDocumentWithCompat(supabase, document.id, {

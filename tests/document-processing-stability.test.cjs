@@ -355,6 +355,10 @@ test("classification action hint explains the next blocking step", () => {
     documentStatus: "extracted",
     workflowState: {
       queueCode: "pending_factual_review",
+      canonicalState: "needs_review",
+      operationalBucket: "review",
+      operationalFlags: [],
+      blockingReason: null,
       stepStatuses: {
         factual: "blocked",
         context: "pending",
@@ -369,7 +373,18 @@ test("classification action hint explains the next blocking step", () => {
       canCreateLearningRule: false,
       canPostProvisional: false,
       canConfirmFinal: false,
+      canConfirm: false,
+      canReopen: false,
       canRunVatPreview: false,
+      permissions: {
+        canRunClassification: false,
+        canCreateLearningRule: false,
+        canPostProvisional: false,
+        canConfirmFinal: false,
+        canConfirm: false,
+        canReopen: false,
+        canRunVatPreview: false,
+      },
       classificationStatus: "needs_context",
     },
   });

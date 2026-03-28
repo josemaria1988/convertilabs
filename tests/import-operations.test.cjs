@@ -42,6 +42,7 @@ test("import intake recognizes a standard DUA with import VAT", () => {
   assert.equal(result.documentKind, "dua");
   assert.equal(result.taxes[0].isCreditableVat, true);
   assert.equal(result.duaNumber, "778899");
+  assert.equal(result.reviewPolicy.status, "assisted_ok");
 });
 
 test("tax classification keeps external tax codes and VAT advance flags", () => {
@@ -92,6 +93,7 @@ test("broker invoices are treated as local expenses and not customs taxes", () =
 
   assert.equal(result.looksLikeLocalExpense, true);
   assert.equal(result.documentKind, "broker_invoice");
+  assert.equal(result.reviewPolicy.status, "manual_required");
 });
 
 test("mixed import operations block when DUA references conflict", () => {
@@ -111,6 +113,14 @@ test("mixed import operations block when DUA references conflict", () => {
         warnings: [],
         taxes: [],
         looksLikeLocalExpense: false,
+        reviewPolicy: {
+          status: "assisted_ok",
+          reasons: [],
+          indicators: ["document_kind:dua"],
+          isImportFlow: true,
+          canPostProvisional: true,
+          canConfirmFinal: false,
+        },
         rawFacts: {},
       },
       {
@@ -127,6 +137,14 @@ test("mixed import operations block when DUA references conflict", () => {
         warnings: [],
         taxes: [],
         looksLikeLocalExpense: false,
+        reviewPolicy: {
+          status: "assisted_ok",
+          reasons: [],
+          indicators: ["document_kind:commercial_invoice"],
+          isImportFlow: true,
+          canPostProvisional: true,
+          canConfirmFinal: false,
+        },
         rawFacts: {},
       },
     ],

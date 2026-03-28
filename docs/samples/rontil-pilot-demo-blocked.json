@@ -1,0 +1,19 @@
+{
+  "kind": "demo_sample",
+  "label": "Demo sample only - blocked gate example",
+  "sample": true,
+  "evidenceNote": "Synthetic demo file for exercising a failing pilot gate. Not production evidence.",
+  "results": [
+    { "scenarioId": "local_purchase", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 8, "estimatedCostUsd": 0.07 },
+    { "scenarioId": "local_sale", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 7, "estimatedCostUsd": 0.07 },
+    { "scenarioId": "credit_note", "usableExtraction": true, "correctClassification": false, "correctBlocking": true, "correctVat": true, "reviewMinutes": 13, "estimatedCostUsd": 0.06 },
+    { "scenarioId": "receipt_payment", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 9, "estimatedCostUsd": 0.05 },
+    { "scenarioId": "duplicates", "usableExtraction": true, "correctClassification": true, "correctBlocking": false, "correctVat": true, "reviewMinutes": 7, "estimatedCostUsd": 0.04 },
+    { "scenarioId": "new_vendor", "usableExtraction": false, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 12, "estimatedCostUsd": 0.08 },
+    { "scenarioId": "new_concept", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 10, "estimatedCostUsd": 0.08 },
+    { "scenarioId": "standard_import", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": false, "reviewMinutes": 14, "estimatedCostUsd": 0.09 },
+    { "scenarioId": "broker_invoice", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 11, "estimatedCostUsd": 0.09 },
+    { "scenarioId": "spreadsheet_import", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 8, "estimatedCostUsd": 0.05 },
+    { "scenarioId": "historical_vat", "usableExtraction": true, "correctClassification": true, "correctBlocking": true, "correctVat": true, "reviewMinutes": 9, "estimatedCostUsd": 0.06 }
+  ]
+}

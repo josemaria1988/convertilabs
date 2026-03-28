@@ -3,6 +3,10 @@ import type {
   DocumentIntakeFactMap,
   DocumentIntakeLineItem,
 } from "@/modules/ai/document-intake-contract";
+import type {
+  ImportReviewPolicyResult,
+  ImportReviewPolicyStatus,
+} from "@/modules/imports/review-policy";
 
 export type ImportOperationStatus =
   | "draft"
@@ -56,6 +60,7 @@ export type ImportDocumentIntakeResult = {
   warnings: string[];
   taxes: ImportTaxLine[];
   looksLikeLocalExpense: boolean;
+  reviewPolicy: ImportReviewPolicyResult;
   rawFacts: DocumentIntakeFactMap;
 };
 
@@ -107,4 +112,6 @@ export type {
   DocumentIntakeAmountBreakdown,
   DocumentIntakeFactMap,
   DocumentIntakeLineItem,
+  ImportReviewPolicyResult,
+  ImportReviewPolicyStatus,
 };

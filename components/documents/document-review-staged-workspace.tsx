@@ -21,6 +21,7 @@ import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
   buildDocumentOperationalHeaderView,
 } from "@/modules/presentation/document-decision-view";
+import { formatLaunchSupportLevelLabel } from "@/modules/launch/scope";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
@@ -1439,12 +1440,31 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
-            <p className="font-semibold">Siguiente mejor accion</p>
-            <p className="mt-2 text-[color:var(--color-muted)]">
-              {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
+        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+          <p className="font-semibold">Siguiente mejor accion</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">
+            {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
+          </p>
+        </div>
+
+        {(pageData.launchScope.supportLevel !== "automatic" || pageData.importReviewPolicy.isImportFlow) ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-semibold">
+              {formatLaunchSupportLevelLabel(pageData.launchScope.supportLevel)}
             </p>
+            {pageData.launchScope.reasons.map((reason) => (
+              <p key={reason} className="mt-2">{reason}</p>
+            ))}
+            {pageData.importReviewPolicy.isImportFlow ? (
+              <>
+                <p className="mt-2 font-semibold">Importacion asistida</p>
+                {pageData.importReviewPolicy.reasons.map((reason) => (
+                  <p key={`import:${reason}`} className="mt-2">{reason}</p>
+                ))}
+              </>
+            ) : null}
           </div>
+        ) : null}
         </div>
 
       {actionMessage ? (

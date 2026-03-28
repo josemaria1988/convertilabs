@@ -40,7 +40,7 @@ export function buildOrganizationPrivateNavItems(
     {
       href: `/app/o/${organizationSlug}/tax`,
       label: "Impuestos",
-      description: "IVA mensual, lifecycle y conciliacion",
+      description: "IVA mensual, lifecycle y comparacion DGI base",
       current: currentSection === "tax",
     },
     {

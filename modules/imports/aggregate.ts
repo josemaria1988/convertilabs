@@ -16,7 +16,11 @@ export function aggregateImportOperationDocuments(input: {
   const suppliers = uniqueValues(input.documents.map((document) => document.supplierName));
   const operationDates = uniqueValues(input.documents.map((document) => document.operationDate));
   const paymentDates = uniqueValues(input.documents.map((document) => document.paymentDate));
-  const warnings = input.documents.flatMap((document) => document.warnings);
+  const warnings = input.documents.flatMap((document) => [
+    ...document.warnings,
+    ...document.reviewPolicy.reasons,
+  ]);
+  const reviewStatuses = input.documents.map((document) => document.reviewPolicy.status);
 
   if (duaNumbers.length > 1) {
     warnings.push("Hay conflicto de numero DUA entre documentos vinculados.");
@@ -43,7 +47,11 @@ export function aggregateImportOperationDocuments(input: {
     looksLikeLocalExpense: document.looksLikeLocalExpense,
   }));
   const status =
-    blockedBySpecialCase || duaNumbers.length > 1 || currencies.length > 1
+    reviewStatuses.includes("blocked")
+    || reviewStatuses.includes("manual_required")
+    || blockedBySpecialCase
+    || duaNumbers.length > 1
+    || currencies.length > 1
       ? "blocked_manual_review"
       : hasPrimaryDua
         ? "ready_for_review"
@@ -68,6 +76,14 @@ export function aggregateImportOperationDocuments(input: {
       linked_document_count: input.documents.length,
       customs_tax_count: taxLines.length,
       local_expense_count: linkedDocuments.filter((document) => document.looksLikeLocalExpense).length,
+      review_policy_status:
+        reviewStatuses.includes("blocked")
+          ? "blocked"
+          : reviewStatuses.includes("manual_required")
+            ? "manual_required"
+            : reviewStatuses.includes("assisted_ok")
+              ? "assisted_ok"
+              : "not_import",
     },
   } satisfies ImportOperationAggregateResult;
 }

@@ -7,7 +7,7 @@ Convertilabs es una plataforma contable y fiscal para Uruguay centrada en tres m
 - onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets base o hibrida con IA;
 - workspace documental con upload privado, procesamiento por Inngest + OpenAI, revision humana, posting y carril separado para operaciones internacionales;
 - workspace contable read-only con balance de comprobacion, libro diario, open items y mapa contable explicable;
-- workspace fiscal con VAT preview, VAT runs, exportes fiscales y conciliacion DGI manual por buckets;
+- workspace fiscal con VAT preview, VAT runs, exportes fiscales y conciliacion DGI base manual por buckets;
 - carriles de soporte para planillas de plan de cuentas, historicos IVA, plantillas contables y bridge de exportacion contable hacia sistemas externos;
 - settings con perfil fiscal versionado, plan de cuentas, conexiones de email CFE y capacidades por organizacion.
 
@@ -94,6 +94,7 @@ npm run inngest:dev
 npm run lint
 npm run typecheck
 npm run test
+npm run pilot:summary -- docs/samples/rontil-pilot-demo-ready.json
 npm run db:generate:migration
 npm run db:verify:parity
 npm run db:smoke:profile-sync
@@ -106,6 +107,7 @@ npm run documents:repair:stale-processing
 ## Documentacion viva
 
 - [docs/README.md](docs/README.md)
+- [docs/beta_privada_alcance_y_operacion.md](docs/beta_privada_alcance_y_operacion.md)
 - [docs/00-foundations/01-mapa-del-repo-y-rutas.md](docs/00-foundations/01-mapa-del-repo-y-rutas.md)
 - [docs/04-documents/01-document-intake-and-processing.md](docs/04-documents/01-document-intake-and-processing.md)
 - [docs/04-documents/03-document-settlement-and-multi-line-posting.md](docs/04-documents/03-document-settlement-and-multi-line-posting.md)
@@ -115,5 +117,17 @@ npm run documents:repair:stale-processing
 
 - Uruguay only;
 - foco operativo en documentos, decision contable, IVA y bridge externo;
-- conciliacion DGI manual asistida, no filing automatico;
+- conciliacion DGI base manual asistida, no filing automatico;
 - sin payroll/BPS, conciliacion bancaria end-to-end ni multi-country operativo.
+
+## Beta privada y perimetro operativo
+
+- `Modo automatico` hoy aplica al perimetro conservador `UY + SA|SRL|SAS + IRAE_GENERAL + IVA GENERAL + flujo local estandar`.
+- `Modo asistido` cubre importaciones y perfiles fuera de ese perimetro: se permite extraccion, review y preview/provisional, pero no cierre automatico final.
+- `Bloqueado` aplica cuando faltan datos minimos, no hay FX confiable en moneda extranjera o aparece settlement cross-currency.
+
+## Operaciones y checks
+
+- `GET /api/health` es liveness/config barato.
+- `GET /api/ready` y `GET /api/health?mode=ready` hacen readiness real contra DB/Supabase sin ping costoso a OpenAI o Inngest.
+- `npm run pilot:summary -- <archivo.json>` ejecuta el gate del piloto y devuelve exit code no-cero si la apertura debe seguir bloqueada.

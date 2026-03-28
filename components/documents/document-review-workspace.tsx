@@ -28,6 +28,7 @@ import {
   formatVatBucketLabel,
   formatVatDeductibilityStatusLabel,
 } from "@/modules/presentation/labels";
+import { formatCanonicalWorkflowStateLabel } from "@/modules/presentation/product-language";
 
 type StepCode =
   | "identity"
@@ -274,29 +275,6 @@ function formatPostingStatus(value: string | null) {
       return "Bloqueado";
     default:
       return value ?? "Sin posteo";
-  }
-}
-
-function formatWorkflowQueue(value: string) {
-  switch (value) {
-    case "pending_factual_review":
-      return "Pendiente de revision factual";
-    case "pending_assignment":
-      return "Pendiente de asignacion";
-    case "pending_learning_decision":
-      return "Pendiente de aprendizaje";
-    case "ready_for_provisional_posting":
-      return "Listo para posteo provisional";
-    case "posted_provisional":
-      return "Posteado provisional";
-    case "ready_for_final_confirmation":
-      return "Listo para confirmacion final";
-    case "posted_final":
-      return "Posteado final";
-    case "reopened_needs_manual_remap":
-      return "Reabierto para remap manual";
-    default:
-      return value.replace(/_/g, " ");
   }
 }
 
@@ -950,7 +928,7 @@ export function DocumentReviewWorkspace({
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
               <p className="font-semibold">Workflow</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
-                {formatWorkflowQueue(pageData.workflowState.queueCode)}
+                {formatCanonicalWorkflowStateLabel(pageData.workflowState.canonicalState)}
               </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
                 Siguiente: {formatRecommendedAction(pageData.workflowState.nextRecommendedAction)}

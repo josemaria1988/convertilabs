@@ -245,6 +245,13 @@ export function InternationalOperationsWorkspace({
                       <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
                         {formatImportOperationStatusLabel(operation.status)} / {operation.currencyCode ?? "sin moneda"}
                       </p>
+                      <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
+                        {operation.status === "ready_for_review"
+                          ? "Importacion asistida: puede revisarse y preparar preview, pero no auto-finaliza."
+                          : operation.status === "blocked_manual_review"
+                            ? "Revision manual obligatoria antes de seguir."
+                            : "Operacion internacional en construccion."}
+                      </p>
                     </div>
                     <div className="text-right text-[13px] text-[color:var(--color-muted)]">
                       <p>{operation.duaNumber ? `DUA ${operation.duaNumber}` : "Sin DUA"}</p>

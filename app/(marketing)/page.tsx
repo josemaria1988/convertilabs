@@ -3,6 +3,10 @@ import { MarketingCtaBanner } from "@/components/marketing-cta-banner";
 import { MarketingSectionHeading } from "@/components/marketing-section-heading";
 import { PageHero } from "@/components/page-hero";
 import { siteConfig } from "@/lib/site";
+import {
+  DGI_RECONCILIATION_COMPARISON_LABEL,
+  DGI_RECONCILIATION_TITLE,
+} from "@/modules/tax/dgi-reconciliation-copy";
 
 const productPillars = [
   {
@@ -21,7 +25,7 @@ const productPillars = [
     code: "03",
     title: "Liquidacion mensual",
     description:
-      "Ordena IVA por periodo, reconstruye runs mensuales, prepara exportes y deja la conciliacion DGI dentro del mismo carril de trabajo.",
+      `Ordena IVA por periodo, reconstruye runs mensuales, prepara exportes y deja la ${DGI_RECONCILIATION_TITLE.toLowerCase()} dentro del mismo carril de trabajo.`,
   },
   {
     code: "04",
@@ -93,7 +97,7 @@ const monthlyFlow = [
     step: "04",
     title: "Liquidacion y exportacion",
     description:
-      "IVA mensual, conciliacion DGI y exportes salen del mismo set validado, sin rearmar la historia en otra herramienta.",
+      `IVA mensual, ${DGI_RECONCILIATION_TITLE.toLowerCase()} y exportes salen del mismo set validado, sin rearmar la historia en otra herramienta.`,
   },
 ];
 
@@ -145,7 +149,7 @@ const audiences = [
 
 const currentScope = [
   "Uruguay only, con foco operativo en documentos, decision contable, IVA y bridge externo.",
-  "Conciliacion DGI manual asistida y exportes fiscales; no filing automatico a organismos.",
+  "Comparacion DGI base manual asistida y exportes fiscales; no filing automatico a organismos.",
   "Libro diario, balance, open items y mapa contable como superficie de lectura y control.",
   "Carril especial para operaciones internacionales dentro del workspace documental.",
 ];
@@ -338,7 +342,7 @@ export default function HomePage() {
                   Lo que ya esta hoy
                 </p>
                 <p className="mt-2 text-sm leading-7 text-white/74">
-                  VAT preview, VAT runs, exportes fiscales, conciliacion DGI manual por buckets y proteccion mensual para no mezclar febrero con marzo.
+                  VAT preview, VAT runs, exportes fiscales, comparacion DGI base por buckets y proteccion mensual para no mezclar febrero con marzo.
                 </p>
               </div>
               <div className={mutedDarkCardClassName}>
@@ -369,7 +373,7 @@ export default function HomePage() {
                   <div className={mutedDarkCardClassName}>
                     <p className="text-sm font-semibold text-white">Impuestos</p>
                     <p className="mt-2 text-sm leading-6 text-white/70">
-                      IVA mensual, lifecycle y conciliacion.
+                      IVA mensual, lifecycle y {DGI_RECONCILIATION_COMPARISON_LABEL.toLowerCase()}.
                     </p>
                   </div>
                   <div className={mutedDarkCardClassName}>

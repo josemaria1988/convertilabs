@@ -52,14 +52,14 @@ export async function createDgiReconciliationRunAction(formData: FormData) {
   const role = organization.role;
 
   if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
-    throw new Error("Tu rol no puede crear corridas DGI.");
+    throw new Error("Tu rol no puede crear corridas DGI base.");
   }
 
   const periodYear = Number(formData.get("periodYear") ?? 0);
   const periodMonth = Number(formData.get("periodMonth") ?? 0);
 
   if (!Number.isInteger(periodYear) || !Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12) {
-    throw new Error("Periodo DGI invalido.");
+    throw new Error("Periodo DGI base invalido.");
   }
 
   const baseline = Object.fromEntries(bucketFields.map((bucket) => [
@@ -93,7 +93,7 @@ export async function reviewDgiBucketAction(formData: FormData) {
   const role = organization.role;
 
   if (!["owner", "admin", "accountant", "reviewer"].includes(role)) {
-    throw new Error("Tu rol no puede revisar buckets DGI.");
+    throw new Error("Tu rol no puede revisar buckets DGI base.");
   }
 
   const runId = String(formData.get("runId") ?? "");
@@ -119,7 +119,7 @@ export async function closeDgiReconciliationRunAction(formData: FormData) {
   const role = organization.role;
 
   if (!["owner", "admin", "accountant"].includes(role)) {
-    throw new Error("Tu rol no puede cerrar conciliaciones DGI.");
+    throw new Error("Tu rol no puede cerrar comparaciones DGI base.");
   }
 
   await closeDgiReconciliationRun(getSupabaseServiceRoleClient(), {
@@ -137,7 +137,7 @@ export async function reopenDocumentFromDgiAction(formData: FormData) {
   const role = organization.role;
 
   if (!["owner", "admin"].includes(role)) {
-    throw new Error("Solo owner y admin pueden reabrir documentos desde conciliacion.");
+    throw new Error("Solo owner y admin pueden reabrir documentos desde comparacion DGI base.");
   }
 
   await reopenDocumentReview({

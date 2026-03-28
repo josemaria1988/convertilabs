@@ -104,7 +104,8 @@ docs/
 
 ### APIs internas activas
 
-- `/api/health`
+- `/api/health` liveness/config
+- `/api/ready` readiness real
 - `/api/inngest`
 - `/api/v1/auth/login`
 - `/api/v1/auth/signup`

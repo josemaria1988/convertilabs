@@ -56,6 +56,10 @@ function buildDerived(overrides = {}) {
 function buildWorkflowState(overrides = {}) {
   return {
     queueCode: "ready_for_provisional_posting",
+    canonicalState: "ready_provisional",
+    operationalBucket: "ready_to_post",
+    operationalFlags: [],
+    blockingReason: null,
     stepStatuses: {
       factual: "completed",
       context: "completed",
@@ -70,7 +74,18 @@ function buildWorkflowState(overrides = {}) {
     canCreateLearningRule: false,
     canPostProvisional: true,
     canConfirmFinal: true,
+    canConfirm: true,
+    canReopen: false,
     canRunVatPreview: true,
+    permissions: {
+      canRunClassification: false,
+      canCreateLearningRule: false,
+      canPostProvisional: true,
+      canConfirmFinal: true,
+      canConfirm: true,
+      canReopen: false,
+      canRunVatPreview: true,
+    },
     classificationStatus: "completed",
     ...overrides,
   };
@@ -98,8 +113,20 @@ test("decision snapshot keeps preview balanced documents blocked when classifica
     }),
     workflowState: buildWorkflowState({
       queueCode: "pending_assignment",
+      canonicalState: "needs_review",
+      operationalBucket: "review",
       canPostProvisional: false,
       canConfirmFinal: false,
+      canConfirm: false,
+      permissions: {
+        canRunClassification: false,
+        canCreateLearningRule: false,
+        canPostProvisional: false,
+        canConfirmFinal: false,
+        canConfirm: false,
+        canReopen: false,
+        canRunVatPreview: false,
+      },
       classificationStatus: "stale",
     }),
     latestClassificationRun: {
@@ -138,7 +165,7 @@ test("decision snapshot keeps preview balanced documents blocked when classifica
   assert.equal(snapshot.previewBalanced, true);
   assert.equal(snapshot.classificationResolved, false);
   assert.equal(snapshot.canPostProvisional, false);
-  assert.equal(snapshot.workflowState, "pending_assignment");
+  assert.equal(snapshot.workflowState, "needs_review");
   assert.match(snapshot.provisionalEligibility.missingConditions.join(" "), /Clasificacion resuelta/i);
 });
 
@@ -166,6 +193,7 @@ test("decision snapshot marks manual override as manual resolution and unlocks f
     }),
     workflowState: buildWorkflowState({
       queueCode: "ready_for_final_confirmation",
+      canonicalState: "ready_final",
       canPostProvisional: true,
       canConfirmFinal: true,
       classificationStatus: "completed",
@@ -214,6 +242,7 @@ test("decision snapshot treats role overrides as manual resolution even without 
     }),
     workflowState: buildWorkflowState({
       queueCode: "ready_for_provisional_posting",
+      canonicalState: "ready_provisional",
       canPostProvisional: true,
       canConfirmFinal: true,
       classificationStatus: "completed",
@@ -267,7 +296,7 @@ test("vat eligibility distinguishes preview from official run", () => {
 });
 
 test("canonical language formats stable workflow and source labels", () => {
-  assert.equal(formatCanonicalWorkflowStateLabel("pending_assignment"), "Pendiente de asignacion");
+  assert.equal(formatCanonicalWorkflowStateLabel("needs_review"), "Necesita revision");
   assert.equal(formatCanonicalResolutionSourceLabel("manual"), "Revision manual");
   assert.equal(formatCanonicalResolutionSourceLabel("unknown"), "Pendiente");
   assert.equal(

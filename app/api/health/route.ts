@@ -1,23 +1,17 @@
 import { NextResponse } from "next/server";
 import {
-  getInngestConfigStatus,
-  getOpenAIConfigStatus,
-  getSupabaseConfigStatus,
-} from "@/lib/env";
+  buildLivenessPayload,
+  getReadinessHttpStatus,
+  loadReadinessPayload,
+} from "@/modules/ops/health";
 
-export function GET() {
-  const supabase = getSupabaseConfigStatus();
-  const openai = getOpenAIConfigStatus();
-  const inngest = getInngestConfigStatus();
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
 
-  return NextResponse.json({
-    name: "convertilabs",
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    services: {
-      supabase,
-      openai,
-      inngest,
-    },
-  });
+  if (searchParams.get("mode") === "ready") {
+    const payload = await loadReadinessPayload();
+    return NextResponse.json(payload, { status: getReadinessHttpStatus(payload) });
+  }
+
+  return NextResponse.json(buildLivenessPayload());
 }

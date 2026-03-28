@@ -11,6 +11,10 @@ import {
 } from "@/modules/exports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
+import {
+  DGI_RECONCILIATION_COMPARISON_LABEL,
+  DGI_RECONCILIATION_TITLE,
+} from "@/modules/tax/dgi-reconciliation-copy";
 import { createAccountingExportAction } from "./actions";
 
 type OrganizationExportsPageProps = {
@@ -123,9 +127,9 @@ export default async function OrganizationExportsPage({
               <p className="metric-card__hint">Cola de recategorizacion del periodo.</p>
             </article>
             <article className="metric-card">
-              <span className="metric-card__label">Buckets DGI</span>
+              <span className="metric-card__label">Buckets DGI base</span>
               <span className="metric-card__value">{previewDataset.dgiDifferences.length}</span>
-              <p className="metric-card__hint">Ultima conciliacion del periodo.</p>
+              <p className="metric-card__hint">Ultima comparacion base del periodo.</p>
             </article>
             <article className="metric-card">
               <span className="metric-card__label">Periodo</span>
@@ -355,14 +359,14 @@ export default async function OrganizationExportsPage({
 
           <section className="ui-panel">
             <div className="ui-panel-header">
-              <h2 className="text-[16px] font-semibold text-white">Diferencias DGI</h2>
+              <h2 className="text-[16px] font-semibold text-white">{DGI_RECONCILIATION_COMPARISON_LABEL}</h2>
               <span className="ui-filter">{previewDataset.dgiDifferences.length}</span>
             </div>
 
             <div className="mt-4 space-y-3">
               {previewDataset.dgiDifferences.length === 0 ? (
                 <div className="text-sm text-[color:var(--color-muted)]">
-                  No hay una conciliacion DGI registrada para este periodo.
+                  No hay una {DGI_RECONCILIATION_TITLE.toLowerCase()} registrada para este periodo.
                 </div>
               ) : (
                 previewDataset.dgiDifferences.map((bucket) => (

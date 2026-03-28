@@ -384,8 +384,8 @@ function buildFallbackWorkbenchItem(input: {
   return {
     documentId: input.document.documentId,
     reviewHref: `/app/o/${input.organizationSlug}/documents/${input.document.documentId}`,
-    workflowState: "pending_factual_review",
-    workflowLabel: "Pendiente de revision factual",
+    workflowState: "processing",
+    workflowLabel: "Procesando",
     resolutionSource: "unknown",
     resolutionSourceLabel: "Pendiente",
     postingStateLabel: input.document.postingStatus ?? "Sin posting",

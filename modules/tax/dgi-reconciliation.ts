@@ -14,6 +14,9 @@ import {
   summarizeDgiReconciliationDifferences,
   type DgiReconciliationBucketCode,
 } from "@/modules/tax/dgi-summary-normalizer";
+import {
+  DGI_RECONCILIATION_SCOPE_LABEL,
+} from "@/modules/tax/dgi-reconciliation-copy";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -60,6 +63,7 @@ export type DgiReconciliationRunSummary = {
   periodYear: number;
   periodMonth: number;
   periodLabel: string;
+  scopeLabel: typeof DGI_RECONCILIATION_SCOPE_LABEL;
   sourceKind: DgiReconciliationRunRow["source_kind"];
   status: DgiReconciliationRunRow["status"];
   createdAt: string;
@@ -332,6 +336,7 @@ export async function listOrganizationDgiReconciliationRuns(
       periodYear: row.period_year,
       periodMonth: row.period_month,
       periodLabel: formatPeriodLabel(row.period_year, row.period_month),
+      scopeLabel: DGI_RECONCILIATION_SCOPE_LABEL,
       sourceKind: row.source_kind,
       status: row.status,
       createdAt: row.created_at,
@@ -405,6 +410,7 @@ export async function loadDgiReconciliationRunDetail(
     periodYear: run.period_year,
     periodMonth: run.period_month,
     periodLabel: formatPeriodLabel(run.period_year, run.period_month),
+    scopeLabel: DGI_RECONCILIATION_SCOPE_LABEL,
     sourceKind: run.source_kind,
     status: run.status,
     createdAt: run.created_at,
@@ -472,6 +478,7 @@ export async function createDgiReconciliationRun(
         summary,
       },
       metadata_json: {
+        scope_label: DGI_RECONCILIATION_SCOPE_LABEL,
         vat_run_id: vatRunId,
         source_type: input.sourceKind,
         system_document_count: dataset?.totals.documentCount ?? 0,
@@ -487,7 +494,7 @@ export async function createDgiReconciliationRun(
 
   if (runError || !runRow?.id) {
     if (runError && isMissingSupabaseRelationError(runError, "dgi_reconciliation_runs")) {
-      throw new Error("Falta la migracion Step 5 para conciliacion DGI.");
+      throw new Error("Falta la migracion Step 5 para conciliacion DGI base.");
     }
 
     throw new Error(runError?.message ?? "No se pudo crear la corrida DGI.");
@@ -511,7 +518,7 @@ export async function createDgiReconciliationRun(
 
   if (bucketError) {
     if (isMissingSupabaseRelationError(bucketError, "dgi_reconciliation_buckets")) {
-      throw new Error("Falta la migracion Step 5 para buckets de conciliacion DGI.");
+      throw new Error("Falta la migracion Step 5 para buckets de conciliacion DGI base.");
     }
 
     throw new Error(bucketError.message);

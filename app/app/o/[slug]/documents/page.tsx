@@ -10,9 +10,14 @@ import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
   listPaginatedOrganizationWorkspaceDocuments,
   type DocumentWorkspaceDirectionFilter,
+  type DocumentWorkspaceStateFilter,
   type DocumentWorkspaceSortOrder,
 } from "@/modules/documents/review";
 import { listOrganizationImportOperations } from "@/modules/imports";
+import {
+  evaluateOrganizationLaunchScope,
+  formatLaunchSupportLevelLabel,
+} from "@/modules/launch/scope";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadMissingFxDocumentsSummary } from "@/modules/documents/spreadsheet-fx-resolution";
 
@@ -24,6 +29,7 @@ type OrganizationDocumentsPageProps = {
     tab?: string;
     page?: string;
     direction?: string;
+    state?: string;
     sort?: string;
   }>;
 };
@@ -78,6 +84,22 @@ const documentSortOptions: Array<{
   },
 ];
 
+const documentStateOptions: Array<{
+  key: DocumentWorkspaceStateFilter;
+  label: string;
+}> = [
+  { key: "all", label: "Todos" },
+  { key: "processing", label: "Procesando" },
+  { key: "review", label: "Revision" },
+  { key: "blocked_duplicate", label: "Duplicado" },
+  { key: "blocked_missing_fx", label: "FX faltante" },
+  { key: "blocked_scope", label: "Fuera de alcance" },
+  { key: "imports_assisted", label: "Importacion asistida" },
+  { key: "ready_provisional", label: "Listos provisional" },
+  { key: "ready_final", label: "Listos final" },
+  { key: "posted_final", label: "Finalizados" },
+];
+
 const documentTabs: Array<{
   key: DocumentsTabKey;
   label: string;
@@ -117,6 +139,23 @@ function normalizeDocumentDirectionFilter(value: string | undefined): DocumentWo
   return "all";
 }
 
+function normalizeDocumentStateFilter(value: string | undefined): DocumentWorkspaceStateFilter {
+  switch (value) {
+    case "processing":
+    case "review":
+    case "blocked_duplicate":
+    case "blocked_missing_fx":
+    case "blocked_scope":
+    case "imports_assisted":
+    case "ready_provisional":
+    case "ready_final":
+    case "posted_final":
+      return value;
+    default:
+      return "all";
+  }
+}
+
 function normalizeDocumentSortOrder(value: string | undefined): DocumentWorkspaceSortOrder {
   switch (value) {
     case "date_asc":
@@ -136,6 +175,7 @@ function buildDocumentsPageHref(
     tab?: DocumentsTabKey;
     page?: number | null;
     direction?: DocumentWorkspaceDirectionFilter;
+    state?: DocumentWorkspaceStateFilter;
     sort?: DocumentWorkspaceSortOrder;
   } = {},
 ) {
@@ -151,6 +191,10 @@ function buildDocumentsPageHref(
 
   if (search.direction && search.direction !== "all") {
     params.set("direction", search.direction);
+  }
+
+  if (search.state && search.state !== "all") {
+    params.set("state", search.state);
   }
 
   if (search.sort && search.sort !== "date_desc") {
@@ -186,16 +230,18 @@ export default async function OrganizationDocumentsPage({
     resolvedSearchParams.tab === "international" ? "international" : "documents";
   const currentPage = normalizeDocumentsPage(resolvedSearchParams.page);
   const directionFilter = normalizeDocumentDirectionFilter(resolvedSearchParams.direction);
+  const stateFilter = normalizeDocumentStateFilter(resolvedSearchParams.state);
   const sortOrder = normalizeDocumentSortOrder(resolvedSearchParams.sort);
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [documentsPage, importOperations, recentDocumentsResult, missingFxSummary] = await Promise.all([
+  const [documentsPage, importOperations, recentDocumentsResult, missingFxSummary, organizationScopeRow] = await Promise.all([
     activeTab === "documents"
       ? listPaginatedOrganizationWorkspaceDocuments({
         organizationId: organization.id,
         organizationSlug: organization.slug,
         page: currentPage,
         directionFilter,
+        stateFilter,
         sortOrder,
       })
       : Promise.resolve(null),
@@ -218,11 +264,28 @@ export default async function OrganizationDocumentsPage({
     activeTab === "documents"
       ? loadMissingFxDocumentsSummary({ organizationId: organization.id, supabase })
       : Promise.resolve({ count: 0, dates: [] }),
+    supabase
+      .from("organizations")
+      .select("country_code, legal_entity_type, tax_regime_code, vat_regime")
+      .eq("id", organization.id)
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (recentDocumentsResult.error) {
     throw new Error(recentDocumentsResult.error.message);
   }
+
+  if (organizationScopeRow.error) {
+    throw new Error(organizationScopeRow.error.message);
+  }
+
+  const organizationScope = evaluateOrganizationLaunchScope({
+    countryCode: organizationScopeRow.data?.country_code ?? "UY",
+    legalEntityType: organizationScopeRow.data?.legal_entity_type ?? null,
+    taxRegimeCode: organizationScopeRow.data?.tax_regime_code ?? null,
+    vatRegime: organizationScopeRow.data?.vat_regime ?? null,
+  });
 
   const recentDocuments = (((recentDocumentsResult.data as Array<{
     id: string;
@@ -295,6 +358,7 @@ export default async function OrganizationDocumentsPage({
                 tab: "documents",
                 page: currentPage,
                 direction: directionFilter,
+                state: stateFilter,
                 sort: sortOrder,
               })}
               pendingLabel="Volviendo..."
@@ -344,6 +408,39 @@ export default async function OrganizationDocumentsPage({
           </div>
         </div>
 
+        <div className="ui-panel">
+          <div className="ui-panel-header">
+            <div>
+              <h2 className="text-[16px] font-semibold text-white">Alcance operativo del MVP</h2>
+              <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                El producto muestra de forma explicita cuando una organizacion queda en modo automatico y cuando solo puede operar en modo asistido.
+              </p>
+            </div>
+            <span className={`status-pill ${
+              organizationScope.supportLevel === "automatic"
+                ? "status-pill--success"
+                : organizationScope.supportLevel === "assisted_only"
+                  ? "status-pill--warning"
+                  : "status-pill--danger"
+            }`}
+            >
+              {formatLaunchSupportLevelLabel(organizationScope.supportLevel)}
+            </span>
+          </div>
+
+          {organizationScope.reasons.length > 0 ? (
+            <div className="mt-4 space-y-2 text-sm text-[color:var(--color-muted)]">
+              {organizationScope.reasons.map((reason) => (
+                <p key={reason}>{reason}</p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-[color:var(--color-muted)]">
+              La organizacion entra dentro del perimetro automatico conservador del MVP para Uruguay.
+            </p>
+          )}
+        </div>
+
         {activeTab === "documents" ? (
           <>
             <div className="ui-panel">
@@ -371,6 +468,30 @@ export default async function OrganizationDocumentsPage({
                         href={buildDocumentsPageHref(organization.slug, {
                           tab: "documents",
                           direction: option.key,
+                          state: stateFilter,
+                          sort: sortOrder,
+                        })}
+                        pendingLabel="Filtrando..."
+                        className={isActive ? "ui-button ui-button--primary" : "ui-button ui-button--secondary"}
+                      >
+                        {option.label}
+                      </LoadingLink>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="ui-filter">Estado operativo</span>
+                  {documentStateOptions.map((option) => {
+                    const isActive = stateFilter === option.key;
+
+                    return (
+                      <LoadingLink
+                        key={option.key}
+                        href={buildDocumentsPageHref(organization.slug, {
+                          tab: "documents",
+                          direction: directionFilter,
+                          state: option.key,
                           sort: sortOrder,
                         })}
                         pendingLabel="Filtrando..."
@@ -393,6 +514,7 @@ export default async function OrganizationDocumentsPage({
                         href={buildDocumentsPageHref(organization.slug, {
                           tab: "documents",
                           direction: directionFilter,
+                          state: stateFilter,
                           sort: option.key,
                         })}
                         pendingLabel="Ordenando..."
@@ -431,6 +553,7 @@ export default async function OrganizationDocumentsPage({
                         tab: "documents",
                         page: documentsPage.page - 1,
                         direction: directionFilter,
+                        state: stateFilter,
                         sort: sortOrder,
                       })}
                       pendingLabel="Cargando..."
@@ -454,6 +577,7 @@ export default async function OrganizationDocumentsPage({
                         tab: "documents",
                         page: documentsPage.page + 1,
                         direction: directionFilter,
+                        state: stateFilter,
                         sort: sortOrder,
                       })}
                       pendingLabel="Cargando..."

@@ -22,6 +22,18 @@ export type PilotScenarioResult = {
   estimatedCostUsd: number;
 };
 
+export type RontilPilotSummary = {
+  coverage: number;
+  missingScenarios: PilotScenarioId[];
+  usableExtractionRate: number;
+  correctClassificationRate: number;
+  correctBlockingRate: number;
+  correctVatRate: number;
+  averageReviewMinutes: number;
+  averageCostUsd: number;
+  pilotReady: boolean;
+};
+
 export const RONTIL_PILOT_SCENARIOS: Array<{
   id: PilotScenarioId;
   label: string;
@@ -40,7 +52,23 @@ export const RONTIL_PILOT_SCENARIOS: Array<{
   { id: "dgi_mapping", label: "Mapping DGI" },
 ];
 
-export function buildRontilPilotSummary(results: PilotScenarioResult[]) {
+export const RONTIL_PILOT_THRESHOLDS = {
+  usableExtractionRate: 0.9,
+  correctClassificationRate: 0.9,
+  correctBlockingRate: 0.95,
+  correctVatRate: 0.9,
+  averageReviewMinutes: 12,
+} as const;
+
+const RONTIL_PILOT_SCENARIO_IDS = new Set(
+  RONTIL_PILOT_SCENARIOS.map((scenario) => scenario.id),
+);
+
+export function isPilotScenarioId(value: string): value is PilotScenarioId {
+  return RONTIL_PILOT_SCENARIO_IDS.has(value as PilotScenarioId);
+}
+
+export function buildRontilPilotSummary(results: PilotScenarioResult[]): RontilPilotSummary {
   const expectedIds = new Set(RONTIL_PILOT_SCENARIOS.map((scenario) => scenario.id));
   const coveredIds = new Set(results.map((result) => result.scenarioId));
   const missingScenarios = Array.from(expectedIds).filter((id) => !coveredIds.has(id));
@@ -77,10 +105,10 @@ export function buildRontilPilotSummary(results: PilotScenarioResult[]) {
     averageCostUsd,
     pilotReady:
       missingScenarios.length === 0
-      && usableExtractionRate >= 0.9
-      && correctClassificationRate >= 0.9
-      && correctBlockingRate >= 0.95
-      && correctVatRate >= 0.9
-      && averageReviewMinutes <= 12,
+      && usableExtractionRate >= RONTIL_PILOT_THRESHOLDS.usableExtractionRate
+      && correctClassificationRate >= RONTIL_PILOT_THRESHOLDS.correctClassificationRate
+      && correctBlockingRate >= RONTIL_PILOT_THRESHOLDS.correctBlockingRate
+      && correctVatRate >= RONTIL_PILOT_THRESHOLDS.correctVatRate
+      && averageReviewMinutes <= RONTIL_PILOT_THRESHOLDS.averageReviewMinutes,
   };
 }

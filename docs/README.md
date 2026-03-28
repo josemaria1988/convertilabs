@@ -24,6 +24,7 @@ Desde 2026-03-20, la epica inmediata de `docs/specs-driven-development-erp-conta
 ## Estructura actual
 
 - [agent_rules.md](./agent_rules.md)
+- [beta_privada_alcance_y_operacion.md](./beta_privada_alcance_y_operacion.md)
 - [00-foundations/00-vision-rectora-v1.md](./00-foundations/00-vision-rectora-v1.md)
 - [00-foundations/01-mapa-del-repo-y-rutas.md](./00-foundations/01-mapa-del-repo-y-rutas.md)
 - [00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-19.md](./00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-19.md)

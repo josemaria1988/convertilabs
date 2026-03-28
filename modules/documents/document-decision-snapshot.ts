@@ -450,8 +450,7 @@ export function buildDocumentDecisionSnapshot(input: {
     vatPreviewEligibility,
     vatRunEligibility,
   });
-  const canonicalWorkflowState =
-    (input.postingStatus === "locked" ? "locked" : input.workflowState.queueCode) as CanonicalWorkflowState;
+  const canonicalWorkflowState = input.workflowState.canonicalState as CanonicalWorkflowState;
   const workflowSuggestedAction = formatCanonicalNextActionLabel(canonicalWorkflowState);
   const nextBestAction =
     input.workflowState.canConfirmFinal

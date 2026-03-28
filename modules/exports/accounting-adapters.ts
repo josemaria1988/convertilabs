@@ -200,7 +200,7 @@ function buildAccountingExportSheets(
       ],
     },
     {
-      name: "Conciliacion DGI",
+      name: "Comparacion DGI base",
       rows: [
         ["Bucket", "Etiqueta", "Estado", "Delta neto UYU", "Delta IVA UYU", "Notas"],
         ...dataset.dgiDifferences.map((row) => [

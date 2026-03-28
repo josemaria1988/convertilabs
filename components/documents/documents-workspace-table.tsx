@@ -15,7 +15,12 @@ import {
   formatDecisionSourceLabel,
   formatDuplicateStatusLabel,
 } from "@/modules/presentation/labels";
-import { getDocumentRoleLabel, getDocumentRoleVariant } from "@/modules/documents/status";
+import {
+  formatDocumentOperationalStatusLabel,
+  getDocumentOperationalStatusVariant,
+  getDocumentRoleLabel,
+  getDocumentRoleVariant,
+} from "@/modules/documents/status";
 
 type DocumentsWorkspaceTableItem = {
   id: string;
@@ -24,6 +29,22 @@ type DocumentsWorkspaceTableItem = {
   mimeType: string | null;
   previewUrl: string | null;
   status: string;
+  canonicalState:
+    | "processing"
+    | "needs_review"
+    | "blocked_duplicate"
+    | "blocked_scope"
+    | "blocked_missing_fx"
+    | "ready_provisional"
+    | "posted_provisional_pending_final"
+    | "ready_final"
+    | "posted_final"
+    | "archived"
+    | "locked"
+    | "error";
+  operationalBucket: "processing" | "review" | "blocked" | "ready_to_post" | "done";
+  operationalFlags: Array<"blocked_duplicate" | "blocked_missing_fx" | "blocked_scope" | "imports_assisted">;
+  blockingReason: string | null;
   role: string;
   documentType: string | null;
   createdAt: string;
@@ -159,6 +180,21 @@ function formatDecisionAuditLabel(document: DocumentsWorkspaceTableItem) {
   }
 
   return formatDecisionSourceLabel(document.decisionSource);
+}
+
+function formatOperationalFlagLabel(value: DocumentsWorkspaceTableItem["operationalFlags"][number]) {
+  switch (value) {
+    case "blocked_duplicate":
+      return "Duplicado";
+    case "blocked_missing_fx":
+      return "FX faltante";
+    case "blocked_scope":
+      return "Fuera de alcance automatico";
+    case "imports_assisted":
+      return "Importacion asistida";
+    default:
+      return value;
+  }
 }
 
 export function DocumentsWorkspaceTable({
@@ -644,12 +680,34 @@ export function DocumentsWorkspaceTable({
                       <span className={getDocumentRoleVariant(document.role)}>
                         {getDocumentRoleLabel(document.role)}
                       </span>
+                      <div className="mt-2">
+                        <span className={getDocumentOperationalStatusVariant(document.canonicalState)}>
+                          {formatDocumentOperationalStatusLabel(document.canonicalState)}
+                        </span>
+                      </div>
+                      {document.operationalFlags.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {document.operationalFlags.map((flag) => (
+                            <span
+                              key={`${document.id}:${flag}`}
+                              className="status-pill status-pill--danger"
+                            >
+                              {formatOperationalFlagLabel(flag)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="mt-2 text-[13px] text-[color:var(--color-muted)]">
                         {formatDecisionAuditLabel(document)}
                       </div>
                       {document.duplicateStatus && document.duplicateStatus !== "clear" ? (
                         <div className="mt-1 text-[13px] text-amber-900">
                           {formatDuplicateStatusLabel(document.duplicateStatus)}
+                        </div>
+                      ) : null}
+                      {document.blockingReason ? (
+                        <div className="mt-1 text-[13px] text-amber-100">
+                          {document.blockingReason}
                         </div>
                       ) : null}
                     </td>

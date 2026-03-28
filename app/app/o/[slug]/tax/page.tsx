@@ -637,7 +637,7 @@ export default async function OrganizationTaxPage({
                   pendingLabel="Abriendo..."
                   className="ui-button ui-button--primary min-h-[28px] px-3 text-[13px]"
                 >
-                  Conciliar Diferencias
+                  Abrir comparacion base
                 </LoadingLink>
               </div>
               <div className="ui-alert-row">
@@ -650,7 +650,7 @@ export default async function OrganizationTaxPage({
                   pendingLabel="Abriendo..."
                   className="ui-button ui-button--secondary min-h-[28px] px-3 text-[13px]"
                 >
-                  Ver Detalles
+                  Ver buckets base
                 </LoadingLink>
               </div>
             </div>

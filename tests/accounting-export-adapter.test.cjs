@@ -90,6 +90,6 @@ test("accounting export adapter renders workbook with recategorization and DGI s
 
   assert.match(workbook, /Asientos/);
   assert.match(workbook, /Recategorizacion/);
-  assert.match(workbook, /Conciliacion DGI/);
+  assert.match(workbook, /Comparacion DGI base/);
   assert.match(workbook, /Convertilabs Demo/);
 });

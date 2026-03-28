@@ -5,6 +5,10 @@ import { createOrganizationAction } from "@/app/onboarding/actions";
 import { BusinessProfileConfigurator } from "@/components/onboarding/business-profile-configurator";
 import { HelpHint } from "@/components/ui/help-hint";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
+import {
+  evaluateOrganizationLaunchScope,
+  formatLaunchSupportLevelLabel,
+} from "@/modules/launch/scope";
 import type { OnboardingFeatureFlags } from "@/modules/organizations/feature-flags";
 import {
   initialOnboardingActionState,
@@ -64,6 +68,12 @@ export function OrganizationOnboardingForm({
   const safeState = normalizeOnboardingActionState(state);
   const slugPreview = slugifyOrganizationNamePreview(organizationName);
   const showGuidedBusinessProfile = featureFlags.onboardingActivityBasedPresetsEnabled;
+  const launchScope = evaluateOrganizationLaunchScope({
+    countryCode: "UY",
+    legalEntityType,
+    taxRegimeCode,
+    vatRegime,
+  });
 
   return (
     <form className="space-y-6" action={formAction}>
@@ -305,6 +315,36 @@ export function OrganizationOnboardingForm({
         <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
           {userEmail ? `Owner inicial: ${userEmail}` : "Owner inicial: cuenta autenticada"}
         </p>
+      </div>
+
+      <div className="rounded-[1.35rem] border border-[color:var(--color-border)] bg-white/72 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-semibold">Alcance real del lanzamiento</p>
+          <span className={`status-pill ${
+            launchScope.supportLevel === "automatic"
+              ? "status-pill--success"
+              : launchScope.supportLevel === "assisted_only"
+                ? "status-pill--warning"
+                : "status-pill--danger"
+          }`}
+          >
+            {formatLaunchSupportLevelLabel(launchScope.supportLevel)}
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
+          {launchScope.supportLevel === "automatic"
+            ? "Esta combinacion entra en el perimetro automatico conservador del MVP para Uruguay."
+            : launchScope.supportLevel === "assisted_only"
+              ? "La organizacion podra trabajar en modo asistido: extraccion, revision y preview si; finalizacion automatica no."
+              : "Faltan datos minimos o el riesgo operativo es demasiado alto para habilitar el flujo."}
+        </p>
+        {launchScope.reasons.length > 0 ? (
+          <div className="mt-3 space-y-2 text-sm text-[color:var(--color-muted)]">
+            {launchScope.reasons.map((reason) => (
+              <p key={reason}>{reason}</p>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <button

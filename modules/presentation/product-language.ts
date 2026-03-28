@@ -1,13 +1,6 @@
-export type CanonicalWorkflowState =
-  | "pending_factual_review"
-  | "pending_assignment"
-  | "pending_learning_decision"
-  | "ready_for_provisional_posting"
-  | "posted_provisional"
-  | "ready_for_final_confirmation"
-  | "posted_final"
-  | "reopened_needs_manual_remap"
-  | "locked";
+import type { CanonicalDocumentState } from "@/modules/documents/workflow-state";
+
+export type CanonicalWorkflowState = CanonicalDocumentState;
 
 export type CanonicalResolutionSource =
   | "rule"
@@ -23,33 +16,43 @@ type WorkflowLanguageEntry = {
 };
 
 const WORKFLOW_LANGUAGE: Record<CanonicalWorkflowState, WorkflowLanguageEntry> = {
-  pending_factual_review: {
-    label: "Pendiente de revision factual",
-    summary: "Todavia faltan validar datos del comprobante antes de decidir la clasificacion.",
-    nextActionLabel: "Revisar datos del comprobante",
+  processing: {
+    label: "Procesando",
+    summary: "El documento todavia esta en ingestion o extraccion y aun no quedo listo para revision operativa.",
+    nextActionLabel: "Esperar procesamiento",
   },
-  pending_assignment: {
-    label: "Pendiente de asignacion",
-    summary: "El documento ya tiene contexto basico, pero la resolucion contable todavia no quedo consolidada.",
-    nextActionLabel: "Resolver clasificacion",
+  needs_review: {
+    label: "Necesita revision",
+    summary: "El documento ya existe dentro del flujo, pero todavia no quedo suficientemente resuelto para postear.",
+    nextActionLabel: "Completar revision",
   },
-  pending_learning_decision: {
-    label: "Pendiente de aprendizaje",
-    summary: "El documento ya puede avanzar y solo falta decidir si conviene guardar el criterio reusable.",
-    nextActionLabel: "Decidir aprendizaje",
+  blocked_duplicate: {
+    label: "Bloqueado por duplicado",
+    summary: "La automatizacion se detiene hasta que el duplicado quede resuelto de forma explicita.",
+    nextActionLabel: "Resolver duplicado",
   },
-  ready_for_provisional_posting: {
-    label: "Listo para posting provisional",
+  blocked_scope: {
+    label: "Fuera de alcance automatico",
+    summary: "El caso puede seguir en modo asistido, pero no debe tratarse como automatizacion cerrada.",
+    nextActionLabel: "Continuar en modo asistido",
+  },
+  blocked_missing_fx: {
+    label: "Bloqueado por FX faltante",
+    summary: "No hay trazabilidad monetaria suficiente para continuar de forma segura con un documento en moneda extranjera.",
+    nextActionLabel: "Resolver tipo de cambio fiscal",
+  },
+  ready_provisional: {
+    label: "Listo para provisional",
     summary: "El documento ya puede impactar contabilidad en modo provisional.",
     nextActionLabel: "Postear provisional",
   },
-  posted_provisional: {
-    label: "Posteado provisional",
-    summary: "El documento ya impacto en contabilidad, pero aun puede requerir confirmacion final o recategorizacion.",
+  posted_provisional_pending_final: {
+    label: "Provisional pendiente de final",
+    summary: "El documento ya impacto en contabilidad, pero todavia no quedo listo para cierre definitivo.",
     nextActionLabel: "Revisar para confirmacion final",
   },
-  ready_for_final_confirmation: {
-    label: "Listo para confirmacion final",
+  ready_final: {
+    label: "Listo para final",
     summary: "La resolucion esta cerrada y ya puede confirmarse como definitiva.",
     nextActionLabel: "Confirmar final",
   },
@@ -58,15 +61,20 @@ const WORKFLOW_LANGUAGE: Record<CanonicalWorkflowState, WorkflowLanguageEntry> =
     summary: "El documento ya quedo confirmado y solo admite reapertura controlada.",
     nextActionLabel: "Ver trazabilidad",
   },
-  reopened_needs_manual_remap: {
-    label: "Reabierto para remap",
-    summary: "La revision fue reabierta y requiere remapeo manual antes de volver a cerrar.",
-    nextActionLabel: "Remapear manualmente",
+  archived: {
+    label: "Archivado",
+    summary: "El documento ya no participa del flujo operativo activo.",
+    nextActionLabel: "Ver historial",
   },
   locked: {
     label: "Bloqueado",
     summary: "El documento o su periodo ya no admiten cambios sin una reapertura formal.",
     nextActionLabel: "Revisar bloqueo",
+  },
+  error: {
+    label: "Error",
+    summary: "El documento quedo en un estado inconsistente y necesita intervencion operativa.",
+    nextActionLabel: "Revisar error",
   },
 };
 
@@ -99,6 +107,10 @@ export function inferBlockingActionHintFromReasons(
 ) {
   if (reasons.some((reason) => isFiscalFxBlockingReason(reason))) {
     return "Resolver tipo de cambio fiscal";
+  }
+
+  if (reasons.some((reason) => normalizeReasonText(reason).includes("duplic"))) {
+    return "Resolver duplicado";
   }
 
   return null;

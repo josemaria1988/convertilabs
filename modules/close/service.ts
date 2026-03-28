@@ -17,6 +17,7 @@ import {
   type FiscalPeriodStatus,
 } from "@/modules/accounting/fiscal-period-status";
 import { listOrganizationDgiReconciliationRuns } from "@/modules/tax/dgi-reconciliation";
+import { formatDgiReconciliationClosedLabel } from "@/modules/tax/dgi-reconciliation-copy";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 
 type JsonRecord = Record<string, unknown>;
@@ -225,7 +226,7 @@ function getCloseCheckLabel(code: string) {
     case "vat_run_closed":
       return "IVA del periodo finalizado";
     case "dgi_reconciliation_closed":
-      return "Conciliacion DGI cerrada";
+      return formatDgiReconciliationClosedLabel();
     case "late_documents_review":
       return "Documentos cargados fuera de ventana";
     case "open_items_supported":
@@ -410,17 +411,17 @@ export function buildCloseCheckResults(
     snapshot.tax.dgiStatus === "closed"
       ? buildResult({
           code: "dgi_reconciliation_closed",
-          label: "Conciliacion DGI cerrada",
+          label: formatDgiReconciliationClosedLabel(),
           family: "tax",
           status: "pass",
-          message: "Existe una conciliacion DGI cerrada para el periodo.",
+          message: "Existe una comparacion DGI base cerrada para el periodo.",
         })
       : buildResult({
           code: "dgi_reconciliation_closed",
-          label: "Conciliacion DGI cerrada",
+          label: formatDgiReconciliationClosedLabel(),
           family: "tax",
           status: "warning",
-          message: "No hay una conciliacion DGI cerrada para el periodo o sigue en borrador/revision.",
+          message: "No hay una comparacion DGI base cerrada para el periodo o sigue en borrador/revision.",
         }),
   );
 

@@ -13,6 +13,12 @@ import {
   listOrganizationDgiReconciliationRuns,
   loadDgiReconciliationRunDetail,
 } from "@/modules/tax/dgi-reconciliation";
+import {
+  DGI_RECONCILIATION_COMPARISON_LABEL,
+  DGI_RECONCILIATION_DESCRIPTION,
+  DGI_RECONCILIATION_DISCLAIMER,
+  DGI_RECONCILIATION_TITLE,
+} from "@/modules/tax/dgi-reconciliation-copy";
 import { formatLifecycleStatusLabel } from "@/modules/presentation/labels";
 import {
   closeDgiReconciliationRunAction,
@@ -46,7 +52,7 @@ const monthNames = [
 ];
 
 export const metadata: Metadata = {
-  title: "Conciliacion DGI",
+  title: DGI_RECONCILIATION_TITLE,
 };
 
 function formatAmount(value: number | null | undefined) {
@@ -161,19 +167,26 @@ export default async function DgiReconciliationPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Conciliacion DGI"
-      toolbarLabel="Conciliacion DGI"
-      description="Baseline mensual DGI contra el universo procesado por Convertilabs, con buckets, diferencias auditables y reapertura deliberada."
+      title={DGI_RECONCILIATION_TITLE}
+      toolbarLabel={DGI_RECONCILIATION_TITLE}
+      description={DGI_RECONCILIATION_DESCRIPTION}
       navItems={buildOrganizationPrivateNavItems(organization.slug, "tax")}
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
+          <section className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
+            <p className="font-semibold text-white">{DGI_RECONCILIATION_COMPARISON_LABEL}</p>
+            <p className="mt-2 text-amber-50/90">
+              {DGI_RECONCILIATION_DISCLAIMER}
+            </p>
+          </section>
+
           <section className="ui-panel">
             <div className="ui-panel-header">
               <div>
-                <h1 className="text-[20px] font-semibold text-white">Nueva corrida DGI</h1>
+                <h1 className="text-[20px] font-semibold text-white">Nueva corrida DGI base</h1>
                 <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Carga manual del baseline por bucket para comparar contra documentos ya posteados.
+                  Carga manual del baseline por bucket para compararlo contra documentos ya posteados.
                 </p>
               </div>
               <span className="status-pill status-pill--info">MVP manual</span>
@@ -253,7 +266,7 @@ export default async function DgiReconciliationPage({
               </div>
 
               <SubmitButton pendingLabel="Calculando..." className="ui-button ui-button--primary">
-                Calcular conciliacion
+                Calcular comparacion base
               </SubmitButton>
             </form>
           </section>
@@ -354,7 +367,7 @@ export default async function DgiReconciliationPage({
                     <input type="hidden" name="slug" value={organization.slug} />
                     <input type="hidden" name="runId" value={selectedRun.id} />
                     <SubmitButton pendingLabel="Cerrando..." className="ui-button ui-button--primary">
-                      Cerrar conciliacion
+                      Cerrar comparacion base
                     </SubmitButton>
                   </form>
                 ) : null}
@@ -373,7 +386,7 @@ export default async function DgiReconciliationPage({
             <div className="mt-4 space-y-3">
               {runs.length === 0 ? (
                 <div className="text-sm text-[color:var(--color-muted)]">
-                  Aun no hay corridas de conciliacion para esta organizacion.
+                  Aun no hay corridas de comparacion base para esta organizacion.
                 </div>
               ) : (
                 runs.map((run) => (
@@ -387,7 +400,7 @@ export default async function DgiReconciliationPage({
                       <div>
                         <p className="font-semibold text-white">{run.periodLabel}</p>
                         <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                          {formatLifecycleStatusLabel(run.status)} / {run.sourceKind.replace(/_/g, " ")}
+                          {formatLifecycleStatusLabel(run.status)} / {run.scopeLabel} / {run.sourceKind.replace(/_/g, " ")}
                         </p>
                       </div>
                       <span className={getStatusPillClass(run.status)}>

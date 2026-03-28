@@ -1,5 +1,19 @@
 export type DocumentDirection = "purchase" | "sale" | "other" | "unknown";
 
+export type DocumentOperationalStatus =
+  | "processing"
+  | "needs_review"
+  | "blocked_duplicate"
+  | "blocked_scope"
+  | "blocked_missing_fx"
+  | "ready_provisional"
+  | "posted_provisional_pending_final"
+  | "ready_final"
+  | "posted_final"
+  | "archived"
+  | "locked"
+  | "error";
+
 export const documentTerminalStatuses = new Set([
   "extracted",
   "draft_ready",
@@ -67,6 +81,53 @@ export function getDocumentStatusVariant(status: string) {
   }
 
   if (["error", "rejected", "duplicate"].includes(status)) {
+    return "status-pill status-pill--danger";
+  }
+
+  return "status-pill status-pill--info";
+}
+
+export function formatDocumentOperationalStatusLabel(status: DocumentOperationalStatus | string) {
+  switch (status) {
+    case "processing":
+      return "Procesando";
+    case "needs_review":
+      return "Necesita revision";
+    case "blocked_duplicate":
+      return "Bloqueado por duplicado";
+    case "blocked_scope":
+      return "Fuera de alcance automatico";
+    case "blocked_missing_fx":
+      return "Bloqueado por FX faltante";
+    case "ready_provisional":
+      return "Listo para provisional";
+    case "posted_provisional_pending_final":
+      return "Provisional pendiente de final";
+    case "ready_final":
+      return "Listo para final";
+    case "posted_final":
+      return "Confirmado final";
+    case "archived":
+      return "Archivado";
+    case "locked":
+      return "Bloqueado";
+    case "error":
+      return "Error";
+    default:
+      return formatDocumentStatusLabel(status);
+  }
+}
+
+export function getDocumentOperationalStatusVariant(status: DocumentOperationalStatus | string) {
+  if (["ready_provisional", "ready_final", "posted_final"].includes(status)) {
+    return "status-pill status-pill--success";
+  }
+
+  if (["processing", "needs_review", "posted_provisional_pending_final"].includes(status)) {
+    return "status-pill status-pill--warning";
+  }
+
+  if (["blocked_duplicate", "blocked_scope", "blocked_missing_fx", "error"].includes(status)) {
     return "status-pill status-pill--danger";
   }
 
