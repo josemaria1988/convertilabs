@@ -295,7 +295,8 @@ export default async function OrganizationTaxPage({
                 </div>
                 {isClosedRun ? (
                   <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4 text-sm text-[color:var(--color-muted)]">
-                    Este periodo ya tiene una corrida cerrada. Usa "Ver resultado IVA" para exportar o reabrir.
+                    Este periodo ya tiene una corrida cerrada. Usa la vista Ver
+                    resultado IVA para exportar o reabrir.
                   </div>
                 ) : (
                   <>
