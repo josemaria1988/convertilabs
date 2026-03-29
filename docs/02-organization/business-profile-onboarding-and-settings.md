@@ -39,6 +39,7 @@ Ademas del business profile, `settings` ahora se presenta en tabs operativas:
 
 - `Empresa`
 - `Perfil fiscal`
+- `Perfil de negocio`
 - `Plan contable`
 - `Integraciones`
 - `Avanzado`

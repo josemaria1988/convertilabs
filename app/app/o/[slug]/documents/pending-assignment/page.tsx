@@ -25,7 +25,7 @@ type PendingAssignmentGroup = {
 };
 
 export const metadata: Metadata = {
-  title: "Pendientes de asignacion",
+  title: "Lotes y asignacion",
 };
 
 function buildPendingAssignmentGroups(
@@ -116,24 +116,24 @@ export default async function PendingAssignmentPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Pendientes de asignacion"
-      description="Cola dedicada para revisar documentos que todavia requieren clasificacion o rerun contable."
+      title="Lotes y asignacion"
+      description="Cola secundaria para agrupar similares y aplicar decisiones por lote cuando haga falta."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
       <section className="space-y-6">
         <div className="ui-panel">
           <div className="ui-panel-header">
             <div>
-              <h1 className="text-[18px] font-semibold text-white">Cola pending-assignment</h1>
+              <h1 className="text-[18px] font-semibold text-white">Cola de lotes y asignacion</h1>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                 Agrupa documentos similares para que puedas revisar lotes y disparar clasificacion masiva desde una vista mas enfocada.
               </p>
             </div>
             <Link
-              href={`/app/o/${organization.slug}/documents`}
+              href={`/app/o/${organization.slug}/review`}
               className="ui-button ui-button--secondary"
             >
-              Volver a Documentos
+              Volver a Revision
             </Link>
           </div>
 

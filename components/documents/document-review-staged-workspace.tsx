@@ -2534,11 +2534,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3">
                   <LoadingLink
-                    href={`/app/o/${pageData.organizationSlug}/documents`}
-                    pendingLabel="Abriendo bandeja..."
+                    href={`/app/o/${pageData.organizationSlug}/review`}
+                    pendingLabel="Abriendo revision..."
                     className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-3 text-sm`}
                   >
-                    Ir a bandeja documental
+                    Volver a Revision
                   </LoadingLink>
                 </div>
               </div>
@@ -2810,7 +2810,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </div>
 
         <div className="xl:sticky xl:top-6">
-          <details className="panel overflow-hidden p-0" open={pendingAssistantSuggestionsCount > 0}>
+          <details className="panel overflow-hidden p-0">
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold">
               {pendingAssistantSuggestionsCount > 0
                 ? `Asistente contable opcional (${pendingAssistantSuggestionsCount} sugerencia(s) pendiente(s))`

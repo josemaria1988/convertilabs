@@ -71,7 +71,7 @@ Ademas, el workspace ya separa soporte operativo por alcance:
 7. se crea `document_draft` y sus pasos;
 8. el documento queda listo para revision.
 
-Si el documento queda en estados de clasificacion pendientes o vencidos, el usuario puede derivarlo a la cola dedicada `/documents/pending-assignment`.
+Si el documento queda en estados de clasificacion pendientes o vencidos, el usuario puede derivarlo a la cola secundaria `/documents/pending-assignment`, pensada para lotes y asignacion masiva y ya no para el loop principal diario.
 
 ### Importacion masiva documental por planilla
 

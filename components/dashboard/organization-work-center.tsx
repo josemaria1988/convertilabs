@@ -1,14 +1,9 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import type { DocumentWorkspaceListItem } from "@/modules/documents/review";
 import {
-  buildDocumentReviewChips,
-  getDocumentReviewBucketKey,
   groupDocumentsByReviewBucket,
+  summarizeDocumentReviewSecondaryBuckets,
 } from "@/modules/documents/review-queue";
-import {
-  formatDocumentOperationalStatusLabel,
-  getDocumentOperationalStatusVariant,
-} from "@/modules/documents/status";
 
 type OrganizationWorkCenterProps = {
   slug: string;
@@ -32,16 +27,6 @@ function formatDateLabel(value: string | null) {
   }).format(new Date(value));
 }
 
-function formatAmount(value: number | null) {
-  if (typeof value !== "number") {
-    return "--";
-  }
-
-  return new Intl.NumberFormat("es-UY", {
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function getToneBadgeClassName(tone: OrganizationWorkCenterProps["supportLevelTone"]) {
   switch (tone) {
     case "success":
@@ -62,13 +47,58 @@ export function OrganizationWorkCenter({
   missingFxSummary,
 }: OrganizationWorkCenterProps) {
   const groupedBuckets = groupDocumentsByReviewBucket(documents);
-  const priorities = documents
-    .filter((document) => {
-      const bucketKey = getDocumentReviewBucketKey(document);
-      return bucketKey !== "done" && bucketKey !== "processing";
-    })
-    .slice(0, 6);
+  const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(documents);
+  const bucketCountMap = new Map(groupedBuckets.map((bucket) => [bucket.key, bucket.items.length]));
+  const secondaryCountMap = new Map(secondaryBuckets.map((bucket) => [bucket.key, bucket.count]));
+  const reviewPendingCount =
+    (bucketCountMap.get("factual_review") ?? 0)
+    + (bucketCountMap.get("assignment") ?? 0);
+  const closeReadyCount =
+    (bucketCountMap.get("ready_provisional") ?? 0)
+    + (bucketCountMap.get("ready_final") ?? 0);
   const recentDocuments = documents.slice(0, 8);
+  const todayTasks = [
+    reviewPendingCount > 0
+      ? {
+        key: "review_pending",
+        title: `Revisar ${reviewPendingCount} documento(s) pendientes`,
+        helper: "Validacion factual y asignacion contable en la cola principal.",
+        href: `/app/o/${slug}/review`,
+        cta: "Abrir Revision",
+      }
+      : null,
+    (bucketCountMap.get("blocked") ?? 0) > 0
+      ? {
+        key: "review_blocked",
+        title: `Destrabar ${bucketCountMap.get("blocked") ?? 0} documento(s) bloqueados`,
+        helper: "Duplicados, FX y alcance viven en la misma cola operativa.",
+        href: `/app/o/${slug}/review`,
+        cta: "Resolver bloqueos",
+      }
+      : null,
+    missingFxSummary.count > 0
+      ? {
+        key: "tax_fx",
+        title: `Resolver ${missingFxSummary.count} documento(s) con cotizacion pendiente`,
+        helper: "Limpia el periodo fiscal antes de generar el IVA definitivo.",
+        href: `/app/o/${slug}/tax`,
+        cta: "Abrir Impuestos",
+      }
+      : null,
+    {
+      key: "close_period",
+      title: "Validar el estado del cierre mensual",
+      helper: "Corre el validator y revisa la siguiente transicion disponible.",
+      href: `/app/o/${slug}/close`,
+      cta: "Abrir Cierre",
+    },
+  ].filter((item): item is {
+    key: string;
+    title: string;
+    helper: string;
+    href: string;
+    cta: string;
+  } => Boolean(item));
 
   return (
     <div className="space-y-4">
@@ -79,54 +109,80 @@ export function OrganizationWorkCenter({
               Centro de trabajo
             </h1>
             <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-              Prioriza lo que esta esperando decision humana, deja la carga en un carril separado
-              y reserva las superficies expertas para trabajo puntual.
+              Responde que conviene hacer ahora: cargar, revisar, destrabar el periodo fiscal o avanzar el cierre.
             </p>
           </div>
-          <span className={getToneBadgeClassName(supportLevelTone)}>{supportLevelLabel}</span>
+          <div className="flex flex-wrap gap-2">
+            <span className={getToneBadgeClassName(supportLevelTone)}>{supportLevelLabel}</span>
+            <LoadingLink
+              href={`/app/o/${slug}/advanced`}
+              pendingLabel="Abriendo..."
+              className="ui-button ui-button--secondary"
+            >
+              Avanzado
+            </LoadingLink>
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-6">
-          <LoadingLink href={`/app/o/${slug}/documents`} pendingLabel="Abriendo..." className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85">
-            <p className="text-sm font-semibold text-white">Documentos</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Subir originales, recibir CFEs y abrir importacion guiada.
-            </p>
-          </LoadingLink>
-          <LoadingLink href={`/app/o/${slug}/review`} pendingLabel="Abriendo..." className="rounded-3xl border border-[rgba(124,157,255,0.34)] bg-[rgba(124,157,255,0.08)] p-4 transition hover:bg-[rgba(124,157,255,0.14)]">
-            <p className="text-sm font-semibold text-white">Revision</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Cola principal por estados operativos y blockers visibles.
-            </p>
-          </LoadingLink>
-          <LoadingLink href={`/app/o/${slug}/tax`} pendingLabel="Abriendo..." className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85">
-            <p className="text-sm font-semibold text-white">Impuestos</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Recorrer el periodo IVA y resolver alertas fiscales.
-            </p>
-          </LoadingLink>
-          <LoadingLink href={`/app/o/${slug}/close`} pendingLabel="Abriendo..." className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85">
-            <p className="text-sm font-semibold text-white">Cierre</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Validar el mes y ejecutar transiciones formales.
-            </p>
-          </LoadingLink>
-          <LoadingLink href={`/app/o/${slug}/audit`} pendingLabel="Abriendo..." className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85">
-            <p className="text-sm font-semibold text-white">Importacion masiva</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Corridas auditadas para planillas y lotes fuera del loop diario.
-            </p>
-          </LoadingLink>
-          <LoadingLink href={`/app/o/${slug}/advanced`} pendingLabel="Abriendo..." className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85">
-            <p className="text-sm font-semibold text-white">Avanzado</p>
-            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
-              Balance, reglas, mapa contable, imports y exports.
-            </p>
-          </LoadingLink>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              key: "documents",
+              label: "Subir documentos",
+              value: secondaryCountMap.get("processing") ?? recentDocuments.length,
+              hint: "Carga originales y confirma rapidamente si el lote entro bien.",
+              href: `/app/o/${slug}/documents`,
+              cta: "Cargar ahora",
+              tone: "secondary",
+            },
+            {
+              key: "review",
+              label: "Pendientes de revision",
+              value: reviewPendingCount,
+              hint: "Validacion factual y asignacion viven en una sola cola operativa.",
+              href: `/app/o/${slug}/review`,
+              cta: "Abrir Revision",
+              tone: "primary",
+            },
+            {
+              key: "tax",
+              label: "IVA del periodo",
+              value: bucketCountMap.get("blocked") ?? 0,
+              hint: "Entra por Impuestos para limpiar pendientes antes de generar el resultado.",
+              href: `/app/o/${slug}/tax`,
+              cta: "Abrir Impuestos",
+              tone: "secondary",
+            },
+            {
+              key: "close",
+              label: "Estado de cierre",
+              value: closeReadyCount,
+              hint: "Usa Cierre para correr validator y decidir la siguiente transicion.",
+              href: `/app/o/${slug}/close`,
+              cta: "Abrir Cierre",
+              tone: "secondary",
+            },
+          ].map((card) => (
+            <LoadingLink
+              key={card.key}
+              href={card.href}
+              pendingLabel="Abriendo..."
+              className={`rounded-3xl border p-5 transition ${
+                card.tone === "primary"
+                  ? "border-[rgba(124,157,255,0.34)] bg-[rgba(124,157,255,0.08)] hover:bg-[rgba(124,157,255,0.14)]"
+                  : "border-[color:var(--color-border)] bg-white/70 hover:bg-white/85"
+              }`}
+            >
+              <p className="text-sm font-semibold text-white">{card.label}</p>
+              <p className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-white">{card.value}</p>
+              <p className="mt-2 text-sm text-[color:var(--color-muted)]">{card.hint}</p>
+              <span className="mt-4 inline-flex text-sm font-semibold text-white">{card.cta}</span>
+            </LoadingLink>
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {groupedBuckets.map((bucket) => (
           <article key={bucket.key} className="metric-card">
             <span className="metric-card__label">{bucket.label}</span>
@@ -136,73 +192,38 @@ export function OrganizationWorkCenter({
         ))}
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <section className="ui-panel">
           <div className="ui-panel-header">
             <div>
-              <h2 className="text-[16px] font-semibold text-white">Prioridades de revision</h2>
+              <h2 className="text-[16px] font-semibold text-white">Tareas de hoy</h2>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                Lo mas util para mover hoy: revisar pendientes, destrabar blockers y cerrar
-                documentos listos.
+                CTAs unicos para mover el cuello de botella del dia sin abrir superficies expertas.
               </p>
             </div>
-            <LoadingLink
-              href={`/app/o/${slug}/review`}
-              pendingLabel="Abriendo revision..."
-              className="ui-button ui-button--secondary"
-            >
-              Abrir cola completa
-            </LoadingLink>
           </div>
 
           <div className="mt-4 space-y-3">
-            {priorities.length === 0 ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                No hay documentos esperando decision manual inmediata.
-              </div>
-            ) : (
-              priorities.map((document) => {
-                const chips = buildDocumentReviewChips(document);
-
-                return (
-                  <article
-                    key={document.id}
-                    className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
+            {todayTasks.map((task) => (
+              <article
+                key={task.key}
+                className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">{task.title}</p>
+                    <p className="mt-1 text-sm text-[color:var(--color-muted)]">{task.helper}</p>
+                  </div>
+                  <LoadingLink
+                    href={task.href}
+                    pendingLabel="Abriendo..."
+                    className="ui-button ui-button--primary"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-white">{document.originalFilename}</p>
-                        <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-                          {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.documentDate ?? document.createdAt)}
-                        </p>
-                      </div>
-                      <span className={getDocumentOperationalStatusVariant(document.canonicalState)}>
-                        {formatDocumentOperationalStatusLabel(document.canonicalState)}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {chips.map((chip) => (
-                        <span key={`${document.id}:${chip}`} className="status-pill status-pill--warning">
-                          {chip}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--color-muted)]">
-                      <span>Total {formatAmount(document.totalAmount)}</span>
-                      <LoadingLink
-                        href={document.processedHref ?? `/app/o/${slug}/documents`}
-                        pendingLabel="Abriendo..."
-                        className="ui-button ui-button--primary"
-                      >
-                        {document.processedHref ? "Abrir revision" : "Ir a Documentos"}
-                      </LoadingLink>
-                    </div>
-                  </article>
-                );
-              })
-            )}
+                    {task.cta}
+                  </LoadingLink>
+                </div>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -210,9 +231,9 @@ export function OrganizationWorkCenter({
           <section className="ui-panel">
             <div className="ui-panel-header">
               <div>
-                <h2 className="text-[16px] font-semibold text-white">Guardrails del MVP</h2>
+                <h2 className="text-[16px] font-semibold text-white">Condiciones del piloto</h2>
                 <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                  Estado de soporte automatico y observaciones visibles para el equipo.
+                  Soporte automatico y observaciones visibles para no perder contexto operativo.
                 </p>
               </div>
               <span className={getToneBadgeClassName(supportLevelTone)}>{supportLevelLabel}</span>
@@ -236,29 +257,9 @@ export function OrganizationWorkCenter({
           <section className="ui-panel">
             <div className="ui-panel-header">
               <div>
-                <h2 className="text-[16px] font-semibold text-white">Moneda extranjera</h2>
-                <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                  Seguimiento rapido de documentos trabados por cotizacion fiscal.
-                </p>
-              </div>
-              <span className={missingFxSummary.count > 0 ? "status-pill status-pill--danger" : "status-pill status-pill--success"}>
-                {missingFxSummary.count}
-              </span>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
-              {missingFxSummary.count > 0
-                ? `Hay ${missingFxSummary.count} documento(s) esperando cotizacion. ${missingFxSummary.dates.length > 0 ? `Fechas visibles: ${missingFxSummary.dates.slice(0, 3).join(", ")}.` : ""}`
-                : "No hay documentos visibles bloqueados por cotizacion BCU."}
-            </div>
-          </section>
-
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
                 <h2 className="text-[16px] font-semibold text-white">Actividad reciente</h2>
                 <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                  Ultimos documentos cargados en la organizacion.
+                  Ultimos documentos cargados para saltar rapido al trabajo correcto.
                 </p>
               </div>
               <span className="ui-filter">{recentDocuments.length}</span>

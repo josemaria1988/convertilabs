@@ -3,12 +3,14 @@
 **Estado actualizado:** Implementacion base realizada en el repo al `2026-03-28`.
 
 - `dashboard` ya funciona como `Inicio`.
-- `documents` quedo enfocado en ingreso documental.
-- existe `/review` como cola principal.
+- `documents` quedo enfocado en ingreso documental y salto a revision.
+- existe `/review` como cola principal accionable, con `processing` y `finalizados` degradados a referencia secundaria.
 - `audit` se presenta como `Importacion masiva`.
-- `settings` quedo organizado por tabs.
+- `settings` quedo organizado por tabs y ahora separa `Perfil fiscal` de `Perfil de negocio`.
 - las superficies expertas se agrupan en `Avanzado`.
 - el reviewer actual fue reordenado como flujo guiado, con rail opcional y mas detalle tecnico colapsado.
+- `tax` separa en la misma ruta `resolver pendientes` y `ver resultado IVA`.
+- `close` ya se presenta como flujo validator-first con bloqueos agrupados por origen.
 
 **Documento:** `convertilabs-ux-ui-spec-driven-refactor.md`  
 **Versión:** 1.0  

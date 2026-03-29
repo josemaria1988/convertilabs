@@ -1,11 +1,12 @@
 import type { DocumentWorkspaceListItem } from "@/modules/documents/review";
 
 export type DocumentReviewBucketKey =
-  | "processing"
-  | "needs_review"
+  | "factual_review"
+  | "assignment"
   | "blocked"
   | "ready_provisional"
   | "ready_final"
+  | "processing"
   | "done";
 
 export type DocumentReviewBucketDefinition = {
@@ -14,16 +15,16 @@ export type DocumentReviewBucketDefinition = {
   description: string;
 };
 
-export const documentReviewBucketDefinitions: DocumentReviewBucketDefinition[] = [
+export const documentReviewPrimaryBucketDefinitions: DocumentReviewBucketDefinition[] = [
   {
-    key: "processing",
-    label: "Procesando",
-    description: "Documentos todavia en ingestion, extraccion o reintento tecnico.",
+    key: "factual_review",
+    label: "Por revisar factual",
+    description: "Todavia falta validar identidad, datos base o consistencia visible del comprobante.",
   },
   {
-    key: "needs_review",
-    label: "Pendientes de revision",
-    description: "Casos listos para decision humana dentro del flujo principal.",
+    key: "assignment",
+    label: "Por asignar o clasificar",
+    description: "Casos listos para decision humana, reclasificacion o aprendizaje reutilizable.",
   },
   {
     key: "blocked",
@@ -40,6 +41,14 @@ export const documentReviewBucketDefinitions: DocumentReviewBucketDefinition[] =
     label: "Listos para final",
     description: "Documentos casi cerrados o ya posteados provisionalmente.",
   },
+];
+
+export const documentReviewSecondaryBucketDefinitions: DocumentReviewBucketDefinition[] = [
+  {
+    key: "processing",
+    label: "Procesando",
+    description: "Documentos todavia en ingestion, extraccion o reintento tecnico.",
+  },
   {
     key: "done",
     label: "Finalizados",
@@ -50,7 +59,7 @@ export const documentReviewBucketDefinitions: DocumentReviewBucketDefinition[] =
 export function getDocumentReviewBucketKey(
   item: Pick<
     DocumentWorkspaceListItem,
-    "canonicalState" | "operationalFlags" | "classificationStatus" | "manualInterventionBy"
+    "canonicalState" | "operationalFlags" | "classificationStatus" | "manualInterventionBy" | "canClassify"
   >,
 ): DocumentReviewBucketKey {
   if (item.canonicalState === "processing") {
@@ -85,13 +94,17 @@ export function getDocumentReviewBucketKey(
     return "done";
   }
 
-  return "needs_review";
+  if (item.classificationStatus === "not_started" && !item.canClassify) {
+    return "factual_review";
+  }
+
+  return "assignment";
 }
 
 export function buildDocumentReviewChips(
   item: Pick<
     DocumentWorkspaceListItem,
-    "canonicalState" | "operationalFlags" | "classificationStatus" | "manualInterventionBy"
+    "canonicalState" | "operationalFlags" | "classificationStatus" | "manualInterventionBy" | "canClassify"
   >,
 ) {
   const chips = new Set<string>();
@@ -116,21 +129,48 @@ export function buildDocumentReviewChips(
     }
   }
 
-  if (
-    bucketKey === "needs_review"
-    || item.classificationStatus === "failed"
-    || item.classificationStatus === "stale"
-    || item.manualInterventionBy
-  ) {
+  if (bucketKey === "factual_review") {
+    chips.add("Validacion factual");
+  }
+
+  if (bucketKey === "assignment") {
+    chips.add("Decision contable");
+  }
+
+  if (item.classificationStatus === "failed") {
+    chips.add("Clasificacion fallida");
+  }
+
+  if (item.classificationStatus === "stale") {
+    chips.add("Clasificacion vencida");
+  }
+
+  if (item.manualInterventionBy) {
     chips.add("Requiere revision manual");
   }
 
   return Array.from(chips);
 }
 
-export function groupDocumentsByReviewBucket(items: DocumentWorkspaceListItem[]) {
-  return documentReviewBucketDefinitions.map((bucket) => ({
+export function groupDocumentsByReviewBucket(
+  items: DocumentWorkspaceListItem[],
+  options: {
+    includeSecondary?: boolean;
+  } = {},
+) {
+  const definitions = options.includeSecondary
+    ? [...documentReviewPrimaryBucketDefinitions, ...documentReviewSecondaryBucketDefinitions]
+    : documentReviewPrimaryBucketDefinitions;
+
+  return definitions.map((bucket) => ({
     ...bucket,
     items: items.filter((item) => getDocumentReviewBucketKey(item) === bucket.key),
+  }));
+}
+
+export function summarizeDocumentReviewSecondaryBuckets(items: DocumentWorkspaceListItem[]) {
+  return documentReviewSecondaryBucketDefinitions.map((bucket) => ({
+    ...bucket,
+    count: items.filter((item) => getDocumentReviewBucketKey(item) === bucket.key).length,
   }));
 }

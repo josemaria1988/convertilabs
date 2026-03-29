@@ -5,15 +5,15 @@ Convertilabs es una plataforma contable y fiscal document-driven para Uruguay, c
 ## Estado operativo real
 
 - onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets por reglas o IA;
-- `Inicio` como centro de trabajo real con prioridades, guardrails y CTAs al flujo principal;
-- workspace `Documentos` reducido al ingreso documental: upload privado, resumen del ultimo lote y CTA fuerte hacia `Revision`;
-- workspace `Revision` como cola principal por buckets operativos y acceso al reviewer paso a paso;
+- `Inicio` como centro de trabajo real con tareas del dia y CTAs unicos hacia documentos, revision, impuestos y cierre;
+- workspace `Documentos` reducido al ingreso documental: upload privado, estado visible del tramo reciente y CTA fuerte hacia `Revision`;
+- workspace `Revision` como cola principal por buckets accionables: revision factual, asignacion/clasificacion, bloqueados, listos para provisional y listos para final;
 - `Importacion masiva` en `/audit` para planillas mensuales con preview estructurado, aceptar/rechazar parcial y trazabilidad por corrida;
 - admin de `Reglas contables` con listado, lifecycle, versionado forward-only, simulaciones, conflictos y chat consultivo;
 - workspaces contables read-only con balance, diario, open items y mapa contable explicable;
-- workspace fiscal con VAT preview, VAT runs, workbench por periodo, conciliacion DGI base y exportes fiscales;
-- cockpit de `Cierre` con estados formales del periodo, validator deterministico y locks efectivos;
-- carriles de soporte para imports de planillas, exportacion contable/fiscal y configuracion fiscal versionada por organizacion.
+- workspace fiscal con una misma ruta `/tax` separada entre `resolver pendientes` y `ver resultado IVA`, reutilizando el mismo workbench y las mismas acciones;
+- `Cierre` como flujo validator-first con bloqueos agrupados por documentos, impuestos, contabilidad y open items;
+- `Configuracion` separada en `Empresa`, `Perfil fiscal`, `Perfil de negocio`, `Plan contable`, `Integraciones` y `Avanzado`.
 
 ## Superficies activas
 
@@ -51,7 +51,7 @@ Convertilabs es una plataforma contable y fiscal document-driven para Uruguay, c
 - `/app/o/[slug]/exports`
 - `/app/o/[slug]/tax/reconciliation`
 
-Las rutas cortas `/dashboard`, `/documents`, `/review`, `/advanced`, `/close`, `/rules`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario.
+Las rutas cortas `/dashboard`, `/documents`, `/review`, `/advanced`, `/close`, `/rules`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario. `pending-assignment` sigue vivo como cola secundaria de lotes y asignacion, no como entrypoint principal.
 
 ## Stack operativo
 

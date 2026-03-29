@@ -9,13 +9,11 @@ import {
   listAllOrganizationWorkspaceDocuments,
   listOrganizationWorkspaceDocuments,
 } from "@/modules/documents/review";
-import { groupDocumentsByReviewBucket } from "@/modules/documents/review-queue";
-import { loadMissingFxDocumentsSummary } from "@/modules/documents/spreadsheet-fx-resolution";
-import { listOrganizationImportOperations } from "@/modules/imports";
 import {
-  evaluateOrganizationLaunchScope,
-  formatLaunchSupportLevelLabel,
-} from "@/modules/launch/scope";
+  groupDocumentsByReviewBucket,
+  summarizeDocumentReviewSecondaryBuckets,
+} from "@/modules/documents/review-queue";
+import { listOrganizationImportOperations } from "@/modules/imports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 
 type OrganizationDocumentsPageProps = {
@@ -51,14 +49,7 @@ export default async function OrganizationDocumentsPage({
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
 
-  const [
-    recentDocuments,
-    allDocuments,
-    missingFxSummary,
-    importOperations,
-    recentDocumentsResult,
-    organizationScopeRow,
-  ] = await Promise.all([
+  const [recentDocuments, allDocuments, importOperations, recentDocumentsResult] = await Promise.all([
     listOrganizationWorkspaceDocuments({
       organizationId: organization.id,
       organizationSlug: organization.slug,
@@ -70,10 +61,6 @@ export default async function OrganizationDocumentsPage({
         sortOrder: "date_desc",
       })
       : Promise.resolve([]),
-    loadMissingFxDocumentsSummary({
-      organizationId: organization.id,
-      supabase,
-    }),
     activeTab === "international"
       ? listOrganizationImportOperations(supabase, organization.id, 8)
       : Promise.resolve([]),
@@ -86,30 +73,16 @@ export default async function OrganizationDocumentsPage({
         .order("created_at", { ascending: false })
         .limit(8)
       : Promise.resolve({ data: [], error: null }),
-    supabase
-      .from("organizations")
-      .select("country_code, legal_entity_type, tax_regime_code, vat_regime")
-      .eq("id", organization.id)
-      .limit(1)
-      .maybeSingle(),
   ]);
 
   if (recentDocumentsResult.error) {
     throw new Error(recentDocumentsResult.error.message);
   }
 
-  if (organizationScopeRow.error) {
-    throw new Error(organizationScopeRow.error.message);
-  }
-
-  const organizationScope = evaluateOrganizationLaunchScope({
-    countryCode: organizationScopeRow.data?.country_code ?? "UY",
-    legalEntityType: organizationScopeRow.data?.legal_entity_type ?? null,
-    taxRegimeCode: organizationScopeRow.data?.tax_regime_code ?? null,
-    vatRegime: organizationScopeRow.data?.vat_regime ?? null,
-  });
   const reviewBuckets = groupDocumentsByReviewBucket(allDocuments);
+  const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(allDocuments);
   const bucketCountMap = new Map(reviewBuckets.map((bucket) => [bucket.key, bucket.items.length]));
+  const secondaryCountMap = new Map(secondaryBuckets.map((bucket) => [bucket.key, bucket.count]));
   const recentInternationalDocuments = (((recentDocumentsResult.data as Array<{
     id: string;
     original_filename: string;
@@ -127,7 +100,7 @@ export default async function OrganizationDocumentsPage({
       userRole={organization.role}
       title="Documentos"
       toolbarLabel="Documentos"
-      description="Superficie de ingreso: cargar originales, resumir el ultimo lote y derivar la decision humana a Revision."
+      description="Superficie de ingreso: cargar originales, confirmar el ultimo tramo y derivar la decision humana a Revision."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
       {activeTab === "international" ? (
@@ -140,7 +113,7 @@ export default async function OrganizationDocumentsPage({
                 </h1>
                 <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                   Vista secundaria para DUA, proveedor exterior y tributos asociados. El flujo
-                  principal de trabajo sigue en Revision.
+                  principal del piloto sigue en Revision.
                 </p>
               </div>
               <LoadingLink
@@ -165,11 +138,11 @@ export default async function OrganizationDocumentsPage({
             <div className="ui-panel-header">
               <div>
                 <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-                  Ingreso documental
+                  Subir documentos
                 </h1>
                 <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Este carril se enfoca en cargar documentos y confirmar que entraron bien al
-                  sistema. La revision detallada vive en una cola aparte.
+                  Esta pantalla se dedica a cargar originales, confirmar que entraron bien y
+                  derivar el trabajo humano a Revision.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -198,115 +171,7 @@ export default async function OrganizationDocumentsPage({
             </div>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <article className="metric-card">
-              <span className="metric-card__label">Pendientes de revision</span>
-              <span className="metric-card__value">{bucketCountMap.get("needs_review") ?? 0}</span>
-              <p className="metric-card__hint">Documentos listos para entrar al wizard humano.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Bloqueados</span>
-              <span className="metric-card__value">{bucketCountMap.get("blocked") ?? 0}</span>
-              <p className="metric-card__hint">Duplicados, FX, alcance o incidencias visibles.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Listos para cierre</span>
-              <span className="metric-card__value">
-                {(bucketCountMap.get("ready_provisional") ?? 0) + (bucketCountMap.get("ready_final") ?? 0)}
-              </span>
-              <p className="metric-card__hint">Documentos que ya superaron la parte pesada de revision.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Sin cotizacion</span>
-              <span className="metric-card__value">{missingFxSummary.count}</span>
-              <p className="metric-card__hint">Casos en moneda extranjera visibles desde ingreso.</p>
-            </article>
-          </section>
-
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h2 className="text-[16px] font-semibold text-white">Ultimo lote visible</h2>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Resumen rapido de las cargas mas recientes antes de saltar a Revision.
-                </p>
-              </div>
-              <span className={`status-pill ${
-                organizationScope.supportLevel === "automatic"
-                  ? "status-pill--success"
-                  : organizationScope.supportLevel === "assisted_only"
-                    ? "status-pill--warning"
-                    : "status-pill--danger"
-              }`}>
-                {formatLaunchSupportLevelLabel(organizationScope.supportLevel)}
-              </span>
-            </div>
-
-            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-              <div className="space-y-3">
-                {recentDocuments.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
-                    Todavia no hay documentos cargados.
-                  </div>
-                ) : (
-                  recentDocuments.map((document) => (
-                    <div
-                      key={document.id}
-                      className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-white">{document.originalFilename}</p>
-                          <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-                            {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.createdAt)}
-                          </p>
-                        </div>
-                        <LoadingLink
-                          href={document.processedHref ?? `/app/o/${organization.slug}/review`}
-                          pendingLabel="Abriendo..."
-                          className="ui-button ui-button--secondary"
-                        >
-                          {document.processedHref ? "Abrir" : "Ver cola"}
-                        </LoadingLink>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
-                  <p className="font-semibold text-white">Que sigue despues de cargar</p>
-                  <p className="mt-2">
-                    1. Verifica que el lote entro bien.
-                  </p>
-                  <p className="mt-1">
-                    2. Abre Revision para trabajar pendientes, blockers y listos para cierre.
-                  </p>
-                  <p className="mt-1">
-                    3. Usa Importacion masiva cuando la entrada venga desde planillas o staging estructurado.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm text-[color:var(--color-muted)]">
-                  <p className="font-semibold text-white">Alcance operativo</p>
-                  {organizationScope.reasons.length === 0 ? (
-                    <p className="mt-2">
-                      La organizacion entra dentro del perimetro automatico conservador del MVP.
-                    </p>
-                  ) : (
-                    organizationScope.reasons.map((reason) => (
-                      <p key={reason} className="mt-2">
-                        {reason}
-                      </p>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <div className="ui-panel" id="document-upload-panel">
+          <section className="ui-panel" id="document-upload-panel">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-[17px] font-semibold text-white">
@@ -326,7 +191,122 @@ export default async function OrganizationDocumentsPage({
               </LoadingLink>
             </div>
             <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
-          </div>
+          </section>
+
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <article className="metric-card">
+              <span className="metric-card__label">En procesamiento</span>
+              <span className="metric-card__value">{secondaryCountMap.get("processing") ?? 0}</span>
+              <p className="metric-card__hint">Archivos que todavia estan entrando al sistema.</p>
+            </article>
+            <article className="metric-card">
+              <span className="metric-card__label">Listos para revisar</span>
+              <span className="metric-card__value">
+                {(bucketCountMap.get("factual_review") ?? 0) + (bucketCountMap.get("assignment") ?? 0)}
+              </span>
+              <p className="metric-card__hint">Documentos que ya requieren una decision humana.</p>
+            </article>
+            <article className="metric-card">
+              <span className="metric-card__label">Bloqueados</span>
+              <span className="metric-card__value">{bucketCountMap.get("blocked") ?? 0}</span>
+              <p className="metric-card__hint">Duplicados, FX, alcance o incidencias visibles.</p>
+            </article>
+            <article className="metric-card">
+              <span className="metric-card__label">Listos para cierre</span>
+              <span className="metric-card__value">
+                {(bucketCountMap.get("ready_provisional") ?? 0) + (bucketCountMap.get("ready_final") ?? 0)}
+              </span>
+              <p className="metric-card__hint">Casos que ya pasaron la parte pesada de la revision.</p>
+            </article>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Que pasa despues de cargar</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Usa este resumen para confirmar que el lote entro bien y despues sigue en Revision.
+                </p>
+              </div>
+              <LoadingLink
+                href={`/app/o/${organization.slug}/review`}
+                pendingLabel="Abriendo revision..."
+                className="ui-button ui-button--primary"
+              >
+                Ir a Revision
+              </LoadingLink>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold text-white">1. Confirmar entrada</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  Revisa que el lote haya quedado cargado y en procesamiento normal.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold text-white">2. Abrir Revision</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  La cola principal separa validacion factual, asignacion, bloqueos y cierres.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold text-white">3. Importacion masiva</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  Usala solo cuando la entrada venga por planillas o staging estructurado.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+                <p className="font-semibold text-white">4. Internacional</p>
+                <p className="mt-2 text-[color:var(--color-muted)]">
+                  Sigue disponible, pero como carril secundario del piloto.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="ui-panel">
+            <div className="ui-panel-header">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white">Ultimos archivos subidos</h2>
+                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                  Lista corta para validar que la carga entro bien antes de pasar a Revision.
+                </p>
+              </div>
+              <span className="ui-filter">{Math.min(recentDocuments.length, 8)}</span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {recentDocuments.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
+                  Todavia no hay documentos cargados.
+                </div>
+              ) : (
+                recentDocuments.slice(0, 8).map((document) => (
+                  <div
+                    key={document.id}
+                    className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-white">{document.originalFilename}</p>
+                        <p className="mt-1 text-sm text-[color:var(--color-muted)]">
+                          {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.createdAt)}
+                        </p>
+                      </div>
+                      <LoadingLink
+                        href={document.processedHref ?? `/app/o/${organization.slug}/review`}
+                        pendingLabel="Abriendo..."
+                        className="ui-button ui-button--secondary"
+                      >
+                        {document.processedHref ? "Abrir en Revision" : "Ver cola"}
+                      </LoadingLink>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
         </div>
       )}
     </PrivateDashboardShell>

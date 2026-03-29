@@ -3,6 +3,7 @@ import type { DocumentWorkspaceListItem } from "@/modules/documents/review";
 import {
   buildDocumentReviewChips,
   groupDocumentsByReviewBucket,
+  summarizeDocumentReviewSecondaryBuckets,
 } from "@/modules/documents/review-queue";
 import {
   formatDocumentOperationalStatusLabel,
@@ -39,6 +40,10 @@ export function DocumentReviewQueue({
   documents,
 }: DocumentReviewQueueProps) {
   const groupedBuckets = groupDocumentsByReviewBucket(documents);
+  const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(documents);
+  const firstActionableDocument = groupedBuckets.flatMap((bucket) => bucket.items)
+    .find((document) => document.processedHref);
+  const assignmentDocuments = groupedBuckets.find((bucket) => bucket.key === "assignment")?.items ?? [];
 
   return (
     <div className="space-y-4">
@@ -50,6 +55,41 @@ export function DocumentReviewQueue({
             <p className="metric-card__hint">{bucket.description}</p>
           </article>
         ))}
+      </section>
+
+      <section className="ui-panel">
+        <div className="ui-panel-header">
+          <div>
+            <h2 className="text-[16px] font-semibold text-white">Siguiente mejor movimiento</h2>
+            <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+              La cola principal muestra solo trabajo accionable. Procesando y finalizados quedan como referencias secundarias.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {secondaryBuckets.map((bucket) => (
+              <span key={bucket.key} className="ui-filter">
+                {bucket.label}: {bucket.count}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <LoadingLink
+            href={firstActionableDocument?.processedHref ?? `/app/o/${slug}/documents`}
+            pendingLabel="Abriendo..."
+            className="ui-button ui-button--primary"
+          >
+            {firstActionableDocument ? "Abrir siguiente pendiente" : "Ir a Documentos"}
+          </LoadingLink>
+          <LoadingLink
+            href={`/app/o/${slug}/documents/pending-assignment`}
+            pendingLabel="Abriendo lotes..."
+            className="ui-button ui-button--secondary"
+          >
+            {assignmentDocuments.length > 0 ? "Aplicar decision a lote" : "Abrir cola de lotes"}
+          </LoadingLink>
+        </div>
       </section>
 
       {groupedBuckets.map((bucket) => (
@@ -131,7 +171,7 @@ export function DocumentReviewQueue({
                           pendingLabel="Abriendo..."
                           className="ui-button ui-button--primary"
                         >
-                          {document.processedHref ? "Abrir revision" : "Ir a Documentos"}
+                          {document.processedHref ? "Abrir wizard" : "Ir a Documentos"}
                         </LoadingLink>
                         {document.processedHref ? (
                           <LoadingLink
@@ -139,7 +179,7 @@ export function DocumentReviewQueue({
                             pendingLabel="Abriendo..."
                             className="ui-button ui-button--secondary"
                           >
-                            Ver wizard
+                            Ver detalle
                           </LoadingLink>
                         ) : null}
                       </div>

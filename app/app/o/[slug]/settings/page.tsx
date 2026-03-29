@@ -55,7 +55,7 @@ type OrganizationSettingsPageProps = {
   }>;
 };
 
-type SettingsTab = "company" | "fiscal" | "chart" | "integrations" | "advanced";
+type SettingsTab = "company" | "fiscal" | "business" | "chart" | "integrations" | "advanced";
 
 const chartAccountTypeOptions: ChartAccountType[] = [
   "asset",
@@ -81,7 +81,12 @@ const settingsTabs: Array<{
   {
     key: "fiscal",
     label: "Perfil fiscal",
-    description: "Versiones, snapshot y perfil de negocio",
+    description: "Versiones, regimenes y direccion fiscal",
+  },
+  {
+    key: "business",
+    label: "Perfil de negocio",
+    description: "Actividad economica y recomendacion de plan",
   },
   {
     key: "chart",
@@ -107,6 +112,7 @@ export const metadata: Metadata = {
 function normalizeSettingsTab(value: string | undefined): SettingsTab {
   switch (value) {
     case "fiscal":
+    case "business":
     case "chart":
     case "integrations":
     case "advanced":
@@ -168,7 +174,7 @@ export default async function OrganizationSettingsPage({
       userEmail={authState.user?.email}
       userRole={organization.role}
       title="Configuracion"
-      description="Configuracion guiada por tabs: empresa, perfil fiscal, plan contable, integraciones y soporte avanzado."
+      description="Configuracion guiada por tabs: empresa, perfil fiscal, perfil de negocio, plan contable, integraciones y soporte avanzado."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
@@ -249,7 +255,7 @@ export default async function OrganizationSettingsPage({
           <span className="ui-filter">{settingsTabs.find((tab) => tab.key === activeSettingsTab)?.label}</span>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 xl:grid-cols-6">
           {settingsTabs.map((tab) => (
             <LoadingLink
               key={tab.key}
@@ -457,7 +463,7 @@ export default async function OrganizationSettingsPage({
           </ExpandableSectionCard>
           ) : null}
 
-          {activeSettingsTab === "fiscal" && featureFlags.onboardingActivityBasedPresetsEnabled ? (
+          {activeSettingsTab === "business" && featureFlags.onboardingActivityBasedPresetsEnabled ? (
             <ExpandableSectionCard
               title="Perfil de negocio y recomendacion de plan"
               description="Actividad economica, rasgos operativos y composicion sugerida del plan de cuentas. Cada cambio crea una nueva version hacia adelante sin tocar historicos."
@@ -472,6 +478,18 @@ export default async function OrganizationSettingsPage({
                 activePresetApplication={businessProfile.activePresetApplication}
                 activePresetAiRun={businessProfile.activePresetAiRun}
               />
+            </ExpandableSectionCard>
+          ) : null}
+
+          {activeSettingsTab === "business" && !featureFlags.onboardingActivityBasedPresetsEnabled ? (
+            <ExpandableSectionCard
+              title="Perfil de negocio"
+              description="Esta organizacion todavia no tiene habilitado el configurador de actividad economica y presets."
+              defaultOpen
+            >
+              <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
+                El perfil de negocio queda reservado hasta activar las tablas y flags de onboarding correspondientes.
+              </div>
             </ExpandableSectionCard>
           ) : null}
 

@@ -38,7 +38,7 @@ export default async function OrganizationReviewPage({
       userRole={organization.role}
       title="Revision"
       toolbarLabel="Revision"
-      description="Cola principal del trabajo humano: prioriza pendientes, blockers, listos para provisional y listos para final."
+      description="Cola principal del trabajo humano: separa subir de revisar y concentra solo el trabajo accionable."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
       <div className="space-y-4">
@@ -46,11 +46,11 @@ export default async function OrganizationReviewPage({
           <div className="ui-panel-header">
             <div>
               <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-                Cola de revision
+                Revision operativa
               </h1>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                Los estados tecnicos se agrupan en un recorrido operativo legible para el equipo:
-                procesar, revisar, destrabar, postear provisional y confirmar final.
+                La carga documental vive en otra pantalla. Aqui solo aparece el trabajo que
+                necesita una decision humana para seguir avanzando.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -61,20 +61,13 @@ export default async function OrganizationReviewPage({
               >
                 Documentos
               </LoadingLink>
-              <LoadingLink
-                href={`/app/o/${organization.slug}/audit`}
-                pendingLabel="Abriendo importacion..."
-                className="ui-button ui-button--secondary"
-              >
-                Importacion masiva
-              </LoadingLink>
               {canUsePendingAssignmentQueue ? (
                 <LoadingLink
                   href={`/app/o/${organization.slug}/documents/pending-assignment`}
                   pendingLabel="Abriendo cola..."
                   className="ui-button ui-button--secondary"
                 >
-                  Pending assignment
+                  Lotes y asignacion
                 </LoadingLink>
               ) : null}
             </div>

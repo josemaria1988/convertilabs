@@ -640,6 +640,30 @@ export function DocumentUploadDropzone({
               </div>
             ) : null}
           </div>
+
+          {status === "success" || status === "error" || status === "cancelled" ? (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="ui-button ui-button--primary"
+                onClick={() => {
+                  router.push(`/app/o/${slug}/review`);
+                }}
+              >
+                Ir a Revision
+              </button>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => {
+                  setStatus("idle");
+                  setMessage("");
+                }}
+              >
+                Seguir cargando
+              </button>
+            </div>
+          ) : null}
         </section>
 
         {showSpreadsheetImport ? (

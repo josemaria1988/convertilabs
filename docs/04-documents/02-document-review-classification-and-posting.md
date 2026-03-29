@@ -6,6 +6,16 @@ Tomar un draft ya extraido, revisarlo, clasificarlo contable y fiscalmente, perm
 
 Desde `2026-03-28`, esta capacidad ya no entra por `Documentos`: la cola principal vive en `/app/o/[slug]/review` y el detalle sigue en `/app/o/[slug]/documents/[documentId]` con UX guiada por pasos, rail del asistente opcional y detalles tecnicos colapsados.
 
+La superficie `Revision` hoy prioriza buckets accionables:
+
+- `Por revisar factual`
+- `Por asignar o clasificar`
+- `Bloqueados`
+- `Listos para provisional`
+- `Listos para final`
+
+`Procesando` y `Finalizados` siguen existiendo, pero ya no compiten visualmente con el trabajo diario.
+
 ## Superficies activas
 
 - `app/app/o/[slug]/documents/pending-assignment/page.tsx`
@@ -112,6 +122,8 @@ Y existe reapertura controlada.
 - `ready_for_final_confirmation`
 - `posted_final`
 - `reopened_needs_manual_remap`
+
+La UI no expone esos codigos tal cual: los mapea a buckets accionables en `/review` y deja `pending-assignment` como cola secundaria de lotes.
 
 ## Explainability real
 

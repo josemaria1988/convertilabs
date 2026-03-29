@@ -383,15 +383,15 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
     <section className="ui-panel">
       <div className="ui-panel-header">
         <div>
-          <h2 className="text-[16px] font-semibold text-white">Bandeja fiscal del periodo</h2>
+          <h2 className="text-[16px] font-semibold text-white">Pendientes fiscales del periodo</h2>
           <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-            Aqui resuelves elegibilidad fiscal, inclusion en la liquidacion y micro-acciones operativas del mes, sin convertir Impuestos en Documentos 2.0.
+            Resuelve elegibilidad fiscal, inclusion en la liquidacion y micro-acciones del mes sin convertir Impuestos en Documentos 2.0.
           </p>
         </div>
         <span className="ui-filter">{props.period}</span>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <article className="metric-card">
           <span className="metric-card__label">Total</span>
           <span className="metric-card__value">{props.workbench.summary.totalDocuments}</span>
@@ -403,24 +403,9 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
           <p className="metric-card__hint">Todavia no quedaron listos para liquidar.</p>
         </article>
         <article className="metric-card">
-          <span className="metric-card__label">Elegibles</span>
-          <span className="metric-card__value">{props.workbench.summary.eligibleDocuments}</span>
-          <p className="metric-card__hint">Ya pueden entrar al preview o a confirmacion.</p>
-        </article>
-        <article className="metric-card">
           <span className="metric-card__label">Confirmados</span>
           <span className="metric-card__value">{props.workbench.summary.confirmedDocuments}</span>
           <p className="metric-card__hint">Aceptados para liquidacion del periodo.</p>
-        </article>
-        <article className="metric-card">
-          <span className="metric-card__label">Excluidos</span>
-          <span className="metric-card__value">{props.workbench.summary.excludedDocuments}</span>
-          <p className="metric-card__hint">Quedaron fuera de la liquidacion del mes.</p>
-        </article>
-        <article className="metric-card">
-          <span className="metric-card__label">En corrida</span>
-          <span className="metric-card__value">{props.workbench.summary.includedInOfficialRunDocuments}</span>
-          <p className="metric-card__hint">Ya incluidos en la ultima corrida oficial.</p>
         </article>
         <article className="metric-card">
           <span className="metric-card__label">Neto IVA draft</span>
@@ -500,85 +485,90 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
             </div>
           </form>
 
-          <form
-            id="bulk-tax-workbench-form"
-            action={async (formData: FormData) => {
-              "use server";
-              const documentIds = formData.getAll("documentIds").map(String);
-              const intent = String(formData.get("intent") ?? "");
+          <details className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              Acciones de lote y filtros avanzados
+            </summary>
+            <form
+              id="bulk-tax-workbench-form"
+              action={async (formData: FormData) => {
+                "use server";
+                const documentIds = formData.getAll("documentIds").map(String);
+                const intent = String(formData.get("intent") ?? "");
 
-              if (intent === "confirm") {
-                await saveTaxPeriodDocumentSelectionAction({
-                  slug: props.slug,
-                  period: props.period,
-                  documentIds,
-                  selectionStatus: "confirmed_for_period",
-                });
-                return;
-              }
+                if (intent === "confirm") {
+                  await saveTaxPeriodDocumentSelectionAction({
+                    slug: props.slug,
+                    period: props.period,
+                    documentIds,
+                    selectionStatus: "confirmed_for_period",
+                  });
+                  return;
+                }
 
-              if (intent === "exclude") {
-                await saveTaxPeriodDocumentSelectionAction({
-                  slug: props.slug,
-                  period: props.period,
-                  documentIds,
-                  selectionStatus: "excluded_from_period",
-                });
-                return;
-              }
+                if (intent === "exclude") {
+                  await saveTaxPeriodDocumentSelectionAction({
+                    slug: props.slug,
+                    period: props.period,
+                    documentIds,
+                    selectionStatus: "excluded_from_period",
+                  });
+                  return;
+                }
 
-              if (intent === "reclassify") {
-                await runTaxWorkbenchDocumentAction({
-                  slug: props.slug,
-                  period: props.period,
-                  documentIds,
-                  action: "reclassify",
-                });
-                return;
-              }
+                if (intent === "reclassify") {
+                  await runTaxWorkbenchDocumentAction({
+                    slug: props.slug,
+                    period: props.period,
+                    documentIds,
+                    action: "reclassify",
+                  });
+                  return;
+                }
 
-              if (intent === "manual") {
-                await runTaxWorkbenchDocumentAction({
-                  slug: props.slug,
-                  period: props.period,
-                  documentIds,
-                  action: "confirm_manual",
-                });
-                return;
-              }
+                if (intent === "manual") {
+                  await runTaxWorkbenchDocumentAction({
+                    slug: props.slug,
+                    period: props.period,
+                    documentIds,
+                    action: "confirm_manual",
+                  });
+                  return;
+                }
 
-              if (intent === "provisional") {
-                await runTaxWorkbenchDocumentAction({
-                  slug: props.slug,
-                  period: props.period,
-                  documentIds,
-                  action: "post_provisional",
-                });
-              }
-            }}
-            className="flex flex-wrap gap-2 rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4"
-          >
-            <button type="submit" name="intent" value="confirm" className="ui-button ui-button--primary" disabled={props.isClosedRun}>
-              Confirmar seleccionados
-            </button>
-            <button type="submit" name="intent" value="exclude" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
-              Excluir seleccionados
-            </button>
-            <button type="submit" name="intent" value="reclassify" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
-              Reclasificar seleccionados
-            </button>
-            <button type="submit" name="intent" value="manual" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
-              Marcar revision manual
-            </button>
-            <button type="submit" name="intent" value="provisional" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
-              Postear provisional
-            </button>
-            {props.isClosedRun ? (
-              <span className="text-sm text-[color:var(--color-muted)]">
-                El periodo esta cerrado. Reabre la corrida antes de mutar la bandeja fiscal.
-              </span>
-            ) : null}
-          </form>
+                if (intent === "provisional") {
+                  await runTaxWorkbenchDocumentAction({
+                    slug: props.slug,
+                    period: props.period,
+                    documentIds,
+                    action: "post_provisional",
+                  });
+                }
+              }}
+              className="mt-4 flex flex-wrap gap-2"
+            >
+              <button type="submit" name="intent" value="confirm" className="ui-button ui-button--primary" disabled={props.isClosedRun}>
+                Confirmar seleccionados
+              </button>
+              <button type="submit" name="intent" value="exclude" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
+                Excluir seleccionados
+              </button>
+              <button type="submit" name="intent" value="reclassify" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
+                Reclasificar seleccionados
+              </button>
+              <button type="submit" name="intent" value="manual" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
+                Marcar revision manual
+              </button>
+              <button type="submit" name="intent" value="provisional" className="ui-button ui-button--secondary" disabled={props.isClosedRun}>
+                Postear provisional
+              </button>
+              {props.isClosedRun ? (
+                <span className="text-sm text-[color:var(--color-muted)]">
+                  El periodo esta cerrado. Reabre la corrida antes de mutar la bandeja fiscal.
+                </span>
+              ) : null}
+            </form>
+          </details>
 
           <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8">
             <div className="grid grid-cols-[32px_minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 border-b border-[color:var(--color-border)] px-4 py-3 text-[12px] uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
