@@ -21,7 +21,7 @@ export function RuleApplicationCard({
       : null;
 
   return (
-    <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+    <article className="rounded-3xl border border-[color:var(--color-border)] surface-card-dark p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold tracking-[-0.04em]">{explanation.title}</h3>
@@ -68,7 +68,7 @@ export function RuleApplicationCard({
           <ul className="mt-2 space-y-2 text-sm text-[color:var(--color-muted)]">
             {explanation.matchedPredicates.length > 0 ? (
               explanation.matchedPredicates.map((item) => (
-                <li key={item} className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-3 py-2">
+                <li key={item} className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft px-3 py-2">
                   {item}
                 </li>
               ))
@@ -83,7 +83,7 @@ export function RuleApplicationCard({
           <p className="text-sm font-semibold">Impacto de la decision</p>
           <ul className="mt-2 space-y-2 text-sm text-[color:var(--color-muted)]">
             {explanation.impactSummary.map((item) => (
-              <li key={item} className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-3 py-2">
+              <li key={item} className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft px-3 py-2">
                 {item}
               </li>
             ))}
@@ -92,7 +92,7 @@ export function RuleApplicationCard({
       </div>
 
       {explanation.riskNotes.length > 0 ? (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="alert-dark-warning mt-4 rounded-2xl px-4 py-3 text-sm">
           {explanation.riskNotes.join(" ")}
         </div>
       ) : null}

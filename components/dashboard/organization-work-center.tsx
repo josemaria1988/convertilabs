@@ -56,6 +56,7 @@ export function OrganizationWorkCenter({
   const closeReadyCount =
     (bucketCountMap.get("ready_provisional") ?? 0)
     + (bucketCountMap.get("ready_final") ?? 0);
+  const alertCount = (bucketCountMap.get("blocked") ?? 0) + missingFxSummary.count;
   const recentDocuments = documents.slice(0, 8);
   const todayTasks = [
     reviewPendingCount > 0
@@ -102,8 +103,63 @@ export function OrganizationWorkCenter({
 
   return (
     <div className="space-y-4">
+      <section className="space-y-3 lg:hidden">
+        <div className="grid grid-cols-3 gap-3">
+          <article className="surface-card surface-card-state-accent">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#d6e5ff]">
+              Pendientes
+            </p>
+            <p className="mt-3 text-[28px] font-semibold tracking-[-0.05em] text-white">
+              {reviewPendingCount}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[color:var(--color-muted)]">
+              Revision accionable
+            </p>
+          </article>
+          <article className="surface-card surface-card-state-success">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e8fff0]">
+              Listos
+            </p>
+            <p className="mt-3 text-[28px] font-semibold tracking-[-0.05em] text-white">
+              {closeReadyCount}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[color:var(--color-muted)]">
+              Para cierre
+            </p>
+          </article>
+          <article className="surface-card surface-card-state-warning">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f8ecd2]">
+              Alertas
+            </p>
+            <p className="mt-3 text-[28px] font-semibold tracking-[-0.05em] text-white">
+              {alertCount}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[color:var(--color-muted)]">
+              IVA y bloqueos
+            </p>
+          </article>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <LoadingLink
+            href={`/app/o/${slug}/documents#document-upload-panel`}
+            pendingLabel="Abriendo carga..."
+            className="ui-button ui-button--primary min-h-[50px] w-full"
+          >
+            Agregar documentos
+          </LoadingLink>
+          <LoadingLink
+            href={`/app/o/${slug}/review`}
+            pendingLabel="Abriendo revision..."
+            className="ui-button ui-button--secondary min-h-[50px] w-full"
+          >
+            Revisar pendientes
+          </LoadingLink>
+        </div>
+      </section>
+
       <section className="ui-panel">
-        <div className="ui-panel-header">
+        <div className="ui-panel-header hidden lg:flex">
           <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
               Centro de trabajo
@@ -124,7 +180,7 @@ export function OrganizationWorkCenter({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 lg:mt-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
               key: "documents",
@@ -182,7 +238,7 @@ export function OrganizationWorkCenter({
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {groupedBuckets.map((bucket) => (
           <article key={bucket.key} className="metric-card">
             <span className="metric-card__label">{bucket.label}</span>
@@ -217,7 +273,7 @@ export function OrganizationWorkCenter({
                   <LoadingLink
                     href={task.href}
                     pendingLabel="Abriendo..."
-                    className="ui-button ui-button--primary"
+                    className="ui-button ui-button--primary w-full sm:w-auto"
                   >
                     {task.cta}
                   </LoadingLink>

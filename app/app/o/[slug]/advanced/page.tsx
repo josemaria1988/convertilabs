@@ -125,7 +125,7 @@ export default async function OrganizationAdvancedPage({
               <span className="ui-filter">{section.links.length}</span>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {section.links.map((link) => (
                 <LoadingLink
                   key={link.href}

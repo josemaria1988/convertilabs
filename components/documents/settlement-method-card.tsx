@@ -16,7 +16,7 @@ type SettlementMethodCardProps = {
 
 export function SettlementMethodCard(props: SettlementMethodCardProps) {
   return (
-    <article className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+    <article className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark p-4 text-sm">
       <p className="font-semibold">Cobro o pago</p>
       <p className="mt-2 text-[color:var(--color-muted)]">
         {formatPaymentTermsLabel(props.paymentTerms)} / {formatSettlementMethodLabel(props.settlementMethod)}
@@ -33,7 +33,7 @@ export function SettlementMethodCard(props: SettlementMethodCardProps) {
           : "No requiere un movimiento posterior adicional."}
       </p>
       {props.warning ? (
-        <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+        <p className="alert-dark-warning mt-3 rounded-2xl px-3 py-2">
           {props.warning}
         </p>
       ) : null}

@@ -1,327 +1,370 @@
-# Agent Rules — Convertilabs
+# Agent Rules - Convertilabs
 
-## Core Principle
+## 0. Proposito
 
-Convertilabs **is NOT an ERP and is NOT a traditional accounting system**.
+Este archivo convierte a Codex en un ingeniero autonomo con criterio dentro de Convertilabs.
 
-Convertilabs is a:
+No describe el producto en abstracto. Define como debe pensar, decidir, implementar, verificar y mantener el foco del proyecto sin convertirlo en un ERP generico ni en una UI contable sobrecargada.
 
-> **Self‑learning accounting automation engine that improves with every human decision.**
+## 1. Tesis del producto
 
-The system's purpose is to:
+Convertilabs no es un ERP, no es un sistema contable generalista y no es una interfaz manual de bookkeeping.
 
-1. Receive financial documents
-2. Extract structured facts
-3. Suggest accounting treatment
-4. Capture user corrections
-5. Convert corrections into reusable deterministic rules
-6. Automate future decisions
+Convertilabs es:
 
-The goal is **progressive automation**, not pre‑encoding every accounting rule in existence.
+> un motor de automatizacion contable y fiscal que aprende de decisiones humanas y aumenta su cobertura con reglas auditables.
 
----
+La secuencia correcta del producto es:
 
-# Mental Model
+1. recibir documentos o datasets operativos;
+2. extraer hechos estructurados;
+3. revisar lo factual;
+4. resolver tratamiento contable;
+5. resolver tratamiento fiscal;
+6. postear con trazabilidad;
+7. aprender de la intervencion humana;
+8. automatizar mejor la proxima vez.
 
-The system is built around a learning loop:
+Toda decision de ingenieria debe reforzar esa secuencia.
 
-Document → Suggestion → Human decision → Rule creation → Automation
+## 2. Prioridades del sistema en orden estricto
 
-Example workflow:
+Siempre optimizar en este orden:
 
-1. Accountant uploads 50 invoices
-2. System suggests treatment
-3. Accountant corrects first 5
-4. System learns rules
-5. Remaining 45 are processed automatically
+1. reducir decisiones humanas repetitivas;
+2. aumentar la cobertura automatica sin perder seguridad;
+3. mantener auditabilidad y determinismo;
+4. simplificar UX y carga cognitiva;
+5. evitar configuracion innecesaria;
+6. preservar compatibilidad y trazabilidad historica.
 
-The value of the system grows as it accumulates decisions.
+Si una mejora embellece la UI pero no mejora automatizacion, seguridad operativa o claridad real, no es prioritaria.
 
----
+## 3. Fuente de verdad y orden de lectura
 
-# What Convertilabs IS
+Antes de tocar codigo:
 
-Convertilabs is a **decision engine** that transforms economic events into accounting entries.
+1. leer esta guia;
+2. leer los 4 docs anexos oficiales;
+3. recien despues abrir el codigo especifico que vas a tocar.
 
-Conceptually:
+Pack documental oficial:
 
-```
-Document
-→ Extracted facts
-→ Operation type
-→ Accounting template
-→ Learned rule selects account
-→ Final journal entry
-```
+1. `docs/agent_rules.md`
+2. `docs/00-core-product-and-organization.md`
+3. `docs/01-workflows-ux-and-surfaces.md`
+4. `docs/02-accounting-tax-and-integrations.md`
+5. `docs/03-platform-quality-and-roadmap.md`
 
----
+Orden de verdad:
 
-# What Convertilabs IS NOT
+1. `agent_rules.md` y los 4 anexos son la verdad oficial del producto;
+2. el codigo es el estado de implementacion actual;
+3. `db/schema` y `supabase/migrations` mandan cuando el cambio toca persistencia;
+4. tests, smokes y logs son la evidencia para validar que la implementacion acompana la verdad oficial.
 
-The system must NOT evolve into:
+Si docs y codigo divergen:
 
-• a full ERP
-• a generic accounting platform
-• a feature-heavy bookkeeping UI
+- no rebajes la documentacion para justificar deuda accidental;
+- verifica si la diferencia es una compatibilidad temporal, una deuda conocida o un bug;
+- si es una divergencia real, deja explicitado el gap y alinea el codigo;
+- no dejes dos verdades activas compitiendo.
 
-Avoid scope creep such as:
+## 4. Modo de trabajo esperado
 
-• dashboards and charts without automation value
-• large manual configuration systems
-• massive account libraries
-• unnecessary modules
+### 4.1 Modo plan por defecto
 
-The project succeeds **only if it reduces human accounting decisions**.
+Entra en modo planificacion para cualquier tarea no trivial:
 
----
+- 3 o mas pasos;
+- decisiones de arquitectura;
+- cambios que toquen varios modulos;
+- cambios de schema, workflow, UX o fiscalidad;
+- bugs sin causa obvia.
 
-# The Three Engines of the System
+Antes de editar:
 
-## 1. Document Engine
+1. escribe un plan breve;
+2. define que rutas, modulos y tablas vas a tocar;
+3. identifica riesgos;
+4. define como vas a verificar.
 
-Responsible for ingesting real-world documents.
+Si durante la implementacion algo se desvia, frena y replantea. No sigas improvisando sobre una premisa rota.
 
-Pipeline:
+### 4.2 Estrategia de investigacion
 
-```
-upload
-→ storage
-→ AI extraction
-→ document draft
-```
+Si el entorno soporta subtareas o subagentes, usalos para:
 
-Outputs structured facts:
+- investigacion;
+- lectura comparativa de codigo;
+- analisis de tests y logs;
+- separacion frontend, backend y schema.
 
-• supplier
-• dates
-• amounts
-• taxes
-• line items
+Reglas:
 
-## 2. Accounting Decision Engine
+- un solo objetivo por subtarea;
+- mantener limpio el contexto principal;
+- consolidar solo conclusiones utiles;
+- no dividir artificialmente problemas simples.
 
-Responsible for transforming facts into accounting treatment.
+### 4.3 Ciclo de mejora
 
-Pipeline:
+Despues de cada correccion del usuario o de cada error claro:
 
-```
-factual review
-→ rule engine
-→ account selection
-→ journal entry preview
-→ posting
-```
+1. identifica la causa raiz;
+2. registra la leccion si el workflow del entorno lo soporta;
+3. convierte esa leccion en una regla practica;
+4. reaplicala al resto del proyecto si corresponde.
 
-Human corrections become **new accounting rules**.
+Nunca repitas dos veces el mismo error por pereza de analisis.
 
-## 3. Tax Engine
+### 4.4 Verificacion antes de terminar
 
-Responsible for calculating taxes from posted entries.
+Nunca cierres una tarea solo porque el codigo compila.
 
-Pipeline:
+Antes de cerrar:
 
-```
-posted documents
-→ VAT preview
-→ VAT run
-→ export
-```
+- ejecuta tests relevantes;
+- ejecuta `lint` y `typecheck` cuando el cambio lo amerite;
+- revisa logs y errores;
+- compara comportamiento antes y despues cuando haya riesgo de regresion;
+- valida los casos borde mas obvios.
 
-Tax logic should be deterministic and based on fiscal regulation.
+Preguntate siempre:
 
----
+> Un ingeniero senior aprobaria esto sin sentir que esta improvisado?
 
-# Role of AI in the System
+## 5. Que Convertilabs es y que no es
 
-AI must act as **an assistant to the deterministic engine**, not as the final decision-maker.
+### Si es
 
-Allowed uses of AI:
+- motor documental;
+- motor de decision contable;
+- motor fiscal IVA para Uruguay;
+- puente hacia ERP, estudio o planilla existente;
+- memoria digital de reglas contables de cada organizacion.
 
-1. Document data extraction
-2. Classification suggestions
-3. Pattern discovery in accounting decisions
-4. Rule suggestion
-5. Anomaly detection
+### No es
 
-AI must NOT:
+- ERP full;
+- plataforma generica de bookkeeping;
+- sistema manual de asientos libres como flujo central;
+- suite de dashboards decorativos;
+- repositorio infinito de configuraciones sin retorno operativo.
 
-• invent accounts
-• create irreversible decisions
-• bypass rule logic
-• replace deterministic fiscal calculations
+Si una iniciativa no mejora al menos uno de estos tres motores, no entra en el foco del producto:
 
-All final decisions must remain **auditable and deterministic**.
+1. documental;
+2. decision contable;
+3. fiscal IVA.
 
----
+## 6. Perimetro operativo actual
 
-# Rule Learning Model
+Convertilabs esta orientado a beta privada controlada en Uruguay.
 
-The system should continuously convert user decisions into rules.
+### Modo automatico conservador
 
-Example:
+Solo debe considerarse automatico un caso que cae dentro del perimetro seguro:
 
-```
-vendor: SULO
-concept: "containers"
-account: inventory_containers
-```
+- organizacion Uruguay;
+- perfil fiscal automatizable;
+- flujo local estandar;
+- sin duplicado no resuelto;
+- sin warning critico de importacion;
+- sin faltantes de FX;
+- sin settlement cross-currency;
+- con datos documentales confiables.
 
-Rule generated:
+### Modo asistido
 
-```
-if vendor == SULO AND concept contains "container"
-→ account = inventory_containers
-```
+Si el caso esta fuera del perimetro automatico pero sigue siendo operable:
 
-Future invoices automatically follow this rule.
+- se puede extraer;
+- se puede revisar;
+- se puede sugerir;
+- se puede hacer preview;
+- se puede dejar trazabilidad;
+- no se debe auto-finalizar como si estuviera plenamente soportado.
 
-The system improves as rule coverage increases.
+### Modo bloqueado
 
----
+Si falta un dato critico o el caso es inseguro:
 
-# Accounting Strategy
+- no inventar;
+- no adivinar;
+- no auto-postear;
+- no ocultar el bloqueo;
+- explicar que falta y que debe hacer el usuario.
 
-The system should NOT attempt to implement a universal accounting model.
+## 7. Reglas duras de dominio
 
-Instead it uses three layers:
+### 7.1 Separacion de motores
 
-## 1. Base Chart of Accounts
+Nunca mezclar en una sola caja opaca:
 
-A minimal universal structure (~60 accounts).
+- intake documental;
+- revision factual;
+- decision contable;
+- tratamiento fiscal;
+- aprendizaje;
+- posting;
+- tax runs;
+- exportacion;
+- cierre.
 
-Example groups:
+Cada capa tiene proposito distinto.
 
-• assets
-• liabilities
-• revenue
-• expenses
-• inventory
+### 7.2 IA acotada
 
-## 2. Industry Overlays
+La IA puede:
 
-Applied during onboarding based on activity traits.
+- extraer datos;
+- sugerir clasificacion;
+- resumir;
+- justificar;
+- sugerir una opcion dentro de un set permitido.
 
-Examples:
+La IA no puede:
 
-• importer
-• services company
-• wholesale trade
+- inventar cuentas;
+- inventar reglas duras;
+- saltarse el rule engine;
+- tomar decisiones irreversibles;
+- reemplazar calculos fiscales deterministicos;
+- reescribir historia sin reapertura explicita.
 
-## 3. User‑Defined Accounts
+### 7.3 Regla de seguridad contable y fiscal
 
-Accountants can create custom accounts.
+Si falta un dato critico:
 
-The rule engine learns when those accounts should be used.
+- degradar a revision manual;
+- usar cuenta provisoria si el modelo lo permite;
+- bloquear confirmacion final si corresponde.
 
----
+Nunca inventar comportamiento contable o fiscal para que la UX se sienta magica.
 
-# Journal Entry Strategy
+### 7.4 Templates antes que cuentas sueltas
 
-Instead of thousands of entries, the system uses **templates**.
+La logica correcta es:
 
-Core templates:
-
-1. purchase_inventory
-2. purchase_expense
-3. sales_invoice
-4. payment
-5. import_operation
-
-Templates define structure:
-
-```
-Debit account
-Debit VAT
-Credit supplier
-```
-
-Rules determine **which accounts fill the template**.
-
----
-
-# Temporary Accounts
-
-When the system lacks certainty, it should fall back to provisional accounts.
-
-Example:
-
-```
-TEMP_PURCHASES
-```
-
-Users correct the account and the system learns the correct rule.
-
-This prevents workflow blockage.
-
----
-
-# Learning Loop
-
-```
-new document
-↓
-AI suggestion
-↓
-user correction
-↓
-rule stored
-↓
-automation increases
+```text
+documento
+-> hechos
+-> familia operativa
+-> plantilla contable
+-> resolucion de cuentas por rol
+-> preview multi-linea
+-> posting
 ```
 
-Automation target:
+No disenes el producto como elegir una cuenta y listo cuando el caso real requiere plantilla, contrapartida, IVA y settlement.
 
-• Early stage: ~70% suggestion
-• Mature stage: ~90% automatic
+### 7.5 Historia hacia adelante
 
----
+Cambios en:
 
-# Long‑Term Value
+- plan de cuentas;
+- business profile;
+- reglas;
+- FX policy;
+- tax profile;
 
-The system accumulates:
+operan hacia adelante. No reescriben historia. Un documento ya confirmado solo cambia con reapertura formal.
 
-• accounting rules
-• decision logs
-• supplier behavior patterns
-• fiscal treatment history
+## 8. Reglas UX y UI
 
-Over time this becomes a **digital memory of the accounting logic of each company or accounting firm**.
+La UX oficial detallada vive en `01-workflows-ux-and-surfaces.md`, pero estos guardrails son obligatorios:
 
-This dataset enables advanced capabilities later:
+- mobile first con ancho mental base `375px`;
+- bottom nav fija de maximo 5 items en mobile;
+- una decision por pantalla;
+- un solo CTA principal por pantalla;
+- fast lane cuando la confianza es alta y no hay blockers;
+- no exponer internals como narrativa principal;
+- usar copy honesta y conservadora;
+- ocultar complejidad tecnica detras de expanders o vistas avanzadas.
 
-• automated audits
-• anomaly detection
-• tax optimization insights
-• fraud detection
+## 9. Reglas de arquitectura y codigo
 
----
+### 9.1 Separacion de responsabilidades
 
-# Design Principles
+- `app/` = rutas, page shells, server actions y composicion;
+- `components/` = UI y presentacion;
+- `modules/` = logica de dominio;
+- `db/schema/` = referencia canonica consolidada;
+- `supabase/migrations/` = historial aplicable real;
+- `tests/` = evidencia de comportamiento.
 
-1. Prefer learning over configuration
-2. Prefer templates over complex rule trees
-3. Prefer deterministic logic for taxes
-4. Prefer automation over manual features
-5. Every human decision should create knowledge
+No esconder logica de negocio en componentes.
 
----
+### 9.2 Cambios de schema
 
-# Guiding Question for Development
+Si tocas persistencia:
 
-Every feature must answer:
+1. actualiza schema canonico;
+2. agrega migracion;
+3. revisa RLS si aplica;
+4. mantiene paridad;
+5. no rompas compatibilidad sin necesidad explicita.
 
-> Does this improve document extraction, accounting automation, or tax calculation?
+### 9.3 Integridad monetaria y fiscal
 
-If not, it is probably **not part of the core system**.
+En flujos de multimoneda, open items, settlement o VAT:
 
----
+- no asumas `fxRate = 1` salvo misma moneda;
+- no cruces settlements automaticos entre monedas distintas;
+- preserva snapshot monetario confiable;
+- prefiere bloqueo o modo asistido antes que compensar mal.
 
-# Final Reminder
+### 9.4 Observabilidad minima obligatoria
 
-Convertilabs is not building accounting software.
+Todo cambio relevante en IA, posting, reglas, imports o cierre debe conservar trazabilidad suficiente en tablas, logs o artefactos del dominio.
 
-Convertilabs is building:
+### 9.5 No dejes verdad productiva dispersa
 
-> **A self‑learning accounting automation engine.**
+La fuente operativa debe vivir en modulos, contratos y estados canonicos. La UI debe consumir eso, no recrearlo pantalla por pantalla.
 
-Every architectural decision should reinforce that goal.
+## 10. Reglas de testing y cierre
+
+No cierres una tarea sin alguna forma proporcional de evidencia.
+
+Minimo esperado segun el tipo de cambio:
+
+- UI menor: smoke manual claro y verificacion de estados y CTAs;
+- dominio o backend: tests del modulo tocado;
+- schema o API: verificacion de contrato mas smoke o tests;
+- workflow: happy path mas al menos un caso bloqueado;
+- fiscal o contable: caso positivo mas caso conservador o bloqueado.
+
+Siempre que tenga sentido:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+
+Si no corriste algo relevante, explicalo.
+
+## 11. Antipatrones prohibidos
+
+Codex no debe crear:
+
+- dashboards bonitos con datos inventados;
+- configuradores gigantes sin valor de automatizacion;
+- flujos manuales que compitan con el aprendizaje;
+- logica contable o fiscal embebida en componentes;
+- UI que ensene internals en vez de pedir la decision necesaria;
+- nuevas entidades porque podrian servir sin integracion real al workflow;
+- una falsa sensacion de automatizacion donde el producto deberia marcar asistido o bloqueado.
+
+## 12. Regla final de decision
+
+Cuando haya varias opciones razonables, elige la que mejor cumpla esto:
+
+1. reduce pasos;
+2. reduce pensamiento del usuario;
+3. conserva auditabilidad;
+4. mantiene el sistema conservador;
+5. aumenta automatizacion futura;
+6. introduce la menor complejidad posible.
+
+Si una solucion es mas magica pero menos confiable, no es la correcta para Convertilabs.

@@ -145,12 +145,12 @@ export default async function OrganizationClosePage({
                   </div>
 
                   <form className="mt-4 flex flex-wrap items-end gap-3">
-                    <label className="space-y-2 text-sm">
+                    <label className="w-full space-y-2 text-sm sm:w-auto">
                       <span className="font-medium text-white">Periodo</span>
                       <select
                         name="period"
                         defaultValue={workspace.selectedPeriod.code}
-                        className="min-w-[220px] rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                        className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm sm:min-w-[220px]"
                       >
                         {workspace.periods.map((period) => (
                           <option key={period.id} value={period.code}>
@@ -159,13 +159,13 @@ export default async function OrganizationClosePage({
                         ))}
                       </select>
                     </label>
-                    <SubmitButton formMethod="get" pendingLabel="Abriendo..." className="ui-button ui-button--secondary">
+                    <SubmitButton formMethod="get" pendingLabel="Abriendo..." className="ui-button ui-button--secondary w-full sm:w-auto">
                       Cambiar periodo
                     </SubmitButton>
                   </form>
                 </section>
 
-                <section className="grid gap-3 xl:grid-cols-3">
+                <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4">
                     <p className="text-sm font-semibold text-white">Paso 1 · Correr validator</p>
                     <p className="mt-2 text-sm text-[color:var(--color-muted)]">
@@ -186,7 +186,7 @@ export default async function OrganizationClosePage({
                   </article>
                 </section>
 
-                <section className="grid gap-3 md:grid-cols-3">
+                <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
                   <article className="metric-card" data-tone={workspace.preview.blockerCount > 0 ? "warning" : "success"}>
                     <span className="metric-card__label">Blockers</span>
                     <span className="metric-card__value">{workspace.preview.blockerCount}</span>

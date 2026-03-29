@@ -57,7 +57,7 @@ export default async function OrganizationReviewPage({
               <LoadingLink
                 href={`/app/o/${organization.slug}/documents`}
                 pendingLabel="Abriendo documentos..."
-                className="ui-button ui-button--secondary"
+                className="ui-button ui-button--secondary w-full sm:w-auto"
               >
                 Documentos
               </LoadingLink>
@@ -65,7 +65,7 @@ export default async function OrganizationReviewPage({
                 <LoadingLink
                   href={`/app/o/${organization.slug}/documents/pending-assignment`}
                   pendingLabel="Abriendo cola..."
-                  className="ui-button ui-button--secondary"
+                  className="ui-button ui-button--secondary w-full sm:w-auto"
                 >
                   Lotes y asignacion
                 </LoadingLink>

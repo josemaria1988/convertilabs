@@ -132,11 +132,11 @@ export function DocumentAccountingAssistantRail({
           </div>
         </div>
         {assistantRail.isStale ? (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-950">
+          <span className="rounded-full badge-dark-warning px-3 py-1 text-xs font-semibold">
             Contexto obsoleto
           </span>
         ) : (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-950">
+          <span className="rounded-full badge-dark-success px-3 py-1 text-xs font-semibold">
             Vigente
           </span>
         )}
@@ -146,7 +146,7 @@ export function DocumentAccountingAssistantRail({
         {assistantRail.persona.specialty}
       </p>
 
-      <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/55 p-4 text-sm">
+      <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
         <p className="font-semibold">Estado del analisis</p>
         <p className="mt-2 text-[color:var(--color-muted)]">
           Confianza: {formatConfidence(assistantRail.latestMessage?.structuredPayload.confidence ?? null)}
@@ -198,13 +198,13 @@ export function DocumentAccountingAssistantRail({
           </section>
         </>
       ) : (
-        <div className="mt-5 rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/50 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+        <div className="mt-5 rounded-2xl border border-dashed border-[color:var(--color-border)] surface-card-dark-subtle px-4 py-3 text-sm text-[color:var(--color-muted)]">
           Todavia no hay un analisis visible del Asistente Contable para este documento.
         </div>
       )}
 
       {assistantRail.latestMessage?.structuredPayload.warnings.length ? (
-        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="alert-dark-warning mt-5 rounded-2xl px-4 py-3 text-sm">
           {assistantRail.latestMessage.structuredPayload.warnings.join(" ")}
         </div>
       ) : null}
@@ -228,14 +228,14 @@ export function DocumentAccountingAssistantRail({
         {pendingSuggestions.length > 0 ? pendingSuggestions.map((suggestion) => (
           <div
             key={suggestion.id}
-            className="rounded-2xl border border-[color:var(--color-border)] bg-white/60 p-4 text-sm"
+            className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-semibold text-white">{suggestion.title}</p>
                 <p className="mt-2 leading-7 text-[color:var(--color-muted)]">{suggestion.description}</p>
               </div>
-              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-950">
+              <span className="rounded-full badge-dark-info px-3 py-1 text-xs font-semibold">
                 {formatConfidence(suggestion.confidence)}
               </span>
             </div>
@@ -274,7 +274,7 @@ export function DocumentAccountingAssistantRail({
             </div>
           </div>
         )) : (
-          <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/50 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+          <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] surface-card-dark-subtle px-4 py-3 text-sm text-[color:var(--color-muted)]">
             No hay sugerencias pendientes del Asistente Contable para este documento.
           </div>
         )}
@@ -288,7 +288,7 @@ export function DocumentAccountingAssistantRail({
           {resolvedSuggestions.slice(0, 3).map((suggestion) => (
             <div
               key={`resolved-${suggestion.id}`}
-              className="rounded-2xl border border-[color:var(--color-border)] bg-white/45 px-4 py-3 text-sm"
+              className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-subtle px-4 py-3 text-sm"
             >
               <p className="font-semibold text-white">{suggestion.title}</p>
               <p className="mt-1 text-[color:var(--color-muted)]">

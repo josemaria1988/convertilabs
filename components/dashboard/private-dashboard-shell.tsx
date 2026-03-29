@@ -197,11 +197,27 @@ function getNavIcon(iconKey?: PrivateDashboardNavItem["icon"]) {
   }
 }
 
+function isPrimaryMobileNavItem(item: PrivateDashboardNavItem) {
+  return ["home", "documents", "review", "tax", "settings"].includes(item.icon ?? "home");
+}
+
+function getMobileNavLabel(item: PrivateDashboardNavItem) {
+  switch (item.icon) {
+    case "tax":
+      return "IVA";
+    case "settings":
+      return "Ajustes";
+    default:
+      return item.label;
+  }
+}
+
 export function PrivateDashboardShell({
   organizationName,
   organizationSlug,
   userEmail,
   title,
+  description,
   navItems,
   toolbarLabel,
   children,
@@ -209,6 +225,7 @@ export function PrivateDashboardShell({
   const sectionLabel = toolbarLabel ?? title;
   const currentItem = navItems.find((item) => item.current) ?? null;
   const CurrentIcon = getNavIcon(currentItem?.icon);
+  const mobilePrimaryNavItems = navItems.filter(isPrimaryMobileNavItem);
 
   return (
     <div className="app-shell">
@@ -246,6 +263,36 @@ export function PrivateDashboardShell({
       </aside>
 
       <main className="app-main">
+        <div className="app-mobile-header">
+          <div className="app-mobile-header__top">
+            <LoadingLink
+              href="/app"
+              pendingLabel="Abriendo..."
+              className="app-mobile-header__brand"
+            >
+              <ConvertilabsLogo />
+            </LoadingLink>
+
+            <div className="app-mobile-header__actions">
+              <span className="app-mobile-header__badge">{organizationName}</span>
+              <AccountMenu
+                organizationName={organizationName}
+                organizationSlug={organizationSlug}
+                userEmail={userEmail}
+              />
+            </div>
+          </div>
+
+          <div className="app-mobile-header__card">
+            <span className="app-mobile-header__eyebrow">
+              <CurrentIcon className="h-[14px] w-[14px]" />
+              <span>{sectionLabel}</span>
+            </span>
+            <h1 className="app-mobile-header__title">{title}</h1>
+            <p className="app-mobile-header__description">{description}</p>
+          </div>
+        </div>
+
         <div className="app-topbar">
           <div className="app-topbar__section">
             <span className="flex h-4 w-4 items-center justify-center text-[color:var(--color-muted)]">
@@ -268,6 +315,34 @@ export function PrivateDashboardShell({
         </div>
 
         <div className="app-content">{children}</div>
+
+        {mobilePrimaryNavItems.length > 0 ? (
+          <nav className="app-mobile-nav" aria-label="Navegacion principal">
+            {mobilePrimaryNavItems.map((item) => {
+              const Icon = getNavIcon(item.icon);
+
+              return (
+                <LoadingLink
+                  key={item.href}
+                  href={item.href}
+                  pendingLabel={getMobileNavLabel(item)}
+                  className="app-mobile-nav__item"
+                  data-current={item.current ? "true" : undefined}
+                  aria-current={item.current ? "page" : undefined}
+                >
+                  <span className="app-mobile-nav__content">
+                    <span className="app-mobile-nav__icon">
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="app-mobile-nav__label">
+                      {getMobileNavLabel(item)}
+                    </span>
+                  </span>
+                </LoadingLink>
+              );
+            })}
+          </nav>
+        ) : null}
       </main>
     </div>
   );

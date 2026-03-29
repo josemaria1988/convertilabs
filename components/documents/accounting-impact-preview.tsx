@@ -114,11 +114,11 @@ function getLineDirectionLabel(direction: ReturnType<typeof getLineDirection>) {
 function getDirectionClasses(direction: ReturnType<typeof getLineDirection>) {
   switch (direction) {
     case "debit":
-      return "bg-emerald-100 text-emerald-900";
+      return "badge-dark-success";
     case "credit":
-      return "bg-sky-100 text-sky-900";
+      return "badge-dark-info";
     default:
-      return "bg-slate-100 text-slate-900";
+      return "badge-dark-neutral";
   }
 }
 
@@ -141,7 +141,7 @@ function JournalGroupCard(input: {
   showFunctionalAmounts: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+    <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
       <p className="font-semibold">{input.title}</p>
       {input.lines.length === 0 ? (
         <p className="mt-2 text-[color:var(--color-muted)]">{input.emptyMessage}</p>
@@ -152,7 +152,10 @@ function JournalGroupCard(input: {
             const directionLabel = getLineDirectionLabel(direction);
 
             return (
-              <div key={`${input.title}-${line.lineNumber}`} className="rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3">
+              <div
+                key={`${input.title}-${line.lineNumber}`}
+                className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark px-4 py-3"
+              >
                 <p className="font-medium">{line.accountCode} - {line.accountName}</p>
                 <p className="mt-1 text-[color:var(--color-muted)]">
                   {formatAccountRoleCodeLabel(line.roleCode)} | {formatLinePurpose(line.linePurpose)}
@@ -192,7 +195,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
   );
 
   return (
-    <article className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+    <article className="rounded-3xl border border-[color:var(--color-border)] surface-card-dark p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold tracking-[-0.04em]">Impacto contable y fiscal</h3>
@@ -202,15 +205,15 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
         </div>
         <span className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${
           preview.ready
-            ? "bg-emerald-100 text-emerald-900"
-            : "bg-amber-100 text-amber-900"
+            ? "badge-dark-success"
+            : "badge-dark-warning"
         }`}>
           {preview.ready ? "Listo" : "Incompleto"}
         </span>
       </div>
 
       <div className="mt-4 grid gap-3 xl:grid-cols-5">
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">Plantilla contable</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
             {formatPostingTemplateCodeLabel(preview.summary.templateCode)}
@@ -220,7 +223,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">Moneda y valuacion</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
             Documento: {formatMoney(preview.journal.totalDebit, preview.summary.currencyCode)}
@@ -245,7 +248,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">Cuenta del concepto</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.mainAccount ?? "Pendiente"}</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
@@ -253,7 +256,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">Cobro o pago</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
             {preview.summary.settlementAccount ?? "Pendiente"}
@@ -270,7 +273,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">Cuenta IVA</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.summary.vatAccount ?? "Pendiente"}</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
@@ -280,7 +283,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
       </div>
 
       {preview.missingItems.length > 0 ? (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="alert-dark-warning mt-4 rounded-2xl px-4 py-3 text-sm">
           {preview.missingItems.join(" ")}
         </div>
       ) : null}
@@ -327,7 +330,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
             className={`rounded-full px-3 py-2 text-sm transition ${
               activeTab === tab.key
                 ? "bg-[color:var(--color-accent)] text-white"
-                : "border border-[color:var(--color-border)] bg-white/80"
+                : "border border-[color:var(--color-border)] surface-card-dark-soft"
             }`}
           >
             {tab.label}
@@ -342,7 +345,10 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
             const directionLabel = getLineDirectionLabel(direction);
 
             return (
-              <div key={line.lineNumber} className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 text-sm">
+              <div
+                key={line.lineNumber}
+                className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft px-4 py-3 text-sm"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -355,7 +361,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
                       {formatAccountRoleCodeLabel(line.roleCode)} | {formatLinePurpose(line.linePurpose)}
                     </p>
                     {line.isProvisional ? (
-                      <p className="text-amber-900">Cuenta provisional</p>
+                      <p className="text-amber-100">Cuenta provisional</p>
                     ) : null}
                   </div>
                   <div className="text-right">
@@ -373,7 +379,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
               </div>
             );
           })}
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-3 text-sm">
+          <div className="rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft px-4 py-3 text-sm">
             <p>
               Balance documento: {formatMoney(preview.journal.totalDebit, preview.summary.currencyCode)}
               {" / "}
@@ -397,7 +403,7 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
       ) : null}
 
       {activeTab === "vat" ? (
-        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">{preview.vat.label}</p>
           <p className="mt-2 text-[color:var(--color-muted)]">
             Tratamiento: {formatVatBucketLabel(preview.vat.bucket)}
@@ -420,14 +426,14 @@ export function AccountingImpactPreview({ preview }: AccountingImpactPreviewProp
       ) : null}
 
       {activeTab === "open_items" ? (
-        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm">
+        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm">
           <p className="font-semibold">{preview.openItems.expected ? "Se espera un saldo abierto" : "No se espera un saldo abierto"}</p>
           <p className="mt-2 text-[color:var(--color-muted)]">{preview.openItems.reason}</p>
         </div>
       ) : null}
 
       {activeTab === "warnings" ? (
-        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/75 p-4 text-sm text-[color:var(--color-muted)]">
+        <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] surface-card-dark-soft p-4 text-sm text-[color:var(--color-muted)]">
           {preview.warnings.length > 0 ? preview.warnings.join(" ") : "Sin observaciones adicionales."}
         </div>
       ) : null}

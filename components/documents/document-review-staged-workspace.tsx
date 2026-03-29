@@ -12,11 +12,16 @@ import { DocumentOriginalModalTrigger } from "@/components/documents/document-or
 import { RuleApplicationCard } from "@/components/documents/rule-application-card";
 import { SettlementMethodCard } from "@/components/documents/settlement-method-card";
 import { TemplatePreviewCard } from "@/components/documents/template-preview-card";
+import { AccountingTemplateCard } from "@/components/mobile/accounting-template-card";
+import { CTAButton } from "@/components/mobile/cta-button";
+import { MobileWizard } from "@/components/mobile/mobile-wizard";
+import { StatusBadge } from "@/components/mobile/status-badge";
 import type {
   AccountRoleCode,
   ApprovalLearningInput,
   ManualAccountRoleOverrides,
 } from "@/modules/accounting";
+import { getJournalTemplateByCode } from "@/modules/accounting/journal-templates";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
   buildDocumentOperationalHeaderView,
@@ -32,7 +37,12 @@ import { LoadingLink } from "@/components/ui/loading-link";
 import {
   formatAccountRoleCodeLabel,
   formatAccountTypeLabel,
+  formatDocumentRoleLabel,
+  formatOperationKindLabel,
+  formatPaymentTermsLabel,
+  formatPostingTemplateCodeLabel,
   formatSettlementEvidenceSourceLabel,
+  formatSettlementMethodLabel,
 } from "@/modules/presentation/labels";
 
 type StepCode =
@@ -173,6 +183,17 @@ type PendingAction =
   | "save_learning"
   | "reopen"
   | null;
+
+const surfaceCardClassName = "border border-[color:var(--color-border)] surface-card-dark";
+const surfaceCardSoftClassName = "border border-[color:var(--color-border)] surface-card-dark-soft";
+const surfaceCardSubtleClassName = "border border-[color:var(--color-border)] surface-card-dark-subtle";
+const dashedSurfaceCardClassName =
+  "border border-dashed border-[color:var(--color-border)] surface-card-dark-subtle";
+const inputSurfaceClassName =
+  "w-full rounded-2xl border border-[color:var(--color-border)] input-surface-dark px-4 py-3";
+const neutralBadgeClassName = "rounded-full badge-dark-neutral px-3 py-1 text-xs font-semibold";
+const successBadgeClassName = "rounded-full badge-dark-success px-3 py-1 text-xs font-semibold";
+const warningBadgeClassName = "rounded-full badge-dark-warning px-3 py-1 text-xs font-semibold";
 
 const documentRoleOptions: Array<{ value: DocumentRoleCandidate; label: string }> = [
   { value: "purchase", label: "Compra" },
@@ -631,49 +652,49 @@ function getChecklistToneClasses(input: {
 }) {
   if (input.done) {
     return {
-      badge: "bg-emerald-100 text-emerald-950",
-      row: "border-emerald-200 bg-emerald-50/40",
+      badge: "badge-dark-success",
+      row: "border-emerald-400/25 surface-card-state-success",
     };
   }
 
   if (input.severity === "blocking") {
     return {
-      badge: "bg-rose-100 text-rose-950",
-      row: "border-rose-200 bg-rose-50/40",
+      badge: "badge-dark-danger",
+      row: "border-rose-400/25 surface-card-state-danger",
     };
   }
 
   if (input.severity === "warning") {
     return {
-      badge: "bg-amber-100 text-amber-950",
-      row: "border-amber-200 bg-amber-50/40",
+      badge: "badge-dark-warning",
+      row: "border-amber-400/25 surface-card-state-warning",
     };
   }
 
   return {
-    badge: "bg-slate-100 text-slate-900",
-    row: "border-[color:var(--color-border)] bg-white/60",
+    badge: "badge-dark-neutral",
+    row: "border-[color:var(--color-border)] surface-card-dark-soft",
   };
 }
 
 function getReviewStepClasses(status: "done" | "current" | "pending") {
   if (status === "done") {
     return {
-      card: "border-emerald-200 bg-emerald-50/70",
-      badge: "bg-emerald-100 text-emerald-950",
+      card: "border-emerald-400/25 surface-card-state-success",
+      badge: "badge-dark-success",
     };
   }
 
   if (status === "current") {
     return {
-      card: "border-[rgba(124,157,255,0.34)] bg-[rgba(124,157,255,0.08)]",
-      badge: "bg-slate-950 text-white",
+      card: "border-[rgba(94,130,184,0.32)] surface-card-state-accent",
+      badge: "badge-dark-accent",
     };
   }
 
   return {
-    card: "border-[color:var(--color-border)] bg-white/65",
-    badge: "bg-slate-100 text-slate-900",
+    card: "border-[color:var(--color-border)] surface-card-dark-soft",
+    badge: "badge-dark-neutral",
   };
 }
 
@@ -712,6 +733,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     startsReopenedReview
     || isManualClassificationRequired(pageData)
     || isSettlementContextRequired(pageData);
+  const initialDuplicateStatus = pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear";
+  const shouldStartMobileOnFacts =
+    startsWithForcedManualFlow
+    || pageData.workflowState.stepStatuses.factual !== "completed"
+    || pageData.certaintySummary.level !== "green"
+    || initialDuplicateStatus !== "clear";
   const [identity, setIdentity] = useState({
     documentRole: pageData.draft.documentRole,
     documentType: pageData.draft.documentType,
@@ -770,6 +797,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const [showManualFlow, setShowManualFlow] = useState(
     startsConfirmedReview ? false : startsWithForcedManualFlow,
   );
+  const [mobileStep, setMobileStep] = useState<1 | 2>(
+    shouldStartMobileOnFacts ? 1 : 2,
+  );
   const [showCreateAccountStage, setShowCreateAccountStage] = useState(false);
 
   useEffect(() => {
@@ -808,6 +838,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     );
     if (pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final") {
       setShowManualFlow(false);
+      setMobileStep(2);
       setShowCreateAccountStage(false);
     } else if (
       pageData.document.status === "classified_with_open_revision"
@@ -815,6 +846,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       || isSettlementContextRequired(pageData)
     ) {
       setShowManualFlow(true);
+      setMobileStep(1);
+    } else {
+      setMobileStep(
+        pageData.workflowState.stepStatuses.factual !== "completed"
+          || pageData.certaintySummary.level !== "green"
+          || (pageData.derived.invoiceIdentity?.duplicateStatus ?? "clear") !== "clear"
+          ? 1
+          : 2,
+      );
     }
   }, [pageData]);
 
@@ -947,6 +987,99 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         const message = error instanceof Error ? error.message : "Error al guardar los datos.";
         setSectionStatus((current) => ({ ...current, facts: message }));
         setActionMessage(message);
+      }
+    });
+  }
+
+  function runSaveMobileStepOne() {
+    setPendingAction("stage1");
+    setSectionStatus((current) => ({
+      ...current,
+      facts: "Guardando confirmacion factual...",
+      manualStage1: "Guardando contexto del documento...",
+    }));
+    setActionMessage("");
+
+    startTransition(async () => {
+      try {
+        const factsResult = await saveDraftReviewAction({
+          stepCode: "fields",
+          payload: {
+            facts: buildFactPayload(),
+          },
+        });
+
+        if (!factsResult.ok) {
+          const message = buildBlockingMessage(factsResult.blockers);
+          setSectionStatus((current) => ({
+            ...current,
+            facts: message,
+            manualStage1: message,
+          }));
+          setActionMessage(message);
+          return;
+        }
+
+        const identityResult = await saveDraftReviewAction({
+          stepCode: "identity",
+          payload: {
+            documentRole: identity.documentRole,
+            documentType: identity.documentType.trim(),
+          },
+        });
+
+        if (!identityResult.ok) {
+          const message = buildBlockingMessage(identityResult.blockers);
+          setSectionStatus((current) => ({ ...current, manualStage1: message }));
+          setActionMessage(message);
+          return;
+        }
+
+        const operationResult = await saveDraftReviewAction({
+          stepCode: "operation_context",
+          payload: {
+            operationCategory: operationCategory || null,
+          },
+        });
+
+        if (!operationResult.ok) {
+          const message = buildBlockingMessage(operationResult.blockers);
+          setSectionStatus((current) => ({ ...current, manualStage1: message }));
+          setActionMessage(message);
+          return;
+        }
+
+        const contextResult = await saveDraftReviewAction({
+          stepCode: "accounting_context",
+          payload: buildAccountingContextPayload(),
+        });
+
+        if (!contextResult.ok) {
+          const message = buildBlockingMessage(contextResult.blockers);
+          setSectionStatus((current) => ({ ...current, manualStage1: message }));
+          setActionMessage(message);
+          return;
+        }
+
+        const message = "Paso 1 guardado. Ya puedes confirmar la decision contable.";
+        setSectionStatus((current) => ({
+          ...current,
+          facts: "Datos factuales guardados.",
+          manualStage1: message,
+        }));
+        setActionMessage(message);
+        setMobileStep(2);
+        router.refresh();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error al guardar el paso 1.";
+        setSectionStatus((current) => ({
+          ...current,
+          facts: message,
+          manualStage1: message,
+        }));
+        setActionMessage(message);
+      } finally {
+        setPendingAction(null);
       }
     });
   }
@@ -1346,6 +1479,58 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const pendingAssistantSuggestionsCount =
     pageData.assistantRail?.suggestions.filter((suggestion) => suggestion.resolutionStatus === "pending").length
     ?? 0;
+  const reviewConfidence =
+    pageData.certaintySummary.confidence
+    ?? pageData.latestClassificationRun?.confidence
+    ?? pageData.derived.assistantSuggestion.confidence
+    ?? pageData.draft.sourceConfidence
+    ?? null;
+  const currentTemplate =
+    getJournalTemplateByCode(
+      pageData.derived.settlementContext.templateCode ?? pageData.derived.journalSuggestion.templateCode,
+    );
+  const currentTemplateTitle =
+    currentTemplate?.label
+    ?? formatPostingTemplateCodeLabel(
+      pageData.derived.settlementContext.templateCode ?? pageData.derived.journalSuggestion.templateCode,
+    );
+  const currentTemplateMeta = Array.from(
+    new Set(
+      pageData.accountingImpactPreview.journal.lines
+        .map((line) =>
+          line.accountCode && line.accountName
+            ? `${line.accountCode} ${line.accountName}`
+            : line.accountName || line.accountCode || null)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ).slice(0, 4);
+  const mobileFastLaneReady =
+    !isConfirmedReview
+    && !showManualFlow
+    && decisionSnapshot.finalEligibility.ok
+    && pageData.certaintySummary.level === "green"
+    && decisionSnapshot.blockers.length === 0;
+  const mobileRoleAssignments = (
+    roleAssignments.filter((assignment) =>
+      assignment.assignment.editable || assignment.isMissing || assignment.isProvisional)
+  ).length > 0
+    ? roleAssignments.filter((assignment) =>
+      assignment.assignment.editable || assignment.isMissing || assignment.isProvisional)
+    : roleAssignments;
+  const mobileDecisionHint =
+    decisionSnapshot.blockers[0]
+    ?? decisionSnapshot.warnings[0]
+    ?? finalGate.summary
+    ?? "La sugerencia actual ya se puede resolver desde esta pantalla.";
+  const mobileConfidenceTone =
+    pageData.certaintySummary.level === "green"
+      ? "success"
+      : pageData.certaintySummary.level === "yellow"
+        ? "warning"
+        : "danger";
+  const mobileNeedsAccountReview = mobileRoleAssignments.some((assignment) =>
+    assignment.isMissing || assignment.isProvisional);
+  const mobileDuplicateBlocked = !isConfirmedReview && duplicateStatus !== "clear";
   const reviewSteps = [
     {
       key: "classification",
@@ -1395,9 +1580,754 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     },
   ] as const;
 
+  function renderMobileStepOne() {
+    return (
+      <div className="space-y-4">
+        <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-white">Confirma solo lo necesario</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                Corrige datos extraidos del comprobante. La decision contable sugerida queda para el paso 2.
+              </p>
+            </div>
+            <StatusBadge tone={mobileConfidenceTone}>
+              {formatPercentage(reviewConfidence)}
+            </StatusBadge>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">Moneda</p>
+            <p className="mt-2 font-semibold text-white">{reviewCurrencyCode}</p>
+            <p className="mt-1 text-[color:var(--color-muted)]">Tipo de cambio {visibleFx.valueText}</p>
+          </div>
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+            <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">Total</p>
+            <p className="mt-2 font-semibold text-white">{totalLabel}</p>
+            <p className="mt-1 text-[color:var(--color-muted)]">IVA {taxLabel}</p>
+          </div>
+        </div>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Proveedor</span>
+          <input
+            value={facts.issuer_name}
+            onChange={(event) => {
+              setFacts((current) => ({ ...current, issuer_name: event.target.value }));
+            }}
+            className={inputSurfaceClassName}
+          />
+        </label>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Nro. factura</span>
+          <input
+            value={facts.document_number}
+            onChange={(event) => {
+              setFacts((current) => ({ ...current, document_number: event.target.value }));
+            }}
+            className={inputSurfaceClassName}
+          />
+        </label>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Fecha</span>
+          <input
+            value={facts.document_date}
+            onChange={(event) => {
+              setFacts((current) => ({ ...current, document_date: event.target.value }));
+            }}
+            className={inputSurfaceClassName}
+          />
+        </label>
+
+        <div className="grid grid-cols-3 gap-3">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Subtotal</span>
+            <input
+              value={facts.subtotal}
+              onChange={(event) => {
+                setFacts((current) => ({ ...current, subtotal: event.target.value }));
+              }}
+              className={inputSurfaceClassName}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">IVA</span>
+            <input
+              value={facts.tax_amount}
+              onChange={(event) => {
+                setFacts((current) => ({ ...current, tax_amount: event.target.value }));
+              }}
+              className={inputSurfaceClassName}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Total</span>
+            <input
+              value={facts.total_amount}
+              onChange={(event) => {
+                setFacts((current) => ({ ...current, total_amount: event.target.value }));
+              }}
+              className={inputSurfaceClassName}
+            />
+          </label>
+        </div>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Concepto</span>
+          <textarea
+            value={accountingContext.userFreeText}
+            onChange={(event) => {
+              setAccountingContext((current) => ({
+                ...current,
+                userFreeText: event.target.value,
+              }));
+            }}
+            className="input-surface-dark min-h-24 w-full rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-sm"
+            placeholder="Describe brevemente que representa este documento."
+          />
+        </label>
+
+        <details className={`rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
+          <summary className="cursor-pointer text-sm font-semibold text-white">
+            Ajustes avanzados del documento
+          </summary>
+          <div className="mt-4 grid gap-4">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Rol documental</span>
+              <select
+                value={identity.documentRole}
+                onChange={(event) => {
+                  setIdentity((current) => ({
+                    ...current,
+                    documentRole: event.target.value as DocumentRoleCandidate,
+                  }));
+                }}
+                className={inputSurfaceClassName}
+              >
+                {documentRoleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Tipo documental</span>
+              <input
+                value={identity.documentType}
+                onChange={(event) => {
+                  setIdentity((current) => ({
+                    ...current,
+                    documentType: event.target.value,
+                  }));
+                }}
+                className={inputSurfaceClassName}
+              />
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Categoria operativa</span>
+              <select
+                value={operationCategory}
+                onChange={(event) => {
+                  setOperationCategory(event.target.value);
+                }}
+                className={inputSurfaceClassName}
+              >
+                <option value="">Selecciona una categoria</option>
+                {pageData.operationCategoryOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <div className={`rounded-2xl ${surfaceCardSubtleClassName} p-4 text-sm text-[color:var(--color-muted)]`}>
+          La sugerencia contable se conserva para el siguiente paso. Aqui solo confirmas hechos y, si hace falta, el encuadre documental basico.
+        </div>
+      </div>
+    );
+  }
+
+  function renderMobileStepTwo() {
+    return (
+      <div className="space-y-4">
+        <AccountingTemplateCard
+          title={currentTemplateTitle}
+          description={pageData.derived.journalSuggestion.explanation}
+          meta={currentTemplateMeta}
+          badgeLabel={pageData.certaintySummary.level === "green" ? "Sugerido" : "Revisar"}
+          badgeTone={mobileConfidenceTone}
+          selected
+        />
+        <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+          <p className="font-semibold text-white">Decision contable</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">
+            Ajusta la operacion o el medio de cobro/pago solo si la sugerencia no refleja lo que paso realmente.
+          </p>
+        </div>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Operacion contable</span>
+          <select
+            value={accountingContext.operationKind}
+            onChange={(event) => {
+              setAccountingContext((current) => ({
+                ...current,
+                operationKind: event.target.value,
+              }));
+            }}
+            className={inputSurfaceClassName}
+          >
+            <option value="">Selecciona una operacion</option>
+            {operationKindOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="grid gap-4">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Condicion</span>
+            <select
+              value={accountingContext.paymentTerms}
+              onChange={(event) => {
+                const nextPaymentTerms = event.target.value as "cash" | "credit" | "unknown";
+                setAccountingContext((current) => ({
+                  ...current,
+                  paymentTerms: nextPaymentTerms,
+                  settlementMethod:
+                    nextPaymentTerms === "credit"
+                      ? "unknown"
+                      : current.settlementMethod,
+                }));
+              }}
+              className={inputSurfaceClassName}
+            >
+              {paymentTermsOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {accountingContext.paymentTerms !== "credit" ? (
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Medio de cobro / pago</span>
+              <select
+                value={accountingContext.settlementMethod}
+                onChange={(event) => {
+                  setAccountingContext((current) => ({
+                    ...current,
+                    settlementMethod: event.target.value as
+                      | "cash"
+                      | "bank_transfer"
+                      | "card"
+                      | "check"
+                      | "mixed"
+                      | "unknown",
+                  }));
+                }}
+                className={inputSurfaceClassName}
+              >
+                {settlementMethodOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+          <p className="font-semibold text-white">Resolucion sugerida</p>
+          <p className="mt-2 text-[color:var(--color-muted)]">
+            {formatOperationKindLabel(
+              accountingContext.operationKind || pageData.derived.settlementContext.operationKind,
+            )}
+          </p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            {formatPaymentTermsLabel(accountingContext.paymentTerms)}
+            {" / "}
+            {formatSettlementMethodLabel(accountingContext.settlementMethod)}
+          </p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            Cuenta principal: {selectedAccountLabel}
+          </p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            {operationCategory
+              ? `Categoria ${pageData.operationCategoryOptions.find((option) => option.code === operationCategory)?.label ?? operationCategory}`
+              : "Categoria operativa por default"}
+          </p>
+        </div>
+
+        <details
+          className={`rounded-2xl ${surfaceCardSubtleClassName} p-4`}
+          open={mobileNeedsAccountReview}
+        >
+          <summary className="cursor-pointer text-sm font-semibold text-white">
+            Cuentas por rol
+          </summary>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-[color:var(--color-muted)]">
+              Ajusta cuentas solo si necesitas corregir la resolucion sugerida.
+            </p>
+            <StatusBadge tone={mobileNeedsAccountReview ? "warning" : "success"}>
+              {mobileNeedsAccountReview ? "Revisar" : "Listas"}
+            </StatusBadge>
+          </div>
+          <div className="mt-4 space-y-3">
+            {mobileRoleAssignments.map((roleAssignment) => (
+              <div
+                key={`mobile-${roleAssignment.assignment.roleCode}`}
+                className={`rounded-2xl border p-4 text-sm ${
+                  roleAssignment.isMissing
+                    ? "border-amber-400/25 surface-card-state-warning"
+                    : surfaceCardSoftClassName
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">
+                      {formatAccountRoleCodeLabel(roleAssignment.assignment.roleCode)}
+                    </p>
+                    <p className="mt-1 text-[color:var(--color-muted)]">
+                      {roleAssignment.effectiveLabel}
+                    </p>
+                  </div>
+                  {roleAssignment.isMissing ? (
+                    <StatusBadge tone="warning">Pendiente</StatusBadge>
+                  ) : roleAssignment.isProvisional ? (
+                    <StatusBadge>Provisoria</StatusBadge>
+                  ) : (
+                    <StatusBadge tone="success">Lista</StatusBadge>
+                  )}
+                </div>
+
+                <label className="mt-4 block space-y-2">
+                  <span className="font-medium">{roleAssignment.roleUi.label}</span>
+                  <select
+                    value={roleAssignment.overrideAccountId}
+                    onChange={(event) => {
+                      setAccountingContext((current) => ({
+                        ...current,
+                        manualRoleOverrides: {
+                          ...current.manualRoleOverrides,
+                          [roleAssignment.assignment.roleCode]: event.target.value,
+                        },
+                      }));
+                    }}
+                    className={inputSurfaceClassName}
+                  >
+                    <option value="">Usar cuenta actual del asiento</option>
+                    {roleAssignment.compatibleAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.code} - {account.name}
+                        {account.isProvisional ? " (provisoria)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <details className={`rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
+          <summary className="cursor-pointer text-sm font-semibold text-white">
+            Ver preview contable
+          </summary>
+          <div className="mt-4">
+            <AccountingImpactPreview preview={pageData.accountingImpactPreview} />
+          </div>
+        </details>
+
+        {pageData.canRunClassification ? (
+          <div className={`rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
+            <p className="text-sm font-semibold text-white">Shortcut</p>
+            <p className="mt-2 text-sm text-[color:var(--color-muted)]">
+              Si ajustaste la operacion y quieres refrescar la sugerencia antes de confirmar, recalcula desde aqui.
+            </p>
+            <div className="mt-4">
+              <CTAButton
+                tone="secondary"
+                disabled={isPending}
+                onClick={() => {
+                  runSimpleAction("classify", runClassificationAction);
+                }}
+              >
+                <>
+                  {pendingAction === "classify" && isPending ? <InlineSpinner /> : null}
+                  Recalcular sugerencia
+                </>
+              </CTAButton>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderMobileDuplicateResolution() {
+    return (
+      <section className="panel p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+              Bloqueo detectado
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-white">
+              Resolver posible duplicado
+            </h3>
+          </div>
+          <StatusBadge tone="danger">Duplicado</StatusBadge>
+        </div>
+
+        <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+          Este documento quedo marcado como {duplicateStatus.replace(/_/g, " ")}. Antes de confirmar, decide si se descarta, si es un falso positivo o si debe seguir con una justificacion.
+        </p>
+
+        <textarea
+          value={duplicateNote}
+          onChange={(event) => {
+            setDuplicateNote(event.target.value);
+          }}
+          className="input-surface-dark mt-4 min-h-28 w-full rounded-2xl border border-rose-400/30 px-4 py-3 text-sm"
+          placeholder="Nota breve para dejar trazabilidad de esta decision"
+        />
+
+        <div className="mt-4 space-y-3">
+          <CTAButton
+            tone="secondary"
+            disabled={isPending}
+            onClick={() => {
+              runDuplicateResolution("confirmed_duplicate");
+            }}
+          >
+            <>
+              {pendingDuplicateAction === "confirmed_duplicate" && isPending ? <InlineSpinner /> : null}
+              Confirmar duplicado
+            </>
+          </CTAButton>
+          <CTAButton
+            tone="secondary"
+            disabled={isPending}
+            onClick={() => {
+              runDuplicateResolution("false_positive");
+            }}
+          >
+            <>
+              {pendingDuplicateAction === "false_positive" && isPending ? <InlineSpinner /> : null}
+              Marcar falso positivo
+            </>
+          </CTAButton>
+          <CTAButton
+            disabled={isPending}
+            onClick={() => {
+              runDuplicateResolution("justified_non_duplicate");
+            }}
+          >
+            <>
+              {pendingDuplicateAction === "justified_non_duplicate" && isPending ? <InlineSpinner /> : null}
+              Justificar y seguir
+            </>
+          </CTAButton>
+          <DocumentOriginalModalTrigger
+            previewUrl={pageData.document.previewUrl}
+            mimeType={pageData.document.mimeType}
+            originalFilename={pageData.document.originalFilename}
+            triggerLabel="Ver documento original"
+            triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} w-full px-4 py-3 text-sm`}
+            modalTitle={pageData.document.originalFilename}
+            modalDescription="Archivo original subido por el usuario."
+          />
+        </div>
+      </section>
+    );
+  }
+
+  function renderMobileDecisionContent() {
+    if (isConfirmedReview) {
+      return (
+        <section className="panel p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+            Resultado final
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-white">
+            Documento confirmado
+          </h3>
+          <div className="mt-4 space-y-3">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+              <p className="font-semibold text-white">Estado</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">
+                {formatPostingStatus(pageData.document.postingStatus)}
+              </p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Cuenta principal: {selectedAccountLabel}
+              </p>
+            </div>
+            {pageData.canReopen ? (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  runSimpleAction("reopen", reopenDocumentAction);
+                }}
+                className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} w-full px-4 py-3 text-sm disabled:opacity-60`}
+              >
+                {pendingAction === "reopen" && isPending ? <InlineSpinner /> : null}
+                Reabrir revision
+              </button>
+            ) : null}
+          </div>
+        </section>
+      );
+    }
+
+    if (mobileDuplicateBlocked) {
+      return renderMobileDuplicateResolution();
+    }
+
+    if (mobileFastLaneReady) {
+      return (
+        <section className="panel p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Fast lane
+              </p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-white">
+                Documento listo para confirmar
+              </h3>
+            </div>
+            <StatusBadge tone="success">Sin conflictos</StatusBadge>
+          </div>
+
+          <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+            La sugerencia actual ya cumple las condiciones para cerrar el documento sin abrir pasos extra.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <AccountingTemplateCard
+              title={currentTemplateTitle}
+              description={pageData.derived.journalSuggestion.explanation}
+              meta={currentTemplateMeta}
+              badgeLabel={formatPercentage(reviewConfidence)}
+              badgeTone="success"
+              selected
+            />
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
+              <p className="font-semibold text-white">Resolucion sugerida</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{finalGate.summary}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3">
+            <CTAButton
+              disabled={!decisionSnapshot.finalEligibility.ok || isPending}
+              onClick={() => {
+                runConfirmFinal();
+              }}
+            >
+              <>
+                {pendingAction === "confirm_final" && isPending ? <InlineSpinner /> : null}
+                Confirmar
+              </>
+            </CTAButton>
+            <CTAButton
+              tone="secondary"
+              onClick={() => {
+                setShowManualFlow(true);
+                setMobileStep(1);
+              }}
+            >
+              Editar
+            </CTAButton>
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <MobileWizard
+        step={mobileStep}
+        totalSteps={2}
+        title={mobileStep === 1 ? "Confirmar datos" : "Asignar asiento"}
+        description={
+          mobileStep === 1
+            ? "Valida proveedor, comprobante, fecha, importes y concepto antes de seguir."
+            : "Confirma la sugerencia contable y ajusta cuentas solo si hace falta."
+        }
+        footerNote={(
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
+            {mobileStep === 1
+              ? sectionStatus.manualStage1 || "Paso 1 solo factual. La decision contable queda para el paso 2."
+              : sectionStatus.accounting || mobileDecisionHint}
+          </div>
+        )}
+        primaryAction={(
+          mobileStep === 1 ? (
+            <CTAButton
+              disabled={isPending}
+              onClick={() => {
+                runSaveMobileStepOne();
+              }}
+            >
+              <>
+                {pendingAction === "stage1" && isPending ? <InlineSpinner /> : null}
+                Guardar y seguir
+              </>
+            </CTAButton>
+          ) : (
+            <CTAButton
+              disabled={isPending}
+              onClick={() => {
+                if (shouldShowManualAssignmentCta) {
+                  runConfirmManualAssignment();
+                  return;
+                }
+
+                if (decisionSnapshot.finalEligibility.ok) {
+                  runConfirmFinal();
+                  return;
+                }
+
+                runSaveAccounting();
+              }}
+            >
+              <>
+                {isPending ? <InlineSpinner /> : null}
+                {shouldShowManualAssignmentCta
+                  ? "Confirmar asignacion"
+                  : decisionSnapshot.finalEligibility.ok
+                    ? "Confirmar"
+                    : "Guardar decision"}
+              </>
+            </CTAButton>
+          )
+        )}
+        secondaryAction={(
+          mobileStep === 1 ? (
+            <DocumentOriginalModalTrigger
+              previewUrl={pageData.document.previewUrl}
+              mimeType={pageData.document.mimeType}
+              originalFilename={pageData.document.originalFilename}
+              triggerLabel="Ver original"
+              triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} w-full px-4 py-3 text-sm`}
+              modalTitle={pageData.document.originalFilename}
+              modalDescription="Archivo original subido por el usuario."
+            />
+          ) : (
+            <CTAButton
+              tone="secondary"
+              onClick={() => {
+                if (!showManualFlow) {
+                  setShowManualFlow(true);
+                }
+                setMobileStep(1);
+              }}
+            >
+              Volver al paso 1
+            </CTAButton>
+          )
+        )}
+      >
+        {mobileStep === 1 ? renderMobileStepOne() : renderMobileStepTwo()}
+      </MobileWizard>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <section className="panel p-6" id="review-stage-classification">
+      <div className="lg:hidden space-y-4">
+        <section className="panel p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
+                Revision {pageData.draft.revisionNumber}
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-white">
+                {pageData.document.originalFilename}
+              </h2>
+            </div>
+            <StatusBadge tone={
+              isConfirmedReview
+                ? "success"
+                : mobileDuplicateBlocked
+                  ? "danger"
+                  : mobileFastLaneReady
+                    ? "accent"
+                    : mobileConfidenceTone
+            }>
+              {isConfirmedReview
+                ? "Confirmado"
+                : mobileDuplicateBlocked
+                  ? "Bloqueado"
+                  : mobileFastLaneReady
+                    ? "Fast lane"
+                    : operationalHeader.workflowLabel}
+            </StatusBadge>
+          </div>
+
+          <p className="mt-3 text-sm leading-7 text-[color:var(--color-muted)]">
+            {isConfirmedReview
+              ? "Documento ya confirmado."
+              : mobileDuplicateBlocked
+                ? "Antes de seguir, resuelve el posible duplicado desde esta misma pantalla."
+              : mobileFastLaneReady
+                ? "La IA ya dejo este documento listo para confirmar."
+                : "Flujo mobile de 2 pasos: confirmar datos y luego cerrar la decision contable."}
+          </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-3 text-sm`}>
+              <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">Documento</p>
+              <p className="mt-2 font-semibold text-white">{formatDocumentRoleLabel(pageData.draft.documentRole)}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">{pageData.draft.documentType || "Tipo pendiente"}</p>
+            </div>
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-3 text-sm`}>
+              <p className="text-xs uppercase tracking-[0.12em] text-[color:var(--color-muted)]">Monto</p>
+              <p className="mt-2 font-semibold text-white">{totalLabel}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">IVA {taxLabel}</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <DocumentOriginalModalTrigger
+              previewUrl={pageData.document.previewUrl}
+              mimeType={pageData.document.mimeType}
+              originalFilename={pageData.document.originalFilename}
+              triggerLabel="Ver documento original"
+              triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} w-full px-4 py-3 text-sm`}
+              modalTitle={pageData.document.originalFilename}
+              modalDescription="Archivo original subido por el usuario."
+            />
+          </div>
+        </section>
+
+        {actionMessage ? (
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
+            {actionMessage}
+          </div>
+        ) : null}
+
+        {renderMobileDecisionContent()}
+      </div>
+
+      <section className="hidden lg:block panel p-6" id="review-stage-classification">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
@@ -1424,7 +2354,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
             <p className="font-semibold">Documento</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
               {documentRoleOptions.find((option) => option.value === pageData.draft.documentRole)?.label}
@@ -1433,7 +2363,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               {pageData.draft.documentType || "Tipo pendiente"}
             </p>
           </div>
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
             <p className="font-semibold">Monto</p>
             <p className="mt-2 text-[color:var(--color-muted)]">Total documento: {totalLabel}</p>
             <p className="mt-1 text-[color:var(--color-muted)]">IVA documento: {taxLabel}</p>
@@ -1455,7 +2385,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">{visibleFx.detailText}</p>
           </div>
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
             <p className="font-semibold">Posteo</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
               {operationalHeader.postingStateLabel}
@@ -1466,7 +2396,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </div>
         </div>
 
-        <div className="mt-5 rounded-3xl border border-[color:var(--color-border)] bg-white/72 p-5">
+        <div className={`mt-5 rounded-3xl ${surfaceCardClassName} p-5`}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
@@ -1479,7 +2409,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 {operationalHeader.workflowSummary}
               </p>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
+            <span className={neutralBadgeClassName}>
               {operationalHeader.resolutionSourceLabel}
             </span>
           </div>
@@ -1492,7 +2422,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 <a
                   key={step.key}
                   href={step.href}
-                  className={`rounded-2xl border p-4 text-sm transition hover:bg-white/90 ${tone.card}`}
+                  className={`rounded-2xl border p-4 text-sm transition hover:border-[rgba(94,130,184,0.32)] hover:bg-[rgba(49,60,83,0.92)] ${tone.card}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-semibold text-white">{step.label}</p>
@@ -1506,43 +2436,43 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             })}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
-          <p className="font-semibold">Siguiente mejor accion</p>
-          <p className="mt-2 text-[color:var(--color-muted)]">
-            {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
-          </p>
+          <div className={`mt-4 rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm`}>
+            <p className="font-semibold">Siguiente mejor accion</p>
+            <p className="mt-2 text-[color:var(--color-muted)]">
+              {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
+            </p>
           </div>
 
-          <details className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/60 p-4">
+          <details className={`mt-4 rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
             <summary className="cursor-pointer text-sm font-semibold">
               Ver estado operativo, readiness y soporte
             </summary>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Estado workflow</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.workflowLabel}</p>
               </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Fuente de resolucion</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.resolutionSourceLabel}</p>
               </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Confianza</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.confidenceLabel}</p>
               </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Estado contable</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">{operationalHeader.postingStateLabel}</p>
               </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Provisional</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">
                   {decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado"}
                 </p>
                 <p className="mt-1 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
               </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+              <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Final</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">
                   {decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado"}
@@ -1552,7 +2482,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </div>
 
             {(pageData.launchScope.supportLevel !== "automatic" || pageData.importReviewPolicy.isImportFlow) ? (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="alert-dark-warning mt-4 rounded-2xl px-4 py-3 text-sm">
                 <p className="font-semibold">
                   {formatLaunchSupportLevelLabel(pageData.launchScope.supportLevel)}
                 </p>
@@ -1573,18 +2503,18 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </div>
 
       {actionMessage ? (
-          <div className="mt-5 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+          <div className={`mt-5 rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
             {actionMessage}
           </div>
         ) : null}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+      <div className="hidden gap-6 lg:grid xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <div className="space-y-6">
 
       {!isConfirmedReview && duplicateStatus !== "clear" ? (
-        <section className="panel border-rose-200 bg-rose-50/70 p-6">
-          <p className="text-sm font-semibold text-rose-900">
+        <section className="panel border-rose-400/30 surface-card-state-danger p-6">
+          <p className="text-sm font-semibold text-rose-50">
             Posible duplicado: {duplicateStatus.replace(/_/g, " ")}
           </p>
           <textarea
@@ -1592,7 +2522,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             onChange={(event) => {
               setDuplicateNote(event.target.value);
             }}
-            className="mt-4 min-h-24 w-full rounded-2xl border border-rose-200 bg-white/90 px-4 py-3 text-sm"
+            className="input-surface-dark mt-4 min-h-24 w-full rounded-2xl border border-rose-400/30 px-4 py-3 text-sm"
             placeholder="Nota de revision"
           />
           <div className="mt-4 flex flex-wrap gap-3">
@@ -1648,7 +2578,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 : pageData.classificationActionHint}
             </p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
+          <span className={neutralBadgeClassName}>
             {formatClassificationStatus(pageData.workflowState.classificationStatus)}
           </span>
         </div>
@@ -1659,8 +2589,8 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               key={roleAssignment.assignment.roleCode}
               className={`rounded-2xl border p-4 text-sm ${
                 roleAssignment.isMissing
-                  ? "border-amber-200 bg-amber-50/80"
-                  : "border-[color:var(--color-border)] bg-white/70"
+                  ? "border-amber-400/25 surface-card-state-warning"
+                  : surfaceCardSoftClassName
               }`}
             >
               <p className="font-semibold">
@@ -1673,7 +2603,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 {roleAssignment.effectiveLabel}
               </p>
               {roleAssignment.isMissing ? (
-                <p className="mt-2 text-amber-950">
+                <p className="mt-2 text-amber-100">
                   Falta resolver esta cuenta para completar el asiento.
                 </p>
               ) : roleAssignment.isProvisional ? (
@@ -1683,7 +2613,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               ) : null}
             </div>
           ))}
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
             <p className="font-semibold">Confianza</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
               {formatPercentage(
@@ -1692,7 +2622,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               )}
             </p>
           </div>
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+          <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
             <p className="font-semibold">Ultimo intento</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
               {pageData.latestClassificationRun
@@ -1755,7 +2685,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     documentRole: event.target.value as DocumentRoleCandidate,
                   }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                className={inputSurfaceClassName}
               >
                 {documentRoleOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -1774,7 +2704,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     documentType: event.target.value,
                   }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                className={inputSurfaceClassName}
                 placeholder="Ej. Factura, nota de credito, recibo"
               />
             </label>
@@ -1785,7 +2715,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 onChange={(event) => {
                   setOperationCategory(event.target.value);
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                className={inputSurfaceClassName}
               >
                 <option value="">Selecciona una categoria</option>
                 {pageData.operationCategoryOptions.map((option) => (
@@ -1808,7 +2738,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     operationKind: event.target.value,
                   }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                className={inputSurfaceClassName}
               >
                 <option value="">Selecciona una operacion</option>
                 {operationKindOptions.map((option) => (
@@ -1833,7 +2763,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                         : current.settlementMethod,
                   }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                className={inputSurfaceClassName}
               >
                 {paymentTermsOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -1859,7 +2789,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                         | "unknown",
                     }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                  className={inputSurfaceClassName}
                 >
                   {settlementMethodOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1869,11 +2799,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 </select>
               </label>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/50 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+              <div className={`rounded-2xl ${dashedSurfaceCardClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
                 En operaciones a credito, el medio real de cobro o pago se registra despues.
               </div>
             )}
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm`}>
               <p className="font-medium">Fuente de evidencia</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {formatSettlementEvidenceSourceLabel(accountingContext.settlementEvidenceSource || "none")}
@@ -1908,7 +2838,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     userFreeText: event.target.value,
                   }));
                 }}
-                className="min-h-24 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                className="input-surface-dark min-h-24 w-full rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-sm"
                 placeholder="Explica que es este documento y a que operacion del negocio pertenece."
               />
             </label>
@@ -1925,7 +2855,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     businessPurposeNote: event.target.value,
                   }));
                 }}
-                className="min-h-24 w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 text-sm"
+                className="input-surface-dark min-h-24 w-full rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-sm"
                 placeholder="Solo si hace falta, explica por que corresponde al negocio."
               />
             </label>
@@ -1962,7 +2892,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             </button>
           </div>
 
-          <details className="mt-6 rounded-2xl border border-[color:var(--color-border)] bg-white/55 p-4">
+          <details className={`mt-6 rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
             <summary className="cursor-pointer text-sm font-semibold">
               Corregir datos extraidos
             </summary>
@@ -1974,7 +2904,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, issuer_name: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -1984,7 +2914,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, issuer_tax_id: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -1994,7 +2924,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, document_number: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -2004,7 +2934,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, series: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
             </div>
@@ -2016,7 +2946,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, document_date: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -2026,7 +2956,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, subtotal: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -2036,7 +2966,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, tax_amount: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -2046,11 +2976,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   onChange={(event) => {
                     setFacts((current) => ({ ...current, total_amount: event.target.value }));
                   }}
-                  className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                  className={inputSurfaceClassName}
                 />
               </label>
             </div>
-            <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+            <div className={`mt-4 rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
               <p className="font-semibold">Valuacion fiscal del monto</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 Tipo de cambio: {visibleFx.valueText}
@@ -2115,7 +3045,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             {roleAssignments.map((roleAssignment) => (
               <div
                 key={roleAssignment.assignment.roleCode}
-                className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm"
+                className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -2127,11 +3057,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     </p>
                   </div>
                   {roleAssignment.isMissing ? (
-                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-950">
+                    <span className={warningBadgeClassName}>
                       Falta resolver
                     </span>
                   ) : roleAssignment.isProvisional ? (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-900">
+                    <span className={neutralBadgeClassName}>
                       Provisoria
                     </span>
                   ) : null}
@@ -2157,7 +3087,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                         },
                       }));
                     }}
-                    className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                    className={inputSurfaceClassName}
                   >
                     <option value="">Usar cuenta actual del asiento</option>
                     {roleAssignment.overrideAccountIncompatible && roleAssignment.overrideAccount ? (
@@ -2179,14 +3109,14 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 </p>
 
                 {roleAssignment.overrideAccountIncompatible && roleAssignment.overrideAccountTypeLabel ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <div className="alert-dark-warning mt-3 rounded-2xl px-4 py-3 text-sm">
                     La cuenta elegida actualmente ({roleAssignment.effectiveLabel}) es de tipo {roleAssignment.overrideAccountTypeLabel.toLowerCase()}
                     {" "}y no puede usarse como {roleAssignment.roleUi.label.toLowerCase()}.
                   </div>
                 ) : null}
 
                 {roleAssignment.compatibleAccounts.length === 0 ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  <div className={`mt-3 rounded-2xl ${dashedSurfaceCardClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
                     {roleAssignment.roleUi.emptyState}
                   </div>
                 ) : null}
@@ -2195,7 +3125,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </div>
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
-            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/60 p-4">
+            <div className={`rounded-3xl ${surfaceCardSubtleClassName} p-4`}>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
                 Preview actual del asiento
               </p>
@@ -2207,7 +3137,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </div>
             </div>
 
-            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5 text-sm">
+            <div className={`rounded-3xl ${surfaceCardClassName} p-5 text-sm`}>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
                 Estado de resolucion
               </p>
@@ -2219,7 +3149,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </p>
 
               <div className="mt-4 space-y-3">
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3`}>
                   <p className="font-semibold">Clasificacion</p>
                   <p className="mt-2 text-[color:var(--color-muted)]">
                     {decisionSnapshot.classificationResolved
@@ -2227,7 +3157,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                       : "Todavia no consolidada"}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3`}>
                   <p className="font-semibold">Ultimo motivo visible</p>
                   <p className="mt-2 text-[color:var(--color-muted)]">
                     {decisionSnapshot.blockers[0]
@@ -2235,7 +3165,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                       ?? "No hay blockers visibles en este momento."}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3">
+                <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-3`}>
                   <p className="font-semibold">Ultimo intento</p>
                   <p className="mt-2 text-[color:var(--color-muted)]">
                     {pageData.latestClassificationRun
@@ -2246,7 +3176,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </div>
 
               {shouldShowManualAssignmentCta ? (
-                <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sky-950">
+                <div className="alert-dark-info mt-5 rounded-2xl px-4 py-4">
                   <p className="font-semibold">Confirmar asignacion manual</p>
                   <p className="mt-2 text-sm leading-6">
                     Esta accion fija la asignacion efectiva actual como resolucion manual, limpia los bloqueos que dependan solo de baja confianza IA y deja rastro auditado.
@@ -2266,7 +3196,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   </div>
                 </div>
               ) : decisionSnapshot.resolutionSource === "manual" ? (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-950">
+                <div className="alert-dark-success mt-5 rounded-2xl px-4 py-4">
                   La resolucion visible ya quedo consolidada como revision manual.
                 </div>
               ) : null}
@@ -2342,7 +3272,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 onChange={(event) => {
                   setNewReviewAccount((current) => ({ ...current, code: event.target.value }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                className={inputSurfaceClassName}
                 placeholder={pageData.draft.documentRole === "sale" ? "Ej. 4105" : "Ej. 6105"}
               />
             </label>
@@ -2353,12 +3283,12 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 onChange={(event) => {
                   setNewReviewAccount((current) => ({ ...current, name: event.target.value }));
                 }}
-                className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/90 px-4 py-3"
+                className={inputSurfaceClassName}
                 placeholder="Nombre de la cuenta"
               />
             </label>
           </div>
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="alert-dark-warning mt-4 rounded-2xl px-4 py-3 text-sm">
             La cuenta se crea como cuenta postable de {primaryAccountUi.createKindLabel} y se usa solo en esta revision.
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
@@ -2402,7 +3332,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <div className="space-y-4">
-              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+              <div className={`rounded-3xl ${surfaceCardClassName} p-5`}>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
                   Resolver solo este documento
                 </p>
@@ -2415,11 +3345,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     ? "La resolucion visible ya quedo consolidada como revision manual."
                     : shouldShowManualAssignmentCta
                       ? "Todavia puedes confirmar manualmente esta asignacion antes de decidir si la guardas como criterio."
-                      : "Este documento ya tiene una fuente de resolucion visible y no necesita otra confirmacion manual ahora mismo."}
+                  : "Este documento ya tiene una fuente de resolucion visible y no necesita otra confirmacion manual ahora mismo."}
                 </p>
               </div>
 
-              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+              <div className={`rounded-3xl ${surfaceCardClassName} p-5`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
@@ -2430,11 +3360,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                     </h4>
                   </div>
                   {pageData.canSaveLearningRule ? (
-                    <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
+                    <span className={successBadgeClassName}>
                       Listo para guardar
                     </span>
                   ) : (
-                    <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-100">
+                    <span className={warningBadgeClassName}>
                       Aun no habilitado
                     </span>
                   )}
@@ -2463,13 +3393,13 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                         className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
                           learningScope === option.scope
                             ? "border-transparent bg-[color:var(--color-accent)] text-white"
-                            : "border-[color:var(--color-border)] bg-white/80"
+                            : `${surfaceCardSoftClassName}`
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-medium">{option.label}</span>
                           {option.recommended ? (
-                            <span className="rounded-full bg-black/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
+                            <span className="rounded-full bg-slate-950/30 px-2 py-1 text-[11px] uppercase tracking-[0.18em]">
                               recomendado
                             </span>
                           ) : null}
@@ -2499,7 +3429,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                       onChange={(event) => {
                         setLearnedConceptName(event.target.value);
                       }}
-                      className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
+                      className={inputSurfaceClassName}
                       placeholder={pageData.learningSuggestions.suggestedConceptName ?? "Ej. Servicios administrativos"}
                     />
                   </label>
@@ -2516,14 +3446,14 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   </button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-[color:var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                <div className={`mt-4 rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm text-[color:var(--color-muted)]`}>
                   {selectedLearningOption
                     ? `Alcance seleccionado: ${selectedLearningOption.label}. ${selectedLearningOption.reason}`
                     : "Selecciona un alcance reusable antes de guardar el criterio."}
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-5">
+              <div className={`rounded-3xl ${surfaceCardClassName} p-5`}>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
                   Aplicar en lote desde la bandeja
                 </p>
@@ -2566,7 +3496,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           </p>
 
           <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
               <p className="font-semibold">Estado final</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {formatPostingStatus(pageData.document.postingStatus)}
@@ -2575,7 +3505,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 Draft {formatDraftStatus(pageData.draft.status)}
               </p>
             </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
               <p className="font-semibold">Ultima confirmacion</p>
               <p className="mt-2 text-[color:var(--color-muted)]">
                 {latestConfirmation ? formatConfirmationType(latestConfirmation.type) : "Confirmacion registrada"}
@@ -2586,7 +3516,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   : "Sin detalle disponible"}
               </p>
             </div>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
+            <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
               <p className="font-semibold">Cuenta principal final</p>
               <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
               <p className="mt-1 text-[color:var(--color-muted)]">
@@ -2632,7 +3562,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
 
         {!isConfirmedReview ? (
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/65 p-4">
+            <div className={`rounded-3xl ${surfaceCardSoftClassName} p-4`}>
               <p className="text-sm font-semibold">Checklist de cierre</p>
               <div className="mt-4 space-y-3">
                 {decisionSnapshot.checklist.map((item) => {
@@ -2668,18 +3598,18 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </div>
             </div>
 
-            <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/65 p-4">
+            <div className={`rounded-3xl ${surfaceCardSoftClassName} p-4`}>
               <p className="text-sm font-semibold">Motivos de bloqueo y readiness</p>
 
               <div className="mt-4 space-y-4">
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-4 text-sm">
+                <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-4 text-sm`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold">Postear provisional</p>
                       <p className="mt-2 text-[color:var(--color-muted)]">{provisionalGate.label}</p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      provisionalGate.ok ? "bg-emerald-100 text-emerald-950" : "bg-rose-100 text-rose-950"
+                      provisionalGate.ok ? "badge-dark-success" : "badge-dark-danger"
                     }`}>
                       {provisionalGate.ok ? "Listo" : "Bloqueado"}
                     </span>
@@ -2697,14 +3627,14 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/75 px-4 py-4 text-sm">
+                <div className={`rounded-2xl ${surfaceCardSoftClassName} px-4 py-4 text-sm`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold">Confirmar final</p>
                       <p className="mt-2 text-[color:var(--color-muted)]">{finalGate.label}</p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      finalGate.ok ? "bg-emerald-100 text-emerald-950" : "bg-rose-100 text-rose-950"
+                      finalGate.ok ? "badge-dark-success" : "badge-dark-danger"
                     }`}>
                       {finalGate.ok ? "Listo" : "Bloqueado"}
                     </span>
@@ -2723,15 +3653,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
                 </div>
 
                 {decisionSnapshot.blockers.length > 0 ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+                  <div className="alert-dark-danger rounded-2xl px-4 py-3 text-sm">
                     {decisionSnapshot.blockers.join(" ")}
                   </div>
                 ) : decisionSnapshot.warnings.length > 0 ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <div className="alert-dark-warning rounded-2xl px-4 py-3 text-sm">
                     {decisionSnapshot.warnings.join(" ")}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                  <div className="alert-dark-success rounded-2xl px-4 py-3 text-sm">
                     No quedan blockers ni warnings visibles que impidan avanzar.
                   </div>
                 )}
@@ -2800,7 +3730,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           ) : null}
         </div>
 
-        <details className="mt-6 rounded-2xl border border-[color:var(--color-border)] bg-white/55 p-4">
+        <details className={`mt-6 rounded-2xl ${surfaceCardSubtleClassName} p-4`}>
           <summary className="cursor-pointer text-sm font-semibold">Texto extraido y detalle tecnico</summary>
           <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-950 px-4 py-3 text-xs text-slate-100">
             {pageData.draft.extractedText || "Sin texto extraido."}

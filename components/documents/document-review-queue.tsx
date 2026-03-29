@@ -47,7 +47,7 @@ export function DocumentReviewQueue({
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-6">
         {groupedBuckets.map((bucket) => (
           <article key={bucket.key} className="metric-card">
             <span className="metric-card__label">{bucket.label}</span>
@@ -78,14 +78,14 @@ export function DocumentReviewQueue({
           <LoadingLink
             href={firstActionableDocument?.processedHref ?? `/app/o/${slug}/documents`}
             pendingLabel="Abriendo..."
-            className="ui-button ui-button--primary"
+            className="ui-button ui-button--primary w-full sm:w-auto"
           >
             {firstActionableDocument ? "Abrir siguiente pendiente" : "Ir a Documentos"}
           </LoadingLink>
           <LoadingLink
             href={`/app/o/${slug}/documents/pending-assignment`}
             pendingLabel="Abriendo lotes..."
-            className="ui-button ui-button--secondary"
+            className="ui-button ui-button--secondary w-full sm:w-auto"
           >
             {assignmentDocuments.length > 0 ? "Aplicar decision a lote" : "Abrir cola de lotes"}
           </LoadingLink>
@@ -169,7 +169,7 @@ export function DocumentReviewQueue({
                         <LoadingLink
                           href={document.processedHref ?? `/app/o/${slug}/documents`}
                           pendingLabel="Abriendo..."
-                          className="ui-button ui-button--primary"
+                          className="ui-button ui-button--primary w-full"
                         >
                           {document.processedHref ? "Abrir wizard" : "Ir a Documentos"}
                         </LoadingLink>
@@ -177,7 +177,7 @@ export function DocumentReviewQueue({
                           <LoadingLink
                             href={document.processedHref}
                             pendingLabel="Abriendo..."
-                            className="ui-button ui-button--secondary"
+                            className="ui-button ui-button--secondary w-full"
                           >
                             Ver detalle
                           </LoadingLink>

@@ -131,7 +131,7 @@ export default async function PendingAssignmentPage({
             </div>
             <Link
               href={`/app/o/${organization.slug}/review`}
-              className="ui-button ui-button--secondary"
+              className="ui-button ui-button--secondary w-full sm:w-auto"
             >
               Volver a Revision
             </Link>
@@ -144,7 +144,7 @@ export default async function PendingAssignmentPage({
           ) : null}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="ui-panel">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
               Documentos en cola
@@ -189,7 +189,7 @@ export default async function PendingAssignmentPage({
               No hay documentos pendientes de asignacion ahora mismo.
             </div>
           ) : (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {groups.map((group) => (
                 <div
                   key={group.key}

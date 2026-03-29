@@ -177,7 +177,7 @@ export default async function OrganizationSettingsPage({
       description="Configuracion guiada por tabs: empresa, perfil fiscal, perfil de negocio, plan contable, integraciones y soporte avanzado."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
     >
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
         <article className="metric-card">
           <span className="metric-card__label">Perfil activo</span>
           <span className="metric-card__value">
@@ -255,13 +255,13 @@ export default async function OrganizationSettingsPage({
           <span className="ui-filter">{settingsTabs.find((tab) => tab.key === activeSettingsTab)?.label}</span>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-6">
+        <div className="mobile-nav -mx-1 mt-4 flex gap-3 overflow-x-auto px-1 pb-1 xl:mx-0 xl:grid xl:grid-cols-6 xl:overflow-visible xl:px-0 xl:pb-0">
           {settingsTabs.map((tab) => (
             <LoadingLink
               key={tab.key}
               href={buildSettingsTabHref(organization.slug, tab.key)}
               pendingLabel="Abriendo..."
-              className={activeSettingsTab === tab.key ? "rounded-3xl border border-transparent bg-[color:var(--color-accent)] p-4 text-white" : "rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4"}
+              className={activeSettingsTab === tab.key ? "min-w-[220px] shrink-0 rounded-3xl border border-transparent bg-[color:var(--color-accent)] p-4 text-white xl:min-w-0" : "min-w-[220px] shrink-0 rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 xl:min-w-0"}
             >
               <p className="text-sm font-semibold">{tab.label}</p>
               <p className={`mt-2 text-sm ${activeSettingsTab === tab.key ? "text-white/80" : "text-[color:var(--color-muted)]"}`}>

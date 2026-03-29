@@ -149,21 +149,21 @@ export default async function OrganizationDocumentsPage({
                 <LoadingLink
                   href={`/app/o/${organization.slug}/review`}
                   pendingLabel="Abriendo revision..."
-                  className="ui-button ui-button--primary"
+                  className="ui-button ui-button--primary w-full sm:w-auto"
                 >
                   Ir a Revision
                 </LoadingLink>
                 <LoadingLink
                   href={`/app/o/${organization.slug}/audit`}
                   pendingLabel="Abriendo importacion..."
-                  className="ui-button ui-button--secondary"
+                  className="ui-button ui-button--secondary w-full sm:w-auto"
                 >
                   Importacion masiva
                 </LoadingLink>
                 <LoadingLink
                   href={`/app/o/${organization.slug}/documents?tab=international`}
                   pendingLabel="Abriendo..."
-                  className="ui-button ui-button--secondary"
+                  className="ui-button ui-button--secondary w-full sm:w-auto"
                 >
                   Operaciones internacionales
                 </LoadingLink>
@@ -185,7 +185,7 @@ export default async function OrganizationDocumentsPage({
               <LoadingLink
                 href={`/app/o/${organization.slug}/review`}
                 pendingLabel="Abriendo revision..."
-                className="ui-button ui-button--secondary"
+                className="ui-button ui-button--secondary w-full sm:w-auto"
               >
                 Abrir Revision
               </LoadingLink>
@@ -193,7 +193,7 @@ export default async function OrganizationDocumentsPage({
             <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <article className="metric-card">
               <span className="metric-card__label">En procesamiento</span>
               <span className="metric-card__value">{secondaryCountMap.get("processing") ?? 0}</span>
@@ -231,13 +231,13 @@ export default async function OrganizationDocumentsPage({
               <LoadingLink
                 href={`/app/o/${organization.slug}/review`}
                 pendingLabel="Abriendo revision..."
-                className="ui-button ui-button--primary"
+                className="ui-button ui-button--primary w-full sm:w-auto"
               >
                 Ir a Revision
               </LoadingLink>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
                 <p className="font-semibold text-white">1. Confirmar entrada</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">
@@ -297,7 +297,7 @@ export default async function OrganizationDocumentsPage({
                       <LoadingLink
                         href={document.processedHref ?? `/app/o/${organization.slug}/review`}
                         pendingLabel="Abriendo..."
-                        className="ui-button ui-button--secondary"
+                        className="ui-button ui-button--secondary w-full sm:w-auto"
                       >
                         {document.processedHref ? "Abrir en Revision" : "Ver cola"}
                       </LoadingLink>

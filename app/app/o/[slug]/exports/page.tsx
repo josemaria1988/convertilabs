@@ -115,7 +115,7 @@ export default async function OrganizationExportsPage({
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
-          <section className="grid gap-3 md:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <article className="metric-card">
               <span className="metric-card__label">Lineas exportables</span>
               <span className="metric-card__value">{previewDataset.rows.length}</span>
@@ -163,7 +163,7 @@ export default async function OrganizationExportsPage({
                     Cambia periodo y scope para revisar el set de asientos antes de exportar.
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-white">Ano</span>
                     <input
@@ -197,7 +197,7 @@ export default async function OrganizationExportsPage({
                     </select>
                   </label>
                 </div>
-                <SubmitButton formMethod="get" pendingLabel="Actualizando..." className="ui-button ui-button--secondary">
+                <SubmitButton formMethod="get" pendingLabel="Actualizando..." className="ui-button ui-button--secondary w-full sm:w-auto">
                   Actualizar preview
                 </SubmitButton>
               </form>
@@ -210,7 +210,7 @@ export default async function OrganizationExportsPage({
                     Crea el archivo y lo deja disponible en el bucket de exportaciones.
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-white">Ano</span>
                     <input

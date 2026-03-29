@@ -228,21 +228,21 @@ export default async function OrganizationTaxPage({
             </div>
 
             <form className="mt-4 flex flex-wrap items-end gap-3">
-              <label className="space-y-2 text-sm">
+              <label className="w-full space-y-2 text-sm sm:w-auto">
                 <span className="font-medium text-white">Ano</span>
-                <input name="periodYear" defaultValue={selectedYear} className="min-w-[120px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none" />
+                <input name="periodYear" defaultValue={selectedYear} className="min-w-[120px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none sm:min-w-[120px] w-full" />
               </label>
-              <label className="space-y-2 text-sm">
+              <label className="w-full space-y-2 text-sm sm:w-auto">
                 <span className="font-medium text-white">Mes</span>
-                <input name="periodMonth" defaultValue={selectedMonth} className="min-w-[120px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none" />
+                <input name="periodMonth" defaultValue={selectedMonth} className="min-w-[120px] rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[14px] text-white outline-none sm:min-w-[120px] w-full" />
               </label>
               <input type="hidden" name="view" value={activeView} />
-              <SubmitButton formMethod="get" pendingLabel="Cambiando..." className="ui-button ui-button--secondary">
+              <SubmitButton formMethod="get" pendingLabel="Cambiando..." className="ui-button ui-button--secondary w-full sm:w-auto">
                 Cambiar periodo
               </SubmitButton>
             </form>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <LoadingLink
                 href={buildTaxPageHref(organization.slug, { periodYear: selectedYear, periodMonth: selectedMonth, view: "resolve" })}
                 pendingLabel="Abriendo pendientes..."
@@ -266,7 +266,7 @@ export default async function OrganizationTaxPage({
             </div>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <article className="metric-card"><span className="metric-card__label">Debito</span><span className="metric-card__value">{formatAmount(displayOutputVat)}</span></article>
             <article className="metric-card"><span className="metric-card__label">Credito</span><span className="metric-card__value">{formatAmount(displayInputVatCreditable)}</span></article>
             <article className="metric-card"><span className="metric-card__label">IVA neto</span><span className="metric-card__value">{formatAmount(displayNetVatPayable)}</span></article>
@@ -308,7 +308,7 @@ export default async function OrganizationTaxPage({
                       }}
                       className="mt-4"
                     >
-                      <SubmitButton pendingLabel="Generando..." className="ui-button ui-button--primary">
+                      <SubmitButton pendingLabel="Generando..." className="ui-button ui-button--primary w-full sm:w-auto">
                         {selectedRun ? "Regenerar IVA definitivo" : "Generar IVA definitivo"}
                       </SubmitButton>
                     </form>
@@ -327,7 +327,7 @@ export default async function OrganizationTaxPage({
                 </div>
               </div>
               {isClosedRun ? (
-                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4"><p className="text-[13px] text-[color:var(--color-muted)]">Debito</p><p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayOutputVat)}</p></div>
                   <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4"><p className="text-[13px] text-[color:var(--color-muted)]">Credito</p><p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayInputVatCreditable)}</p></div>
                   <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4"><p className="text-[13px] text-[color:var(--color-muted)]">Neto</p><p className="mt-2 text-lg font-semibold text-white">{formatAmount(displayNetVatPayable)}</p></div>
