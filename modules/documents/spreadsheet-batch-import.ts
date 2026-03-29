@@ -7,6 +7,7 @@ import { createStructuredOpenAIResponse } from "@/lib/llm/openai-responses";
 import {
   buildInvoiceIdentityResult,
   buildDraftFieldsPayload,
+  findExactInvoiceDuplicateDocumentId,
   normalizeDocumentNumber,
   normalizeTextToken,
   roundCurrency,
@@ -128,6 +129,22 @@ export async function findDuplicateSpreadsheetImportDocument(input: {
   organizationId: string;
   row: Pick<DocumentSpreadsheetImportRow, "documentRole" | "facts">;
 }) {
+  const identityDuplicateDocumentId = await findExactInvoiceDuplicateDocumentId(
+    input.supabase,
+    {
+      organizationId: input.organizationId,
+      facts: input.row.facts,
+    },
+  );
+
+  if (identityDuplicateDocumentId) {
+    return {
+      documentId: identityDuplicateDocumentId,
+      documentDate: input.row.facts.document_date ?? null,
+      matchedOn: "invoice_identity",
+    } satisfies SpreadsheetImportDuplicateMatch;
+  }
+
   const numberCandidates = buildSpreadsheetDuplicateNumberCandidates(input.row.facts);
   const totalAmount =
     typeof input.row.facts.total_amount === "number"
@@ -136,37 +153,6 @@ export async function findDuplicateSpreadsheetImportDocument(input: {
 
   if (numberCandidates.size === 0 || totalAmount === null) {
     return null;
-  }
-
-  const { data: identityRows, error: identityError } = await input.supabase
-    .from("document_invoice_identities")
-    .select("document_id, document_date, document_number_normalized, total_amount")
-    .eq("organization_id", input.organizationId)
-    .in("document_number_normalized", [...numberCandidates])
-    .order("created_at", { ascending: true })
-    .limit(12);
-
-  if (identityError) {
-    throw new Error(identityError.message);
-  }
-
-  const identityMatch = (((identityRows as Array<{
-    document_id: string;
-    document_date: string | null;
-    document_number_normalized: string | null;
-    total_amount: number | null;
-  }> | null) ?? [])).find((row) =>
-    row.document_number_normalized
-    && numberCandidates.has(row.document_number_normalized)
-    && typeof row.total_amount === "number"
-    && roundCurrency(row.total_amount) === totalAmount);
-
-  if (identityMatch) {
-    return {
-      documentId: identityMatch.document_id,
-      documentDate: identityMatch.document_date,
-      matchedOn: "invoice_identity",
-    } satisfies SpreadsheetImportDuplicateMatch;
   }
 
   const { data: documentRows, error: documentError } = await input.supabase

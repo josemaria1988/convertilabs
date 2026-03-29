@@ -1141,10 +1141,28 @@ function buildWorkspaceExtractionState(input: {
   const metadata = asRecord(input.metadata);
   const uploadError = asString(metadata.upload_error);
   const processingError = asString(metadata.processing_error);
+  const duplicateRejectionMessage =
+    asString(metadata.duplicate_rejection_message)
+    ?? (
+      input.documentStatus === "duplicate"
+        ? "El documento fue rechazado porque ya existe una factura equivalente."
+        : null
+    );
   const processingStage = asString(metadata.processing_error_stage)
     ?? input.processingRun?.failure_stage
     ?? null;
   const isStale = isDocumentProcessingStaleReason(processingStage);
+
+  if (input.documentStatus === "duplicate") {
+    return {
+      status: "error" as const,
+      label: "Duplicado rechazado",
+      failureMessage: duplicateRejectionMessage,
+      canProcess: false,
+      inFlight: false,
+      isStale: false,
+    };
+  }
 
   if (
     [
@@ -1930,7 +1948,17 @@ async function persistDraftArtifacts(
     fx_rate_bcu_value: derived.journalSuggestion.fxRateBcuValue,
     fx_rate_bcu_date_used: derived.journalSuggestion.fxRateBcuDateUsed,
     fx_rate_bcu_series: derived.journalSuggestion.fxRateBcuSeries,
-    fx_rate_document_value: derived.monetarySnapshot?.fx.documentValue ?? derived.journalSuggestion.fxRate,
+    fx_rate_document_value:
+      derived.monetarySnapshot?.fx.documentValue
+      ?? (hasResolvedDocumentFx({
+        source: derived.journalSuggestion.fxRateSource,
+        rate: derived.journalSuggestion.fxRate,
+        currencyCode: derived.journalSuggestion.currencyCode,
+        functionalCurrencyCode: derived.journalSuggestion.functionalCurrencyCode,
+        blockingReasons: derived.monetarySnapshot?.fx.blockingReasons ?? [],
+      })
+        ? derived.journalSuggestion.fxRate
+        : null),
     fx_rate_document_date: derived.monetarySnapshot?.fx.documentDate ?? facts.document_date ?? null,
     fx_rate_source: derived.journalSuggestion.fxRateSource,
     fx_rate_override_reason: derived.monetarySnapshot?.fx.overrideReason ?? null,
@@ -1985,6 +2013,35 @@ const DEFAULT_DOCUMENT_WORKSPACE_PAGE_SIZE = 30;
 function unique(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value && value.trim()))),
+  );
+}
+
+function hasResolvedDocumentFx(input: {
+  source: string | null | undefined;
+  rate: number | null | undefined;
+  currencyCode: string | null | undefined;
+  functionalCurrencyCode: string | null | undefined;
+  blockingReasons: string[];
+}) {
+  const currencyCode = input.currencyCode?.trim().toUpperCase() || "UYU";
+  const functionalCurrencyCode = input.functionalCurrencyCode?.trim().toUpperCase() || "UYU";
+
+  if (currencyCode === functionalCurrencyCode) {
+    return true;
+  }
+
+  if (input.blockingReasons.length > 0) {
+    return false;
+  }
+
+  return (
+    (input.source === "bcu"
+      || input.source === "document_import"
+      || input.source === "manual_override"
+      || input.source === "cfe")
+    && typeof input.rate === "number"
+    && Number.isFinite(input.rate)
+    && input.rate > 0
   );
 }
 
@@ -2273,7 +2330,7 @@ function buildWorkspaceOperationalState(input: {
       : null,
     input.duplicateStatus === "suspected_duplicate"
       ? "Duplicado pendiente de resolver."
-      : input.duplicateStatus === "confirmed_duplicate"
+      : input.duplicateStatus === "confirmed_duplicate" || input.row.status === "duplicate"
         ? "Duplicado confirmado."
         : null,
   ]);
@@ -2492,7 +2549,10 @@ async function buildOrganizationWorkspaceDocumentList(input: {
     })(),
     ...(() => {
       const decision = latestDecisionLogByDocumentId.get(row.id);
-      const duplicateStatus = duplicateStatusByDocumentId.get(row.id) ?? null;
+      const duplicateStatus =
+        duplicateStatusByDocumentId.get(row.id)
+        ?? asString(asRecord(row.metadata).duplicate_status)
+        ?? null;
       const operationalFlags = parseDocumentOperationalFlags(row.metadata);
       const operationalState = buildWorkspaceOperationalState({
         row,

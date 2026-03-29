@@ -76,6 +76,19 @@ function normalizePositiveRate(value: number | null | undefined) {
     : null;
 }
 
+function hasFunctionalFxResolution(input: {
+  currencyCode: string;
+  functionalCurrencyCode: string;
+  rate: number;
+  blockingReasons: string[];
+}) {
+  if (input.currencyCode === input.functionalCurrencyCode) {
+    return true;
+  }
+
+  return input.blockingReasons.length === 0 && input.rate > 0;
+}
+
 function buildBcuLookupUnavailableReason(documentDate: string | null | undefined) {
   return documentDate
     ? `No pudimos consultar la cotizacion BCU para resolver el tipo de cambio fiscal previo al ${documentDate}.`
@@ -230,7 +243,7 @@ export async function resolveFiscalFxPolicy(input: {
       currencyCode,
       functionalCurrencyCode,
       source: "document_default",
-      rate: 1,
+      rate: 0,
       bcuValue: null,
       bcuDateUsed: null,
       bcuSeries: null,
@@ -272,7 +285,7 @@ export async function resolveFiscalFxPolicy(input: {
       currencyCode,
       functionalCurrencyCode,
       source: "document_default",
-      rate: 1,
+      rate: 0,
       bcuValue: null,
       bcuDateUsed: null,
       bcuSeries: null,
@@ -317,15 +330,22 @@ export async function buildDocumentMonetarySnapshot(input: {
   const netAmountOriginal = asNumber(input.facts.subtotal) ?? 0;
   const taxAmountOriginal = asNumber(input.facts.tax_amount) ?? 0;
   const totalAmountOriginal = asNumber(input.facts.total_amount) ?? 0;
+  const functionalFxResolved = hasFunctionalFxResolution({
+    currencyCode: fx.currencyCode,
+    functionalCurrencyCode: fx.functionalCurrencyCode,
+    rate: fx.rate,
+    blockingReasons: fx.blockingReasons,
+  });
+  const functionalRate = functionalFxResolved ? fx.rate : 0;
 
   return {
     currencyCode: fx.currencyCode,
     netAmountOriginal: roundCurrency(netAmountOriginal),
     taxAmountOriginal: roundCurrency(taxAmountOriginal),
     totalAmountOriginal: roundCurrency(totalAmountOriginal),
-    netAmountUyu: roundCurrency(netAmountOriginal * fx.rate),
-    taxAmountUyu: roundCurrency(taxAmountOriginal * fx.rate),
-    totalAmountUyu: roundCurrency(totalAmountOriginal * fx.rate),
+    netAmountUyu: roundCurrency(netAmountOriginal * functionalRate),
+    taxAmountUyu: roundCurrency(taxAmountOriginal * functionalRate),
+    totalAmountUyu: roundCurrency(totalAmountOriginal * functionalRate),
     fx,
   } satisfies DocumentMonetarySnapshot;
 }

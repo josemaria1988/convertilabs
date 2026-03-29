@@ -152,10 +152,21 @@ Para carga binaria:
 Flujo:
 
 1. upload;
-2. storage privado;
-3. procesamiento IA;
-4. draft persistido;
-5. derivacion a revision.
+2. validacion temprana de duplicado exacto por hash cuando el cliente puede calcularlo;
+3. storage privado;
+4. procesamiento IA;
+5. rechazo duro si ya existe la misma factura por proveedor o emisor + numero + monto total;
+6. draft persistido solo si el caso sigue siendo valido;
+7. derivacion a revision.
+
+Regla dura de intake:
+
+- no aceptar como documento operativo normal un archivo ya cargado;
+- no aceptar como documento operativo normal una factura ya existente aunque el archivo sea distinto;
+- `mismo nombre de archivo` no es criterio suficiente;
+- el criterio de identidad fuerte es proveedor o emisor normalizado + numero normalizado + monto total + moneda;
+- duplicados exactos se rechazan antes de entrar al reviewer;
+- duplicados difusos o sospechosos pueden seguir existiendo como bloqueo revisable.
 
 ### B. Auditoria / Importacion masiva
 
@@ -191,6 +202,11 @@ La superficie `Review` debe priorizar buckets accionables:
 - Listos para final
 
 `Procesando` y `Finalizados` pueden existir, pero no deben competir visualmente con el trabajo diario.
+
+Importante:
+
+- un documento rechazado por duplicado exacto no debe comportarse como `pendiente`;
+- debe verse como bloqueado o descartado, con motivo explicito y referencia al documento existente cuando sea posible.
 
 ## 6. Estados canonicos visibles
 

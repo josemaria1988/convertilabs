@@ -157,6 +157,15 @@ function formatUploadFileLabel(file: File) {
   return file.webkitRelativePath?.trim() || file.name;
 }
 
+async function computeFileSha256(file: File) {
+  const bytes = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function uploadFileToSignedUrl(input: {
   signedUploadUrl: string;
   file: File;
@@ -344,12 +353,20 @@ export function DocumentUploadDropzone({
           rejectedFiles.length > 0 ? ` | ${rejectedFiles.length} rechazado(s)` : ""
         }`,
       );
+      let fileHash: string | null = null;
+
+      try {
+        fileHash = await computeFileSha256(file);
+      } catch {
+        fileHash = null;
+      }
 
       const preparedUpload = await prepareDocumentUploadAction({
         slug,
         originalFilename: file.name,
         mimeType: file.type,
         fileSize: file.size,
+        fileHash,
       });
 
       if (!preparedUpload.ok) {

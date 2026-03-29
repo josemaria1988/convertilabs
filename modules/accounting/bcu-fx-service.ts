@@ -1,3 +1,5 @@
+import { request as httpsRequest } from "node:https";
+
 const DEFAULT_BCU_HANDLER_URL = "https://www.bcu.gub.uy/_layouts/15/BCU.Cotizaciones/handler/CotizacionesHandler.ashx?op=getcotizaciones";
 const DEFAULT_BCU_LOOKBACK_DAYS = 10;
 
@@ -70,6 +72,14 @@ function parseNumber(value: unknown) {
 function parseDate(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
+  }
+
+  const microsoftJsonDateMatch = value.match(/\/Date\((\d+)(?:[-+]\d{4})?\)\//);
+  if (microsoftJsonDateMatch) {
+    const parsed = new Date(Number.parseInt(microsoftJsonDateMatch[1], 10));
+    return Number.isNaN(parsed.getTime())
+      ? null
+      : parsed.toISOString().slice(0, 10);
   }
 
   const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -155,6 +165,102 @@ function collectRows(value: unknown, rows: BcuCandidateRow[] = []) {
   return rows;
 }
 
+function buildBcuRequestHeaders() {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json; charset=utf-8",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    "X-Requested-With": "XMLHttpRequest",
+    Referer: "https://www.bcu.gub.uy/Estadisticas-e-Indicadores/Paginas/Cotizaciones.aspx",
+    Origin: "https://www.bcu.gub.uy",
+  } satisfies Record<string, string>;
+}
+
+function shouldRetryWithNodeHttps(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = `${error.message} ${String((error as { cause?: { code?: string } }).cause?.code ?? "")}`;
+  return /unable_to_verify_leaf_signature|unable to verify the first certificate|self_signed_cert_in_chain/i
+    .test(message);
+}
+
+async function postJsonViaNodeHttps(input: {
+  url: string;
+  payload: Record<string, unknown>;
+}) {
+  return new Promise<unknown>((resolve, reject) => {
+    const body = JSON.stringify(input.payload);
+    const request = httpsRequest(input.url, {
+      method: "POST",
+      rejectUnauthorized: false,
+      headers: {
+        ...buildBcuRequestHeaders(),
+        "Content-Length": String(Buffer.byteLength(body)),
+      },
+    }, (response) => {
+      let raw = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        raw += chunk;
+      });
+      response.on("end", () => {
+        if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) {
+          reject(
+            new Error(
+              raw.trim() || `BCU handler respondio ${response.statusCode ?? 0}.`,
+            ),
+          );
+          return;
+        }
+
+        try {
+          resolve(raw ? JSON.parse(raw) : {});
+        } catch {
+          reject(new Error("El handler BCU devolvio una respuesta JSON invalida."));
+        }
+      });
+    });
+
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
+}
+
+async function postJsonWithBcuFallback(input: {
+  url: string;
+  payload: Record<string, unknown>;
+  fetchImpl: typeof fetch;
+  allowNodeHttpsFallback: boolean;
+}) {
+  try {
+    const response = await input.fetchImpl(input.url, {
+      method: "POST",
+      headers: buildBcuRequestHeaders(),
+      body: JSON.stringify(input.payload),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`BCU handler respondio ${response.status}.`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (!input.allowNodeHttpsFallback || !shouldRetryWithNodeHttps(error)) {
+      throw error;
+    }
+
+    return postJsonViaNodeHttps({
+      url: input.url,
+      payload: input.payload,
+    });
+  }
+}
+
 async function fetchViaConfiguredProxy(input: {
   endpoint: string;
   currencyCode: string;
@@ -207,6 +313,7 @@ async function fetchViaDefaultHandler(input: {
   currencyCode: string;
   documentDate: string;
   fetchImpl: typeof fetch;
+  allowNodeHttpsFallback: boolean;
 }) {
   const series = currencySeriesByCode[input.currencyCode];
 
@@ -214,30 +321,33 @@ async function fetchViaDefaultHandler(input: {
     throw new Error(`No hay serie BCU configurada para ${input.currencyCode}.`);
   }
 
+  let lastError: Error | null = null;
+
   for (let offset = 1; offset <= DEFAULT_BCU_LOOKBACK_DAYS; offset += 1) {
     const candidateDate = subtractDays(input.documentDate, offset);
-    const body = {
-      Monedas: [{ Val: series.value, Text: series.label }],
-      FechaDesde: toDisplayDate(candidateDate),
-      FechaHasta: toDisplayDate(candidateDate),
-      Grupo: "2",
-    };
-    const response = await input.fetchImpl(DEFAULT_BCU_HANDLER_URL, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json; charset=utf-8",
+    const payload = {
+      KeyValuePairs: {
+        Monedas: [{ Val: series.value, Text: series.label }],
+        FechaDesde: toDisplayDate(candidateDate),
+        FechaHasta: toDisplayDate(candidateDate),
+        Grupo: "2",
       },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
+    } satisfies Record<string, unknown>;
+    let responsePayload: unknown;
 
-    if (!response.ok) {
+    try {
+      responsePayload = await postJsonWithBcuFallback({
+        url: DEFAULT_BCU_HANDLER_URL,
+        payload,
+        fetchImpl: input.fetchImpl,
+        allowNodeHttpsFallback: input.allowNodeHttpsFallback,
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("No se pudo consultar el handler BCU.");
       continue;
     }
 
-    const payload = await response.json().catch(() => null);
-    const rows = collectRows(payload);
+    const rows = collectRows(responsePayload);
     const matching = rows.find((row) =>
       row.rate
       && row.date === candidateDate
@@ -252,6 +362,10 @@ async function fetchViaDefaultHandler(input: {
         source: "bcu",
       } satisfies BcuResolvedFxRate;
     }
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 
   throw new Error("No se encontro cotizacion BCU disponible en el cierre habil previo requerido.");
@@ -285,5 +399,6 @@ export async function resolveBcuFiscalFxRate(input: {
     currencyCode,
     documentDate,
     fetchImpl,
+    allowNodeHttpsFallback: !input.fetchImpl || input.fetchImpl === fetch,
   });
 }

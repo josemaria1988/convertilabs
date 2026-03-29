@@ -47,7 +47,9 @@ export function buildJournalMonetaryContext(input: {
   const fxRate =
     typeof input.fxRate === "number" && Number.isFinite(input.fxRate) && input.fxRate > 0
       ? input.fxRate
-      : 1;
+      : currencyCode === functionalCurrencyCode
+        ? 1
+        : 0;
 
   return {
     currencyCode,

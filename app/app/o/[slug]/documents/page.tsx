@@ -294,13 +294,17 @@ export default async function OrganizationDocumentsPage({
                           {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.createdAt)}
                         </p>
                       </div>
-                      <LoadingLink
-                        href={document.processedHref ?? `/app/o/${organization.slug}/review`}
-                        pendingLabel="Abriendo..."
-                        className="ui-button ui-button--secondary w-full sm:w-auto"
-                      >
-                        {document.processedHref ? "Abrir en Revision" : "Ver cola"}
-                      </LoadingLink>
+                      {document.status === "duplicate" ? (
+                        <span className="status-pill status-pill--danger">Duplicado rechazado</span>
+                      ) : (
+                        <LoadingLink
+                          href={document.processedHref ?? `/app/o/${organization.slug}/review`}
+                          pendingLabel="Abriendo..."
+                          className="ui-button ui-button--secondary w-full sm:w-auto"
+                        >
+                          {document.processedHref ? "Abrir en Revision" : "Ver cola"}
+                        </LoadingLink>
+                      )}
                     </div>
                   </div>
                 ))

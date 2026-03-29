@@ -347,6 +347,51 @@ test("workspace documents keep opening review as primary action when a draft exi
   }
 });
 
+test("workspace documents show duplicate rejection without retrying extraction", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const supabase = createMutableSupabaseStub(buildWorkspaceSeed({
+    document: {
+      status: "duplicate",
+      current_draft_id: null,
+      current_processing_run_id: "run-1",
+      metadata: {
+        duplicate_status: "confirmed_duplicate",
+        duplicate_reason: "business_identity_match",
+        duplicate_of_document_id: "doc-older",
+        duplicate_rejection_message:
+          "Se rechazo el documento porque ya existe una factura con el mismo proveedor, numero y monto total en la organizacion. Documento existente: doc-older.",
+      },
+    },
+    run: {
+      status: "skipped",
+      failure_stage: "duplicate_rejected",
+      failure_message:
+        "Se rechazo el documento porque ya existe una factura con el mismo proveedor, numero y monto total en la organizacion. Documento existente: doc-older.",
+      finished_at: "2026-03-16T10:01:05.000Z",
+    },
+  }));
+
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const documents = await reviewModule.listOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+    });
+
+    assert.equal(documents.length, 1);
+    assert.equal(documents[0].status, "duplicate");
+    assert.equal(documents[0].canonicalState, "blocked_duplicate");
+    assert.equal(documents[0].extractionStatusLabel, "Duplicado rechazado");
+    assert.equal(documents[0].nextPrimaryAction, null);
+    assert.equal(documents[0].canRetryExtraction, false);
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});
+
 test("classification action hint explains the next blocking step", () => {
   const reviewModule = loadFresh("@/modules/documents/review");
   const message = reviewModule.buildClassificationActionHint({

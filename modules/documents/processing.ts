@@ -32,7 +32,7 @@ import {
   buildOrganizationIdentityPromptContext,
   buildDraftFieldsPayload,
   buildInvoiceIdentityResult,
-  findDuplicateInvoiceIdentityDocumentId,
+  findExactInvoiceDuplicateDocumentId,
   findSuspiciousDuplicateInvoiceIdentityDocumentId,
   insertAIDecisionLogs,
   loadOrganizationIdentityProfile,
@@ -333,6 +333,57 @@ function mergeRecords(
   }, {});
 }
 
+function buildDuplicateRejectionMessage(input: {
+  duplicateReason: string | null;
+  duplicateOfDocumentId: string | null;
+}) {
+  const relatedDocument = input.duplicateOfDocumentId
+    ? ` Documento existente: ${input.duplicateOfDocumentId}.`
+    : "";
+
+  switch (input.duplicateReason) {
+    case "file_hash_and_business_identity_match":
+      return `Se rechazo el documento porque ya existe el mismo archivo y la misma identidad de factura en la organizacion.${relatedDocument}`;
+    case "business_identity_match":
+      return `Se rechazo el documento porque ya existe una factura con el mismo proveedor, numero y monto total en la organizacion.${relatedDocument}`;
+    case "file_hash_match":
+      return `Se rechazo el documento porque el archivo ya fue cargado previamente en la organizacion.${relatedDocument}`;
+    default:
+      return `Se rechazo el documento porque ya existe una factura equivalente en la organizacion.${relatedDocument}`;
+  }
+}
+
+function resolveHardDuplicateRejection(input: {
+  fileHashDuplicateDocumentIds: string[];
+  businessDuplicateDocumentId: string | null;
+}) {
+  const duplicateOfDocumentId =
+    input.businessDuplicateDocumentId
+    ?? input.fileHashDuplicateDocumentIds[0]
+    ?? null;
+
+  if (!duplicateOfDocumentId) {
+    return null;
+  }
+
+  const duplicateReason =
+    input.fileHashDuplicateDocumentIds.length > 0 && input.businessDuplicateDocumentId
+      ? "file_hash_and_business_identity_match"
+      : input.businessDuplicateDocumentId
+        ? "business_identity_match"
+        : "file_hash_match";
+
+  return {
+    duplicateOfDocumentId,
+    duplicateReason,
+    duplicateStatus: "confirmed_duplicate" as const,
+    message: buildDuplicateRejectionMessage({
+      duplicateReason,
+      duplicateOfDocumentId,
+    }),
+  };
+}
+
 function clearDocumentProcessingMetadata(metadata: Record<string, unknown> | null | undefined) {
   const nextMetadata = {
     ...(metadata ?? {}),
@@ -463,6 +514,15 @@ function resolveDocumentProcessingHealth(input: {
     ? input.failureStage
     : null;
   const hasPersistedDraft = Boolean(input.draftId && input.reviewUrl);
+
+  if (input.documentStatus === "duplicate") {
+    return {
+      health: "completed" as const,
+      staleReason: null,
+      recommendedAction: "wait" as const,
+      retryable: false,
+    };
+  }
 
   if (
     !hasPersistedDraft
@@ -1035,13 +1095,45 @@ async function findDuplicateDocumentIds(
     .select("id")
     .eq("organization_id", organizationId)
     .eq("file_hash", fileHash)
-    .neq("id", currentDocumentId);
+    .neq("id", currentDocumentId)
+    .in("status", [
+      "uploading",
+      "uploaded",
+      "queued",
+      "extracting",
+      "extracted",
+      "draft_ready",
+      "classified",
+      "classified_with_open_revision",
+      "needs_review",
+      "approved",
+      "duplicate",
+      "archived",
+    ])
+    .order("created_at", { ascending: true });
 
   if (error) {
     throw new Error(error.message);
   }
 
   return ((data as Array<{ id: string }> | null) ?? []).map((row) => row.id);
+}
+
+async function persistDocumentFileHash(input: {
+  documentId: string;
+  fileHash: string;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+
+  await assertSupabaseMutation(
+    supabase
+      .from("documents")
+      .update({
+        file_hash: input.fileHash,
+      })
+      .eq("id", input.documentId),
+    "No se pudo guardar el hash del archivo cargado.",
+  );
 }
 
 async function markExtractionActive(documentId: string) {
@@ -1108,13 +1200,13 @@ async function persistDocumentArtifacts(input: {
     supabase,
     input.document.id,
   );
-  const businessDuplicateDocumentId = await findDuplicateInvoiceIdentityDocumentId(
+  const businessDuplicateDocumentId = await findExactInvoiceDuplicateDocumentId(
     supabase,
-    input.document.organization_id,
-    input.document.id,
-    buildInvoiceIdentityResult({
+    {
+      organizationId: input.document.organization_id,
+      currentDocumentId: input.document.id,
       facts: input.structuredOutput.facts,
-    }).invoiceIdentityKey,
+    },
   );
   const suspiciousDuplicateDocumentId = await findSuspiciousDuplicateInvoiceIdentityDocumentId(
     supabase,
@@ -1133,12 +1225,68 @@ async function persistDocumentArtifacts(input: {
     persistedDuplicateOfDocumentId: existingInvoiceIdentity?.duplicate_of_document_id ?? null,
     persistedDuplicateReason: existingInvoiceIdentity?.duplicate_reason ?? null,
   });
+  const hardDuplicateRejection = resolveHardDuplicateRejection({
+    fileHashDuplicateDocumentIds: input.duplicateDocumentIds,
+    businessDuplicateDocumentId,
+  });
   const transactionFamilyResolution = resolveTransactionFamilyByOrganizationIdentity({
     issuerMatch: input.structuredOutput.issuer_matches_organization,
     receiverMatch: input.structuredOutput.receiver_matches_organization,
     modelRoleCandidate: input.structuredOutput.transaction_family_candidate,
     modelSubtypeCandidate: input.structuredOutput.document_subtype_candidate,
   });
+
+  if (hardDuplicateRejection) {
+    await upsertDocumentInvoiceIdentity(supabase, {
+      organization_id: input.document.organization_id,
+      document_id: input.document.id,
+      source_draft_id: null,
+      vendor_id: existingInvoiceIdentity?.vendor_id ?? null,
+      issuer_tax_id_normalized: invoiceIdentity.issuerTaxIdNormalized,
+      issuer_name_normalized: invoiceIdentity.issuerNameNormalized,
+      document_number_normalized: invoiceIdentity.documentNumberNormalized,
+      document_date: invoiceIdentity.documentDate,
+      total_amount: invoiceIdentity.totalAmount,
+      currency_code: invoiceIdentity.currencyCode,
+      identity_strategy: invoiceIdentity.identityStrategy,
+      invoice_identity_key: invoiceIdentity.invoiceIdentityKey,
+      duplicate_status: hardDuplicateRejection.duplicateStatus,
+      duplicate_of_document_id: hardDuplicateRejection.duplicateOfDocumentId,
+      duplicate_reason: hardDuplicateRejection.duplicateReason,
+      resolution_notes: existingInvoiceIdentity?.resolution_notes ?? null,
+    });
+
+    await markRunSkippedAsDuplicate({
+      documentId: input.document.id,
+      runId: input.runId,
+      message: hardDuplicateRejection.message,
+      duplicateStatus: hardDuplicateRejection.duplicateStatus,
+      duplicateReason: hardDuplicateRejection.duplicateReason,
+      duplicateOfDocumentId: hardDuplicateRejection.duplicateOfDocumentId,
+      duplicateDocumentIds: input.duplicateDocumentIds,
+      fileHash: input.fileHash,
+      providerStatus: input.providerStatus,
+      providerResponse: input.providerResponse,
+      lastPolledAt: input.lastPolledAt,
+      documentMetadata: input.document.metadata,
+      runMetadata: input.runMetadata,
+      latencyMs: input.latencyMs,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      totalTokens: input.totalTokens,
+      estimatedCostUsd: input.estimatedCostUsd,
+      attemptCount: input.attemptCount,
+      openAiFileId: input.openAiFileId,
+      providerResponseId: input.providerResponseId,
+    });
+
+    return {
+      draftId: null,
+      documentStatus: "duplicate" as const,
+      skipped: true as const,
+      message: hardDuplicateRejection.message,
+    };
+  }
 
   await markExtractionActive(input.document.id);
 
@@ -1436,7 +1584,93 @@ async function persistDocumentArtifacts(input: {
   return {
     draftId: draft.id as string,
     documentStatus: "extracted" as const,
+    skipped: false as const,
   };
+}
+
+async function markRunSkippedAsDuplicate(input: {
+  documentId: string;
+  runId: string;
+  message: string;
+  duplicateStatus: "confirmed_duplicate";
+  duplicateReason: string;
+  duplicateOfDocumentId: string | null;
+  duplicateDocumentIds: string[];
+  fileHash: string | null;
+  providerStatus?: string | null;
+  providerResponse?: Record<string, unknown> | null;
+  lastPolledAt?: string | null;
+  documentMetadata?: Record<string, unknown> | null;
+  runMetadata?: Record<string, unknown> | null;
+  latencyMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCostUsd?: number | null;
+  attemptCount?: number | null;
+  openAiFileId?: string | null;
+  providerResponseId?: string | null;
+}) {
+  const supabase = getSupabaseServiceRoleClient();
+  const finishedAt = new Date().toISOString();
+  const relatedDuplicateIds = Array.from(new Set([
+    ...input.duplicateDocumentIds,
+    input.duplicateOfDocumentId,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0)));
+
+  await assertSupabaseMutation(
+    supabase
+      .from("document_processing_runs")
+      .update({
+        status: "skipped",
+        finished_at: finishedAt,
+        failure_stage: "duplicate_rejected",
+        failure_message: input.message,
+        provider_status: input.providerStatus ?? null,
+        last_polled_at: input.lastPolledAt ?? null,
+        latency_ms: input.latencyMs ?? null,
+        input_tokens: input.inputTokens ?? null,
+        output_tokens: input.outputTokens ?? null,
+        total_tokens: input.totalTokens ?? null,
+        openai_file_id: input.openAiFileId ?? null,
+        provider_response_id: input.providerResponseId ?? null,
+        attempt_count: Math.max(0, input.attemptCount ?? 0),
+        provider_response_json: input.providerResponse ?? {},
+        metadata: mergeRecords(input.runMetadata, {
+          skipped_at: finishedAt,
+          skipped_reason: "duplicate_rejected",
+          duplicate_status: input.duplicateStatus,
+          duplicate_reason: input.duplicateReason,
+          duplicate_of_document_id: input.duplicateOfDocumentId,
+          duplicate_document_ids: relatedDuplicateIds,
+          file_hash: input.fileHash,
+          estimated_cost_usd: input.estimatedCostUsd ?? null,
+        }),
+      })
+      .eq("id", input.runId),
+    "No se pudo marcar la corrida como duplicado rechazado.",
+  );
+
+  await assertSupabaseMutation(
+    supabase
+      .from("documents")
+      .update({
+        status: "duplicate",
+        current_processing_run_id: input.runId,
+        current_draft_id: null,
+        last_processed_at: finishedAt,
+        file_hash: input.fileHash,
+        metadata: applyDocumentProcessingMetadata(input.documentMetadata, {
+          duplicate_status: input.duplicateStatus,
+          duplicate_reason: input.duplicateReason,
+          duplicate_of_document_id: input.duplicateOfDocumentId,
+          duplicate_document_ids: relatedDuplicateIds,
+          duplicate_rejection_message: input.message,
+        }),
+      })
+      .eq("id", input.documentId),
+    "No se pudo marcar el documento como duplicado rechazado.",
+  );
 }
 
 async function markRunFailed(input: {
@@ -1861,11 +2095,46 @@ export async function processDocumentRunFromInngest(
         async () => {
           const bytes = await downloadDocumentBytes(document!);
           const computedFileHash = computeFileHash(bytes);
+          await persistDocumentFileHash({
+            documentId: document!.id,
+            fileHash: computedFileHash,
+          });
           const duplicates = await findDuplicateDocumentIds(
             document!.organization_id,
             computedFileHash,
             document!.id,
           );
+          const duplicateRejection = resolveHardDuplicateRejection({
+            fileHashDuplicateDocumentIds: duplicates,
+            businessDuplicateDocumentId: null,
+          });
+
+          if (duplicateRejection) {
+            await markRunSkippedAsDuplicate({
+              documentId: document!.id,
+              runId: run!.id,
+              message: duplicateRejection.message,
+              duplicateStatus: duplicateRejection.duplicateStatus,
+              duplicateReason: duplicateRejection.duplicateReason,
+              duplicateOfDocumentId: duplicateRejection.duplicateOfDocumentId,
+              duplicateDocumentIds: duplicates,
+              fileHash: computedFileHash,
+              documentMetadata: document!.metadata,
+              runMetadata: run!.metadata,
+            });
+
+            return {
+              skipped: true as const,
+              message: duplicateRejection.message,
+              fileHash: computedFileHash,
+              duplicateDocumentIds: duplicates,
+              openAiFileId: null,
+              providerResponseId: null,
+              providerStatus: null,
+              providerResponse: null,
+            };
+          }
+
           let uploadedFile;
 
           try {
@@ -1941,6 +2210,15 @@ export async function processDocumentRunFromInngest(
 
       fileHash = submission.fileHash;
       duplicateDocumentIds = submission.duplicateDocumentIds;
+      if (submission.skipped) {
+        return {
+          ok: false,
+          documentId: document.id,
+          runId: run.id,
+          status: "skipped",
+          message: submission.message,
+        };
+      }
       openAiFileId = submission.openAiFileId;
       providerResponseId = submission.providerResponseId;
       providerStatus = submission.providerStatus;
@@ -2141,6 +2419,16 @@ export async function processDocumentRunFromInngest(
     await input.step.run("cleanup-openai-file-after-success", async () => {
       await cleanupOpenAIFileBestEffort(openAiFileId, input.logger);
     });
+
+    if (persisted.skipped) {
+      return {
+        ok: false,
+        documentId: document.id,
+        runId: run.id,
+        status: "skipped",
+        message: persisted.message,
+      };
+    }
 
     return {
       ok: true,

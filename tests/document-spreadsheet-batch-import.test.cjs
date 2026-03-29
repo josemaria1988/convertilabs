@@ -245,9 +245,13 @@ test("document spreadsheet import duplicate guard blocks an existing invoice ide
       {
         document_id: "doc-existing-1",
         organization_id: "org-1",
+        issuer_tax_id_normalized: "21433455019",
+        issuer_name_normalized: "pergol maquinaria sa",
         document_date: "2026-02-18",
         document_number_normalized: "a1001",
         total_amount: 254,
+        currency_code: "UYU",
+        duplicate_status: "clear",
         created_at: "2026-03-01T00:00:00.000Z",
       },
     ],
@@ -260,7 +264,7 @@ test("document spreadsheet import duplicate guard blocks an existing invoice ide
       documentRole: "purchase",
       facts: {
         issuer_name: "Pergol Maquinaria S.A.",
-        issuer_tax_id: null,
+        issuer_tax_id: "21.433.455/019",
         receiver_name: null,
         receiver_tax_id: null,
         document_number: "1001",
@@ -279,6 +283,51 @@ test("document spreadsheet import duplicate guard blocks an existing invoice ide
 
   assert.equal(duplicate?.documentId, "doc-existing-1");
   assert.equal(duplicate?.matchedOn, "invoice_identity");
+});
+
+test("document spreadsheet import duplicate guard does not block same number and total when the supplier is different", async () => {
+  const supabase = buildSpreadsheetImportSupabaseClient(buildSpreadsheetImportSupabaseState({
+    documentInvoiceIdentities: [
+      {
+        document_id: "doc-existing-1",
+        organization_id: "org-1",
+        issuer_tax_id_normalized: "21999999001",
+        issuer_name_normalized: "otro proveedor sa",
+        document_date: "2026-02-18",
+        document_number_normalized: "a1001",
+        total_amount: 254,
+        currency_code: "UYU",
+        duplicate_status: "clear",
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  }));
+
+  const duplicate = await findDuplicateSpreadsheetImportDocument({
+    supabase,
+    organizationId: "org-1",
+    row: {
+      documentRole: "purchase",
+      facts: {
+        issuer_name: "Pergol Maquinaria S.A.",
+        issuer_tax_id: "21.433.455/019",
+        receiver_name: null,
+        receiver_tax_id: null,
+        document_number: "1001",
+        series: "A",
+        currency_code: "UYU",
+        document_date: "2026-02-28",
+        due_date: null,
+        subtotal: 208.2,
+        tax_amount: 45.8,
+        total_amount: 254,
+        purchase_category_candidate: null,
+        sale_category_candidate: null,
+      },
+    },
+  });
+
+  assert.equal(duplicate, null);
 });
 
 test("document spreadsheet import duplicate guard falls back to existing documents by external reference and total", async () => {

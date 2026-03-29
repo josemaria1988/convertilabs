@@ -63,6 +63,7 @@ type PrepareDocumentUploadInput = {
   originalFilename: string;
   mimeType: string;
   fileSize: number;
+  fileHash?: string | null;
 };
 
 type FinalizeDocumentUploadInput = {
@@ -397,6 +398,46 @@ export async function prepareDocumentUploadAction(
   const { organization } = await requireOrganizationDashboardPage(input.slug);
   const userSupabase = await getSupabaseServerClient();
   const serviceSupabase = getSupabaseServiceRoleClient();
+
+  if (input.fileHash?.trim()) {
+    const { data: duplicateDocument, error: duplicateError } = await serviceSupabase
+      .from("documents")
+      .select("id")
+      .eq("organization_id", organization.id)
+      .eq("file_hash", input.fileHash.trim())
+      .in("status", [
+        "uploading",
+        "uploaded",
+        "queued",
+        "extracting",
+        "extracted",
+        "draft_ready",
+        "classified",
+        "classified_with_open_revision",
+        "needs_review",
+        "approved",
+        "duplicate",
+        "archived",
+      ])
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateError) {
+      return {
+        ok: false,
+        message: duplicateError.message ?? "No se pudo validar si el archivo ya existia.",
+      };
+    }
+
+    if (duplicateDocument?.id) {
+      return {
+        ok: false,
+        message: `El archivo ya fue cargado previamente en la organizacion. Documento existente: ${duplicateDocument.id}.`,
+      };
+    }
+  }
+
   const { data, error } = await userSupabase
     .rpc("prepare_document_upload", {
       p_org_id: organization.id,
@@ -416,6 +457,23 @@ export async function prepareDocumentUploadAction(
         error?.message
         ?? "No se pudo preparar la metadata del documento para la subida.",
     };
+  }
+
+  if (input.fileHash?.trim()) {
+    const { error: fileHashError } = await serviceSupabase
+      .from("documents")
+      .update({
+        file_hash: input.fileHash.trim(),
+      })
+      .eq("id", row.document_id)
+      .eq("organization_id", organization.id);
+
+    if (fileHashError) {
+      return {
+        ok: false,
+        message: fileHashError.message ?? "No se pudo registrar el hash del archivo antes de subirlo.",
+      };
+    }
   }
 
   const { data: signedUpload, error: signedUploadError } = await serviceSupabase.storage

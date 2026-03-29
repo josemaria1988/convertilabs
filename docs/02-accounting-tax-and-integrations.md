@@ -95,6 +95,25 @@ Regla operativa:
 - primero se resuelve el documento;
 - luego se decide si esa resolucion merece memoria reusable.
 
+## 4.1 Identidad de factura y politica de duplicados
+
+La identidad documental no depende del nombre del archivo.
+
+Politica oficial:
+
+- usar RUT del emisor cuando exista; si no, usar nombre normalizado como fallback conservador;
+- normalizar serie + numero de factura;
+- comparar monto total redondeado y moneda;
+- tratar como duplicado exacto una coincidencia de proveedor o emisor + numero + total + moneda;
+- tratar como duplicado exacto tambien un mismo archivo ya visto por hash;
+- mantener los duplicados difusos como sospecha bloqueante revisable, no como autoaceptacion.
+
+Efecto esperado:
+
+- duplicado exacto = rechazo duro del documento antes de review normal;
+- duplicado sospechoso = bloqueo visible y resolucion humana;
+- un duplicado no debe pasar a posting como si fuera un caso valido.
+
 ## 5. Templates, settlement y posting multi-linea
 
 El motor contable vigente es settlement-aware y multi-linea.
@@ -258,6 +277,11 @@ Carril auditado para planillas mensuales de compras y ventas:
 - preflight;
 - aceptacion o rechazo;
 - materializacion a documentos.
+
+Regla de coherencia:
+
+- el carril por planilla debe aplicar la misma politica de duplicados exactos por identidad documental;
+- no puede ser mas permisivo que el upload binario normal.
 
 ### `/exports`
 

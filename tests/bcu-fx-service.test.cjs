@@ -12,18 +12,23 @@ test("BCU fiscal FX starts from the previous calendar day, never the document da
     documentDate: "2026-03-17",
     fetchImpl: async (_url, options) => {
       const body = JSON.parse(options.body);
-      calls.push(body);
+      calls.push(body.KeyValuePairs);
 
       return {
         ok: true,
-        json: async () => ([
-          {
-            Fecha: body.FechaDesde,
-            CodigoISO: "USD",
-            Promedio: "44,25",
-            CodigoMoneda: "2224",
+        json: async () => ({
+          operation: "getcotizaciones",
+          cotizacionesoutlist: {
+            Cotizaciones: [
+              {
+                Fecha: `/Date(${Date.parse("2026-03-16T03:00:00.000Z")})/`,
+                CodigoISO: "DLS.",
+                TCC: 44.25,
+                CodigoMoneda: "2224",
+              },
+            ],
           },
-        ]),
+        }),
       };
     },
   });
@@ -43,25 +48,35 @@ test("BCU fiscal FX walks back to the last available business close when the pre
     documentDate: "2026-03-16",
     fetchImpl: async (_url, options) => {
       const body = JSON.parse(options.body);
-      calls.push(body.FechaDesde);
+      calls.push(body.KeyValuePairs.FechaDesde);
 
-      if (body.FechaDesde === "13/03/2026") {
+      if (body.KeyValuePairs.FechaDesde === "13/03/2026") {
         return {
           ok: true,
-          json: async () => ([
-            {
-              Fecha: "13/03/2026",
-              CodigoISO: "USD",
-              Promedio: "44,10",
-              CodigoMoneda: "2224",
+          json: async () => ({
+            operation: "getcotizaciones",
+            cotizacionesoutlist: {
+              Cotizaciones: [
+                {
+                  Fecha: `/Date(${Date.parse("2026-03-13T03:00:00.000Z")})/`,
+                  CodigoISO: "DLS.",
+                  TCC: 44.1,
+                  CodigoMoneda: "2224",
+                },
+              ],
             },
-          ]),
+          }),
         };
       }
 
       return {
         ok: true,
-        json: async () => ([]),
+        json: async () => ({
+          operation: "getcotizaciones",
+          cotizacionesoutlist: {
+            Cotizaciones: [],
+          },
+        }),
       };
     },
   });

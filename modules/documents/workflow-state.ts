@@ -252,6 +252,8 @@ export function deriveCanonicalDocumentState(input: {
 
   if (input.documentStatus === "archived") {
     canonicalState = "archived";
+  } else if (input.documentStatus === "duplicate") {
+    canonicalState = "blocked_duplicate";
   } else if (input.postingStatus === "locked") {
     canonicalState = "locked";
   } else if (input.postingStatus === "posted_final") {

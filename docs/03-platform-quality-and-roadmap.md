@@ -106,6 +106,13 @@ Si tocas persistencia, no alcanza con editar un archivo aislado. Debes revisar:
 - `document_assignment_runs`
 - `document_invoice_identities`
 
+Notas operativas relevantes:
+
+- `documents.file_hash` participa en el guard de duplicado exacto para archivos binarios;
+- `document_invoice_identities` conserva la identidad documental normalizada y el estado de duplicado;
+- una corrida puede terminar en `skipped` cuando el documento se rechaza por duplicado exacto;
+- el motivo funcional debe quedar trazado en metadata y surfaces derivadas.
+
 ### Kernel contable
 
 - `fiscal_periods`
@@ -252,6 +259,12 @@ Tablas a no olvidar:
 - `close_check_*`
 - `fiscal_period_transition_logs`
 
+Para duplicados exactos, la evidencia minima esperada incluye:
+
+- documento relacionado cuando exista;
+- motivo (`file_hash_match`, identidad de negocio o combinacion de ambos);
+- estado derivado visible en UI como rechazo o bloqueo, no como pendiente silencioso.
+
 ## 8. Testing y comandos de calidad
 
 ### Comandos base
@@ -311,6 +324,11 @@ Direccion correcta:
 - estado canonico derivado;
 - copy consistente;
 - buckets accionables.
+
+Aplicacion concreta:
+
+- `duplicate` no debe verse como `processing` ni como `pendiente`;
+- un rechazo por duplicado exacto debe quedar claramente fuera del flujo normal de review.
 
 ### C. Dashboard y metricas
 

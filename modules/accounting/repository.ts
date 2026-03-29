@@ -817,6 +817,97 @@ export async function findDuplicateInvoiceIdentityDocumentId(
   return typeof data?.document_id === "string" ? data.document_id : null;
 }
 
+export async function findExactInvoiceDuplicateDocumentId(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    currentDocumentId?: string | null;
+    facts: DocumentIntakeFactMap;
+  },
+) {
+  const documentNumberNormalized = normalizeDocumentNumber(
+    [input.facts.series, input.facts.document_number].filter(Boolean).join("-"),
+  );
+  const totalAmount =
+    typeof input.facts.total_amount === "number"
+      ? roundCurrency(input.facts.total_amount)
+      : null;
+  const currencyCode = normalizeCurrencyCode(input.facts.currency_code);
+  const issuerTaxIdNormalized = normalizeTaxId(input.facts.issuer_tax_id);
+  const issuerNameNormalized = normalizeTextToken(input.facts.issuer_name);
+
+  if (!documentNumberNormalized || totalAmount === null || !currencyCode) {
+    return null;
+  }
+
+  const allowedStatuses = [
+    "clear",
+    "suspected_duplicate",
+    "false_positive",
+    "justified_non_duplicate",
+  ];
+
+  if (issuerTaxIdNormalized) {
+    let query = supabase
+      .from("document_invoice_identities")
+      .select("document_id")
+      .eq("organization_id", input.organizationId)
+      .eq("issuer_tax_id_normalized", issuerTaxIdNormalized)
+      .eq("document_number_normalized", documentNumberNormalized)
+      .eq("total_amount", totalAmount)
+      .eq("currency_code", currencyCode)
+      .in("duplicate_status", allowedStatuses);
+
+    if (input.currentDocumentId) {
+      query = query.neq("document_id", input.currentDocumentId);
+    }
+
+    const { data, error } = await query
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const row = ((data as Array<{ document_id: string }> | null) ?? [])[0] ?? null;
+
+    if (typeof row?.document_id === "string") {
+      return row.document_id;
+    }
+  }
+
+  if (!issuerNameNormalized) {
+    return null;
+  }
+
+  let query = supabase
+    .from("document_invoice_identities")
+    .select("document_id")
+    .eq("organization_id", input.organizationId)
+    .eq("issuer_name_normalized", issuerNameNormalized)
+    .eq("document_number_normalized", documentNumberNormalized)
+    .eq("total_amount", totalAmount)
+    .eq("currency_code", currencyCode)
+    .in("duplicate_status", allowedStatuses);
+
+  if (input.currentDocumentId) {
+    query = query.neq("document_id", input.currentDocumentId);
+  }
+
+  const { data, error } = await query
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = ((data as Array<{ document_id: string }> | null) ?? [])[0] ?? null;
+
+  return typeof row?.document_id === "string" ? row.document_id : null;
+}
+
 export async function findSuspiciousDuplicateInvoiceIdentityDocumentId(
   supabase: SupabaseClient,
   input: {

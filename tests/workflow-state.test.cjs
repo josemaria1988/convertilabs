@@ -315,6 +315,27 @@ test("workflow state marks unresolved duplicates as blocked", () => {
   assert.equal(state.operationalFlags.includes("blocked_duplicate"), true);
 });
 
+test("workflow state keeps duplicate documents without draft in blocked duplicate state", () => {
+  const {
+    deriveCanonicalDocumentState,
+  } = require("@/modules/documents/workflow-state");
+
+  const state = deriveCanonicalDocumentState({
+    documentStatus: "duplicate",
+    postingStatus: "draft",
+    hasDraft: false,
+    factualReady: false,
+    classificationUpToDate: false,
+    canPostProvisional: false,
+    canConfirmFinal: false,
+    visibleWarnings: [],
+    duplicateStatus: "confirmed_duplicate",
+  });
+
+  assert.equal(state.canonicalState, "blocked_duplicate");
+  assert.equal(state.operationalBucket, "blocked");
+});
+
 test("workflow state marks missing fx as blocked", () => {
   const state = deriveDocumentWorkflowState({
     documentStatus: "draft_ready",
