@@ -136,6 +136,12 @@ El sistema resuelve:
 - open item cuando aplica;
 - links de settlement posterior.
 
+Regla UX derivada:
+
+- el reviewer debe presentar esta resolucion como `plantilla contable -> asiento tipo -> cuentas por rol -> preview`;
+- la cuenta principal puede aparecer como evidencia util, pero no como la narrativa principal del paso contable ni del resumen final;
+- la vista previa multi-linea sigue siendo la fuente de verdad del Debe, Haber e IVA.
+
 Tablas y artefactos clave:
 
 - `posting_proposals`

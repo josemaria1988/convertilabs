@@ -329,6 +329,8 @@ Aplicacion concreta:
 
 - `duplicate` no debe verse como `processing` ni como `pendiente`;
 - un rechazo por duplicado exacto debe quedar claramente fuera del flujo normal de review.
+- la ruta guiada del reviewer debe consumir `workflow-state` y `document-decision-snapshot` a traves de un presenter canonico;
+- no derivar estados de review desde flags de UI como `showManualFlow`, `mobileStep` o affordances locales.
 
 ### C. Dashboard y metricas
 
@@ -420,6 +422,12 @@ Cuando hagas un cambio importante:
 3. busca el estado canonico ya existente antes de inventar otro;
 4. manten la solucion conservadora;
 5. actualiza docs si cambio la verdad oficial o si cambio el estado de implementacion.
+
+Si la UI necesita narrar un workflow complejo:
+
+- extrae esa narrativa a `modules/presentation`;
+- deja al componente consumir un presenter estable;
+- no recompongas la verdad productiva mezclando flags visuales con estado de dominio.
 
 ## 12. Checklist mental rapido
 

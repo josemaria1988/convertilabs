@@ -13,7 +13,7 @@ modulos y no al reves.
 - `tax`: IVA Uruguay, FX, conciliacion DGI y workbench fiscal.
 - `close`: validator y lifecycle del periodo.
 - `spreadsheets`, `imports`, `exports`, `audit`: carriles de soporte y bridge externo.
-- `presentation`, `ui`, `explanations`: copy, labels, hints y contratos de explainability.
+- `presentation`, `ui`, `explanations`: copy, labels, hints, contratos de explainability y presenters canonicos de workflow para que la UI no recalcule verdad productiva.
 
 ## Regla de mantenimiento
 

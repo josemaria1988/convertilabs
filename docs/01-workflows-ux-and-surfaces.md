@@ -255,6 +255,28 @@ No inventar estados nuevos si uno canonico ya explica la situacion.
 
 La UX no tiene que mostrar todas esas capas como un monstruo tecnico. Debe mostrarlas como un flujo guiado.
 
+### Ruta guiada canonica del reviewer
+
+La tira de pasos del reviewer, la siguiente accion y el bloque de readiness no deben derivarse desde flags de UI o de visibilidad como:
+
+- `showManualFlow`
+- `mobileStep`
+- expanders abiertos o cerrados
+- presencia visual del rail
+
+La fuente correcta para esa narrativa es el estado canonico compuesto por:
+
+- `workflow-state`
+- `document-decision-snapshot`
+- un presenter de `modules/presentation` cuando haga falta traducirlo a UI
+
+Reglas visibles:
+
+- la misma ruta guiada debe servir para revision manual, fast lane auto-resuelto y review cerrada;
+- fast lane no significa ocultar progreso: si el documento ya esta resuelto por el motor canonico, `Clasificacion`, `Contexto` y `Asiento` deben verse resueltos aunque no se despliegue flujo manual;
+- un review `posted_final` o `locked` debe verse terminal de verdad: los 4 pasos quedan resueltos y la siguiente accion pasa a trazabilidad o bloqueo, no a posting;
+- la UI no debe recrear una segunda verdad pantalla por pantalla.
+
 ## 8. Reviewer mobile: flujo oficial
 
 ### Objetivo
@@ -286,6 +308,15 @@ La UX debe priorizar la seleccion de:
 
 antes que una experiencia de buscar cuentas sueltas, salvo casos avanzados o de rescate.
 
+Orden narrativo obligatorio en reviewer:
+
+1. plantilla contable;
+2. asiento tipo;
+3. cuentas por rol;
+4. preview contable.
+
+La cuenta principal puede mostrarse, pero como dato secundario dentro de una resolucion template-first.
+
 Ejemplos de nombres visibles:
 
 - Venta plaza contado banco pesos
@@ -312,6 +343,8 @@ Si el documento ya esta suficientemente resuelto y no hay blockers:
 - mostrar confirmacion rapida;
 - CTA principales: `Confirmar` y `Editar`;
 - no obligar a un usuario experto a atravesar pasos que no agregan valor.
+- la ruta guiada debe seguir reflejando el progreso canonico aunque el flujo manual no se abra;
+- si el documento quedo auto-resuelto antes del cierre, `Clasificacion`, `Contexto` y `Asiento` deben marcarse como resueltos.
 
 ## 10. Settlement y posting multi-linea
 
@@ -382,6 +415,8 @@ Existe y puede ayudar, pero:
 - Recalcular clasificacion con este contexto
 - Postear provisional
 - Confirmar final
+- Ver trazabilidad
+- Revisar bloqueo
 - Reabrir revision
 
 ### Tax

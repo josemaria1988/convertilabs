@@ -7,7 +7,8 @@ Estado actual:
 - procesamiento durable con Inngest y salida estructurada
 - `Revision` como cola principal por buckets operativos
 - intake auditado por planilla en `Importacion masiva` con preview previo a materializar
-- reviewer por etapas con posting provisional/final, rail opcional y reapertura controlada
+- reviewer por etapas con ruta guiada canonica basada en `workflow-state` + `document-decision-snapshot`, fast lane auto-resuelto, posting provisional/final, rail opcional y reapertura controlada
+- normalizacion terminal del reviewer para `confirmed`, `posted_final` y `locked`, con acciones terminales y reapertura explicita en vez de sugerencias de posting
 - cola `pending-assignment` y soporte de operaciones internacionales
 - preservacion del original y trazabilidad por corrida, draft y revision
 
@@ -17,6 +18,7 @@ Archivos clave:
 - `modules/documents/review.ts`
 - `modules/documents/review-queue.ts`
 - `modules/documents/workflow-state.ts`
+- `modules/documents/document-decision-snapshot.ts`
 - `modules/documents/post-provisional-service.ts`
 - `modules/documents/confirm-final-service.ts`
 - `modules/documents/reopen-remap-service.ts`

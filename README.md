@@ -7,7 +7,7 @@ Convertilabs es una plataforma contable y fiscal document-driven para Uruguay, c
 - onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets por reglas o IA;
 - `Inicio` como centro de trabajo real con tareas del dia y CTAs unicos hacia documentos, revision, impuestos y cierre;
 - workspace `Documentos` reducido al ingreso documental: upload privado, estado visible del tramo reciente y CTA fuerte hacia `Revision`;
-- workspace `Revision` como cola principal por buckets accionables: revision factual, asignacion/clasificacion, bloqueados, listos para provisional y listos para final;
+- workspace `Revision` como cola principal por buckets accionables y reviewer con ruta guiada canonica derivada desde workflow y decision snapshot, incluyendo fast lane auto-resuelto y cierre terminal consistente;
 - `Importacion masiva` en `/audit` para planillas mensuales con preview estructurado, aceptar/rechazar parcial y trazabilidad por corrida;
 - admin de `Reglas contables` con listado, lifecycle, versionado forward-only, simulaciones, conflictos y chat consultivo;
 - workspaces contables read-only con balance, diario, open items y mapa contable explicable;
