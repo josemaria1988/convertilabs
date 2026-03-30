@@ -146,7 +146,7 @@ export function buildDocumentReviewChips(
   }
 
   if (item.manualInterventionBy) {
-    chips.add("Requiere revision manual");
+    chips.add("Intervencion manual");
   }
 
   return Array.from(chips);

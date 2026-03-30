@@ -176,7 +176,7 @@ function getNoticeClasses(tone: NoticeTone) {
 
 function formatDecisionAuditLabel(document: DocumentsWorkspaceTableItem) {
   if (document.decisionSource === "manual_override") {
-    return `Revision intervenida por: ${document.manualInterventionBy ?? "Usuario del equipo"}`;
+    return `Clasificada manualmente por: ${document.manualInterventionBy ?? "Usuario del equipo"}`;
   }
 
   return formatDecisionSourceLabel(document.decisionSource);
@@ -672,7 +672,15 @@ export function DocumentsWorkspaceTable({
                           <div className="text-rose-200">{document.extractionFailureMessage}</div>
                         ) : null}
                         {document.classificationFailureMessage ? (
-                          <div className="text-amber-100">{document.classificationFailureMessage}</div>
+                          <div
+                            className={
+                              document.classificationStatus === "completed"
+                                ? "text-[color:var(--color-muted)]"
+                                : "text-amber-100"
+                            }
+                          >
+                            {document.classificationFailureMessage}
+                          </div>
                         ) : null}
                       </div>
                     </td>

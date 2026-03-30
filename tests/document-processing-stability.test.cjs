@@ -190,9 +190,11 @@ function buildWorkspaceSeed(overrides = {}) {
       },
     ],
     document_drafts: overrides.drafts ?? [],
-    document_invoice_identities: [],
-    ai_decision_logs: [],
-    document_assignment_runs: [],
+    document_invoice_identities: overrides.document_invoice_identities ?? [],
+    ai_decision_logs: overrides.ai_decision_logs ?? [],
+    document_assignment_runs: overrides.document_assignment_runs ?? [],
+    document_draft_autosaves: overrides.document_draft_autosaves ?? [],
+    profiles: overrides.profiles ?? [],
   };
 }
 
@@ -342,6 +344,151 @@ test("workspace documents keep opening review as primary action when a draft exi
     assert.equal(documents[0].nextPrimaryAction, "open_review");
     assert.equal(documents[0].nextPrimaryActionLabel, "Abrir revision");
     assert.equal(documents[0].processedHref, "/app/o/demo/documents/doc-1");
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});
+
+test("workspace documents keep terminal classification resolved even if the last run is stale", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const supabase = createMutableSupabaseStub(buildWorkspaceSeed({
+    document: {
+      status: "confirmed",
+      posting_status: "posted_final",
+      current_draft_id: "draft-1",
+      current_processing_run_id: null,
+      metadata: {},
+    },
+    drafts: [
+      {
+        id: "draft-1",
+        fields_json: {
+          facts: {
+            issuer_name: "Alsura SRL",
+            receiver_name: "Cliente",
+            document_number: "6404",
+            series: "A",
+            tax_amount: 198,
+            total_amount: 1100,
+          },
+        },
+      },
+    ],
+    document_assignment_runs: [
+      {
+        id: "assign-1",
+        document_id: "doc-1",
+        organization_id: "org-1",
+        status: "stale",
+        response_json: {},
+        created_at: "2026-03-16T10:02:00.000Z",
+      },
+    ],
+  }));
+
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const documents = await reviewModule.listOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+    });
+
+    assert.equal(documents.length, 1);
+    assert.equal(documents[0].canonicalState, "posted_final");
+    assert.equal(documents[0].classificationStatus, "completed");
+    assert.equal(documents[0].classificationStatusLabel, "Resuelta");
+    assert.equal(documents[0].classificationFailureMessage, null);
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});
+
+test("workspace documents surface manual classification instead of stale when a user intervened", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const supabase = createMutableSupabaseStub(buildWorkspaceSeed({
+    document: {
+      status: "extracted",
+      posting_status: "draft",
+      current_draft_id: "draft-1",
+      current_processing_run_id: null,
+      metadata: {},
+    },
+    drafts: [
+      {
+        id: "draft-1",
+        fields_json: {
+          facts: {
+            issuer_name: "Alsura SRL",
+            receiver_name: "Cliente",
+            document_number: "6404",
+            series: "A",
+            tax_amount: 198,
+            total_amount: 1100,
+          },
+        },
+      },
+    ],
+    document_assignment_runs: [
+      {
+        id: "assign-1",
+        document_id: "doc-1",
+        organization_id: "org-1",
+        status: "stale",
+        response_json: {},
+        created_at: "2026-03-16T10:02:00.000Z",
+      },
+    ],
+    document_draft_autosaves: [
+      {
+        draft_id: "draft-1",
+        payload_patch_json: {
+          accountingContext: {
+            manualOverrideAccountId: "acct-manual-1",
+          },
+        },
+        saved_by: "user-1",
+        saved_at: "2026-03-16T10:03:00.000Z",
+        step_code: "accounting_context",
+      },
+    ],
+    profiles: [
+      {
+        id: "user-1",
+        full_name: "Jose Maria Sosa Izaguirre",
+        email: "jose@example.com",
+      },
+    ],
+    ai_decision_logs: [
+      {
+        id: "decision-1",
+        organization_id: "org-1",
+        document_id: "doc-1",
+        decision_source: "manual_override",
+        confidence_score: 0.4,
+        certainty_level: "yellow",
+        created_at: "2026-03-16T10:04:00.000Z",
+      },
+    ],
+  }));
+
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const documents = await reviewModule.listOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+    });
+
+    assert.equal(documents.length, 1);
+    assert.equal(documents[0].classificationStatus, "completed");
+    assert.equal(documents[0].classificationStatusLabel, "Manual");
+    assert.match(documents[0].classificationFailureMessage, /Jose Maria Sosa Izaguirre/i);
+    assert.equal(documents[0].manualInterventionBy, "Jose Maria Sosa Izaguirre");
   } finally {
     supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
   }

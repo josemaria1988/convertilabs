@@ -2,6 +2,7 @@
 const { test, assert } = require("./testkit.cjs");
 
 const {
+  buildDocumentReviewChips,
   groupDocumentsByReviewBucket,
   summarizeDocumentReviewSecondaryBuckets,
 } = require("@/modules/documents/review-queue");
@@ -67,4 +68,13 @@ test("review queue keeps processing and done as secondary counters", () => {
       ["done", 2],
     ],
   );
+});
+
+test("review queue manual chip does not imply pending work", () => {
+  const chips = buildDocumentReviewChips(makeItem({
+    classificationStatus: "completed",
+    manualInterventionBy: "Jose Maria Sosa Izaguirre",
+  }));
+
+  assert.deepEqual(chips, ["Decision contable", "Intervencion manual"]);
 });

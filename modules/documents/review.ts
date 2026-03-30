@@ -1292,6 +1292,9 @@ function buildWorkspaceClassificationState(input: {
   postingStatus: DocumentPostingStatus | null;
   currentDraftId: string | null;
   latestAssignmentRun: WorkspaceAssignmentRunRow | null;
+  canonicalState: CanonicalDocumentState;
+  decisionSource: string | null;
+  manualInterventionBy: string | null;
 }) {
   const failureMessage = asString(asRecord(input.latestAssignmentRun?.response_json).error);
   const canClassify = canRunDocumentClassificationAction({
@@ -1301,6 +1304,34 @@ function buildWorkspaceClassificationState(input: {
     hasDraft: Boolean(input.currentDraftId),
     latestClassificationRunStatus: input.latestAssignmentRun?.status ?? null,
   });
+  const terminalClassificationResolved =
+    input.canonicalState === "posted_final"
+    || input.canonicalState === "locked"
+    || input.canonicalState === "archived";
+  const manualClassificationResolved =
+    input.decisionSource === "manual_override"
+    || (input.latestAssignmentRun?.status === "stale" && Boolean(input.manualInterventionBy));
+
+  if (terminalClassificationResolved) {
+    return {
+      status: "completed" as const,
+      label: "Resuelta",
+      failureMessage: null,
+      canClassify,
+    };
+  }
+
+  if (manualClassificationResolved) {
+    return {
+      status: "completed" as const,
+      label: "Manual",
+      failureMessage:
+        input.manualInterventionBy
+          ? `Clasificada manualmente por ${input.manualInterventionBy}.`
+          : "Clasificada manualmente por un usuario del equipo.",
+      canClassify,
+    };
+  }
 
   if (input.latestAssignmentRun?.status === "stale") {
     return {
@@ -2528,65 +2559,39 @@ async function buildOrganizationWorkspaceDocumentList(input: {
     ),
   );
 
-  return Promise.all(rows.map(async (row) => ({
-    ...(() => {
-      const facts = row.current_draft_id
-        ? draftFactsById.get(row.current_draft_id) ?? null
+  return Promise.all(rows.map(async (row) => {
+    const facts = row.current_draft_id
+      ? draftFactsById.get(row.current_draft_id) ?? null
+      : null;
+    const counterpartyName = row.direction === "purchase"
+      ? facts?.issuer_name ?? null
+      : row.direction === "sale"
+        ? facts?.receiver_name ?? null
+        : facts?.issuer_name ?? facts?.receiver_name ?? null;
+    const decision = latestDecisionLogByDocumentId.get(row.id);
+    const duplicateStatus =
+      duplicateStatusByDocumentId.get(row.id)
+      ?? asString(asRecord(row.metadata).duplicate_status)
+      ?? null;
+    const operationalFlags = parseDocumentOperationalFlags(row.metadata);
+    const operationalState = buildWorkspaceOperationalState({
+      row,
+      duplicateStatus,
+      operationalFlags,
+    });
+    const manualInterventionBy =
+      row.current_draft_id && manualInterventionActorIdByDraftId.has(row.current_draft_id)
+        ? (() => {
+            const actorId = manualInterventionActorIdByDraftId.get(row.current_draft_id) ?? null;
+            const profile = actorId ? manualInterventionProfileLookup.get(actorId) : null;
+
+            return profile?.full_name || profile?.email || actorId || null;
+          })()
         : null;
-      const counterpartyName = row.direction === "purchase"
-        ? facts?.issuer_name ?? null
-        : row.direction === "sale"
-          ? facts?.receiver_name ?? null
-          : facts?.issuer_name ?? facts?.receiver_name ?? null;
-
-      return {
-        counterpartyName,
-        documentNumber: facts?.document_number ?? null,
-        documentSeries: facts?.series ?? null,
-        taxAmount: facts?.tax_amount ?? null,
-        totalAmount: facts?.total_amount ?? null,
-      };
-    })(),
-    ...(() => {
-      const decision = latestDecisionLogByDocumentId.get(row.id);
-      const duplicateStatus =
-        duplicateStatusByDocumentId.get(row.id)
-        ?? asString(asRecord(row.metadata).duplicate_status)
-        ?? null;
-      const operationalFlags = parseDocumentOperationalFlags(row.metadata);
-      const operationalState = buildWorkspaceOperationalState({
-        row,
-        duplicateStatus,
-        operationalFlags,
-      });
-
-      return {
-        certaintyLevel: decision?.certainty_level ?? null,
-        certaintyConfidence: decision?.confidence_score ?? null,
-        duplicateStatus,
-        decisionSource: decision?.decision_source ?? null,
-        canonicalState: operationalState.canonicalState,
-        operationalBucket: operationalState.operationalBucket,
-        operationalFlags: operationalState.operationalFlags,
-        blockingReason: operationalState.blockingReason,
-        manualInterventionBy:
-          row.current_draft_id && manualInterventionActorIdByDraftId.has(row.current_draft_id)
-            ? (() => {
-                const actorId = manualInterventionActorIdByDraftId.get(row.current_draft_id) ?? null;
-                const profile = actorId ? manualInterventionProfileLookup.get(actorId) : null;
-
-                return profile?.full_name || profile?.email || null;
-              })()
-            : null,
-      };
-    })(),
-    id: row.id,
-    processedHref: row.current_draft_id
+    const processedHref = row.current_draft_id
       ? `/app/o/${input.organizationSlug}/documents/${row.id}`
-      : null,
-    originalFilename: row.original_filename,
-    mimeType: row.mime_type,
-    previewUrl: await buildPreviewUrl({
+      : null;
+    const previewUrl = await buildPreviewUrl({
       id: row.id,
       organization_id: input.organizationId,
       direction: row.direction,
@@ -2605,60 +2610,78 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       current_processing_run_id: null,
       last_rule_snapshot_id: null,
       last_processed_at: null,
-    }),
-    status: row.status,
-    role: row.direction,
-    documentType: row.document_type,
-    createdAt: row.created_at,
-    documentDate: row.document_date,
-    hasProcessedDraft: Boolean(row.current_draft_id),
-    ...(() => {
-      const storage = buildWorkspaceStorageState(row.metadata);
-      const extraction = buildWorkspaceExtractionState({
-        documentStatus: row.status,
-        currentDraftId: row.current_draft_id,
-        metadata: row.metadata,
-        processingRun:
-          row.current_processing_run_id
-            ? processingRunById.get(row.current_processing_run_id) ?? null
-            : null,
-      });
-      const classification = buildWorkspaceClassificationState({
-        documentStatus: row.status,
-        postingStatus: row.posting_status ?? null,
-        currentDraftId: row.current_draft_id,
-        latestAssignmentRun: latestAssignmentRunByDocumentId.get(row.id) ?? null,
-      });
-      const canRetryExtraction =
-        extraction.canProcess && (extraction.status === "error" || extraction.isStale);
-      const primaryAction = buildWorkspacePrimaryAction({
-        processedHref: row.current_draft_id
-          ? `/app/o/${input.organizationSlug}/documents/${row.id}`
+    });
+    const storage = buildWorkspaceStorageState(row.metadata);
+    const extraction = buildWorkspaceExtractionState({
+      documentStatus: row.status,
+      currentDraftId: row.current_draft_id,
+      metadata: row.metadata,
+      processingRun:
+        row.current_processing_run_id
+          ? processingRunById.get(row.current_processing_run_id) ?? null
           : null,
-        canProcessExtraction: extraction.canProcess,
-        canRetryExtraction,
-      });
+    });
+    const classification = buildWorkspaceClassificationState({
+      documentStatus: row.status,
+      postingStatus: row.posting_status ?? null,
+      currentDraftId: row.current_draft_id,
+      latestAssignmentRun: latestAssignmentRunByDocumentId.get(row.id) ?? null,
+      canonicalState: operationalState.canonicalState,
+      decisionSource: decision?.decision_source ?? null,
+      manualInterventionBy,
+    });
+    const canRetryExtraction =
+      extraction.canProcess && (extraction.status === "error" || extraction.isStale);
+    const primaryAction = buildWorkspacePrimaryAction({
+      processedHref,
+      canProcessExtraction: extraction.canProcess,
+      canRetryExtraction,
+    });
 
-      return {
-        storageStatus: storage.status,
-        storageStatusLabel: storage.label,
-        storageFailureMessage: storage.failureMessage,
-        extractionStatus: extraction.status,
-        extractionStatusLabel: extraction.label,
-        extractionFailureMessage: extraction.failureMessage,
-        classificationStatus: classification.status,
-        classificationStatusLabel: classification.label,
-        classificationFailureMessage: classification.failureMessage,
-        canProcessExtraction: extraction.canProcess,
-        canClassify: classification.canClassify,
-        hasExtractionInFlight: extraction.inFlight,
-        nextPrimaryAction: primaryAction.action,
-        nextPrimaryActionLabel: primaryAction.label,
-        isProcessingStale: extraction.isStale,
-        canRetryExtraction,
-      };
-    })(),
-  } satisfies DocumentWorkspaceListItem)));
+    return {
+      id: row.id,
+      processedHref,
+      originalFilename: row.original_filename,
+      mimeType: row.mime_type,
+      previewUrl,
+      status: row.status,
+      canonicalState: operationalState.canonicalState,
+      operationalBucket: operationalState.operationalBucket,
+      operationalFlags: operationalState.operationalFlags,
+      blockingReason: operationalState.blockingReason,
+      role: row.direction,
+      documentType: row.document_type,
+      createdAt: row.created_at,
+      documentDate: row.document_date,
+      counterpartyName,
+      documentNumber: facts?.document_number ?? null,
+      documentSeries: facts?.series ?? null,
+      taxAmount: facts?.tax_amount ?? null,
+      totalAmount: facts?.total_amount ?? null,
+      hasProcessedDraft: Boolean(row.current_draft_id),
+      certaintyLevel: decision?.certainty_level ?? null,
+      certaintyConfidence: decision?.confidence_score ?? null,
+      duplicateStatus,
+      decisionSource: decision?.decision_source ?? null,
+      manualInterventionBy,
+      storageStatus: storage.status,
+      storageStatusLabel: storage.label,
+      storageFailureMessage: storage.failureMessage,
+      extractionStatus: extraction.status,
+      extractionStatusLabel: extraction.label,
+      extractionFailureMessage: extraction.failureMessage,
+      classificationStatus: classification.status,
+      classificationStatusLabel: classification.label,
+      classificationFailureMessage: classification.failureMessage,
+      canProcessExtraction: extraction.canProcess,
+      canClassify: classification.canClassify,
+      hasExtractionInFlight: extraction.inFlight,
+      nextPrimaryAction: primaryAction.action,
+      nextPrimaryActionLabel: primaryAction.label,
+      isProcessingStale: extraction.isStale,
+      canRetryExtraction,
+    } satisfies DocumentWorkspaceListItem;
+  }));
 }
 
 export async function listOrganizationWorkspaceDocuments(input: {
