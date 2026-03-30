@@ -365,3 +365,53 @@ test("workflow state marks missing fx as blocked", () => {
   assert.equal(state.operationalBucket, "blocked");
   assert.equal(state.nextRecommendedAction, "Resolver tipo de cambio fiscal");
 });
+
+test("workflow state clamps posting actions once the review is terminal", () => {
+  const state = deriveDocumentWorkflowState({
+    documentStatus: "draft_ready",
+    postingStatus: "draft",
+    draftStatus: "confirmed",
+    steps: [],
+    derived: buildDerived({
+      validation: {
+        canPostProvisional: true,
+        canConfirmFinal: true,
+        blockers: [],
+      },
+    }),
+    latestClassificationRun: {
+      id: "run-terminal",
+      organizationId: "org-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      triggeredByUserId: "user-1",
+      status: "stale",
+      requestPayload: {},
+      responseJson: {},
+      selectedAccountId: "acct-1",
+      selectedOperationCategory: "services",
+      selectedTemplateCode: null,
+      selectedTaxProfileCode: null,
+      confidence: 0.52,
+      providerCode: "openai",
+      modelCode: "gpt-5",
+      latencyMs: 180,
+      createdAt: "2026-03-19T00:00:00Z",
+      updatedAt: "2026-03-19T00:00:01Z",
+    },
+    learningOptionCount: 2,
+  });
+
+  assert.equal(state.queueCode, "posted_final");
+  assert.equal(state.canonicalState, "posted_final");
+  assert.equal(state.classificationStatus, "completed");
+  assert.equal(state.canPostProvisional, false);
+  assert.equal(state.canConfirmFinal, false);
+  assert.equal(state.canConfirm, false);
+  assert.equal(state.canReopen, true);
+  assert.equal(state.stepStatuses.factual, "completed");
+  assert.equal(state.stepStatuses.context, "completed");
+  assert.equal(state.stepStatuses.classification, "completed");
+  assert.equal(state.stepStatuses.posting, "completed");
+  assert.equal(state.nextRecommendedAction, "Ver trazabilidad");
+});

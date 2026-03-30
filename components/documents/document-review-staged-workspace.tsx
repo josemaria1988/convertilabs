@@ -26,6 +26,7 @@ import type { DocumentReviewPageData } from "@/modules/documents/review";
 import {
   buildDocumentOperationalHeaderView,
 } from "@/modules/presentation/document-decision-view";
+import { buildDocumentReviewGuidedRoute } from "@/modules/presentation/document-review-guided-route";
 import { formatLaunchSupportLevelLabel } from "@/modules/launch/scope";
 import {
   buttonBaseClassName,
@@ -727,7 +728,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const startsConfirmedReview =
-    pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
+    pageData.draft.status === "confirmed"
+    || pageData.document.postingStatus === "posted_final"
+    || pageData.document.postingStatus === "locked";
   const startsReopenedReview = pageData.document.status === "classified_with_open_revision";
   const startsWithForcedManualFlow =
     startsReopenedReview
@@ -836,7 +839,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
       ?? pageData.learningSuggestions.suggestedConceptName
       ?? "",
     );
-    if (pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final") {
+    if (
+      pageData.draft.status === "confirmed"
+      || pageData.document.postingStatus === "posted_final"
+      || pageData.document.postingStatus === "locked"
+    ) {
       setShowManualFlow(false);
       setMobileStep(2);
       setShowCreateAccountStage(false);
@@ -1454,7 +1461,9 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     overrideReason: pageData.derived.monetarySnapshot?.fx.overrideReason ?? null,
   });
   const isConfirmedReview =
-    pageData.draft.status === "confirmed" || pageData.document.postingStatus === "posted_final";
+    pageData.draft.status === "confirmed"
+    || pageData.document.postingStatus === "posted_final"
+    || pageData.document.postingStatus === "locked";
   const latestConfirmation = pageData.confirmations[0] ?? null;
   const resolutionStatusSummary = decisionSnapshot.classificationResolved
     ? "La resolucion actual ya quedo consolidada para este draft."
@@ -1485,15 +1494,13 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
     ?? pageData.derived.assistantSuggestion.confidence
     ?? pageData.draft.sourceConfidence
     ?? null;
+  const currentTemplateCode =
+    pageData.derived.settlementContext.templateCode ?? pageData.derived.journalSuggestion.templateCode;
   const currentTemplate =
-    getJournalTemplateByCode(
-      pageData.derived.settlementContext.templateCode ?? pageData.derived.journalSuggestion.templateCode,
-    );
+    getJournalTemplateByCode(currentTemplateCode);
   const currentTemplateTitle =
     currentTemplate?.label
-    ?? formatPostingTemplateCodeLabel(
-      pageData.derived.settlementContext.templateCode ?? pageData.derived.journalSuggestion.templateCode,
-    );
+    ?? formatPostingTemplateCodeLabel(currentTemplateCode);
   const currentTemplateMeta = Array.from(
     new Set(
       pageData.accountingImpactPreview.journal.lines
@@ -1531,54 +1538,15 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
   const mobileNeedsAccountReview = mobileRoleAssignments.some((assignment) =>
     assignment.isMissing || assignment.isProvisional);
   const mobileDuplicateBlocked = !isConfirmedReview && duplicateStatus !== "clear";
-  const reviewSteps = [
-    {
-      key: "classification",
-      label: "1. Clasificacion",
-      href: "#review-stage-classification",
-      description: "Revisar sugerencia automatica y decidir si basta o hay que abrir manual.",
-      status:
-        isConfirmedReview || pageData.workflowState.classificationStatus === "completed"
-          ? "done"
-          : "current",
-    },
-    {
-      key: "context",
-      label: "2. Contexto",
-      href: "#review-stage-context",
-      description: "Definir operacion, cobro o pago y notas del negocio cuando haga falta.",
-      status:
-        !showManualFlow
-          ? "pending"
-          : hasSavedContext
-            ? "done"
-            : "current",
-    },
-    {
-      key: "accounting",
-      label: "3. Asiento",
-      href: "#review-stage-accounting",
-      description: "Confirmar cuentas por rol, resolver manuales y validar preview contable.",
-      status:
-        !showManualFlow
-          ? "pending"
-          : decisionSnapshot.classificationResolved || manualAssignmentReady
-            ? "done"
-            : "current",
-    },
-    {
-      key: "close",
-      label: "4. Cierre",
-      href: "#review-stage-close",
-      description: "Postear provisional, confirmar final o reabrir la revision.",
-      status:
-        isConfirmedReview
-          ? "done"
-          : decisionSnapshot.canPostProvisional || decisionSnapshot.canConfirmFinal
-            ? "current"
-            : "pending",
-    },
-  ] as const;
+  const guidedRoute = buildDocumentReviewGuidedRoute({
+    workflowState: pageData.workflowState,
+    decisionSnapshot,
+    accountingContextStatus: pageData.derived.accountingContext.status,
+    hasSavedContext,
+    hasPostingTemplate: Boolean(currentTemplateCode),
+    manualAssignmentReady,
+  });
+  const reviewSteps = guidedRoute.reviewSteps;
 
   function renderMobileStepOne() {
     return (
@@ -2391,7 +2359,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               {operationalHeader.postingStateLabel}
             </p>
             <p className="mt-1 text-[color:var(--color-muted)]">
-              {isConfirmedReview ? "Revision cerrada" : operationalHeader.nextBestAction}
+              {guidedRoute.reviewClosed ? operationalHeader.workflowSummary : guidedRoute.nextBestActionCopy}
             </p>
           </div>
         </div>
@@ -2439,7 +2407,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
           <div className={`mt-4 rounded-2xl ${surfaceCardSoftClassName} px-4 py-3 text-sm`}>
             <p className="font-semibold">Siguiente mejor accion</p>
             <p className="mt-2 text-[color:var(--color-muted)]">
-              {operationalHeader.nextBestAction ?? "Revisar estado actual del documento"}
+              {guidedRoute.nextBestActionCopy}
             </p>
           </div>
 
@@ -2468,16 +2436,16 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Provisional</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">
-                  {decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado"}
+                  {guidedRoute.readinessStatusLabel ?? (decisionSnapshot.canPostProvisional ? "Habilitado" : "Bloqueado")}
                 </p>
-                <p className="mt-1 text-[color:var(--color-muted)]">{provisionalGate.summary}</p>
+                <p className="mt-1 text-[color:var(--color-muted)]">{guidedRoute.provisionalReadinessCopy}</p>
               </div>
               <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
                 <p className="font-semibold">Final</p>
                 <p className="mt-2 text-[color:var(--color-muted)]">
-                  {decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado"}
+                  {guidedRoute.readinessStatusLabel ?? (decisionSnapshot.canConfirmFinal ? "Habilitado" : "Bloqueado")}
                 </p>
-                <p className="mt-1 text-[color:var(--color-muted)]">{finalGate.summary}</p>
+                <p className="mt-1 text-[color:var(--color-muted)]">{guidedRoute.finalReadinessCopy}</p>
               </div>
             </div>
 
@@ -3019,10 +2987,10 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
             Etapa 2
           </p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-            Asiento contable y cuentas por rol
+            Plantilla contable, asiento tipo y cuentas por rol
           </h3>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            Aqui puedes revisar y corregir las cuentas que usa cada rol del asiento. La vista previa de abajo sigue siendo la fuente de verdad del Debe, Haber e IVA.
+            Aqui puedes revisar y corregir la plantilla contable o el asiento tipo sugerido, junto con las cuentas que usa cada rol. La vista previa de abajo sigue siendo la fuente de verdad del Debe, Haber e IVA.
           </p>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -3517,8 +3485,11 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
               </p>
             </div>
             <div className={`rounded-2xl ${surfaceCardSoftClassName} p-4 text-sm`}>
-              <p className="font-semibold">Cuenta principal final</p>
-              <p className="mt-2 text-[color:var(--color-muted)]">{selectedAccountLabel}</p>
+              <p className="font-semibold">Plantilla / asiento final</p>
+              <p className="mt-2 text-[color:var(--color-muted)]">{currentTemplateTitle}</p>
+              <p className="mt-1 text-[color:var(--color-muted)]">
+                Cuenta principal: {selectedAccountLabel}
+              </p>
               <p className="mt-1 text-[color:var(--color-muted)]">
                 {primaryAccountUi.label}
               </p>
@@ -3556,7 +3527,7 @@ export function DocumentReviewStagedWorkspace(props: DocumentReviewWorkspaceProp
         </h3>
         <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
           {isConfirmedReview
-            ? "La revision ya fue confirmada. Si necesitas volver a editar etapas o reasignar cuentas, primero reabre la revision."
+            ? "La revision ya fue confirmada. Si necesitas volver a editar etapas o reasignar plantilla, asiento tipo o cuentas por rol, primero reabre la revision."
             : "Solo cuando la clasificacion queda resuelta seguimos con posteo, confirmacion o reapertura."}
         </p>
 

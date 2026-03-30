@@ -306,3 +306,67 @@ test("canonical language formats stable workflow and source labels", () => {
     "Resolver tipo de cambio fiscal",
   );
 });
+
+test("decision snapshot keeps terminal reviews on tracing instead of posting actions", () => {
+  const snapshot = buildDocumentDecisionSnapshot({
+    documentStatus: "draft_ready",
+    postingStatus: "draft",
+    draftStatus: "confirmed",
+    steps: buildSteps(),
+    derived: buildDerived(),
+    workflowState: buildWorkflowState({
+      queueCode: "posted_final",
+      canonicalState: "posted_final",
+      operationalBucket: "done",
+      stepStatuses: {
+        factual: "completed",
+        context: "completed",
+        classification: "completed",
+        learning: "ready",
+        posting: "completed",
+        vat: "ready",
+      },
+      nextRecommendedAction: "Ver trazabilidad",
+      canPostProvisional: false,
+      canConfirmFinal: false,
+      canConfirm: false,
+      canReopen: true,
+      canRunVatPreview: true,
+      permissions: {
+        canRunClassification: false,
+        canCreateLearningRule: true,
+        canPostProvisional: false,
+        canConfirmFinal: false,
+        canConfirm: false,
+        canReopen: true,
+        canRunVatPreview: true,
+      },
+      classificationStatus: "completed",
+    }),
+    latestClassificationRun: null,
+    accountRoleAssignments: [
+      {
+        roleCode: "expense_account",
+        linePurpose: "main",
+        accountId: "acct-1",
+        isMissing: false,
+        isProvisional: false,
+      },
+    ],
+    documentDate: "2026-03-22",
+    duplicateStatus: "clear",
+  });
+
+  const provisionalChecklist = snapshot.checklist.find((item) => item.code === "provisional_ready");
+  const finalChecklist = snapshot.checklist.find((item) => item.code === "final_ready");
+
+  assert.equal(snapshot.postingState, "posted_final");
+  assert.equal(snapshot.factualReviewResolved, true);
+  assert.equal(snapshot.accountingContextResolved, true);
+  assert.equal(snapshot.canPostProvisional, false);
+  assert.equal(snapshot.canConfirmFinal, false);
+  assert.equal(snapshot.nextBestAction, "Ver trazabilidad");
+  assert.equal(snapshot.vatPreviewEligibility.ok, true);
+  assert.equal(provisionalChecklist?.done, true);
+  assert.equal(finalChecklist?.done, true);
+});

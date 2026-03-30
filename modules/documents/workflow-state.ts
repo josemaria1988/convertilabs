@@ -163,6 +163,30 @@ function buildSupportLevelFlags(input: {
   return flags;
 }
 
+function normalizeTerminalPostingStatus(input: {
+  draftStatus: string | null;
+  postingStatus: DocumentPostingStatus | null;
+}) {
+  if (input.postingStatus === "locked") {
+    return "locked" satisfies DocumentPostingStatus;
+  }
+
+  if (input.draftStatus === "confirmed" || input.postingStatus === "posted_final") {
+    return "posted_final" satisfies DocumentPostingStatus;
+  }
+
+  return input.postingStatus;
+}
+
+function isTerminalReviewState(input: {
+  draftStatus: string | null;
+  postingStatus: DocumentPostingStatus | null;
+}) {
+  const normalizedPostingStatus = normalizeTerminalPostingStatus(input);
+
+  return normalizedPostingStatus === "posted_final" || normalizedPostingStatus === "locked";
+}
+
 export function canRunDocumentClassificationAction(input: {
   documentStatus: string;
   postingStatus: DocumentPostingStatus | null;
@@ -175,11 +199,10 @@ export function canRunDocumentClassificationAction(input: {
     return false;
   }
 
-  if (
-    input.draftStatus === "confirmed"
-    || input.postingStatus === "posted_final"
-    || input.postingStatus === "locked"
-  ) {
+  if (isTerminalReviewState({
+    draftStatus: input.draftStatus,
+    postingStatus: input.postingStatus,
+  })) {
     return false;
   }
 
@@ -326,16 +349,23 @@ export function deriveDocumentActionPermissions(input: {
   supportLevel?: DocumentSupportLevel | null;
   importReviewStatus?: ImportReviewStatus | null;
 }) {
+  const normalizedPostingStatus = normalizeTerminalPostingStatus({
+    draftStatus: input.draftStatus,
+    postingStatus: input.postingStatus,
+  });
+  const isTerminalReview = normalizedPostingStatus === "posted_final" || normalizedPostingStatus === "locked";
   const scopeBlocksFinal =
     input.supportLevel === "assisted_only"
     || input.supportLevel === "blocked";
   const importBlocksFinal = input.importReviewStatus !== null && input.importReviewStatus !== undefined;
   const canPostProvisional =
-    input.classificationUpToDate
+    !isTerminalReview
+    && input.classificationUpToDate
     && input.canPostProvisionalByValidation
     && input.supportLevel !== "blocked";
   const canConfirmFinal =
-    input.classificationUpToDate
+    !isTerminalReview
+    && input.classificationUpToDate
     && input.canConfirmFinalByValidation
     && !scopeBlocksFinal
     && !importBlocksFinal;
@@ -349,12 +379,13 @@ export function deriveDocumentActionPermissions(input: {
     canReopen:
       input.documentStatus === "classified"
       || input.draftStatus === "confirmed"
-      || input.postingStatus === "posted_final"
-      || input.postingStatus === "locked",
+      || normalizedPostingStatus === "posted_final"
+      || normalizedPostingStatus === "locked",
     canRunVatPreview:
       canPostProvisional
-      || input.postingStatus === "posted_provisional"
-      || input.postingStatus === "posted_final",
+      || normalizedPostingStatus === "posted_provisional"
+      || normalizedPostingStatus === "posted_final"
+      || normalizedPostingStatus === "locked",
   } satisfies DocumentActionPermissions;
 }
 
@@ -370,12 +401,20 @@ export function deriveDocumentWorkflowState(input: {
   supportLevel?: DocumentSupportLevel | null;
   importReviewStatus?: ImportReviewStatus | null;
 }) {
-  const factualReady = ["identity", "fields", "amounts"].every((stepCode) =>
+  const normalizedPostingStatus = normalizeTerminalPostingStatus({
+    draftStatus: input.draftStatus,
+    postingStatus: input.postingStatus,
+  });
+  const terminalReview = isTerminalReviewState({
+    draftStatus: input.draftStatus,
+    postingStatus: normalizedPostingStatus,
+  });
+  const factualReady = terminalReview || ["identity", "fields", "amounts"].every((stepCode) =>
     input.steps.some((step) =>
       step.step_code === stepCode
       && ["draft_saved", "confirmed"].includes(step.status)
     ));
-  const contextReady = input.steps.some((step) =>
+  const contextReady = terminalReview || input.steps.some((step) =>
     step.step_code === "accounting_context"
     && ["draft_saved", "confirmed"].includes(step.status)
   ) || input.derived.accountingContext.status === "not_required";
@@ -384,7 +423,9 @@ export function deriveDocumentWorkflowState(input: {
     && hasManualClassificationResolution(input.derived.accountingContext),
   );
   const classificationStatus =
-    manualClassificationResolved
+    terminalReview
+      ? "completed"
+      : manualClassificationResolved
       ? "completed"
       : input.latestClassificationRun?.status === "failed"
         ? "failed"
@@ -395,12 +436,16 @@ export function deriveDocumentWorkflowState(input: {
             : input.documentStatus === "extracted" && input.derived.accountingContext.shouldBlockConfirmation
               ? "needs_context"
               : "not_started";
-  const classificationMaterialized = isClassificationMaterializedDocumentStatus(input.documentStatus);
+  const classificationMaterialized =
+    terminalReview || isClassificationMaterializedDocumentStatus(input.documentStatus);
   const classificationUpToDate =
-    classificationMaterialized
-    && classificationStatus !== "failed"
-    && classificationStatus !== "stale"
-    && classificationStatus !== "needs_context";
+    terminalReview
+    || (
+      classificationMaterialized
+      && classificationStatus !== "failed"
+      && classificationStatus !== "stale"
+      && classificationStatus !== "needs_context"
+    );
   const canCreateLearningRule =
     classificationUpToDate
     && Boolean(input.derived.appliedRule.accountId)
@@ -408,7 +453,7 @@ export function deriveDocumentWorkflowState(input: {
     && input.learningOptionCount > 0;
   const canRunClassification = canRunDocumentClassificationAction({
     documentStatus: input.documentStatus,
-    postingStatus: input.postingStatus,
+    postingStatus: normalizedPostingStatus,
     draftStatus: input.draftStatus,
     hasDraft: true,
     latestClassificationRunStatus: input.latestClassificationRun?.status ?? null,
@@ -428,7 +473,7 @@ export function deriveDocumentWorkflowState(input: {
     canCreateLearningRule,
     canPostProvisionalByValidation: input.derived.validation.canPostProvisional,
     canConfirmFinalByValidation: input.derived.validation.canConfirmFinal,
-    postingStatus: input.postingStatus,
+    postingStatus: normalizedPostingStatus,
     documentStatus: input.documentStatus,
     draftStatus: input.draftStatus,
     supportLevel: input.supportLevel,
@@ -436,7 +481,7 @@ export function deriveDocumentWorkflowState(input: {
   });
   const canonical = deriveCanonicalDocumentState({
     documentStatus: input.documentStatus,
-    postingStatus: input.postingStatus,
+    postingStatus: normalizedPostingStatus,
     hasDraft: true,
     factualReady,
     classificationUpToDate,
@@ -452,11 +497,11 @@ export function deriveDocumentWorkflowState(input: {
 
   if (input.documentStatus === "classified_with_open_revision") {
     queueCode = "reopened_needs_manual_remap";
-  } else if (input.postingStatus === "posted_final" || input.postingStatus === "locked") {
+  } else if (normalizedPostingStatus === "posted_final" || normalizedPostingStatus === "locked") {
     queueCode = "posted_final";
-  } else if (input.postingStatus === "posted_provisional" && permissions.canConfirmFinal) {
+  } else if (normalizedPostingStatus === "posted_provisional" && permissions.canConfirmFinal) {
     queueCode = "ready_for_final_confirmation";
-  } else if (input.postingStatus === "posted_provisional") {
+  } else if (normalizedPostingStatus === "posted_provisional") {
     queueCode = "posted_provisional";
   } else if (canonical.canonicalState === "blocked_duplicate") {
     queueCode = "pending_assignment";
@@ -489,6 +534,10 @@ export function deriveDocumentWorkflowState(input: {
           ? "Continuar en modo asistido"
           : canonical.canonicalState === "processing"
             ? "Esperar procesamiento"
+            : canonical.canonicalState === "posted_final"
+              ? "Ver trazabilidad"
+              : canonical.canonicalState === "locked"
+                ? "Revisar bloqueo"
             : queueCode === "pending_factual_review"
               ? "Completar validacion factual"
               : queueCode === "pending_assignment"
@@ -510,9 +559,17 @@ export function deriveDocumentWorkflowState(input: {
     operationalFlags: canonical.operationalFlags,
     blockingReason: canonical.blockingReason,
     stepStatuses: {
-      factual: resolveStepStatus(input.steps, ["identity", "fields", "amounts"], false),
-      context: resolveStepStatus(input.steps, ["operation_context", "accounting_context"], !contextReady),
-      classification: classificationUpToDate
+      factual:
+        terminalReview
+          ? "completed"
+          : resolveStepStatus(input.steps, ["identity", "fields", "amounts"], false),
+      context:
+        terminalReview
+          ? "completed"
+          : resolveStepStatus(input.steps, ["operation_context", "accounting_context"], !contextReady),
+      classification: terminalReview
+        ? "completed"
+        : classificationUpToDate
         ? "completed"
         : canRunClassification
           ? "ready"
@@ -523,14 +580,18 @@ export function deriveDocumentWorkflowState(input: {
             : "pending",
       learning: canCreateLearningRule ? "ready" : "pending",
       posting:
-        input.postingStatus === "posted_final" || input.postingStatus === "posted_provisional"
+        terminalReview
+          ? "completed"
+          : normalizedPostingStatus === "posted_final" || normalizedPostingStatus === "posted_provisional"
           ? "completed"
           : classificationUpToDate
               && (permissions.canPostProvisional || permissions.canConfirmFinal)
             ? "ready"
             : "blocked",
       vat:
-        input.postingStatus === "posted_provisional" || input.postingStatus === "posted_final"
+        terminalReview
+          ? "ready"
+          : normalizedPostingStatus === "posted_provisional" || normalizedPostingStatus === "posted_final"
           ? "ready"
           : "pending",
     },

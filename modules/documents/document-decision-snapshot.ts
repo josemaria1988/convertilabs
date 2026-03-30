@@ -91,10 +91,22 @@ function stepSavedOrConfirmed(step: DraftStepStatus | undefined) {
   return step ? ["draft_saved", "confirmed"].includes(step.status) : false;
 }
 
+function isTerminalWorkflowState(value: CanonicalWorkflowState | null | undefined) {
+  return value === "posted_final" || value === "locked";
+}
+
 function buildPostingState(input: {
   postingStatus: DocumentPostingStatus | null;
   workflowState: DocumentWorkflowState;
 }) {
+  if (input.workflowState.canonicalState === "locked") {
+    return "locked" satisfies PostingState;
+  }
+
+  if (input.workflowState.canonicalState === "posted_final") {
+    return "posted_final" satisfies PostingState;
+  }
+
   if (input.postingStatus === "locked") {
     return "locked" satisfies PostingState;
   }
@@ -191,9 +203,18 @@ function buildChecklist(input: {
   blockers: string[];
   canPostProvisional: boolean;
   canConfirmFinal: boolean;
+  postingState: PostingState;
   vatPreviewEligibility: EligibilityDecision;
   vatRunEligibility: EligibilityDecision;
 }) {
+  const provisionalStageClosed = [
+    "posted_provisional",
+    "ready_final",
+    "posted_final",
+    "locked",
+  ].includes(input.postingState);
+  const finalStageClosed = ["posted_final", "locked"].includes(input.postingState);
+
   return [
     {
       code: "factual_review",
@@ -280,22 +301,32 @@ function buildChecklist(input: {
     {
       code: "provisional_ready",
       label: "Listo para posting provisional",
-      done: input.canPostProvisional,
+      done: input.canPostProvisional || provisionalStageClosed,
       severity: "info",
       explanation: input.canPostProvisional
         ? "Ya puede impactar en contabilidad en modo provisional."
-        : "Todavia faltan condiciones para el posting provisional.",
-      actionHint: input.canPostProvisional ? undefined : "Completar condiciones para provisional",
+        : provisionalStageClosed
+          ? "La etapa provisional ya quedo superada dentro de una revision mas avanzada."
+          : "Todavia faltan condiciones para el posting provisional.",
+      actionHint:
+        input.canPostProvisional || provisionalStageClosed
+          ? undefined
+          : "Completar condiciones para provisional",
     },
     {
       code: "final_ready",
       label: "Listo para confirmacion final",
-      done: input.canConfirmFinal,
+      done: input.canConfirmFinal || finalStageClosed,
       severity: "info",
       explanation: input.canConfirmFinal
         ? "Ya puede confirmarse definitivamente."
-        : "Todavia faltan condiciones para la confirmacion final.",
-      actionHint: input.canConfirmFinal ? undefined : "Completar condiciones para final",
+        : finalStageClosed
+          ? "La confirmacion final ya quedo cerrada y solo admite reapertura controlada."
+          : "Todavia faltan condiciones para la confirmacion final.",
+      actionHint:
+        input.canConfirmFinal || finalStageClosed
+          ? undefined
+          : "Completar condiciones para final",
     },
     {
       code: "vat_preview",
@@ -332,17 +363,20 @@ export function buildDocumentDecisionSnapshot(input: {
   documentDate?: string | null;
   duplicateStatus?: string | null;
 }) {
+  const canonicalWorkflowState = input.workflowState.canonicalState as CanonicalWorkflowState;
+  const workflowIsTerminal = isTerminalWorkflowState(canonicalWorkflowState);
   const stepByCode = new Map(input.steps.map((step) => [step.step_code, step]));
-  const factualReviewResolved = ["identity", "fields", "amounts"].every((stepCode) =>
+  const factualReviewResolved = workflowIsTerminal || ["identity", "fields", "amounts"].every((stepCode) =>
     stepSavedOrConfirmed(stepByCode.get(stepCode)),
   );
   const accountingContextResolved =
-    input.derived.accountingContext.status === "not_required"
+    workflowIsTerminal
+    || input.derived.accountingContext.status === "not_required"
     || input.derived.accountingContext.status === "provided"
     || input.derived.accountingContext.status === "assistant_completed"
     || input.derived.accountingContext.status === "manual_override"
     || stepSavedOrConfirmed(stepByCode.get("accounting_context"));
-  const classificationResolved = input.workflowState.classificationStatus === "completed";
+  const classificationResolved = workflowIsTerminal || input.workflowState.classificationStatus === "completed";
   const previewBalanced = Boolean(
     input.derived.journalSuggestion.isBalanced
     && (input.derived.journalSuggestion.totalDebit ?? 0) > 0,
@@ -353,6 +387,12 @@ export function buildDocumentDecisionSnapshot(input: {
     postingStatus: input.postingStatus,
     workflowState: input.workflowState,
   });
+  const normalizedPostingStatus =
+    canonicalWorkflowState === "locked"
+      ? "locked"
+      : canonicalWorkflowState === "posted_final"
+        ? "posted_final"
+        : input.postingStatus;
   const blockers = unique(input.derived.validation.blockers);
   const warnings = unique([
     ...input.workflowState.visibleWarnings,
@@ -386,7 +426,7 @@ export function buildDocumentDecisionSnapshot(input: {
   const vatPreviewDecision = eligibleForVatPreview({
     documentId: "document",
     documentDate: input.documentDate ?? null,
-    postingStatus: input.postingStatus,
+    postingStatus: normalizedPostingStatus,
     documentStatus: input.documentStatus,
     hasCurrentDraft: true,
     classificationResolved,
@@ -397,7 +437,7 @@ export function buildDocumentDecisionSnapshot(input: {
   const vatRunDecision = eligibleForVatRun({
     documentId: "document",
     documentDate: input.documentDate ?? null,
-    postingStatus: input.postingStatus,
+    postingStatus: normalizedPostingStatus,
     documentStatus: input.documentStatus,
     hasCurrentDraft: true,
     classificationResolved,
@@ -447,13 +487,15 @@ export function buildDocumentDecisionSnapshot(input: {
     blockers,
     canPostProvisional: input.workflowState.canPostProvisional,
     canConfirmFinal: input.workflowState.canConfirmFinal,
+    postingState,
     vatPreviewEligibility,
     vatRunEligibility,
   });
-  const canonicalWorkflowState = input.workflowState.canonicalState as CanonicalWorkflowState;
   const workflowSuggestedAction = formatCanonicalNextActionLabel(canonicalWorkflowState);
   const nextBestAction =
-    input.workflowState.canConfirmFinal
+    workflowIsTerminal
+      ? workflowSuggestedAction ?? null
+      : input.workflowState.canConfirmFinal
       ? "Confirmar final"
       : input.workflowState.canPostProvisional
         ? "Postear provisional"
