@@ -5,6 +5,7 @@ import { InternationalOperationsWorkspace } from "@/components/documents/interna
 import { LoadingLink } from "@/components/ui/loading-link";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { listOrganizationCostCenters } from "@/modules/cost-centers/service";
 import {
   listAllOrganizationWorkspaceDocuments,
   listOrganizationWorkspaceDocuments,
@@ -49,7 +50,7 @@ export default async function OrganizationDocumentsPage({
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
 
-  const [recentDocuments, allDocuments, importOperations, recentDocumentsResult] = await Promise.all([
+  const [recentDocuments, allDocuments, importOperations, recentDocumentsResult, costCenters] = await Promise.all([
     listOrganizationWorkspaceDocuments({
       organizationId: organization.id,
       organizationSlug: organization.slug,
@@ -73,6 +74,12 @@ export default async function OrganizationDocumentsPage({
         .order("created_at", { ascending: false })
         .limit(8)
       : Promise.resolve({ data: [], error: null }),
+    activeTab === "documents"
+      ? listOrganizationCostCenters({
+        organizationId: organization.id,
+        includeArchived: true,
+      })
+      : Promise.resolve([]),
   ]);
 
   if (recentDocumentsResult.error) {
@@ -83,6 +90,7 @@ export default async function OrganizationDocumentsPage({
   const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(allDocuments);
   const bucketCountMap = new Map(reviewBuckets.map((bucket) => [bucket.key, bucket.items.length]));
   const secondaryCountMap = new Map(secondaryBuckets.map((bucket) => [bucket.key, bucket.count]));
+  const costCenterNameById = Object.fromEntries(costCenters.map((item) => [item.id, item.name]));
   const recentInternationalDocuments = (((recentDocumentsResult.data as Array<{
     id: string;
     original_filename: string;
@@ -282,8 +290,13 @@ export default async function OrganizationDocumentsPage({
                   Todavia no hay documentos cargados.
                 </div>
               ) : (
-                recentDocuments.slice(0, 8).map((document) => (
-                  <div
+                recentDocuments.slice(0, 8).map((document) => {
+                  const costCenterName = document.costCenterId
+                    ? costCenterNameById[document.costCenterId] ?? null
+                    : null;
+
+                  return (
+                    <div
                     key={document.id}
                     className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
                   >
@@ -293,6 +306,13 @@ export default async function OrganizationDocumentsPage({
                         <p className="mt-1 text-sm text-[color:var(--color-muted)]">
                           {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.createdAt)}
                         </p>
+                        {costCenterName ? (
+                          <div className="mt-2">
+                            <span className="status-pill status-pill--info">
+                              Proyecto: {costCenterName}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                       {document.status === "duplicate" ? (
                         <span className="status-pill status-pill--danger">Duplicado rechazado</span>
@@ -307,7 +327,8 @@ export default async function OrganizationDocumentsPage({
                       )}
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>

@@ -252,6 +252,7 @@ type DocumentListRow = {
   document_type: string | null;
   status: string;
   posting_status: DocumentPostingStatus | null;
+  cost_center_id: string | null;
   storage_bucket: string;
   storage_path: string;
   original_filename: string;
@@ -281,6 +282,7 @@ export type DocumentWorkspaceListItem = {
   documentType: string | null;
   createdAt: string;
   documentDate: string | null;
+  costCenterId: string | null;
   counterpartyName: string | null;
   documentNumber: string | null;
   documentSeries: string | null;
@@ -2312,6 +2314,7 @@ function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | 
     status: String(row.status ?? "uploaded"),
     posting_status:
       typeof row.posting_status === "string" ? row.posting_status as DocumentPostingStatus : null,
+    cost_center_id: typeof row.cost_center_id === "string" ? row.cost_center_id : null,
     storage_bucket: String(row.storage_bucket ?? ""),
     storage_path: String(row.storage_path ?? ""),
     original_filename: String(row.original_filename ?? ""),
@@ -2653,6 +2656,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       documentType: row.document_type,
       createdAt: row.created_at,
       documentDate: row.document_date,
+      costCenterId: row.cost_center_id,
       counterpartyName,
       documentNumber: facts?.document_number ?? null,
       documentSeries: facts?.series ?? null,
@@ -2742,7 +2746,7 @@ async function loadPaginatedWorkspaceDocumentRows(input: {
   let primaryQuery = input.supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      "id, direction, document_type, status, posting_status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
     )
     .eq("organization_id", input.organizationId);
 
@@ -2761,7 +2765,7 @@ async function loadPaginatedWorkspaceDocumentRows(input: {
     let legacyQuery = input.supabase
       .from("documents")
       .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+        "id, direction, document_type, status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
       )
       .eq("organization_id", input.organizationId);
 
@@ -2792,7 +2796,7 @@ async function loadAllWorkspaceDocumentRows(input: {
   let primaryQuery = input.supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, posting_status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      "id, direction, document_type, status, posting_status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
     )
     .eq("organization_id", input.organizationId);
 
@@ -2810,7 +2814,7 @@ async function loadAllWorkspaceDocumentRows(input: {
     let legacyQuery = input.supabase
       .from("documents")
       .select(
-        "id, direction, document_type, status, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+        "id, direction, document_type, status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
       )
       .eq("organization_id", input.organizationId);
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { DocumentsWorkspaceTable } from "@/components/documents/documents-workspace-table";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { listOrganizationCostCenters } from "@/modules/cost-centers/service";
 import { listPaginatedOrganizationWorkspaceDocuments } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 
@@ -96,19 +97,26 @@ export default async function PendingAssignmentPage({
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const canUseQueue = ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(organization.role);
-  const documentsPage = await listPaginatedOrganizationWorkspaceDocuments({
-    organizationId: organization.id,
-    organizationSlug: organization.slug,
-    page: 1,
-    pageSize: 200,
-    directionFilter: "all",
-    sortOrder: "confidence_asc",
-  });
+  const [documentsPage, costCenters] = await Promise.all([
+    listPaginatedOrganizationWorkspaceDocuments({
+      organizationId: organization.id,
+      organizationSlug: organization.slug,
+      page: 1,
+      pageSize: 200,
+      directionFilter: "all",
+      sortOrder: "confidence_asc",
+    }),
+    listOrganizationCostCenters({
+      organizationId: organization.id,
+      includeArchived: true,
+    }),
+  ]);
   const pendingItems = documentsPage.items.filter((item) =>
     item.canClassify
     || item.classificationStatus === "failed"
     || item.classificationStatus === "stale");
   const groups = buildPendingAssignmentGroups(pendingItems).slice(0, 12);
+  const costCenterNameById = Object.fromEntries(costCenters.map((item) => [item.id, item.name]));
 
   return (
     <PrivateDashboardShell
@@ -218,6 +226,7 @@ export default async function PendingAssignmentPage({
           <DocumentsWorkspaceTable
             slug={organization.slug}
             documents={pendingItems}
+            costCenterNameById={costCenterNameById}
             missingFxSummary={{ count: 0, dates: [] }}
           />
         ) : (

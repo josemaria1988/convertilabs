@@ -3,6 +3,7 @@ import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-
 import { DocumentReviewQueue } from "@/components/documents/document-review-queue";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { listOrganizationCostCenters } from "@/modules/cost-centers/service";
 import { listAllOrganizationWorkspaceDocuments } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 
@@ -21,11 +22,18 @@ export default async function OrganizationReviewPage({
 }: OrganizationReviewPageProps) {
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const documents = await listAllOrganizationWorkspaceDocuments({
-    organizationId: organization.id,
-    organizationSlug: organization.slug,
-    sortOrder: "date_desc",
-  });
+  const [documents, costCenters] = await Promise.all([
+    listAllOrganizationWorkspaceDocuments({
+      organizationId: organization.id,
+      organizationSlug: organization.slug,
+      sortOrder: "date_desc",
+    }),
+    listOrganizationCostCenters({
+      organizationId: organization.id,
+      includeArchived: true,
+    }),
+  ]);
+  const costCenterNameById = Object.fromEntries(costCenters.map((item) => [item.id, item.name]));
   const canUsePendingAssignmentQueue = ["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(
     organization.role,
   );
@@ -74,7 +82,11 @@ export default async function OrganizationReviewPage({
           </div>
         </section>
 
-        <DocumentReviewQueue slug={organization.slug} documents={documents} />
+        <DocumentReviewQueue
+          slug={organization.slug}
+          documents={documents}
+          costCenterNameById={costCenterNameById}
+        />
       </div>
     </PrivateDashboardShell>
   );

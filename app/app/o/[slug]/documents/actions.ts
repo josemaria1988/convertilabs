@@ -21,7 +21,12 @@ import { resolveMissingFxRates } from "@/modules/documents/spreadsheet-fx-resolu
 function buildPaths(slug: string, documentId?: string) {
   return {
     documents: `/app/o/${slug}/documents`,
+    reviewQueue: `/app/o/${slug}/review`,
     review: documentId ? `/app/o/${slug}/documents/${documentId}` : null,
+    field: `/app/o/${slug}/field`,
+    fieldUpload: `/app/o/${slug}/field/upload`,
+    fieldActivity: `/app/o/${slug}/field/activity`,
+    fieldProjects: `/app/o/${slug}/field/projects`,
   };
 }
 
@@ -35,10 +40,10 @@ function canRunClassification(role: string) {
 
 function revalidateDocumentSurfaces(slug: string, documentId?: string) {
   const paths = buildPaths(slug, documentId);
-  revalidatePath(paths.documents);
-
-  if (paths.review) {
-    revalidatePath(paths.review);
+  for (const path of Object.values(paths)) {
+    if (path) {
+      revalidatePath(path);
+    }
   }
 }
 
@@ -64,6 +69,7 @@ type PrepareDocumentUploadInput = {
   mimeType: string;
   fileSize: number;
   fileHash?: string | null;
+  sourceSurface?: "mobile_field" | null;
 };
 
 type FinalizeDocumentUploadInput = {
@@ -459,19 +465,36 @@ export async function prepareDocumentUploadAction(
     };
   }
 
-  if (input.fileHash?.trim()) {
+  if (input.fileHash?.trim() || input.sourceSurface === "mobile_field") {
+    const updatePayload: {
+      file_hash?: string;
+      upload_source?: string;
+      metadata?: Record<string, unknown>;
+    } = {};
+
+    if (input.fileHash?.trim()) {
+      updatePayload.file_hash = input.fileHash.trim();
+    }
+
+    if (input.sourceSurface === "mobile_field") {
+      updatePayload.upload_source = "mobile_field";
+      updatePayload.metadata = {
+        source_surface: "mobile_field",
+      };
+    }
+
     const { error: fileHashError } = await serviceSupabase
       .from("documents")
-      .update({
-        file_hash: input.fileHash.trim(),
-      })
+      .update(updatePayload)
       .eq("id", row.document_id)
       .eq("organization_id", organization.id);
 
     if (fileHashError) {
       return {
         ok: false,
-        message: fileHashError.message ?? "No se pudo registrar el hash del archivo antes de subirlo.",
+        message:
+          fileHashError.message
+          ?? "No se pudo registrar la metadata del archivo antes de subirlo.",
       };
     }
   }

@@ -178,6 +178,28 @@ create table if not exists public.accounting_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.organization_cost_centers (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  description text,
+  is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_by uuid references public.profiles(id),
+  updated_by uuid references public.profiles(id),
+  archived_by uuid references public.profiles(id),
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_org_cost_centers_org_name_active
+  on public.organization_cost_centers (organization_id, lower(name))
+  where is_active = true;
+
+create index if not exists idx_org_cost_centers_org_active_created
+  on public.organization_cost_centers (organization_id, is_active, created_at desc);
+
 create table if not exists public.account_role_bindings (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

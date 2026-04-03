@@ -28,6 +28,7 @@ import {
 type OrganizationOnboardingFormProps = {
   userEmail?: string | null;
   featureFlags: OnboardingFeatureFlags;
+  nextPath?: string | null;
 };
 
 type LabelWithHelpProps = {
@@ -52,6 +53,7 @@ function LabelWithHelp({
 export function OrganizationOnboardingForm({
   userEmail,
   featureFlags,
+  nextPath,
 }: OrganizationOnboardingFormProps) {
   const [organizationName, setOrganizationName] = useState("");
   const [legalEntityType, setLegalEntityType] = useState("SAS");
@@ -77,6 +79,8 @@ export function OrganizationOnboardingForm({
 
   return (
     <form className="space-y-6" action={formAction}>
+      {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
+
       <div aria-live="polite" className="min-h-6">
         {safeState.message ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
@@ -309,8 +313,12 @@ export function OrganizationOnboardingForm({
         <p className="text-sm font-semibold">Vista previa del slug</p>
         <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
           {slugPreview
-            ? `/app/o/${slugPreview}/documents`
-            : "/app/o/<slug>/documents"}
+            ? nextPath === "/mobile"
+              ? `/app/o/${slugPreview}/field`
+              : `/app/o/${slugPreview}/documents`
+            : nextPath === "/mobile"
+              ? "/app/o/<slug>/field"
+              : "/app/o/<slug>/documents"}
         </p>
         <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
           {userEmail ? `Owner inicial: ${userEmail}` : "Owner inicial: cuenta autenticada"}

@@ -43,6 +43,25 @@ Las superficies avanzadas pueden entrar por:
 - cards internas;
 - desktop o hub experto.
 
+### Carril mobile de campo
+
+Existe un carril mobile separado para captura operativa en:
+
+- `/mobile`
+- `/app/o/[slug]/field`
+- `/app/o/[slug]/field/upload`
+- `/app/o/[slug]/field/activity`
+- `/app/o/[slug]/field/projects`
+
+Reglas activas para ese carril:
+
+- misma auth y tenancy del producto principal;
+- misma infraestructura de upload, storage privado, extraccion y workflow;
+- foco solo en captura, estado, clasificacion basica, proyectos minimos y onboarding mobile;
+- desktop mantiene la administracion completa de proyectos/centros de costo y la edicion fina por documento;
+- acceso visible a "Abrir version completa en web";
+- no reemplaza Review, IVA, cierre, auditoria, imports, exports ni advanced.
+
 ### Filosofia de pantalla
 
 Cada pantalla debe:
@@ -87,10 +106,15 @@ No hacer:
 
 ### Rutas privadas clave
 
+- `/mobile`
 - `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/documents`
 - `/app/o/[slug]/documents/[documentId]`
 - `/app/o/[slug]/review`
+- `/app/o/[slug]/field`
+- `/app/o/[slug]/field/upload`
+- `/app/o/[slug]/field/activity`
+- `/app/o/[slug]/field/projects`
 - `/app/o/[slug]/documents/pending-assignment`
 - `/app/o/[slug]/audit`
 - `/app/o/[slug]/tax`

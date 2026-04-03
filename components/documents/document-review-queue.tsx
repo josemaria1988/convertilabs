@@ -13,6 +13,7 @@ import {
 type DocumentReviewQueueProps = {
   slug: string;
   documents: DocumentWorkspaceListItem[];
+  costCenterNameById: Record<string, string>;
 };
 
 function formatDateLabel(value: string | null) {
@@ -38,6 +39,7 @@ function formatAmount(value: number | null) {
 export function DocumentReviewQueue({
   slug,
   documents,
+  costCenterNameById,
 }: DocumentReviewQueueProps) {
   const groupedBuckets = groupDocumentsByReviewBucket(documents);
   const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(documents);
@@ -112,6 +114,9 @@ export function DocumentReviewQueue({
             ) : (
               bucket.items.map((document) => {
                 const chips = buildDocumentReviewChips(document);
+                const costCenterName = document.costCenterId
+                  ? costCenterNameById[document.costCenterId] ?? null
+                  : null;
 
                 return (
                   <article
@@ -135,6 +140,11 @@ export function DocumentReviewQueue({
                     <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                       <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
+                          {costCenterName ? (
+                            <span className="status-pill status-pill--info">
+                              Proyecto: {costCenterName}
+                            </span>
+                          ) : null}
                           {chips.map((chip) => (
                             <span key={`${document.id}:${chip}`} className="status-pill status-pill--warning">
                               {chip}

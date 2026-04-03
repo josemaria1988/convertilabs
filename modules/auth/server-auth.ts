@@ -134,6 +134,10 @@ export function resolveOrganizationDashboardPath(slug: string) {
   return `/app/o/${slug}/dashboard`;
 }
 
+export function resolveOrganizationFieldPath(slug: string) {
+  return `/app/o/${slug}/field`;
+}
+
 export function resolveOrganizationDocumentsPath(slug: string) {
   return `/app/o/${slug}/documents`;
 }

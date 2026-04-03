@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { ConvertilabsLogo } from "@/components/convertilabs-logo";
 import { OrganizationOnboardingForm } from "@/components/organization-onboarding-form";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { requireOnboardingPage } from "@/modules/auth/server-auth";
+import {
+  normalizeNextPath,
+  requireOnboardingPage,
+} from "@/modules/auth/server-auth";
 import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 
 export const metadata: Metadata = {
@@ -17,9 +20,43 @@ const onboardingChecks = [
   "Entrar directo al cockpit privado o al carril de importacion externa.",
 ];
 
-export default async function OnboardingPage() {
+type OnboardingPageProps = {
+  searchParams?: Promise<{
+    next?: string | string[];
+  }>;
+};
+
+function readSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
   const { user } = await requireOnboardingPage();
   const featureFlags = getOrganizationFeatureFlags();
+  const params = (await searchParams) ?? {};
+  const nextPath = normalizeNextPath(readSearchParam(params.next));
+
+  return (
+    <OnboardingPageContent
+      userEmail={user?.email}
+      featureFlags={featureFlags}
+      nextPath={nextPath}
+    />
+  );
+}
+
+type OnboardingPageContentProps = {
+  userEmail?: string | null;
+  featureFlags: ReturnType<typeof getOrganizationFeatureFlags>;
+  nextPath: string | null;
+};
+
+function OnboardingPageContent({
+  userEmail,
+  featureFlags,
+  nextPath,
+}: OnboardingPageContentProps) {
+  const isMobileReturn = nextPath === "/mobile";
 
   return (
     <div className="auth-stage">
@@ -36,11 +73,16 @@ export default async function OnboardingPage() {
                 Crea la primera organizacion del workspace.
               </h1>
               <p className="mt-5 text-sm leading-7 text-[color:var(--color-muted)] md:text-base">
-                {user?.email
-                  ? `Tu sesion ya esta lista como ${user.email}.`
+                {userEmail
+                  ? `Tu sesion ya esta lista como ${userEmail}.`
                   : "Tu sesion ya esta lista."}{" "}
                 El siguiente paso es abrir el contexto multi-organizacion real que usara documentos, asientos, IVA e instantaneas.
               </p>
+              {isMobileReturn ? (
+                <div className="mt-5 rounded-[1rem] border border-[rgba(124,157,255,0.22)] bg-[rgba(77,120,201,0.12)] px-4 py-3 text-sm leading-6 text-[#d6e5ff]">
+                  Al terminar volveras a la experiencia mobile de campo para seguir con la carga y el seguimiento documental.
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-10 space-y-3">
@@ -75,8 +117,9 @@ export default async function OnboardingPage() {
 
           <div className="mt-8 rounded-[1.3rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.64)] p-5 md:p-6">
             <OrganizationOnboardingForm
-              userEmail={user?.email}
+              userEmail={userEmail}
               featureFlags={featureFlags}
+              nextPath={nextPath}
             />
           </div>
 

@@ -96,6 +96,7 @@ Si tocas persistencia, no alcanza con editar un archivo aislado. Debes revisar:
 ### Documentos y workflow
 
 - `documents`
+- `organization_cost_centers`
 - `document_processing_runs`
 - `document_drafts`
 - `document_draft_steps`
@@ -109,6 +110,8 @@ Si tocas persistencia, no alcanza con editar un archivo aislado. Debes revisar:
 Notas operativas relevantes:
 
 - `documents.file_hash` participa en el guard de duplicado exacto para archivos binarios;
+- `documents.cost_center_id` deja asociar un documento a un proyecto o centro de costo minimo y hoy ya queda visible/editable tambien desde desktop;
+- `organization_cost_centers` concentra la taxonomia operativa minima reutilizada por mobile y administrada desde desktop, siempre gobernada por membership + RLS;
 - `document_invoice_identities` conserva la identidad documental normalizada y el estado de duplicado;
 - una corrida puede terminar en `skipped` cuando el documento se rechaza por duplicado exacto;
 - el motivo funcional debe quedar trazado en metadata y surfaces derivadas.
@@ -196,6 +199,13 @@ Semantica:
 ### Documentos
 
 - `/api/v1/documents/[documentId]/processing-status`
+
+### Superficie mobile y distribucion
+
+- `app/manifest.ts` expone el web manifest del carril field;
+- `public/sw.js` aplica caching conservador solo sobre shell estatico y offline page;
+- `/.well-known/assetlinks.json` se sirve desde App Router para la TWA Android;
+- `/android-twa` contiene la configuracion Bubblewrap reproducible y scripts de build.
 
 ### Presets IA
 

@@ -1,6 +1,7 @@
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
+  cost_center_id uuid references public.organization_cost_centers(id) on delete set null,
   direction public.document_direction not null default 'unknown',
   document_type text,
   status public.document_status not null default 'uploaded',
@@ -51,6 +52,9 @@ create table if not exists public.documents (
   updated_at timestamptz not null default now()
 );
 
+alter table public.documents
+  add column if not exists cost_center_id uuid references public.organization_cost_centers(id) on delete set null;
+
 create index if not exists idx_documents_org_status
   on public.documents (organization_id, status);
 
@@ -68,6 +72,10 @@ create index if not exists idx_documents_status
 
 create index if not exists idx_documents_org_created_at
   on public.documents (organization_id, created_at desc);
+
+create index if not exists idx_documents_org_cost_center_created_at
+  on public.documents (organization_id, cost_center_id, created_at desc)
+  where cost_center_id is not null;
 
 create index if not exists idx_documents_org_source_type
   on public.documents (organization_id, source_type, created_at desc);

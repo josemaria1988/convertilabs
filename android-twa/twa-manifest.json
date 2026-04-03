@@ -1,0 +1,30 @@
+{
+  "generatorApp": "bubblewrap-cli",
+  "name": "Convertilabs Campo",
+  "launcherName": "Convertilabs Campo",
+  "shortName": "Convertilabs",
+  "packageId": "com.convertilabs.campo",
+  "applicationId": "com.convertilabs.campo",
+  "host": "convertilabs.com",
+  "startUrl": "/mobile",
+  "webManifestUrl": "https://convertilabs.com/manifest.webmanifest",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#1c2230",
+  "backgroundColor": "#1c2230",
+  "navigationColor": "#1c2230",
+  "iconUrl": "https://convertilabs.com/pwa/icon-512.png",
+  "maskableIconUrl": "https://convertilabs.com/pwa/maskable-icon-512.png",
+  "fallbackType": "customtabs",
+  "enableNotifications": false,
+  "splashScreenFadeOutDuration": 300,
+  "appVersion": "1.0.0",
+  "appVersionCode": 1,
+  "fingerprints": [],
+  "features": {},
+  "additionalTrustedOrigins": [],
+  "signingKey": {
+    "path": "./android-keystore.jks",
+    "alias": "convertilabs"
+  }
+}

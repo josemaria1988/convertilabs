@@ -24,6 +24,7 @@ import {
 
 type DocumentsWorkspaceTableItem = {
   id: string;
+  costCenterId: string | null;
   processedHref: string | null;
   originalFilename: string;
   mimeType: string | null;
@@ -81,6 +82,7 @@ type DocumentsWorkspaceTableItem = {
 type DocumentsWorkspaceTableProps = {
   slug: string;
   documents: DocumentsWorkspaceTableItem[];
+  costCenterNameById?: Record<string, string>;
   missingFxSummary: {
     count: number;
     dates: string[];
@@ -200,6 +202,7 @@ function formatOperationalFlagLabel(value: DocumentsWorkspaceTableItem["operatio
 export function DocumentsWorkspaceTable({
   slug,
   documents,
+  costCenterNameById = {},
   missingFxSummary,
 }: DocumentsWorkspaceTableProps) {
   const router = useRouter();
@@ -596,6 +599,9 @@ export function DocumentsWorkspaceTable({
                 const processBusy = busyAction === `process:${document.id}`;
                 const classifyBusy = busyAction === `classify:${document.id}`;
                 const canSelect = document.canProcessExtraction || document.canClassify;
+                const costCenterName = document.costCenterId
+                  ? costCenterNameById[document.costCenterId] ?? null
+                  : null;
 
                 return (
                   <tr key={document.id}>
@@ -634,6 +640,11 @@ export function DocumentsWorkspaceTable({
                           }
                         />
                       </div>
+                      {costCenterName ? (
+                        <div className="mt-2">
+                          <span className="status-pill status-pill--info">Proyecto: {costCenterName}</span>
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       <div className="text-white">

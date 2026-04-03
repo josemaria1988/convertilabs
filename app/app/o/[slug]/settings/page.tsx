@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
+import { CostCentersSettingsPanel } from "@/components/settings/cost-centers-settings-panel";
 import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
 import { SettingsCapabilitiesList } from "@/components/settings/settings-capabilities-list";
 import {
@@ -15,6 +16,12 @@ import {
   loadOrganizationChartManagementData,
   type ChartAccountType,
 } from "@/modules/accounting/chart-admin";
+import {
+  canArchiveOrganizationCostCenter,
+  canCreateOrganizationCostCenter,
+  listOrganizationCostCenters,
+  loadOrganizationDocumentsCountByCostCenter,
+} from "@/modules/cost-centers/service";
 import {
   supportedLegalEntityTypes,
   supportedTaxRegimeCodes,
@@ -45,6 +52,10 @@ import {
   updateOrganizationBasicsAction,
   updateOrganizationChartAccountAction,
 } from "./actions";
+import {
+  archiveOrganizationCostCenterAction,
+  createOrganizationCostCenterAction,
+} from "../cost-centers/actions";
 
 type OrganizationSettingsPageProps = {
   params: Promise<{
@@ -135,10 +146,19 @@ export default async function OrganizationSettingsPage({
   const activeSettingsTab = normalizeSettingsTab(resolvedSearchParams.tab);
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const featureFlags = getOrganizationFeatureFlags();
-  const [settings, chart, businessProfile] = await Promise.all([
+  const [settings, chart, businessProfile, costCenters, documentsCountByProjectId] = await Promise.all([
     loadOrganizationSettingsData(organization.id, authState.user?.id ?? null),
     loadOrganizationChartManagementData(organization.id),
     loadOrganizationBusinessProfileData(organization.id),
+    activeSettingsTab === "company"
+      ? listOrganizationCostCenters({
+        organizationId: organization.id,
+        includeArchived: true,
+      })
+      : Promise.resolve([]),
+    activeSettingsTab === "company"
+      ? loadOrganizationDocumentsCountByCostCenter(organization.id)
+      : Promise.resolve({}),
   ]);
   const effectiveFromDefault = new Date().toISOString().slice(0, 10);
   const activeProfileJson = (settings.activeProfile?.profile_json ?? {}) as Record<string, unknown>;
@@ -283,6 +303,40 @@ export default async function OrganizationSettingsPage({
           showBusinessProfile={featureFlags.onboardingActivityBasedPresetsEnabled}
         />
       </ExpandableSectionCard>
+      ) : null}
+
+      {activeSettingsTab === "company" ? (
+        <CostCentersSettingsPanel
+          slug={organization.slug}
+          projects={costCenters}
+          documentsCountByProjectId={documentsCountByProjectId}
+          canCreateProjects={canCreateOrganizationCostCenter(organization.role)}
+          canArchiveProjects={canArchiveOrganizationCostCenter(organization.role)}
+          createProjectAction={async (input) => {
+            "use server";
+            const result = await createOrganizationCostCenterAction({
+              slug: organization.slug,
+              ...input,
+            });
+
+            return {
+              ok: result.ok,
+              message: result.message,
+            };
+          }}
+          archiveProjectAction={async (input) => {
+            "use server";
+            const result = await archiveOrganizationCostCenterAction({
+              slug: organization.slug,
+              ...input,
+            });
+
+            return {
+              ok: result.ok,
+              message: result.message,
+            };
+          }}
+        />
       ) : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-2">

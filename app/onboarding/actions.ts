@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getSupabaseServiceRoleClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getAuthStateForUser,
+  normalizeNextPath,
+  resolveOrganizationFieldPath,
   resolvePostAuthDestination,
 } from "@/modules/auth/server-auth";
 import { applyPresetComposition } from "@/modules/accounting/preset-apply-service";
@@ -295,6 +297,7 @@ export async function createOrganizationAction(
   _previousState: OnboardingActionState,
   formData: FormData,
 ): Promise<OnboardingActionState> {
+  const nextPath = normalizeNextPath(String(formData.get("next") ?? ""));
   const supabase = await getSupabaseServerClient();
   const {
     data: { user },
@@ -334,7 +337,7 @@ export async function createOrganizationAction(
   const authState = await getAuthStateForUser(supabase, user);
 
   if (authState.primaryOrganization) {
-    redirect(resolvePostAuthDestination(authState));
+    redirect(resolvePostAuthDestination(authState, nextPath));
   }
 
   const serviceRole = getSupabaseServiceRoleClient();
@@ -415,7 +418,11 @@ export async function createOrganizationAction(
 
     revalidatePath("/app");
     revalidatePath("/onboarding");
-    redirect(`/app/o/${data.slug}/documents`);
+    redirect(
+      nextPath === "/mobile"
+        ? resolveOrganizationFieldPath(data.slug)
+        : `/app/o/${data.slug}/documents`,
+    );
   }
 
   let destination = `/app/o/${data.slug}/documents`;
@@ -498,6 +505,10 @@ export async function createOrganizationAction(
 
     revalidatePath("/app");
     revalidatePath("/onboarding");
+  }
+
+  if (nextPath === "/mobile") {
+    destination = resolveOrganizationFieldPath(data.slug);
   }
 
   redirect(destination);
