@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
-import { LoadingLink } from "@/components/ui/loading-link";
+import { siteConfig } from "@/lib/site";
 import {
   type LoginFieldErrors,
   type LoginInput,
@@ -34,6 +34,8 @@ const initialState: LoginFormState = {
   message: "",
   fieldErrors: {},
 };
+
+const requestAccessHref = `mailto:${siteConfig.contactEmail}?subject=Acceso%20por%20invitacion%20Convertilabs`;
 
 type AuthLoginFormProps = {
   nextPath?: string | null;
@@ -168,13 +170,12 @@ export function AuthLoginForm({ nextPath }: AuthLoginFormProps) {
           {isPending ? <InlineSpinner /> : null}
           {isPending ? "Ingresando..." : "Ingresar"}
         </button>
-        <LoadingLink
-          href="/signup"
-          pendingLabel="Abriendo..."
+        <a
+          href={requestAccessHref}
           className="ui-button ui-button--secondary min-w-[118px] flex-1"
         >
-          Crear cuenta
-        </LoadingLink>
+          Solicitar acceso
+        </a>
       </div>
     </form>
   );

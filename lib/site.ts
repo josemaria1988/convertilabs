@@ -1,8 +1,8 @@
 export const siteConfig = {
   name: "Convertilabs",
-  tagline: "Contabilidad, liquidaciones y auditoria para Uruguay",
+  tagline: "Capa inteligente para sistemas contables legacy en Uruguay",
   description:
-    "Plataforma para Uruguay que unifica documentos, decision contable, liquidaciones mensuales y auditoria explicable en una misma superficie operativa.",
-  contactEmail: "hola@convertilabs.com",
+    "Convertilabs es una capa de inteligencia y captura operativa que ordena documentos, OCR, clasificación guiada, IVA y trazabilidad antes de alimentar tu sistema contable legacy. Acceso por invitación y prueba sin costo.",
+  contactEmail: "josemaria@rontil.com",
   location: "Montevideo, Uruguay",
 };

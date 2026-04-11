@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+Temporales/
 
 # debug
 npm-debug.log*

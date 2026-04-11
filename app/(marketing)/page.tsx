@@ -1,531 +1,571 @@
+import Image from "next/image";
 import Link from "next/link";
 import { MarketingCtaBanner } from "@/components/marketing-cta-banner";
-import { MarketingSectionHeading } from "@/components/marketing-section-heading";
-import { PageHero } from "@/components/page-hero";
 import { siteConfig } from "@/lib/site";
-import {
-  DGI_RECONCILIATION_COMPARISON_LABEL,
-  DGI_RECONCILIATION_TITLE,
-} from "@/modules/tax/dgi-reconciliation-copy";
 
-const productPillars = [
+const demoHref = `mailto:${siteConfig.contactEmail}?subject=${encodeURIComponent("Acceso por invitación Convertilabs")}`;
+const marketingImageSrc = "/images/Gemini_Generated_Image_hm7m3uhm7m3uhm7m.png";
+const fieldFlowImageSrc = "/images/Gemini_Generated_Image_27qdxo27qdxo27qd.png";
+
+const operatingSignals = [
   {
-    code: "01",
-    title: "Documentos y planillas",
-    description:
-      "Carga comprobantes originales, importa compras o ventas desde ERPs legacy y separa las operaciones internacionales cuando la transaccion lo requiere.",
+    label: "Captura",
+    value: "Web y app móvil para tickets, facturas y planillas.",
   },
   {
-    code: "02",
-    title: "Decision contable",
-    description:
-      "Convierte evidencia en drafts revisables, sugerencias de cuentas, journal entries y open items sin perder control humano.",
+    label: "IA",
+    value: "IA que asiste, no que decide ni inventa asientos.",
   },
   {
-    code: "03",
-    title: "Liquidacion mensual",
-    description:
-      `Ordena IVA por periodo, reconstruye runs mensuales, prepara exportes y deja la ${DGI_RECONCILIATION_TITLE.toLowerCase()} dentro del mismo carril de trabajo.`,
+    label: "Legacy",
+    value: "Filtro inteligente antes de tu sistema contable legacy.",
   },
   {
-    code: "04",
-    title: "Auditoria explicable",
-    description:
-      "Expone linaje, duplicate checks, intervenciones manuales, mapa contable e impacto de cada documento sobre el kernel.",
+    label: "Control",
+    value: "IVA, auditoría y trazabilidad sobre la misma historia.",
   },
 ];
 
-const capabilities = [
-  {
-    title: "Bandeja documental operativa",
-    description:
-      "Sube archivos privados, encola procesamiento en background y revisa cada documento desde una bandeja preparada para trabajar en lote.",
-    accent: "Documentos",
-  },
-  {
-    title: "Importacion estructurada desde planillas",
-    description:
-      "Toma compras y ventas exportadas desde sistemas legacy, las normaliza y crea documentos listos para clasificar sin obligarte a un formato fijo de origen.",
-    accent: "Bridge ERP",
-  },
-  {
-    title: "Kernel contable mensual",
-    description:
-      "Postea sobre periodos mensuales, protege el cierre por mes y alimenta libro diario, balance de comprobacion y open items desde el mismo core.",
-    accent: "Journal + open items",
-  },
-  {
-    title: "Liquidacion IVA revisable",
-    description:
-      "Trabaja sobre previews y runs mensuales, permite regenerar, finalizar, exportar y conciliar sin mezclar comprobantes de distintos periodos.",
-    accent: "IVA mensual",
-  },
-  {
-    title: "Mapa contable explicable",
-    description:
-      "Muestra arbol de cuentas, impacto por documento y trazabilidad de decisiones para que control interno y auditoria tengan una superficie de inspeccion real.",
-    accent: "Auditoria",
-  },
-  {
-    title: "Exportes y capas de integracion",
-    description:
-      "Prepara datasets contables y fiscales para sistemas externos, recategorizacion, conciliaciones y futuros conectores de producto o API.",
-    accent: "Salida estructurada",
-  },
+const integrationPrinciples = [
+  "Convertilabs no compite con tu sistema contable. Se conecta como una capa de inteligencia y captura operativa encima del sistema que ya usas.",
+  "No te pide borrón y cuenta nueva. Favorece integración y mejora continua porque sabemos lo doloroso que puede ser mudarse de sistema con años de información acumulada.",
+  "Lo que llega al sistema contable legacy llega más limpio, mejor clasificado y más fácil de importar.",
 ];
 
-const monthlyFlow = [
+const workflow = [
   {
     step: "01",
-    title: "Captura y normalizacion",
+    title: "Captura operativa",
     description:
-      "Los comprobantes entran por upload privado o por planillas de compras y ventas.",
+      "El documento entra desde escritorio, planilla o app móvil en el momento en que ocurre el gasto o la operación.",
   },
   {
     step: "02",
-    title: "Revision contable",
+    title: "IA + motor determinístico",
     description:
-      "El sistema propone contexto, cuentas, montos y tratamiento para que el equipo confirme con criterio profesional.",
+      "La IA lee, extrae y sugiere. El motor determinístico acota el camino para que el criterio siga siendo controlable y auditable.",
   },
   {
     step: "03",
-    title: "Posting y saldos vivos",
+    title: "Revisión humana reusable",
     description:
-      "El kernel genera journal entries y actualiza open items para cuentas a cobrar, pagar y cancelaciones.",
+      "El equipo confirma con criterio profesional y transforma esa decisión en aprendizaje y reglas auditables.",
   },
   {
     step: "04",
-    title: "Liquidacion y exportacion",
+    title: "Salida limpia al sistema contable",
     description:
-      `IVA mensual, ${DGI_RECONCILIATION_TITLE.toLowerCase()} y exportes salen del mismo set validado, sin rearmar la historia en otra herramienta.`,
+      "El resultado queda clasificado y listo para importar en tu sistema contable legacy, sin perder control mensual de IVA ni trazabilidad.",
   },
 ];
 
-const auditStrengths = [
+const painVsSolution = [
   {
-    title: "Trazabilidad por documento",
-    description:
-      "Cada documento conserva estado, origen, draft, run de procesamiento y accion sugerida dentro de una misma historia operativa.",
+    pain: "Tickets, boletas y facturas llegan tarde o se pierden antes de entrar al sistema.",
+    solution:
+      "La captura desde web y móvil deja el comprobante cargado cuando ocurre, no horas o días después.",
   },
   {
-    title: "Linaje contable",
-    description:
-      "El libro diario y el chart map permiten inspeccionar de donde viene cada impacto, sus reversas y sus ajustes.",
+    pain: "El sistema contable legacy recibe información sucia y el equipo termina corrigiendo a mano.",
+    solution:
+      "Convertilabs filtra, extrae, clasifica y deja mejor preparado lo que el sistema contable recibe.",
   },
   {
-    title: "Controles por periodo",
-    description:
-      "La capa mensual evita cruces entre meses para liquidaciones y lecturas contables sensibles al cierre.",
+    pain: "Migrar de sistema da miedo porque hay años de información acumulada y procesos armados.",
+    solution:
+      "Se integra con lo que ya existe. Favorece mejora e integración, no borrón y cuenta nueva.",
   },
   {
-    title: "Intervencion humana visible",
-    description:
-      "Overrides, revisiones y correcciones quedan expuestos para control interno, supervision o auditoria externa.",
+    pain: "La promesa de IA genera desconfianza si parece que puede inventar un asiento.",
+    solution:
+      "IA que asiste, no que decide. El motor es determinístico y el control final sigue en manos del equipo.",
   },
+];
+
+const aiItems = [
+  "Hace OCR, extrae datos y propone una primera lectura para ahorrar trabajo repetitivo.",
+  "Sugiere clasificación, opinión sobre cuentas y reportes, pero no modifica ni contabiliza por su cuenta.",
+  "Opera dentro de un marco determinístico, con reglas auditables y criterio humano visible.",
+  "Su valor está en asistir y acelerar, no en reemplazar al contador, al auditor ni al responsable de la decisión.",
+];
+
+const desktopPoints = [
+  "Revisión factual y contable",
+  "IVA mensual, auditoría y trazabilidad",
+  "Reglas, aprendizaje y salida para el sistema contable legacy",
+];
+
+const mobilePoints = [
+  "Captura inmediata de tickets y boletas",
+  "Seguimiento rápido del documento desde campo",
+  "Foto visible en desktop para corroborar el documento real",
 ];
 
 const audiences = [
   {
-    name: "Estudios contables",
+    title: "Estudios contables",
     description:
-      "Para operar varios clientes con mas consistencia, menos retrabajo y una pista clara de por que se tomo cada decision.",
+      "Para bajar retrabajo, sostener criterio entre clientes y hacer que lo que llega al sistema contable legacy ya llegue mejor armado.",
   },
   {
-    name: "Equipos financieros internos",
+    title: "Empresas",
     description:
-      "Para ordenar el mes contable, sostener liquidaciones y revisar documentos sin depender de planillas dispersas.",
+      "Para tener gastos y documentos cargados cuando ocurren, y llegar al IVA con menos administración atrasada.",
   },
   {
-    name: "ERPs y software vertical",
+    title: "Sistemas contables legacy",
     description:
-      "Para sumar contabilidad, IVA y auditoria operativa sin reconstruir desde cero un motor regulatorio para Uruguay.",
-  },
-  {
-    name: "Proyectos de auditoria y saneamiento",
-    description:
-      "Para reconstruir lotes historicos, inspeccionar impactos y convertir exportaciones legacy en evidencia mas utilizable.",
+      "Para sumar captura móvil, OCR y clasificación guiada sin tener que desarrollar desde cero una capa operativa completa.",
   },
 ];
 
-const currentScope = [
-  "Uruguay only, con foco operativo en documentos, decision contable, IVA y bridge externo.",
-  "Comparacion DGI base manual asistida y exportes fiscales; no filing automatico a organismos.",
-  "Libro diario, balance, open items y mapa contable como superficie de lectura y control.",
-  "Carril especial para operaciones internacionales dentro del workspace documental.",
+const faqItems = [
+  {
+    question: "¿Convertilabs reemplaza mi sistema contable?",
+    answer:
+      "No. Funciona como una capa de inteligencia y captura operativa que alimenta al sistema contable legacy que ya usa tu equipo.",
+  },
+  {
+    question: "¿La IA decide sola?",
+    answer:
+      "No. IA que asiste, no que decide. Puede extraer, sugerir y resumir, pero no inventa asientos ni modifica información por su cuenta.",
+  },
+  {
+    question: "¿Para qué sirve la app móvil?",
+    answer:
+      "Para capturar el comprobante en el momento en que ocurre el gasto. Eso evita pérdida de tickets y reduce horas de carga administrativa al volver a la oficina.",
+  },
+  {
+    question: "¿Tengo que migrar mi información histórica?",
+    answer:
+      "No necesariamente. La idea es integrarse con el sistema existente y mejorar la calidad de lo que entra, no forzarte a una mudanza completa.",
+  },
+  {
+    question: "¿Cómo funciona el acceso hoy?",
+    answer:
+      "El registro abierto está cerrado. Si quieres probarlo, escribes y evaluamos si tiene sentido habilitarte acceso por invitación y sin costo.",
+  },
 ];
 
-const expansionPotential = [
-  "Mas capas tributarias encima del mismo kernel, empezando por la logica mensual ya resuelta en IVA.",
-  "Mas integraciones con ERPs y herramientas externas a partir de datasets ya estructurados.",
-  "Uso como modulo premium de auditoria para revisiones masivas, saneamiento y recuperacion operativa.",
-  "API publica cuando la cobertura contable y fiscal madura quede consolidada como plataforma.",
+const originPoints = [
+  "Desarrollado para resolver la operativa de Rontil, una empresa real de importaciones y servicios técnicos en Uruguay.",
+  "No nació como un sistema contable completo. Nació como una capa de automatización para convivir con sistemas contables legacy.",
+  "Su obsesión no es reemplazar lo que ya existe, sino mejorar lo que entra para que llegue perfecto al sistema de fondo.",
+  "Hoy se comparte por invitación con equipos que quieran probarlo sobre una operación real y sin costo.",
 ];
 
-const darkCardClassName =
-  "rounded-[1.45rem] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(124,157,255,0.24)]";
-
-const mutedDarkCardClassName =
-  "rounded-[1.35rem] border border-white/10 bg-white/[0.038] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
+function sectionEyebrow(label: string) {
+  return (
+    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#58d2c4]">
+      {label}
+    </p>
+  );
+}
 
 export default function HomePage() {
   return (
-    <div className="page-shell relative space-y-6">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-[-6%] top-10 h-72 w-72 rounded-full bg-[rgba(76,124,212,0.16)] blur-3xl" />
-        <div className="absolute right-[-4%] top-[22rem] h-80 w-80 rounded-full bg-[rgba(26,140,124,0.14)] blur-3xl" />
-        <div className="absolute left-[24%] top-[78rem] h-80 w-80 rounded-full bg-[rgba(210,131,66,0.12)] blur-3xl" />
-      </div>
+    <div className="page-shell space-y-8">
+      <section className="overflow-hidden rounded-[8px] border border-white/10 bg-[linear-gradient(135deg,#12181f_0%,#18262d_50%,#1f241d_100%)] text-white shadow-[0_32px_100px_rgba(8,12,18,0.28)]">
+        <div className="grid gap-8 px-6 py-8 md:px-8 md:py-10 lg:grid-cols-[0.82fr_minmax(0,1.18fr)] lg:px-10 lg:py-12">
+          <div className="max-w-2xl space-y-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
+              <span className="h-2 w-2 rounded-full bg-[#ffad62]" />
+              Capa de inteligencia y captura operativa
+            </div>
 
-      <PageHero
-        eyebrow="Contabilidad, liquidaciones y auditoria"
-        title="Convertilabs organiza documentos, contabilidad e IVA mensual en una misma superficie operativa"
-        description="Convertilabs no se limita a leer facturas. Convierte documentos y planillas en decisiones contables revisables, liquidaciones mensuales y evidencia auditable para equipos de Uruguay."
-        actions={
-          <>
-            <Link
-              href="/contact"
-              className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
-            >
-              Solicitar demo
-            </Link>
-            <a
-              href="#plataforma"
-              className="rounded-full border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-            >
-              Ver la plataforma
-            </a>
-          </>
-        }
-        highlights={[
-          { label: "Ingreso", value: "Documentos + planillas" },
-          { label: "Liquidacion", value: "IVA mensual revisable" },
-          { label: "Control", value: "Journal, open items y auditoria" },
-        ]}
-        aside={
-          <div className="space-y-5">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Superficie real hoy
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-[-0.05em]">
-                  De la evidencia al cierre mensual
-                </p>
-              </div>
-              <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                Uruguay 2026
-              </div>
+            <div className="space-y-4">
+              <h1 className="max-w-3xl text-4xl font-semibold tracking-[-0.07em] text-balance md:text-6xl">
+                Convertilabs, capa inteligente para sistemas contables legacy
+              </h1>
+              <p className="max-w-2xl text-base leading-8 text-white/74 md:text-lg">
+                Convertilabs captura documentos y tickets, usa IA que asiste, no
+                que decide, y aplica un motor determinístico para que lo que llega
+                a tu sistema contable legacy ya esté clasificado, revisado y listo
+                para importar.
+              </p>
             </div>
 
             <div className="space-y-3">
-              {productPillars.map((item) => (
-                <div
-                  key={item.code}
-                  className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4"
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={demoHref}
+                  className="rounded-[8px] bg-[#ff9b4a] px-5 py-3 text-sm font-semibold text-[#1d1208] transition hover:brightness-105"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/8 font-mono text-sm text-white/72">
-                      {item.code}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-white/56">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  Solicitar acceso
+                </a>
+                <a
+                  href="#como-funciona"
+                  className="rounded-[8px] border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                >
+                  Ver cómo funciona
+                </a>
+              </div>
+              <p className="text-sm leading-6 text-white/52">
+                Priorizamos el contacto directo para asegurar que la herramienta se
+                adapte a tu flujo de trabajo.
+              </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[1.25rem] border border-white/8 bg-[color:var(--color-accent)]/14 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Resguardo mensual
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[8px] border border-white/10 bg-black/12 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-white/42">
+                  Acceso
                 </p>
-                <p className="mt-2 text-sm leading-6 text-white/80">
-                  Las lecturas contables y fiscales sensibles al cierre se ordenan por periodo mensual.
+                <p className="mt-2 text-sm font-semibold">Solo por invitación</p>
+              </div>
+              <div className="rounded-[8px] border border-white/10 bg-black/12 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-white/42">
+                  Enfoque
+                </p>
+                <p className="mt-2 text-sm font-semibold">
+                  Integración, no migración forzada
                 </p>
               </div>
-              <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.035] p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Potencial de negocio
+              <div className="rounded-[8px] border border-white/10 bg-black/12 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-white/42">
+                  Costo
                 </p>
-                <p className="mt-2 text-sm leading-6 text-white/80">
-                  Sirve para operacion diaria hoy y abre una capa fuerte para auditoria y saneamiento masivo.
-                </p>
+                <p className="mt-2 text-sm font-semibold">Prueba sin costo</p>
               </div>
             </div>
           </div>
-        }
-      />
 
-      <section
-        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(145deg,rgba(15,22,35,0.98),rgba(22,31,47,0.96))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.16)]"
-        id="plataforma"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(41,109,192,0.22),transparent_28%),radial-gradient(circle_at_78%_26%,rgba(24,148,132,0.18),transparent_22%)]" />
-        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[0.78fr_minmax(0,1fr)]">
-          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Lo que ofrece"
-              title="Una plataforma operativa para contabilidad, liquidaciones y control"
-              description="La propuesta real de Convertilabs es unificar captura documental, criterio contable, ciclo mensual de IVA y superficies de auditoria dentro de una misma plataforma para Uruguay."
-            />
+          <div className="lg:pl-4">
+            <div className="mx-auto max-w-[1120px] rounded-[8px] border border-white/12 bg-[#0e141a] p-3 shadow-[0_28px_80px_rgba(4,10,18,0.34)]">
+              <div className="overflow-hidden rounded-[6px] border border-white/8 bg-black/10">
+                <Image
+                  src={marketingImageSrc}
+                  alt="Dashboard de Convertilabs en desktop mostrando bandeja documental, IVA y auditoría"
+                  width={1408}
+                  height={768}
+                  priority
+                  className="h-auto w-full"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#132028_0%,#0f181f_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="max-w-3xl">
+          {sectionEyebrow("Entenderlo rápido")}
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+            Captura operativa, IA guiada y salida limpia al sistema contable que
+            ya usas
+          </h2>
+        </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {operatingSignals.map((item) => (
+            <article
+              key={item.label}
+              className="rounded-[8px] border border-white/8 bg-[rgba(17,24,30,0.62)] px-4 py-4 shadow-[0_14px_34px_rgba(6,10,16,0.18)]"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#58d2c4]">
+                {item.label}
+              </p>
+              <p className="mt-3 text-sm leading-7 text-white/70">{item.value}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(135deg,#10171e_0%,#122127_56%,#17221c_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="grid gap-6 lg:grid-cols-[0.86fr_minmax(0,1fr)]">
+          <div className="max-w-2xl">
+            {sectionEyebrow("No compite con tu sistema")}
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+              No venimos a reemplazar tu sistema contable. Venimos a mejorar lo
+              que llega al fondo.
+            </h2>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {capabilities.map((item) => (
-              <article
-                key={item.title}
-                className={`${darkCardClassName} flex h-full flex-col justify-between p-6`}
+          <div className="grid gap-3">
+            {integrationPrinciples.map((item) => (
+              <div
+                key={item}
+                className="rounded-[8px] border border-white/8 bg-white/5 px-4 py-4 text-sm leading-7 text-white/72"
               >
-                <div>
-                  <span className="eyebrow">{item.accent}</span>
-                  <p className="mt-4 text-2xl font-semibold tracking-[-0.05em] text-white">
-                    {item.title}
-                  </p>
-                  <p className="mt-4 text-sm leading-7 text-white/70">
-                    {item.description}
-                  </p>
-                </div>
-              </article>
+                {item}
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(145deg,rgba(27,33,48,0.98),rgba(38,33,29,0.94))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(27,148,132,0.18),transparent_24%),radial-gradient(circle_at_82%_18%,rgba(214,140,82,0.16),transparent_20%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_60%)]" />
-        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[1fr_0.96fr]">
-          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Como trabaja el mes"
-              title="El flujo une ingreso documental, posting y liquidacion"
-              description="En vez de repartir el trabajo entre OCR, planillas, cierres manuales y verificaciones separadas, Convertilabs ordena el mes sobre un recorrido continuo."
-            />
+      <section
+        id="como-funciona"
+        className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#131a22_0%,#10161d_100%)] px-6 py-7 text-white md:px-8 md:py-8"
+      >
+        <div className="max-w-3xl">
+          {sectionEyebrow("Cómo funciona")}
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+            Una capa operativa entre el documento y el sistema contable
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-white/66 md:text-base">
+            Convertilabs ordena la captura, la clasificación, la revisión y la
+            salida al sistema contable legacy para que la operación llegue mejor
+            al final del proceso.
+          </p>
+        </div>
 
-            <div className="mt-6 space-y-4">
-              {monthlyFlow.map((item) => (
-                <article
-                  key={item.step}
-                  className={darkCardClassName}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[rgba(102,146,235,0.18)] font-mono text-sm font-semibold text-[rgba(196,218,255,0.92)]">
-                      {item.step}
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold tracking-[-0.05em] text-white">
-                        {item.title}
-                      </h3>
-                      <p className="mt-2 text-sm leading-7 text-white/70">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+        <div className="mt-8 grid gap-4 lg:grid-cols-4">
+          {workflow.map((item) => (
+            <article
+              key={item.step}
+              className="rounded-[8px] border border-white/8 bg-white/5 px-4 py-4"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7cd6f3]">
+                {item.step}
+              </p>
+              <h3 className="mt-3 text-xl font-semibold tracking-[-0.04em]">
+                {item.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-white/66">
+                {item.description}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#15222a_0%,#0f171d_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+          {sectionEyebrow("Dolor actual")}
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+            Lo que hoy rompe la calidad de lo que entra al sistema contable
+          </h2>
+          <div className="mt-6 space-y-3">
+            {painVsSolution.map((item) => (
+              <div
+                key={item.pain}
+                className="rounded-[8px] border border-white/8 bg-[rgba(14,20,26,0.68)] px-4 py-4 text-sm leading-7 text-white/68"
+              >
+                {item.pain}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#12211e_0%,#11181d_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+          {sectionEyebrow("Filtro antes del sistema")}
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+            Lo que Convertilabs ordena antes de importar
+          </h2>
+          <div className="mt-6 space-y-3">
+            {painVsSolution.map((item) => (
+              <div
+                key={item.solution}
+                className="rounded-[8px] border border-white/8 bg-white/6 px-4 py-4 text-sm leading-7 text-white/72"
+              >
+                {item.solution}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(135deg,#18161a_0%,#142229_55%,#111921_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_minmax(0,1fr)]">
+          <div className="max-w-2xl">
+            {sectionEyebrow("IA con límites claros")}
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+              IA que asiste, no que decide
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-white/68 md:text-base">
+              Esa es la ventaja competitiva. La IA acelera lectura,
+              clasificación y explicación, pero el asiento no sale de una caja
+              opaca: sale de un motor determinístico y de una decisión humana
+              visible.
+            </p>
           </div>
 
-          <div className="rounded-[1.7rem] border border-white/10 bg-[linear-gradient(180deg,rgba(243,248,247,0.08),rgba(255,255,255,0.03))] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Liquidador mensual"
-              title="Fuerte para cierres de IVA y lecturas contables por periodo"
-              description="El valor no esta solo en cargar documentos. Esta en que el cierre mensual quede protegido, explicable y reutilizable para liquidar, revisar y exportar."
-            />
+          <div className="grid gap-3">
+            {aiItems.map((item) => (
+              <div
+                key={item}
+                className="rounded-[8px] border border-white/8 bg-white/5 px-4 py-4 text-sm leading-7 text-white/72"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-            <div className="mt-6 grid gap-3">
-              <div className={mutedDarkCardClassName}>
-                <p className="text-xs uppercase tracking-[0.18em] text-white/46">
-                  Lo que ya esta hoy
-                </p>
-                <p className="mt-2 text-sm leading-7 text-white/74">
-                  VAT preview, VAT runs, exportes fiscales, comparacion DGI base por buckets y proteccion mensual para no mezclar febrero con marzo.
-                </p>
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#121d25_0%,#0f1820_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="grid gap-6 lg:grid-cols-[0.82fr_minmax(0,1.18fr)]">
+          <div className="space-y-6">
+            <div>
+              {sectionEyebrow("Desktop + móvil")}
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+                App móvil para capturar en la calle. Desktop para revisar con la
+                foto real a la vista.
+              </h2>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-[8px] border border-white/8 bg-[rgba(15,22,29,0.66)] px-4 py-4">
+                <p className="text-sm font-semibold">Versión desktop</p>
+                <div className="mt-4 space-y-2 text-sm leading-7 text-white/68">
+                  {desktopPoints.map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
+                </div>
               </div>
-              <div className={mutedDarkCardClassName}>
-                <p className="text-xs uppercase tracking-[0.18em] text-white/46">
-                  Donde genera mas palanca
-                </p>
-                <p className="mt-2 text-sm leading-7 text-white/74">
-                  Estudios, equipos internos y software que necesitan cerrar meses con menos retrabajo y una pista clara de como se llego al numero final.
-                </p>
-              </div>
-              <div className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(12,21,38,0.94),rgba(18,29,60,0.9))] p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/52">
-                  Superficies conectadas
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className={mutedDarkCardClassName}>
-                    <p className="text-sm font-semibold text-white">Documentos</p>
-                    <p className="mt-2 text-sm leading-6 text-white/70">
-                      Bandeja, revision y cargas masivas.
-                    </p>
-                  </div>
-                  <div className={mutedDarkCardClassName}>
-                    <p className="text-sm font-semibold text-white">Contabilidad</p>
-                    <p className="mt-2 text-sm leading-6 text-white/70">
-                      Diario, balance y open items.
-                    </p>
-                  </div>
-                  <div className={mutedDarkCardClassName}>
-                    <p className="text-sm font-semibold text-white">Impuestos</p>
-                    <p className="mt-2 text-sm leading-6 text-white/70">
-                      IVA mensual, lifecycle y {DGI_RECONCILIATION_COMPARISON_LABEL.toLowerCase()}.
-                    </p>
-                  </div>
-                  <div className={mutedDarkCardClassName}>
-                    <p className="text-sm font-semibold text-white">Mapa contable</p>
-                    <p className="mt-2 text-sm leading-6 text-white/70">
-                      Arbol, impacto y explicabilidad.
-                    </p>
-                  </div>
+
+              <div className="rounded-[8px] border border-white/8 bg-[rgba(15,22,29,0.66)] px-4 py-4">
+                <p className="text-sm font-semibold">App móvil de campo</p>
+                <div className="mt-4 space-y-2 text-sm leading-7 text-white/68">
+                  {mobilePoints.map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <section
-        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(150deg,rgba(14,19,32,0.98),rgba(19,24,31,0.94))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]"
-        id="auditoria"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(94,130,184,0.18),transparent_24%),radial-gradient(circle_at_24%_72%,rgba(212,136,77,0.14),transparent_26%)]" />
-        <div className="relative grid gap-4 px-6 py-7 md:px-8 md:py-8 lg:grid-cols-[0.92fr_1fr]">
-          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Potencia para auditoria"
-              title="No solo procesa: deja evidencia para revisar"
-              description="Convertilabs gana valor real cuando el equipo necesita entender que paso, por que paso y que impacto genero cada documento sobre el cierre, el ledger y la liquidacion."
-            />
-
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {auditStrengths.map((item) => (
-                <article
-                  key={item.title}
-                  className={darkCardClassName}
-                >
-                  <h3 className="text-xl font-semibold tracking-[-0.05em] text-white">
-                    {item.title}
-                  </h3>
-                  <p className="mt-3 text-sm leading-7 text-white/70">
-                    {item.description}
-                  </p>
-                </article>
-              ))}
+            <div className="rounded-[8px] border border-[rgba(255,155,74,0.22)] bg-[rgba(255,155,74,0.1)] px-4 py-4 text-sm leading-7 text-[#ffd8af]">
+              ¿Paraste en la ANCAP a poner combustible o a tomar un café?
+              Sacás la foto del ticket y seguís. Para equipos que trabajan con
+              sistemas contables legacy, eso puede terminar clasificado y listo
+              para importar sin tener que desarrollar esa capa desde cero.
             </div>
+
+            <p className="text-sm leading-7 text-white/60">
+              Piensa en una boleta de combustible sacada en Nueva Palmira: entra
+              desde la calle, se procesa, aparece en desktop con la foto visible
+              y se revisa sin perder trazabilidad.
+            </p>
           </div>
 
-          <div className="rounded-[1.7rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Para quien"
-              title="Util para equipos contables y tambien para software"
-              description="La plataforma puede correr como superficie de trabajo interna o como capa especializada encima de otras herramientas."
-            />
-
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {audiences.map((item) => (
-                <article
-                  key={item.name}
-                  className={darkCardClassName}
-                >
-                  <p className="text-xl font-semibold tracking-[-0.05em] text-white">
-                    {item.name}
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white/70">
-                    {item.description}
-                  </p>
-                </article>
-              ))}
+          <div className="rounded-[8px] border border-white/12 bg-[#0e141a] p-3 shadow-[0_22px_60px_rgba(4,10,18,0.28)]">
+            <div className="overflow-hidden rounded-[6px] border border-white/8 bg-black/10">
+                <Image
+                  src={fieldFlowImageSrc}
+                  alt="Convertilabs mostrando captura móvil de campo sincronizada con la revisión en desktop"
+                  width={1408}
+                  height={768}
+                  className="h-auto w-full"
+                />
             </div>
           </div>
         </div>
       </section>
 
-      <section
-        className="relative overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[linear-gradient(150deg,rgba(22,28,41,0.98),rgba(32,25,29,0.95))] text-white shadow-[0_28px_100px_rgba(15,23,42,0.14)]"
-        id="alcance"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,132,123,0.18),transparent_24%),radial-gradient(circle_at_88%_80%,rgba(120,92,188,0.12),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_50%)]" />
-        <div className="relative px-6 py-7 md:px-8 md:py-8">
-          <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-6 md:p-7">
-            <MarketingSectionHeading
-              eyebrow="Alcance real y expansion"
-              title="Transparente sobre lo que ya hace hoy y sobre hacia donde puede crecer"
-              description="La mejor forma de presentar Convertilabs es ser precisos: hoy ya resuelve una base fuerte para operar, liquidar y auditar; y esa base habilita capas nuevas sin rehacer el core."
-            />
-          </div>
-
-          <div className="mt-8 grid gap-4 lg:grid-cols-2">
-            <article className="rounded-[1.6rem] border border-white/10 bg-white/[0.045] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-2xl font-semibold tracking-[-0.05em] text-white">
-                  Alcance operativo hoy
-                </h3>
-                <span className="eyebrow">Actual</span>
-              </div>
-              <div className="mt-5 space-y-3">
-                {currentScope.map((item) => (
-                  <div
-                    key={item}
-                    className={mutedDarkCardClassName}
-                  >
-                    <p className="text-sm leading-7 text-white/70">{item}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(12,20,34,0.94),rgba(36,29,26,0.9))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-2xl font-semibold tracking-[-0.05em] text-white">
-                  Potencial real
-                </h3>
-                <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/68">
-                  Expansion
-                </span>
-              </div>
-              <div className="mt-5 space-y-3">
-                {expansionPotential.map((item) => (
-                  <div
-                    key={item}
-                    className={mutedDarkCardClassName}
-                  >
-                    <p className="text-sm leading-7 text-white/70">{item}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </div>
-        </div>
+      <section className="grid gap-4 lg:grid-cols-3">
+        {audiences.map((item) => (
+          <article
+            key={item.title}
+            className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#141b23_0%,#10161d_100%)] px-6 py-7 text-white md:px-8 md:py-8"
+          >
+            {sectionEyebrow("Para quién")}
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+              {item.title}
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-white/68 md:text-base">
+              {item.description}
+            </p>
+          </article>
+        ))}
       </section>
 
-      <div id="waitlist">
-        <MarketingCtaBanner
-          eyebrow="Acceso temprano"
-          title="Solicita una demo y conversemos donde te genera mas valor"
-          description="Si hoy te importa ordenar documentos, cerrar IVA, explicar decisiones contables o convertir auditoria en una superficie mejor, Convertilabs ya tiene una base concreta para esa conversacion."
-          actions={
-            <>
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(135deg,#15161d_0%,#1b2123_52%,#1d1712_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="grid gap-6 lg:grid-cols-[0.84fr_minmax(0,1fr)]">
+          <div className="max-w-xl">
+            {sectionEyebrow("Prueba real")}
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+              Desarrollado para resolver la operativa de una empresa real en
+              Uruguay
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-white/68 md:text-base">
+              El caso Rontil no es decorado de marketing. Es la prueba de que
+              Convertilabs nació para resolver flujo documental, importaciones,
+              trabajo de campo y salida a sistemas contables legacy dentro de
+              una operación real.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            {originPoints.map((item) => (
+              <div
+                key={item}
+                className="rounded-[8px] border border-white/8 bg-white/5 px-4 py-4 text-sm leading-7 text-white/72"
+              >
+                {item}
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-3 pt-2">
+              <a
+                href={demoHref}
+                className="rounded-[8px] bg-[#ff9b4a] px-5 py-3 text-sm font-semibold text-[#1d1208] transition hover:brightness-105"
+              >
+                Solicitar acceso
+              </a>
               <Link
                 href="/contact"
-                className="rounded-full bg-[color:var(--color-foreground)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/86"
+                className="rounded-[8px] border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
               >
-                Solicitar demo
+                Ver contacto
               </Link>
+            </div>
+            <p className="text-sm leading-6 text-white/52">
+              Priorizamos el contacto directo para asegurar que la herramienta se
+              adapte a tu flujo de trabajo.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#132028_0%,#10181f_100%)] px-6 py-7 text-white md:px-8 md:py-8">
+        <div className="max-w-3xl">
+          {sectionEyebrow("FAQ")}
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+            Preguntas frecuentes antes de pedir acceso
+          </h2>
+        </div>
+
+        <div className="mt-8 space-y-3">
+          {faqItems.map((item) => (
+            <details
+              key={item.question}
+              className="rounded-[8px] border border-white/8 bg-[rgba(15,22,29,0.66)] px-4 py-4"
+            >
+              <summary className="cursor-pointer list-none text-sm font-semibold text-white">
+                {item.question}
+              </summary>
+              <p className="mt-3 text-sm leading-7 text-white/70">{item.answer}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <MarketingCtaBanner
+        eyebrow="Acceso actual"
+        title="No se comercializa de forma abierta. Si quieres probarlo, escríbenos."
+        description="Hoy Convertilabs se comparte por invitación con equipos que quieran evaluar esta capa de inteligencia y captura operativa sobre una necesidad real. La prueba actual es sin costo."
+        actions={
+          <div className="flex max-w-sm flex-col items-start gap-3">
+            <div className="flex flex-wrap gap-3">
               <a
-                href={`mailto:${siteConfig.contactEmail}?subject=Demo%20Convertilabs`}
-                className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
+                href={demoHref}
+                className="rounded-[8px] bg-[#ff9b4a] px-5 py-3 text-sm font-semibold text-[#1d1208] transition hover:brightness-105"
               >
-                Escribir por email
+                Solicitar acceso
               </a>
-            </>
-          }
-        />
-      </div>
+              <Link
+                href="/login"
+                className="rounded-[8px] border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Ya tengo invitación
+              </Link>
+            </div>
+            <p className="text-sm leading-6 text-white/52">
+              Priorizamos el contacto directo para asegurar que la herramienta se
+              adapte a tu flujo de trabajo.
+            </p>
+          </div>
+        }
+      />
     </div>
   );
 }

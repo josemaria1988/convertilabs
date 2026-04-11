@@ -1,95 +1,103 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingCtaBanner } from "@/components/marketing-cta-banner";
-import { MarketingSectionHeading } from "@/components/marketing-section-heading";
 import { PageHero } from "@/components/page-hero";
 import { SectionCard } from "@/components/section-card";
 import { siteConfig } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Contacto",
+  title: "Acceso por invitación",
 };
 
+const emailHref = `mailto:${siteConfig.contactEmail}?subject=${encodeURIComponent("Acceso por invitación Convertilabs")}`;
+
 const nextSteps = [
-  "Compartes contexto del flujo actual y los cuellos de botella.",
-  "Revisamos documentos, contabilidad, IVA e integraciones prioritarias.",
-  "Definimos si conviene un piloto, una prueba controlada o una propuesta mas amplia.",
+  "Nos cuentas tu operación, el volumen documental y dónde hoy se acumula trabajo manual.",
+  "Te decimos con honestidad si Convertilabs ya encaja para tu equipo en desktop, móvil o ambos carriles.",
+  "Si tiene sentido, te habilitamos acceso por invitación para probarlo sin costo.",
+];
+
+const usefulContext = [
+  "Qué tipo de empresa o estudio eres.",
+  "Si el mayor dolor está en documentos, IVA, auditoría o cierre mensual.",
+  "Si tu equipo trabaja fijo en escritorio, en calle o mezclando ambos carriles.",
 ];
 
 export default function ContactPage() {
   return (
-    <div className="page-shell space-y-6">
+    <div className="page-shell space-y-8">
       <PageHero
-        eyebrow="Contacto"
-        title="Conversemos sobre pilotos, integraciones y casos reales de operacion"
-        description="Si estas evaluando documentos, contabilidad o impuestos para Uruguay, lo mejor es partir de un caso concreto. Desde ahi se ordena alcance, prioridad y forma de implementacion."
+        eyebrow="Acceso por invitación"
+        title="Conversemos primero y, si encaja, te damos acceso para probarlo sin costo"
+        description="Convertilabs no se está comercializando como producto abierto. Nació como una capa de inteligencia y captura operativa para convivir con sistemas contables legacy, y hoy se comparte por invitación con equipos que quieren evaluar si encaja en su flujo real."
         actions={
-          <>
-            <a
-              href={`mailto:${siteConfig.contactEmail}`}
-              className="rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
-            >
-              Escribir por email
-            </a>
-            <a
-              href={`mailto:${siteConfig.contactEmail}?subject=Lista%20de%20espera%20Convertilabs`}
-              className="rounded-full border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-            >
-              Lista de espera
-            </a>
-          </>
+          <div className="flex max-w-sm flex-col items-start gap-3">
+            <div className="flex flex-wrap gap-3">
+              <a
+                href={emailHref}
+                className="rounded-[8px] bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[color:var(--color-accent-strong)]"
+              >
+                Solicitar acceso
+              </a>
+              <Link
+                href="/"
+                className="rounded-[8px] border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Ver inicio
+              </Link>
+            </div>
+            <p className="text-sm leading-6 text-white/52">
+              Priorizamos el contacto directo para asegurar que la herramienta se
+              adapte a tu flujo de trabajo.
+            </p>
+          </div>
         }
         highlights={[
-          { label: "Canal principal", value: "Email" },
+          { label: "Acceso", value: "Solo por invitación" },
+          { label: "Costo", value: "Prueba sin costo" },
           { label: "Cobertura", value: "Uruguay" },
-          { label: "Formato", value: "Pilotos y demos" },
         ]}
         aside={
           <div className="space-y-4">
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-              Respuesta ideal
+              Punto de partida
             </p>
             <div className="space-y-3 text-sm leading-7 text-white/72">
-              <p>Cuanto mas contexto compartas, mejor podemos orientar la conversacion.</p>
-              <p>Especialmente util: volumen documental, impuestos involucrados e integraciones necesarias.</p>
+              <p>Nació dentro de una empresa de importaciones y servicios técnicos.</p>
+              <p>
+                Por eso la conversación siempre parte del flujo real, no de una
+                demo vacía.
+              </p>
             </div>
           </div>
         }
       />
 
-      <section className="space-y-6">
-        <MarketingSectionHeading
-          eyebrow="Canales"
-          title="Tres formas simples de iniciar la conversacion"
-          description="No hace falta tener todo resuelto. Alcanza con saber donde hoy se traba la operacion y que resultado quieres mejorar primero."
-        />
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <SectionCard
-            title="Email"
-            description="Canal mas directo para demos, integraciones o consultas sobre alcance."
-          >
-            <p className="text-lg font-semibold">{siteConfig.contactEmail}</p>
-          </SectionCard>
-          <SectionCard
-            title="Pilotos y diagnostico"
-            description="Ideal para bajar el problema real antes de hablar de hoja de ruta, precios o integraciones."
-          >
-            <p className="text-lg font-semibold">Reunion corta, contexto completo</p>
-          </SectionCard>
-          <SectionCard
-            title="Base operativa"
-            description="Producto pensado para desplegar en Vercel y operar con equipos distribuidos."
-          >
-            <p className="text-lg font-semibold">{siteConfig.location}</p>
-          </SectionCard>
-        </div>
+      <section className="grid gap-4 md:grid-cols-3">
+        <SectionCard
+          title="Email directo"
+          description="Si quieres evaluar acceso por invitación, este es el canal principal."
+        >
+          <p className="text-lg font-semibold">{siteConfig.contactEmail}</p>
+        </SectionCard>
+        <SectionCard
+          title="Estado actual"
+          description="Hoy funciona en beta privada y no tiene comercialización abierta."
+        >
+          <p className="text-lg font-semibold">Acceso selectivo y sin costo</p>
+        </SectionCard>
+        <SectionCard
+          title="Formato"
+          description="Primero revisamos tu caso. Si encaja, abrimos una prueba guiada sobre tu flujo real."
+        >
+          <p className="text-lg font-semibold">Diagnóstico corto + invitación</p>
+        </SectionCard>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[0.72fr_minmax(0,1fr)]">
+      <section className="grid gap-4 lg:grid-cols-[0.9fr_minmax(0,1fr)]">
         <SectionCard
-          title="Proximo paso"
-          description="Lo mas util en un primer contacto es revisar un flujo real y ordenar prioridades."
+          title="Cómo avanza"
+          description="Buscamos ver rápido si el producto ya te sirve en documentos, IVA, auditoría o captura de campo."
         />
 
         <div className="panel px-6 py-7 md:px-8 md:py-8">
@@ -97,7 +105,7 @@ export default function ContactPage() {
             {nextSteps.map((item, index) => (
               <div
                 key={item}
-                className="rounded-[1.4rem] border border-[color:var(--color-border)] bg-white/72 p-4"
+                className="rounded-[8px] border border-[color:var(--color-border)] bg-[rgba(15,22,29,0.74)] p-4"
               >
                 <p className="font-mono text-sm text-[color:var(--color-muted)]">
                   0{index + 1}
@@ -109,25 +117,69 @@ export default function ContactPage() {
         </div>
       </section>
 
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="panel px-6 py-7 md:px-8 md:py-8">
+          <p className="text-sm uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
+            Lo más útil para escribirnos
+          </p>
+          <div className="mt-6 space-y-3">
+            {usefulContext.map((item) => (
+              <div
+                key={item}
+                className="rounded-[8px] border border-[color:var(--color-border)] bg-[rgba(15,22,29,0.74)] px-4 py-4 text-sm leading-6"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel px-6 py-7 md:px-8 md:py-8">
+          <p className="text-sm uppercase tracking-[0.2em] text-[color:var(--color-muted)]">
+            Qué te vamos a responder
+          </p>
+          <div className="mt-6 space-y-4 text-sm leading-7 text-[color:var(--color-muted)]">
+            <p>
+              Si ya cubrimos tu caso hoy en el carril desktop, en la app móvil de
+              campo o en ambos.
+            </p>
+            <p>
+              Qué nivel de automatización puedes esperar realmente y dónde sigue
+              siendo importante la revisión humana.
+            </p>
+            <p>
+              Si conviene darte acceso para probarlo ahora o si todavía no es el
+              momento correcto.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <MarketingCtaBanner
-        eyebrow="Accion"
-        title="Si prefieres empezar por email, respondemos desde un caso concreto."
-        description="Comparte el tipo de empresa, el volumen aproximado, los impuestos involucrados y cualquier integracion que ya exista."
+        eyebrow="Invitación"
+        title="Si quieres probarlo, escríbenos y vemos si tiene sentido habilitarte acceso"
+        description="No hay pricing público ni alta abierta. Hoy compartimos Convertilabs por invitación con equipos que quieran evaluar esta capa de inteligencia y captura operativa sobre una operación real y sin costo."
         actions={
-          <>
-            <a
-              href={`mailto:${siteConfig.contactEmail}?subject=Consulta%20Convertilabs`}
-              className="rounded-full bg-[color:var(--color-foreground)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/86"
-            >
-              Escribir ahora
-            </a>
-            <Link
-              href="/"
-              className="rounded-full border border-[color:var(--color-border)] bg-white/80 px-5 py-3 text-sm font-semibold"
-            >
-              Ver inicio
-            </Link>
-          </>
+          <div className="flex max-w-sm flex-col items-start gap-3">
+            <div className="flex flex-wrap gap-3">
+              <a
+                href={emailHref}
+                className="rounded-[8px] bg-[#ff9b4a] px-5 py-3 text-sm font-semibold text-[#1d1208] transition hover:brightness-105"
+              >
+                Solicitar acceso
+              </a>
+              <Link
+                href="/login"
+                className="rounded-[8px] border border-white/14 bg-white/6 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Ya tengo invitación
+              </Link>
+            </div>
+            <p className="text-sm leading-6 text-white/52">
+              Priorizamos el contacto directo para asegurar que la herramienta se
+              adapte a tu flujo de trabajo.
+            </p>
+          </div>
         }
       />
     </div>

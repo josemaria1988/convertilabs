@@ -8,21 +8,21 @@ export function MarketingHeader() {
       <div className="mx-auto max-w-7xl px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Link href="/">
-            <ConvertilabsLogo subtitle="Infraestructura contable y fiscal" />
+            <ConvertilabsLogo subtitle="Capa inteligente para sistemas contables legacy" />
           </Link>
 
           <div className="flex items-center gap-3">
             <Link
               href="/login"
-              className="rounded-[0.95rem] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] px-4 py-3 text-sm font-medium text-white transition hover:bg-[rgba(24,39,77,0.92)]"
+              className="rounded-[8px] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.88)] px-4 py-3 text-sm font-medium text-white transition hover:bg-[rgba(24,39,77,0.92)]"
             >
               Ingresar
             </Link>
             <Link
               href="/contact"
-              className="rounded-[0.95rem] border border-[rgba(124,157,255,0.22)] bg-[linear-gradient(180deg,rgba(104,143,255,0.95),rgba(72,115,235,0.95))] px-4 py-3 text-sm font-medium text-white transition hover:brightness-110"
+              className="rounded-[8px] bg-[#ff9b4a] px-4 py-3 text-sm font-medium text-[#1d1208] transition hover:brightness-105"
             >
-              Solicitar demo
+              Agendar diagnóstico
             </Link>
           </div>
         </div>
@@ -32,7 +32,7 @@ export function MarketingHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="shrink-0 rounded-[0.95rem] px-4 py-2 transition hover:bg-white/70"
+              className="shrink-0 rounded-[8px] px-4 py-2 transition hover:bg-white/8"
             >
               {item.label}
             </Link>
