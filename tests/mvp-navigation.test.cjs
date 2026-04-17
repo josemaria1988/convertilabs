@@ -3,7 +3,6 @@ const { test, assert } = require("./testkit.cjs");
 
 const {
   resolveOrganizationDashboardPath,
-  resolveOrganizationDocumentsPath,
   resolvePostAuthDestination,
 } = require("@/modules/auth/server-auth");
 const { buildOrganizationPrivateNavItems } = require("@/modules/organizations/private-nav");
@@ -30,31 +29,29 @@ test("post auth destination defaults to the dashboard workspace", () => {
   );
 });
 
-test("private navigation exposes the guided workspace and advanced entrypoint", () => {
+test("private navigation exposes the new operational tray menu", () => {
   const navItems = buildOrganizationPrivateNavItems("rontil", "documents");
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Inicio", "Documentos", "Revision", "Impuestos", "Cierre", "Configuracion", "Avanzado"],
+    ["Bandeja Documental", "Contabilidad", "Impuestos (IVA)", "Auditoria", "Configuracion"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
     [
-      "/app/o/rontil/dashboard",
       "/app/o/rontil/documents",
-      "/app/o/rontil/review",
+      "/app/o/rontil/settings?tab=chart",
       "/app/o/rontil/tax",
-      "/app/o/rontil/close",
+      "/app/o/rontil/audit",
       "/app/o/rontil/settings",
-      "/app/o/rontil/advanced",
     ],
   );
 });
 
-test("public and workspace navigation mirror the guided primary sections", () => {
+test("public and workspace navigation mirror the operational primary sections", () => {
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Inicio", "Documentos", "Revision", "Impuestos", "Cierre", "Configuracion", "Avanzado"],
+    ["Bandeja Documental", "Contabilidad", "Impuestos (IVA)", "Auditoria", "Configuracion"],
   );
 });

@@ -30,11 +30,16 @@ Reglas activas:
 
 Bottom nav fija con:
 
-- Inicio
-- Documentos
-- Revisar
+- Bandeja
+- Contabilidad
 - IVA
+- Auditoria
 - Ajustes
+
+Regla activa:
+
+- la revision documental se entra desde `Bandeja Documental`;
+- `Review` no compite como item primario del menu.
 
 Las superficies avanzadas pueden entrar por:
 
@@ -85,10 +90,10 @@ No hacer:
 
 ### Superficies core
 
-- `Inicio`
-- `Documentos`
-- `Revisar`
+- `Bandeja Documental`
+- `Contabilidad`
 - `IVA / Impuestos`
+- `Auditoria`
 - `Ajustes`
 
 ### Superficies expertas o secundarias
@@ -213,7 +218,7 @@ Flujo:
 
 ### C. Review
 
-Es la cola humana principal. `Documentos` no debe cargar con toda la narrativa de revision diaria.
+La cola humana principal vive dentro de la `Bandeja Documental`. La ruta `/review` puede sobrevivir como acceso secundario o legacy, pero no compite como entrada primaria del menu.
 
 ## 5. Buckets operativos del reviewer
 

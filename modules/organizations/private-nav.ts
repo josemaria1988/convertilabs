@@ -2,6 +2,7 @@ export type OrganizationPrivateSection =
   | "home"
   | "documents"
   | "review"
+  | "audit"
   | "close"
   | "tax"
   | "settings"
@@ -11,9 +12,17 @@ type OrganizationPrivateNavItem = {
   href: string;
   label: string;
   description: string;
-  icon: "home" | "documents" | "review" | "tax" | "close" | "settings" | "advanced";
+  icon: "tray" | "accounting" | "tax" | "audit" | "settings";
   current: boolean;
 };
+
+function isDocumentsCurrent(currentSection: OrganizationPrivateSection) {
+  return currentSection === "home" || currentSection === "documents" || currentSection === "review";
+}
+
+function isAccountingCurrent(currentSection: OrganizationPrivateSection) {
+  return currentSection === "advanced" || currentSection === "close";
+}
 
 export function buildOrganizationPrivateNavItems(
   organizationSlug: string,
@@ -21,53 +30,39 @@ export function buildOrganizationPrivateNavItems(
 ): OrganizationPrivateNavItem[] {
   return [
     {
-      href: `/app/o/${organizationSlug}/dashboard`,
-      label: "Inicio",
-      description: "Centro de trabajo y prioridades del dia",
-      icon: "home",
-      current: currentSection === "home",
-    },
-    {
       href: `/app/o/${organizationSlug}/documents`,
-      label: "Documentos",
-      description: "Carga de originales e ingreso asistido",
-      icon: "documents",
-      current: currentSection === "documents",
+      label: "Bandeja Documental",
+      description: "Inicio operativo, revision y criterio de IA por documento",
+      icon: "tray",
+      current: isDocumentsCurrent(currentSection),
     },
     {
-      href: `/app/o/${organizationSlug}/review`,
-      label: "Revision",
-      description: "Cola principal por estados operativos",
-      icon: "review",
-      current: currentSection === "review",
+      href: `/app/o/${organizationSlug}/settings?tab=chart`,
+      label: "Contabilidad",
+      description: "Plan de cuentas, cierres y superficies contables",
+      icon: "accounting",
+      current: isAccountingCurrent(currentSection),
     },
     {
       href: `/app/o/${organizationSlug}/tax`,
-      label: "Impuestos",
-      description: "Periodo IVA guiado y alertas fiscales",
+      label: "Impuestos (IVA)",
+      description: "Reporte IVA y contraste operativo contra DGI",
       icon: "tax",
       current: currentSection === "tax",
     },
     {
-      href: `/app/o/${organizationSlug}/close`,
-      label: "Cierre",
-      description: "Validator mensual y transiciones formales",
-      icon: "close",
-      current: currentSection === "close",
+      href: `/app/o/${organizationSlug}/audit`,
+      label: "Auditoria",
+      description: "Ingreso masivo, staging y control documental",
+      icon: "audit",
+      current: currentSection === "audit",
     },
     {
       href: `/app/o/${organizationSlug}/settings`,
       label: "Configuracion",
-      description: "Empresa, perfil fiscal e integraciones",
+      description: "Empresa, accesos, fiscalidad e integraciones",
       icon: "settings",
       current: currentSection === "settings",
-    },
-    {
-      href: `/app/o/${organizationSlug}/advanced`,
-      label: "Avanzado",
-      description: "Importacion masiva, contabilidad y salidas expertas",
-      icon: "advanced",
-      current: currentSection === "advanced",
     },
   ];
 }

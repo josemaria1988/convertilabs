@@ -62,7 +62,7 @@ export default async function OrganizationAuditPage({
       title="Importacion masiva"
       toolbarLabel="Importacion masiva"
       description="Ingreso masivo guiado con preview estructurado, decisiones controladas e historico trazable por usuario y fecha."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "advanced")}
+      navItems={buildOrganizationPrivateNavItems(organization.slug, "audit")}
     >
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-4">

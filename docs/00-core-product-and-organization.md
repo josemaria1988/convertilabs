@@ -231,12 +231,11 @@ Sentido de cada tab:
 
 Lenguaje de producto recomendado:
 
-- `Inicio`
-- `Documentos`
-- `Revisar`
-- `IVA` en mobile y `Impuestos` cuando la vista necesite una narrativa mas amplia;
+- `Bandeja Documental`
+- `Contabilidad`
+- `Impuestos (IVA)`
+- `Review documental` como accion contextual dentro de la bandeja, no como entrada primaria del menu;
 - `Ajustes`
-- `Cierre`
 - `Auditoria`
 - `Mapa contable`
 - `Reglas contables`
@@ -247,9 +246,9 @@ Lenguaje de producto recomendado:
 
 ### Canonicas core
 
-- `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/documents`
-- `/app/o/[slug]/review`
+- `/app/o/[slug]/dashboard` redirige a `/app/o/[slug]/documents`
+- `/app/o/[slug]/review` queda como superficie secundaria o legacy
 - `/app/o/[slug]/tax`
 - `/app/o/[slug]/settings`
 

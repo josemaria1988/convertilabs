@@ -1,44 +1,34 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { DocumentUploadDropzone } from "@/components/documents/upload-dropzone";
-import { InternationalOperationsWorkspace } from "@/components/documents/international-operations-workspace";
+import { DocumentOperationalTray } from "@/components/documents/document-operational-tray";
 import { LoadingLink } from "@/components/ui/loading-link";
-import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
-import { listOrganizationCostCenters } from "@/modules/cost-centers/service";
 import {
   listAllOrganizationWorkspaceDocuments,
-  listOrganizationWorkspaceDocuments,
+  loadDocumentOriginalPageData,
+  loadDocumentReviewPageData,
+  MissingPersistedDraftError,
 } from "@/modules/documents/review";
-import {
-  groupDocumentsByReviewBucket,
-  summarizeDocumentReviewSecondaryBuckets,
-} from "@/modules/documents/review-queue";
-import { listOrganizationImportOperations } from "@/modules/imports";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import {
+  confirmFinalDocumentReviewAction,
+  resolveDocumentAssistantSuggestionAction,
+  runDocumentClassificationAction,
+} from "./[documentId]/actions";
 
 type OrganizationDocumentsPageProps = {
   params: Promise<{
     slug: string;
   }>;
   searchParams?: Promise<{
-    tab?: string;
+    documentId?: string;
   }>;
 };
 
 export const metadata: Metadata = {
-  title: "Documentos",
+  title: "Bandeja documental",
 };
-
-function formatDateLabel(value: string | null) {
-  if (!value) {
-    return "Sin fecha";
-  }
-
-  return new Intl.DateTimeFormat("es-UY", {
-    dateStyle: "medium",
-  }).format(new Date(value));
-}
 
 export default async function OrganizationDocumentsPage({
   params,
@@ -46,59 +36,63 @@ export default async function OrganizationDocumentsPage({
 }: OrganizationDocumentsPageProps) {
   const { slug } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
-  const activeTab = resolvedSearchParams.tab === "international" ? "international" : "documents";
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const supabase = getSupabaseServiceRoleClient();
+  const userRole = organization.role as
+    | "owner"
+    | "admin"
+    | "admin_processing"
+    | "accountant"
+    | "reviewer"
+    | "operator"
+    | "viewer"
+    | "developer";
+  const documents = await listAllOrganizationWorkspaceDocuments({
+    organizationId: organization.id,
+    organizationSlug: organization.slug,
+    sortOrder: "date_desc",
+  });
+  const selectedDocumentId = (
+    resolvedSearchParams.documentId
+    && documents.some((document) => document.id === resolvedSearchParams.documentId)
+      ? resolvedSearchParams.documentId
+      : documents.find((document) => document.processedHref)?.id
+        ?? documents[0]?.id
+        ?? null
+  );
+  const selectedWorkspaceDocument = selectedDocumentId
+    ? documents.find((document) => document.id === selectedDocumentId) ?? null
+    : null;
 
-  const [recentDocuments, allDocuments, importOperations, recentDocumentsResult, costCenters] = await Promise.all([
-    listOrganizationWorkspaceDocuments({
-      organizationId: organization.id,
-      organizationSlug: organization.slug,
-    }),
-    activeTab === "documents"
-      ? listAllOrganizationWorkspaceDocuments({
-        organizationId: organization.id,
-        organizationSlug: organization.slug,
-        sortOrder: "date_desc",
-      })
-      : Promise.resolve([]),
-    activeTab === "international"
-      ? listOrganizationImportOperations(supabase, organization.id, 8)
-      : Promise.resolve([]),
-    activeTab === "international"
-      ? supabase
-        .from("documents")
-        .select("id, original_filename, document_type, direction, created_at, current_draft_id")
-        .eq("organization_id", organization.id)
-        .not("current_draft_id", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(8)
-      : Promise.resolve({ data: [], error: null }),
-    activeTab === "documents"
-      ? listOrganizationCostCenters({
-        organizationId: organization.id,
-        includeArchived: true,
-      })
-      : Promise.resolve([]),
-  ]);
+  let selectedDocument: Parameters<typeof DocumentOperationalTray>[0]["selectedDocument"] = null;
 
-  if (recentDocumentsResult.error) {
-    throw new Error(recentDocumentsResult.error.message);
+  if (selectedWorkspaceDocument) {
+    try {
+      selectedDocument = {
+        kind: "review",
+        pageData: await loadDocumentReviewPageData({
+          organizationId: organization.id,
+          organizationSlug: organization.slug,
+          documentId: selectedWorkspaceDocument.id,
+          actorId: authState.user?.id ?? null,
+          userRole,
+        }),
+      };
+    } catch (error) {
+      if (error instanceof MissingPersistedDraftError) {
+        selectedDocument = {
+          kind: "original",
+          pageData: await loadDocumentOriginalPageData({
+            organizationId: organization.id,
+            organizationSlug: organization.slug,
+            documentId: selectedWorkspaceDocument.id,
+            userRole,
+          }),
+        };
+      } else {
+        throw error;
+      }
+    }
   }
-
-  const reviewBuckets = groupDocumentsByReviewBucket(allDocuments);
-  const secondaryBuckets = summarizeDocumentReviewSecondaryBuckets(allDocuments);
-  const bucketCountMap = new Map(reviewBuckets.map((bucket) => [bucket.key, bucket.items.length]));
-  const secondaryCountMap = new Map(secondaryBuckets.map((bucket) => [bucket.key, bucket.count]));
-  const costCenterNameById = Object.fromEntries(costCenters.map((item) => [item.id, item.name]));
-  const recentInternationalDocuments = (((recentDocumentsResult.data as Array<{
-    id: string;
-    original_filename: string;
-    document_type: string | null;
-    direction: string;
-    created_at: string;
-    current_draft_id: string | null;
-  }> | null) ?? []));
 
   return (
     <PrivateDashboardShell
@@ -106,234 +100,99 @@ export default async function OrganizationDocumentsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Documentos"
-      toolbarLabel="Documentos"
-      description="Superficie de ingreso: cargar originales, confirmar el ultimo tramo y derivar la decision humana a Revision."
+      title="Bandeja Documental"
+      toolbarLabel="Bandeja Documental"
+      description="Superficie operativa principal: revisa cada comprobante, valida el criterio de IA y entra a la sugerencia completa desde la misma bandeja."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
-      {activeTab === "international" ? (
-        <div className="space-y-4">
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-                  Operaciones internacionales
-                </h1>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Vista secundaria para DUA, proveedor exterior y tributos asociados. El flujo
-                  principal del piloto sigue en Revision.
-                </p>
-              </div>
-              <LoadingLink
-                href={`/app/o/${organization.slug}/documents`}
-                pendingLabel="Volviendo..."
-                className="ui-button ui-button--secondary"
-              >
-                Volver a ingreso documental
-              </LoadingLink>
-            </div>
-          </section>
+      <div className="space-y-3">
+        <DocumentOperationalTray
+          slug={organization.slug}
+          documents={documents}
+          selectedDocumentId={selectedDocumentId}
+          selectedDocument={selectedDocument}
+          confirmFinalDocumentAction={selectedWorkspaceDocument
+            ? async () => {
+              "use server";
+              return confirmFinalDocumentReviewAction({
+                slug,
+                documentId: selectedWorkspaceDocument.id,
+              });
+            }
+            : undefined}
+          runClassificationAction={selectedWorkspaceDocument
+            ? async () => {
+              "use server";
+              return runDocumentClassificationAction({
+                slug,
+                documentId: selectedWorkspaceDocument.id,
+              });
+            }
+            : undefined}
+          resolveAssistantSuggestionAction={selectedWorkspaceDocument
+            ? async (input) => {
+              "use server";
+              return resolveDocumentAssistantSuggestionAction({
+                slug,
+                documentId: selectedWorkspaceDocument.id,
+                ...input,
+              });
+            }
+            : undefined}
+        />
 
-          <InternationalOperationsWorkspace
-            slug={organization.slug}
-            importOperations={importOperations}
-            recentDocuments={recentInternationalDocuments}
-          />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-                  Subir documentos
-                </h1>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Esta pantalla se dedica a cargar originales, confirmar que entraron bien y
-                  derivar el trabajo humano a Revision.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <LoadingLink
-                  href={`/app/o/${organization.slug}/review`}
-                  pendingLabel="Abriendo revision..."
-                  className="ui-button ui-button--primary w-full sm:w-auto"
-                >
-                  Ir a Revision
-                </LoadingLink>
-                <LoadingLink
-                  href={`/app/o/${organization.slug}/audit`}
-                  pendingLabel="Abriendo importacion..."
-                  className="ui-button ui-button--secondary w-full sm:w-auto"
-                >
-                  Importacion masiva
-                </LoadingLink>
-                <LoadingLink
-                  href={`/app/o/${organization.slug}/documents?tab=international`}
-                  pendingLabel="Abriendo..."
-                  className="ui-button ui-button--secondary w-full sm:w-auto"
-                >
-                  Operaciones internacionales
-                </LoadingLink>
-              </div>
+        <section className="ui-panel" id="document-upload-panel">
+          <div className="ui-panel-header">
+            <div>
+              <h2 className="text-[17px] font-semibold text-white">Ingreso directo</h2>
+              <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                La carga sigue disponible, pero ya no domina la pantalla. Primero ves la bandeja; despues agregas nuevos comprobantes o entras por Auditoria para un lote masivo.
+              </p>
             </div>
-          </section>
-
-          <section className="ui-panel" id="document-upload-panel">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[17px] font-semibold text-white">
-                  Cargar originales
-                </h2>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Sube comprobantes firmados, recibidos por email o respaldos necesarios para que
-                  entren al loop principal de revision.
-                </p>
-              </div>
+            <div className="flex flex-wrap gap-2">
               <LoadingLink
-                href={`/app/o/${organization.slug}/review`}
-                pendingLabel="Abriendo revision..."
+                href={`/app/o/${organization.slug}/audit`}
+                pendingLabel="Abriendo..."
                 className="ui-button ui-button--secondary w-full sm:w-auto"
               >
-                Abrir Revision
+                Auditoria
               </LoadingLink>
-            </div>
-            <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
-          </section>
-
-          <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <article className="metric-card">
-              <span className="metric-card__label">En procesamiento</span>
-              <span className="metric-card__value">{secondaryCountMap.get("processing") ?? 0}</span>
-              <p className="metric-card__hint">Archivos que todavia estan entrando al sistema.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Listos para revisar</span>
-              <span className="metric-card__value">
-                {(bucketCountMap.get("factual_review") ?? 0) + (bucketCountMap.get("assignment") ?? 0)}
-              </span>
-              <p className="metric-card__hint">Documentos que ya requieren una decision humana.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Bloqueados</span>
-              <span className="metric-card__value">{bucketCountMap.get("blocked") ?? 0}</span>
-              <p className="metric-card__hint">Duplicados, FX, alcance o incidencias visibles.</p>
-            </article>
-            <article className="metric-card">
-              <span className="metric-card__label">Listos para cierre</span>
-              <span className="metric-card__value">
-                {(bucketCountMap.get("ready_provisional") ?? 0) + (bucketCountMap.get("ready_final") ?? 0)}
-              </span>
-              <p className="metric-card__hint">Casos que ya pasaron la parte pesada de la revision.</p>
-            </article>
-          </section>
-
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h2 className="text-[16px] font-semibold text-white">Que pasa despues de cargar</h2>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Usa este resumen para confirmar que el lote entro bien y despues sigue en Revision.
-                </p>
-              </div>
               <LoadingLink
-                href={`/app/o/${organization.slug}/review`}
-                pendingLabel="Abriendo revision..."
-                className="ui-button ui-button--primary w-full sm:w-auto"
+                href={`/app/o/${organization.slug}/settings?tab=chart`}
+                pendingLabel="Abriendo..."
+                className="ui-button ui-button--secondary w-full sm:w-auto"
               >
-                Ir a Revision
+                Contabilidad
+              </LoadingLink>
+              <LoadingLink
+                href={`/app/o/${organization.slug}/tax`}
+                pendingLabel="Abriendo..."
+                className="ui-button ui-button--secondary w-full sm:w-auto"
+              >
+                Impuestos (IVA)
               </LoadingLink>
             </div>
+          </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                <p className="font-semibold text-white">1. Confirmar entrada</p>
-                <p className="mt-2 text-[color:var(--color-muted)]">
-                  Revisa que el lote haya quedado cargado y en procesamiento normal.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                <p className="font-semibold text-white">2. Abrir Revision</p>
-                <p className="mt-2 text-[color:var(--color-muted)]">
-                  La cola principal separa validacion factual, asignacion, bloqueos y cierres.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                <p className="font-semibold text-white">3. Importacion masiva</p>
-                <p className="mt-2 text-[color:var(--color-muted)]">
-                  Usala solo cuando la entrada venga por planillas o staging estructurado.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                <p className="font-semibold text-white">4. Internacional</p>
-                <p className="mt-2 text-[color:var(--color-muted)]">
-                  Sigue disponible, pero como carril secundario del piloto.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="ui-panel">
-            <div className="ui-panel-header">
-              <div>
-                <h2 className="text-[16px] font-semibold text-white">Ultimos archivos subidos</h2>
-                <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                  Lista corta para validar que la carga entro bien antes de pasar a Revision.
-                </p>
-              </div>
-              <span className="ui-filter">{Math.min(recentDocuments.length, 8)}</span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {recentDocuments.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
-                  Todavia no hay documentos cargados.
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_320px]">
+            <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
+            <div className="space-y-3">
+              {[
+                "La revision documental ya no entra por un menu aparte.",
+                "El criterio IA se confirma desde la bandeja sobre cada documento.",
+                "La sugerencia completa sigue disponible para casos que necesiten mas contexto.",
+              ].map((note) => (
+                <div
+                  key={note}
+                  className="rounded-[6px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[color:var(--color-muted)]"
+                >
+                  {note}
                 </div>
-              ) : (
-                recentDocuments.slice(0, 8).map((document) => {
-                  const costCenterName = document.costCenterId
-                    ? costCenterNameById[document.costCenterId] ?? null
-                    : null;
-
-                  return (
-                    <div
-                    key={document.id}
-                    className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-white">{document.originalFilename}</p>
-                        <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-                          {document.counterpartyName ?? "Contraparte pendiente"} · {formatDateLabel(document.createdAt)}
-                        </p>
-                        {costCenterName ? (
-                          <div className="mt-2">
-                            <span className="status-pill status-pill--info">
-                              Proyecto: {costCenterName}
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                      {document.status === "duplicate" ? (
-                        <span className="status-pill status-pill--danger">Duplicado rechazado</span>
-                      ) : (
-                        <LoadingLink
-                          href={document.processedHref ?? `/app/o/${organization.slug}/review`}
-                          pendingLabel="Abriendo..."
-                          className="ui-button ui-button--secondary w-full sm:w-auto"
-                        >
-                          {document.processedHref ? "Abrir en Revision" : "Ver cola"}
-                        </LoadingLink>
-                      )}
-                    </div>
-                  </div>
-                  );
-                })
-              )}
+              ))}
             </div>
-          </section>
-        </div>
-      )}
+          </div>
+        </section>
+      </div>
     </PrivateDashboardShell>
   );
 }

@@ -9,11 +9,9 @@ export const marketingNav: NavItem[] = [
 ];
 
 export const workspaceNav: NavItem[] = [
-  { href: "/dashboard", label: "Inicio", description: "Centro de trabajo" },
-  { href: "/documents", label: "Documentos", description: "Carga e ingreso" },
-  { href: "/review", label: "Revision", description: "Cola principal de trabajo" },
-  { href: "/tax", label: "Impuestos", description: "Flujo guiado del periodo" },
-  { href: "/close", label: "Cierre", description: "Validacion y transiciones" },
-  { href: "/settings", label: "Configuracion", description: "Empresa y setup" },
-  { href: "/advanced", label: "Avanzado", description: "Superficies expertas" },
+  { href: "/documents", label: "Bandeja Documental", description: "Inicio operativo y revision" },
+  { href: "/settings?tab=chart", label: "Contabilidad", description: "Plan de cuentas" },
+  { href: "/tax", label: "Impuestos (IVA)", description: "Reporte y estado del IVA" },
+  { href: "/audit", label: "Auditoria", description: "Ingreso masivo documental" },
+  { href: "/settings", label: "Configuracion", description: "Empresa e integraciones" },
 ];

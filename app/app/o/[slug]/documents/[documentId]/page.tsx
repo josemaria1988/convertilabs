@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { DocumentCostCenterPanel } from "@/components/cost-centers/document-cost-center-panel";
-import { DocumentReviewStagedWorkspace } from "@/components/documents/document-review-staged-workspace";
+import { DocumentReviewRuleWorkspace } from "@/components/documents/document-review-rule-workspace";
 import { DocumentRecoveryActionButton } from "@/components/documents/document-recovery-action-button";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
@@ -12,10 +10,6 @@ import {
 } from "@/components/ui/button-styles";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
-  canAssignOrganizationCostCenter,
-  listOrganizationCostCenters,
-} from "@/modules/cost-centers/service";
-import {
   loadDocumentOriginalPageData,
   loadDocumentReviewPageData,
   MissingPersistedDraftError,
@@ -23,18 +17,10 @@ import {
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
   confirmDocumentManualAssignmentAction,
-  confirmFinalDocumentReviewAction,
   createDocumentReviewOverrideAccountAction,
-  postProvisionalDocumentReviewAction,
-  refreshDocumentAssistantAction,
-  reopenDocumentReviewAction,
-  resolveDocumentAssistantSuggestionAction,
-  runDocumentClassificationAction,
-  resolveDocumentDuplicateAction,
   saveDocumentDraftReviewAction,
   saveDocumentLearningRuleAction,
 } from "./actions";
-import { assignOrganizationDocumentCostCenterAction } from "../../cost-centers/actions";
 
 type DocumentReviewPageProps = {
   params: Promise<{
@@ -44,7 +30,7 @@ type DocumentReviewPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Revision documental",
+  title: "Revision documental y reglas",
 };
 
 export default async function DocumentReviewPage({
@@ -52,17 +38,6 @@ export default async function DocumentReviewPage({
 }: DocumentReviewPageProps) {
   const { slug, documentId } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const supabase = getSupabaseServiceRoleClient();
-  const costCentersPromise = listOrganizationCostCenters({
-    organizationId: organization.id,
-    includeArchived: true,
-  });
-  const documentCostCenterPromise = supabase
-    .from("documents")
-    .select("id, cost_center_id")
-    .eq("organization_id", organization.id)
-    .eq("id", documentId)
-    .maybeSingle();
   let pageData: Awaited<ReturnType<typeof loadDocumentReviewPageData>> | null = null;
   let originalPageData: Awaited<ReturnType<typeof loadDocumentOriginalPageData>> | null = null;
 
@@ -103,33 +78,6 @@ export default async function DocumentReviewPage({
     }
   }
 
-  const [costCenters, documentCostCenterResult] = await Promise.all([
-    costCentersPromise,
-    documentCostCenterPromise,
-  ]);
-
-  if (documentCostCenterResult.error) {
-    throw new Error(documentCostCenterResult.error.message);
-  }
-
-  const costCenterPanel = (
-    <DocumentCostCenterPanel
-      slug={organization.slug}
-      projects={costCenters}
-      currentCostCenterId={documentCostCenterResult.data?.cost_center_id ?? null}
-      canEdit={canAssignOrganizationCostCenter(organization.role)}
-      assignCostCenterAction={async (input) => {
-        "use server";
-        return assignOrganizationDocumentCostCenterAction({
-          slug,
-          documentId,
-          costCenterId: input.costCenterId,
-          sourceSurface: "desktop_review",
-        });
-      }}
-    />
-  );
-
   if (originalPageData) {
     return (
       <PrivateDashboardShell
@@ -137,11 +85,10 @@ export default async function DocumentReviewPage({
         organizationSlug={organization.slug}
         userEmail={authState.user?.email}
         userRole={organization.role}
-        title="Revision documental"
+        title="Revision documental y reglas"
         description="Este documento todavia no tiene draft persistido. Igual podes abrir el original para validar el comprobante real sin salir de la pantalla."
         navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
       >
-        {costCenterPanel}
         <SectionCard
           title={originalPageData.document.originalFilename}
           description="Cuando exista el draft persistido se habilitara la revision procesada. Mientras tanto, el original queda disponible en modal y en una ventana aparte."
@@ -207,100 +154,47 @@ export default async function DocumentReviewPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Revision documental"
-      description="La revision avanza por etapas: clasificacion automatica, contexto manual solo si hace falta, asignacion contable y cierre."
+      title="Revision documental y reglas"
+      description="Revision compacta para validar la factura, el criterio IA, el asiento y la regla reusable sin ruido extra."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
-      <div className="space-y-4">
-        {costCenterPanel}
-        <DocumentReviewStagedWorkspace
-          pageData={pageData}
-          saveDraftReviewAction={async (input) => {
-            "use server";
-            return saveDocumentDraftReviewAction({
-              slug,
-              documentId,
-              ...input,
-            });
-          }}
-          postProvisionalDocumentAction={async () => {
-            "use server";
-            return postProvisionalDocumentReviewAction({
-              slug,
-              documentId,
-            });
-          }}
-          confirmFinalDocumentAction={async (payload) => {
-            "use server";
-            return confirmFinalDocumentReviewAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-          confirmManualAssignmentAction={async (payload) => {
-            "use server";
-            return confirmDocumentManualAssignmentAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-          createReviewAccountAction={async (payload) => {
-            "use server";
-            return createDocumentReviewOverrideAccountAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-          saveLearningRuleAction={async (payload) => {
-            "use server";
-            return saveDocumentLearningRuleAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-          resolveDuplicateAction={async (payload) => {
-            "use server";
-            return resolveDocumentDuplicateAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-          runClassificationAction={async () => {
-            "use server";
-            return runDocumentClassificationAction({
-              slug,
-              documentId,
-            });
-          }}
-          reopenDocumentAction={async () => {
-            "use server";
-            return reopenDocumentReviewAction({
-              slug,
-              documentId,
-            });
-          }}
-          refreshAssistantAction={async () => {
-            "use server";
-            return refreshDocumentAssistantAction({
-              slug,
-              documentId,
-            });
-          }}
-          resolveAssistantSuggestionAction={async (payload) => {
-            "use server";
-            return resolveDocumentAssistantSuggestionAction({
-              slug,
-              documentId,
-              ...payload,
-            });
-          }}
-        />
-      </div>
+      <DocumentReviewRuleWorkspace
+        slug={slug}
+        organizationName={organization.name}
+        pageData={pageData}
+        saveDraftReviewAction={async (input) => {
+          "use server";
+          return saveDocumentDraftReviewAction({
+            slug,
+            documentId,
+            ...input,
+          });
+        }}
+        confirmManualAssignmentAction={async (payload) => {
+          "use server";
+          return confirmDocumentManualAssignmentAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        createReviewAccountAction={async (payload) => {
+          "use server";
+          return createDocumentReviewOverrideAccountAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        saveLearningRuleAction={async (payload) => {
+          "use server";
+          return saveDocumentLearningRuleAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+      />
     </PrivateDashboardShell>
   );
 }

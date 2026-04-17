@@ -195,7 +195,10 @@ export default async function OrganizationSettingsPage({
       userRole={organization.role}
       title="Configuracion"
       description="Configuracion guiada por tabs: empresa, perfil fiscal, perfil de negocio, plan contable, integraciones y soporte avanzado."
-      navItems={buildOrganizationPrivateNavItems(organization.slug, "settings")}
+      navItems={buildOrganizationPrivateNavItems(
+        organization.slug,
+        activeSettingsTab === "chart" ? "advanced" : "settings",
+      )}
     >
       <section className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
         <article className="metric-card">

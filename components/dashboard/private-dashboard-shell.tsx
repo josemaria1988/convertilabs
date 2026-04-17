@@ -8,7 +8,7 @@ export type PrivateDashboardNavItem = {
   href: string;
   label: string;
   description: string;
-  icon?: "home" | "documents" | "review" | "tax" | "close" | "settings" | "advanced";
+  icon?: "tray" | "accounting" | "tax" | "audit" | "settings";
   current?: boolean;
 };
 
@@ -29,7 +29,7 @@ type IconProps = {
   className?: string;
 };
 
-function HomeIcon({ className }: IconProps) {
+function TrayIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -41,14 +41,15 @@ function HomeIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M3 11.5 12 4l9 7.5" />
-      <path d="M5.5 10.5V20h13V10.5" />
-      <path d="M9.5 20v-5h5v5" />
+      <path d="M4.5 6.5h15" />
+      <path d="M6 6.5v10.5h12V6.5" />
+      <path d="M8.5 10.5h7" />
+      <path d="M8.5 14.5h4.5" />
     </svg>
   );
 }
 
-function DocumentIcon({ className }: IconProps) {
+function AccountingIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -60,30 +61,10 @@ function DocumentIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M7 3.5h7.5L19 8v12.5H7z" />
-      <path d="M14 3.5V8h5" />
-      <path d="M10 12h6" />
-      <path d="M10 16h6" />
-    </svg>
-  );
-}
-
-function ReviewIcon({ className }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 6.5h14" />
-      <path d="M5 12h8" />
-      <path d="M5 17.5h10" />
-      <path d="m16.8 15.8 1.6 1.6 2.8-3.3" />
+      <path d="M5 5.5h14v13H5z" />
+      <path d="M8 9.5h8" />
+      <path d="M8 13.5h3" />
+      <path d="M14.5 12 16 13.5l2.5-3" />
     </svg>
   );
 }
@@ -106,7 +87,7 @@ function TaxIcon({ className }: IconProps) {
   );
 }
 
-function CloseIcon({ className }: IconProps) {
+function AuditIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -118,11 +99,10 @@ function CloseIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M6 4.5h12v15H6z" />
-      <path d="M9 2.5v4" />
-      <path d="M15 2.5v4" />
-      <path d="M9 11.5h6" />
-      <path d="M9 15.5h4" />
+      <path d="M7 4.5h8l3 3V19.5H7z" />
+      <path d="M15 4.5v3h3" />
+      <path d="M9.5 11h5" />
+      <path d="M9.5 14.5h5" />
     </svg>
   );
 }
@@ -145,7 +125,7 @@ function SettingsIcon({ className }: IconProps) {
   );
 }
 
-function AdvancedIcon({ className }: IconProps) {
+function HelpIcon({ className }: IconProps) {
   return (
     <svg
       aria-hidden="true"
@@ -157,9 +137,48 @@ function AdvancedIcon({ className }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12 3.5 14 7.5l4.5.7-3.2 3.1.8 4.7-4.1-2.1-4.1 2.1.8-4.7-3.2-3.1 4.5-.7Z" />
-      <path d="M18.5 16.5 20.5 18.5" />
-      <path d="M3.5 18.5 5.5 16.5" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9.8 9.7a2.4 2.4 0 1 1 3.9 1.9c-.8.6-1.2 1-1.2 2" />
+      <path d="M12 16.8h.01" />
+    </svg>
+  );
+}
+
+function SupportIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 12a7 7 0 1 1 14 0" />
+      <path d="M5.5 12H4a1.5 1.5 0 0 0 0 3h1.5" />
+      <path d="M18.5 12H20a1.5 1.5 0 0 1 0 3h-1.5" />
+      <path d="M9.5 18h5" />
+    </svg>
+  );
+}
+
+function ExitIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10 6H6v12h4" />
+      <path d="M14 8l4 4-4 4" />
+      <path d="M8 12h10" />
     </svg>
   );
 }
@@ -179,37 +198,26 @@ function CaretIcon({ className }: IconProps) {
 
 function getNavIcon(iconKey?: PrivateDashboardNavItem["icon"]) {
   switch (iconKey) {
-    case "documents":
-      return DocumentIcon;
-    case "review":
-      return ReviewIcon;
+    case "accounting":
+      return AccountingIcon;
     case "tax":
       return TaxIcon;
-    case "close":
-      return CloseIcon;
+    case "audit":
+      return AuditIcon;
     case "settings":
       return SettingsIcon;
-    case "advanced":
-      return AdvancedIcon;
-    case "home":
+    case "tray":
     default:
-      return HomeIcon;
+      return TrayIcon;
   }
 }
 
 function isPrimaryMobileNavItem(item: PrivateDashboardNavItem) {
-  return ["home", "documents", "review", "tax", "settings"].includes(item.icon ?? "home");
+  return ["tray", "accounting", "tax", "audit", "settings"].includes(item.icon ?? "tray");
 }
 
 function getMobileNavLabel(item: PrivateDashboardNavItem) {
-  switch (item.icon) {
-    case "tax":
-      return "IVA";
-    case "settings":
-      return "Ajustes";
-    default:
-      return item.label;
-  }
+  return item.label;
 }
 
 export function PrivateDashboardShell({
@@ -259,6 +267,23 @@ export function PrivateDashboardShell({
               );
             })}
           </nav>
+
+          <div className="app-sidebar-footer">
+            <LoadingLink href={`/app/o/${organizationSlug}/settings`} pendingLabel="Abriendo..." className="app-sidebar-footer-link">
+              <HelpIcon className="h-[16px] w-[16px]" />
+              <span>Ayuda</span>
+            </LoadingLink>
+            <LoadingLink href={`/app/o/${organizationSlug}/settings?tab=integrations`} pendingLabel="Abriendo..." className="app-sidebar-footer-link">
+              <SupportIcon className="h-[16px] w-[16px]" />
+              <span>Soporte</span>
+            </LoadingLink>
+            <form action="/logout" method="post" className="app-sidebar-footer-link">
+              <button type="submit" className="flex items-center gap-2 text-inherit">
+                <ExitIcon className="h-[16px] w-[16px]" />
+                <span>Salir</span>
+              </button>
+            </form>
+          </div>
         </div>
       </aside>
 
