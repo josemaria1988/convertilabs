@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { CostCentersSettingsPanel } from "@/components/settings/cost-centers-settings-panel";
 import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
+import { ZetaSoftwareConnectionCard } from "@/components/settings/integrations/zetasoftware-connection-card";
+import { ZetaSoftwareRunHistory } from "@/components/settings/integrations/zetasoftware-run-history";
+import { ZetaSoftwareSyncPanel } from "@/components/settings/integrations/zetasoftware-sync-panel";
 import { SettingsCapabilitiesList } from "@/components/settings/settings-capabilities-list";
 import {
   buttonBaseClassName,
@@ -48,7 +51,9 @@ import {
   applyOrganizationChartPresetAction,
   createOrganizationChartAccountAction,
   importOrganizationChartSpreadsheetAction,
+  testOrganizationZetaConnectionAction,
   upsertOrganizationCfeEmailConnectionAction,
+  upsertOrganizationZetaConnectionAction,
   updateOrganizationBasicsAction,
   updateOrganizationChartAccountAction,
 } from "./actions";
@@ -186,6 +191,7 @@ export default async function OrganizationSettingsPage({
     typeof activeProfileJson.travel_radius_km_policy === "number"
       ? String(activeProfileJson.travel_radius_km_policy)
       : "";
+  const canManageIntegrations = ["owner", "admin", "developer"].includes(organization.role);
 
   return (
     <PrivateDashboardShell
@@ -418,6 +424,25 @@ export default async function OrganizationSettingsPage({
           ) : null}
 
           {activeSettingsTab === "integrations" ? (
+          <div className="space-y-5">
+            <ExpandableSectionCard
+              title="Zetasoftware"
+              description="Conexion de lectura para datos estructurados, trazabilidad y futuras sincronizaciones."
+              defaultOpen
+            >
+              <div className="space-y-4">
+                <ZetaSoftwareConnectionCard
+                  slug={organization.slug}
+                  connection={settings.zetaConnection}
+                  canManage={canManageIntegrations}
+                  saveAction={upsertOrganizationZetaConnectionAction}
+                  testAction={testOrganizationZetaConnectionAction}
+                />
+                <ZetaSoftwareSyncPanel isConfigured={settings.zetaConnection.isConfigured} />
+                <ZetaSoftwareRunHistory />
+              </div>
+            </ExpandableSectionCard>
+
           <ExpandableSectionCard
             title="Conectar email de eFacturas"
             description="Usa esta conexion para recibir en el sistema directamente los CFE de esta organizacion desde la casilla que cada usuario opera."
@@ -518,6 +543,7 @@ export default async function OrganizationSettingsPage({
               </form>
             </div>
           </ExpandableSectionCard>
+          </div>
           ) : null}
 
           {activeSettingsTab === "business" && featureFlags.onboardingActivityBasedPresetsEnabled ? (

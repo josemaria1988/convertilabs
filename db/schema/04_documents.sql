@@ -55,6 +55,20 @@ create table if not exists public.documents (
 alter table public.documents
   add column if not exists cost_center_id uuid references public.organization_cost_centers(id) on delete set null;
 
+alter table public.documents
+  add column if not exists issuer_address_raw text,
+  add column if not exists issuer_department text,
+  add column if not exists issuer_city text,
+  add column if not exists issuer_branch_code text,
+  add column if not exists location_extraction_confidence numeric(10,6),
+  add column if not exists location_signal_code text,
+  add column if not exists location_signal_severity text,
+  add column if not exists location_signal_payload jsonb not null default '{}'::jsonb,
+  add column if not exists requires_business_purpose_review boolean not null default false,
+  add column if not exists business_purpose_note text,
+  add column if not exists suggested_expense_family text,
+  add column if not exists suggested_tax_profile_code text;
+
 create index if not exists idx_documents_org_status
   on public.documents (organization_id, status);
 
@@ -76,6 +90,9 @@ create index if not exists idx_documents_org_created_at
 create index if not exists idx_documents_org_cost_center_created_at
   on public.documents (organization_id, cost_center_id, created_at desc)
   where cost_center_id is not null;
+
+create index if not exists idx_documents_org_location_signal
+  on public.documents (organization_id, location_signal_severity, location_signal_code, created_at desc);
 
 create index if not exists idx_documents_org_source_type
   on public.documents (organization_id, source_type, created_at desc);

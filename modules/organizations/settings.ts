@@ -7,6 +7,10 @@ import {
   loadUserOrganizationCfeEmailConnection,
   type UserOrganizationCfeEmailConnection,
 } from "@/modules/integrations/cfe-email-settings";
+import {
+  loadZetaConnectionSettings,
+  type ZetaConnectionSettings,
+} from "@/modules/integrations/zeta/services/connection-service";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type ProfileVersionRow = {
@@ -65,6 +69,7 @@ export type OrganizationSettingsData = {
   activeRuleSnapshot: RuleSnapshotRow | null;
   ruleSnapshotHistory: RuleSnapshotRow[];
   currentUserCfeEmailConnection: UserOrganizationCfeEmailConnection | null;
+  zetaConnection: ZetaConnectionSettings;
 };
 
 function asRecord(value: unknown) {
@@ -142,7 +147,13 @@ export async function loadOrganizationSettingsData(
   userId?: string | null,
 ) {
   const supabase = getSupabaseServiceRoleClient();
-  const [organization, profileResult, snapshotResult, currentUserCfeEmailConnection] = await Promise.all([
+  const [
+    organization,
+    profileResult,
+    snapshotResult,
+    currentUserCfeEmailConnection,
+    zetaConnection,
+  ] = await Promise.all([
     loadOrganizationRow(supabase, organizationId),
     supabase
       .from("organization_profile_versions")
@@ -164,6 +175,7 @@ export async function loadOrganizationSettingsData(
       organizationId,
       userId,
     }),
+    loadZetaConnectionSettings(supabase, organizationId),
   ]);
 
   if (profileResult.error) {
@@ -191,6 +203,7 @@ export async function loadOrganizationSettingsData(
       ruleSnapshotHistory.find((snapshot) => snapshot.status === "active") ?? null,
     ruleSnapshotHistory,
     currentUserCfeEmailConnection,
+    zetaConnection,
   } satisfies OrganizationSettingsData;
 }
 

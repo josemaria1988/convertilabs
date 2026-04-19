@@ -113,6 +113,12 @@ alter table public.exports enable row level security;
 alter table public.api_clients enable row level security;
 alter table public.api_keys enable row level security;
 alter table public.webhook_subscriptions enable row level security;
+alter table public.organization_integration_connections enable row level security;
+alter table public.integration_sync_runs enable row level security;
+alter table public.integration_sync_cursors enable row level security;
+alter table public.integration_raw_records enable row level security;
+alter table public.document_source_refs enable row level security;
+alter table public.integration_entity_links enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.fiscal_periods enable row level security;
 alter table public.close_check_runs enable row level security;
@@ -1769,6 +1775,342 @@ with check (
 drop policy if exists "webhook_subscriptions_delete_integration_roles" on public.webhook_subscriptions;
 create policy "webhook_subscriptions_delete_integration_roles"
 on public.webhook_subscriptions
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_integration_connections_select_integration_roles" on public.organization_integration_connections;
+create policy "organization_integration_connections_select_integration_roles"
+on public.organization_integration_connections
+for select
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_integration_connections_insert_integration_roles" on public.organization_integration_connections;
+create policy "organization_integration_connections_insert_integration_roles"
+on public.organization_integration_connections
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_integration_connections_update_integration_roles" on public.organization_integration_connections;
+create policy "organization_integration_connections_update_integration_roles"
+on public.organization_integration_connections
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "organization_integration_connections_delete_integration_roles" on public.organization_integration_connections;
+create policy "organization_integration_connections_delete_integration_roles"
+on public.organization_integration_connections
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_sync_runs_select_member" on public.integration_sync_runs;
+create policy "integration_sync_runs_select_member"
+on public.integration_sync_runs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "integration_sync_runs_insert_processing_roles" on public.integration_sync_runs;
+create policy "integration_sync_runs_insert_processing_roles"
+on public.integration_sync_runs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_sync_runs_update_processing_roles" on public.integration_sync_runs;
+create policy "integration_sync_runs_update_processing_roles"
+on public.integration_sync_runs
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_sync_cursors_select_member" on public.integration_sync_cursors;
+create policy "integration_sync_cursors_select_member"
+on public.integration_sync_cursors
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "integration_sync_cursors_upsert_processing_roles" on public.integration_sync_cursors;
+create policy "integration_sync_cursors_upsert_processing_roles"
+on public.integration_sync_cursors
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_sync_cursors_update_processing_roles" on public.integration_sync_cursors;
+create policy "integration_sync_cursors_update_processing_roles"
+on public.integration_sync_cursors
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_raw_records_select_member" on public.integration_raw_records;
+create policy "integration_raw_records_select_member"
+on public.integration_raw_records
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "integration_raw_records_insert_processing_roles" on public.integration_raw_records;
+create policy "integration_raw_records_insert_processing_roles"
+on public.integration_raw_records
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_raw_records_update_processing_roles" on public.integration_raw_records;
+create policy "integration_raw_records_update_processing_roles"
+on public.integration_raw_records
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_source_refs_select_member" on public.document_source_refs;
+create policy "document_source_refs_select_member"
+on public.document_source_refs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "document_source_refs_insert_processing_roles" on public.document_source_refs;
+create policy "document_source_refs_insert_processing_roles"
+on public.document_source_refs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "document_source_refs_update_processing_roles" on public.document_source_refs;
+create policy "document_source_refs_update_processing_roles"
+on public.document_source_refs
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_entity_links_select_member" on public.integration_entity_links;
+create policy "integration_entity_links_select_member"
+on public.integration_entity_links
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "integration_entity_links_insert_accounting_roles" on public.integration_entity_links;
+create policy "integration_entity_links_insert_accounting_roles"
+on public.integration_entity_links
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_entity_links_update_accounting_roles" on public.integration_entity_links;
+create policy "integration_entity_links_update_accounting_roles"
+on public.integration_entity_links
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'developer'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "integration_entity_links_delete_integration_roles" on public.integration_entity_links;
+create policy "integration_entity_links_delete_integration_roles"
+on public.integration_entity_links
 for delete
 using (
   public.has_org_role(

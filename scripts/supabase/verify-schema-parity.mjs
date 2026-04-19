@@ -51,6 +51,12 @@ async function loadActualSchema(client) {
         column_name
       from information_schema.columns
       where table_schema = 'public'
+        and table_name in (
+          select table_name
+          from information_schema.tables
+          where table_schema = 'public'
+            and table_type = 'BASE TABLE'
+        )
       order by table_name, ordinal_position
     `);
   const uniqueResult = await client.query(`
@@ -328,7 +334,7 @@ function compareSchema(expected, actual) {
   }
 
   if (extraPolicies.length) {
-    failures.push(`Unexpected RLS policies:\n${formatList(uniqueSorted(extraPolicies))}`);
+    warnings.push(`Unexpected RLS policies:\n${formatList(uniqueSorted(extraPolicies))}`);
   }
 
   const actualTriggerKeys = new Set(

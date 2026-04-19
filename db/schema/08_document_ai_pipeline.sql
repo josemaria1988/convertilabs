@@ -22,8 +22,139 @@ create table if not exists public.organization_profile_versions (
   unique (organization_id, version_number)
 );
 
+alter table public.organization_profile_versions
+  add column if not exists fiscal_address_text text,
+  add column if not exists fiscal_department text,
+  add column if not exists fiscal_city text,
+  add column if not exists fiscal_postal_code text,
+  add column if not exists fiscal_lat numeric(10,6),
+  add column if not exists fiscal_long numeric(10,6),
+  add column if not exists location_risk_policy text not null default 'warn_and_require_note',
+  add column if not exists travel_radius_km_policy numeric(10,2);
+
+update public.organization_profile_versions
+set
+  fiscal_address_text = coalesce(fiscal_address_text, nullif(profile_json ->> 'fiscal_address_text', '')),
+  fiscal_department = coalesce(fiscal_department, nullif(profile_json ->> 'fiscal_department', '')),
+  fiscal_city = coalesce(fiscal_city, nullif(profile_json ->> 'fiscal_city', '')),
+  fiscal_postal_code = coalesce(fiscal_postal_code, nullif(profile_json ->> 'fiscal_postal_code', '')),
+  location_risk_policy = coalesce(location_risk_policy, nullif(profile_json ->> 'location_risk_policy', ''), 'warn_and_require_note')
+where profile_json <> '{}'::jsonb;
+
 create index if not exists idx_org_profile_versions_org_effective
   on public.organization_profile_versions (organization_id, effective_from desc);
+
+create table if not exists public.organization_business_profile_versions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  version_no integer not null,
+  primary_activity_code text,
+  short_description text,
+  has_mixed_vat_operations boolean not null default false,
+  has_imports boolean not null default false,
+  has_exports boolean not null default false,
+  is_multi_currency boolean not null default false,
+  source text not null default 'onboarding',
+  is_current boolean not null default true,
+  created_by uuid references public.profiles(id),
+  created_at timestamp with time zone not null default now(),
+  catalog_version text not null default 'uy-ciiu-rev4-dgi-ine-v1-2026-03-15'
+);
+
+create unique index if not exists organization_business_profile_versions_org_version_idx
+  on public.organization_business_profile_versions (organization_id, version_no);
+
+create index if not exists organization_business_profile_versions_current_idx
+  on public.organization_business_profile_versions (organization_id, is_current);
+
+create table if not exists public.organization_business_profile_activities (
+  id uuid primary key default gen_random_uuid(),
+  business_profile_version_id uuid not null references public.organization_business_profile_versions(id) on delete cascade,
+  activity_code text not null,
+  role text not null,
+  rank integer not null default 0
+);
+
+create index if not exists organization_business_profile_activities_version_idx
+  on public.organization_business_profile_activities (business_profile_version_id, role, rank);
+
+create table if not exists public.organization_business_profile_traits (
+  id uuid primary key default gen_random_uuid(),
+  business_profile_version_id uuid not null references public.organization_business_profile_versions(id) on delete cascade,
+  trait_code text not null,
+  enabled boolean not null default true
+);
+
+create index if not exists organization_business_profile_traits_version_idx
+  on public.organization_business_profile_traits (business_profile_version_id, trait_code);
+
+create table if not exists public.organization_preset_applications (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  business_profile_version_id uuid references public.organization_business_profile_versions(id) on delete set null,
+  base_preset_code text not null,
+  overlay_codes_json jsonb not null default '[]'::jsonb,
+  application_mode text not null default 'recommended',
+  explanation_json jsonb not null default '{}'::jsonb,
+  applied_at timestamp with time zone not null default now(),
+  applied_by uuid references public.profiles(id),
+  active boolean not null default true
+);
+
+create index if not exists organization_preset_applications_org_active_idx
+  on public.organization_preset_applications (organization_id, active, applied_at desc);
+
+create table if not exists public.organization_preset_ai_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  business_profile_version_id uuid references public.organization_business_profile_versions(id) on delete set null,
+  requested_by uuid references public.profiles(id) on delete set null,
+  request_origin text not null,
+  ip_hash text,
+  input_hash text not null,
+  input_snapshot_json jsonb not null default '{}'::jsonb,
+  rule_recommendation_json jsonb not null default '{}'::jsonb,
+  candidate_compositions_json jsonb not null default '[]'::jsonb,
+  selected_composition_code text,
+  confidence numeric(6,5),
+  target_audience_fit text,
+  key_benefit text,
+  setup_tip text,
+  assistant_letter_markdown text,
+  observations_json jsonb not null default '[]'::jsonb,
+  suggested_cost_centers_json jsonb not null default '[]'::jsonb,
+  cost_center_draft_saved boolean not null default false,
+  cost_center_draft_saved_at timestamp with time zone,
+  cost_center_draft_saved_by uuid references public.profiles(id) on delete set null,
+  provider_code text,
+  model_code text,
+  response_id text,
+  prompt_hash text,
+  request_payload_json jsonb not null default '{}'::jsonb,
+  response_json jsonb not null default '{}'::jsonb,
+  input_tokens integer,
+  output_tokens integer,
+  total_tokens integer,
+  estimated_cost_usd numeric(12,6),
+  status text not null default 'completed',
+  failure_message text,
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists organization_preset_ai_runs_requested_by_created_idx
+  on public.organization_preset_ai_runs (requested_by, created_at desc);
+
+create index if not exists organization_preset_ai_runs_ip_hash_created_idx
+  on public.organization_preset_ai_runs (ip_hash, created_at desc);
+
+create index if not exists organization_preset_ai_runs_organization_created_idx
+  on public.organization_preset_ai_runs (organization_id, created_at desc);
+
+alter table public.organization_preset_applications
+  add column if not exists ai_run_id uuid references public.organization_preset_ai_runs(id) on delete set null;
+
+create index if not exists organization_preset_applications_ai_run_idx
+  on public.organization_preset_applications (ai_run_id);
 
 create table if not exists public.organization_rule_snapshots (
   id uuid primary key default gen_random_uuid(),

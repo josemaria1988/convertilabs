@@ -39,6 +39,10 @@ import {
 } from "@/modules/organizations/settings";
 import { upsertUserOrganizationCfeEmailConnection } from "@/modules/integrations/cfe-email-settings";
 import {
+  saveZetaConnection,
+  testZetaConnection,
+} from "@/modules/integrations/zeta/services/connection-service";
+import {
   importChartOfAccountsSpreadsheetDirect,
   runSpreadsheetImport,
 } from "@/modules/spreadsheets";
@@ -174,6 +178,12 @@ function assertOrganizationCfeEmailRole(role: string) {
   }
 }
 
+function assertOrganizationIntegrationRole(role: string) {
+  if (!["owner", "admin", "developer"].includes(role)) {
+    throw new Error("Tu rol no puede administrar integraciones externas.");
+  }
+}
+
 function parseStringArray(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || value.trim().length === 0) {
     return [];
@@ -285,6 +295,42 @@ export async function upsertOrganizationCfeEmailConnectionAction(formData: FormD
   });
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
+}
+
+export async function upsertOrganizationZetaConnectionAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationIntegrationRole(organization.role);
+
+  await saveZetaConnection(getSupabaseServiceRoleClient(), {
+    organizationId: organization.id,
+    actorUserId: authState.user?.id ?? null,
+    companyCode: String(formData.get("companyCode") ?? ""),
+    username: String(formData.get("username") ?? ""),
+    baseUrl: String(formData.get("baseUrl") ?? ""),
+    secret: String(formData.get("secret") ?? ""),
+    mockEnabled: formData.get("mockEnabled") === "on",
+    isActive: formData.get("isActive") === "on",
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+}
+
+export async function testOrganizationZetaConnectionAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationIntegrationRole(organization.role);
+
+  await testZetaConnection(getSupabaseServiceRoleClient(), {
+    organizationId: organization.id,
+    actorUserId: authState.user?.id ?? null,
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
 }
 
 export async function updateOrganizationBusinessProfileAction(formData: FormData) {

@@ -27,7 +27,7 @@
 Nota operativa:
 
 - `db/schema/09_accounting_read_models.sql` es canonico para las vistas contables read-only;
-- el generador `npm run db:generate:migration` hoy sigue armando la migracion consolidada desde `00..08 + RLS`, porque `scripts/supabase/canonical-schema.mjs` aun no incorpora `09_accounting_read_models.sql` al archivo generado.
+- el generador `npm run db:generate:migration` arma la migracion consolidada desde `00..09 + RLS`.
 
 ## Regla de mantenimiento
 

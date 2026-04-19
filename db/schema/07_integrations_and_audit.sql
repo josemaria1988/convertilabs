@@ -52,6 +52,47 @@ create table if not exists public.vat_form_exports (
 create index if not exists idx_vat_form_exports_org_run
   on public.vat_form_exports (organization_id, vat_run_id, created_at desc);
 
+create table if not exists public.organization_spreadsheet_import_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  source_document_id uuid references public.documents(id) on delete set null,
+  file_name text not null,
+  file_kind text not null default 'unknown',
+  import_type text not null default 'unsupported',
+  run_mode text not null default 'interactive',
+  status text not null default 'preview_ready',
+  provider_code text,
+  model_code text,
+  prompt_version text,
+  schema_version text,
+  batch_id text,
+  response_id text,
+  estimated_cost_usd numeric(12,6),
+  warnings_json jsonb not null default '[]'::jsonb,
+  preview_json jsonb not null default '{}'::jsonb,
+  result_json jsonb not null default '{}'::jsonb,
+  detected_mapping_json jsonb not null default '{}'::jsonb,
+  status_events_json jsonb not null default '[]'::jsonb,
+  retry_count integer not null default 0,
+  confirmed_at timestamptz,
+  confirmed_by uuid references public.profiles(id),
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.organization_spreadsheet_import_runs
+  add column if not exists ai_parse_status text,
+  add column if not exists ai_parse_payload jsonb not null default '{}'::jsonb,
+  add column if not exists normalized_payload jsonb not null default '{}'::jsonb,
+  add column if not exists error_report jsonb not null default '{}'::jsonb;
+
+create index if not exists idx_org_spreadsheet_runs_org_created
+  on public.organization_spreadsheet_import_runs (organization_id, created_at desc);
+
+create index if not exists idx_org_spreadsheet_runs_org_status
+  on public.organization_spreadsheet_import_runs (organization_id, status, import_type);
+
 insert into storage.buckets (
   id,
   name,
@@ -94,6 +135,181 @@ create table if not exists public.webhook_subscriptions (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.organization_integration_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null,
+  mode text not null default 'read_only',
+  status text not null default 'configured',
+  test_mode boolean not null default true,
+  config_json jsonb not null default '{}'::jsonb,
+  encrypted_credentials text,
+  credentials_fingerprint text,
+  credentials_last_rotated_at timestamptz,
+  last_connection_test_at timestamptz,
+  last_connection_test_ok boolean,
+  last_error text,
+  created_by uuid references public.profiles(id),
+  updated_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, provider)
+);
+
+create index if not exists idx_integration_connections_org_provider_status
+  on public.organization_integration_connections (organization_id, provider, status);
+
+create table if not exists public.integration_sync_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  connection_id uuid references public.organization_integration_connections(id) on delete set null,
+  provider text not null,
+  stream text not null,
+  run_kind text not null default 'manual',
+  status text not null default 'queued',
+  test_mode boolean not null default true,
+  test_run_key text,
+  initiated_by_user_id uuid references public.profiles(id),
+  started_at timestamptz,
+  finished_at timestamptz,
+  records_seen integer not null default 0,
+  records_upserted integer not null default 0,
+  records_skipped integer not null default 0,
+  records_failed integer not null default 0,
+  cursor_from text,
+  cursor_to text,
+  input_json jsonb not null default '{}'::jsonb,
+  summary_json jsonb not null default '{}'::jsonb,
+  warnings_json jsonb not null default '[]'::jsonb,
+  error_code text,
+  error_message text,
+  cleanup_status text not null default 'not_required',
+  cleanup_required_by timestamptz,
+  cleanup_verified_at timestamptz,
+  cleanup_verified_by_user_id uuid references public.profiles(id),
+  cleanup_evidence_json jsonb not null default '{}'::jsonb,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_integration_sync_runs_org_provider_stream_created
+  on public.integration_sync_runs (organization_id, provider, stream, created_at desc);
+
+create index if not exists idx_integration_sync_runs_org_status
+  on public.integration_sync_runs (organization_id, status, created_at desc);
+
+create table if not exists public.integration_sync_cursors (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  connection_id uuid references public.organization_integration_connections(id) on delete cascade,
+  provider text not null,
+  stream text not null,
+  cursor_key text not null,
+  cursor_value text,
+  cursor_json jsonb not null default '{}'::jsonb,
+  last_success_run_id uuid references public.integration_sync_runs(id) on delete set null,
+  last_synced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, provider, stream, cursor_key)
+);
+
+create index if not exists idx_integration_sync_cursors_org_provider_stream
+  on public.integration_sync_cursors (organization_id, provider, stream, cursor_key);
+
+create table if not exists public.integration_raw_records (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  connection_id uuid references public.organization_integration_connections(id) on delete set null,
+  provider text not null,
+  stream text not null,
+  entity_type text not null,
+  external_key text not null,
+  external_version_key text,
+  payload_json jsonb not null default '{}'::jsonb,
+  payload_hash text not null,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  last_sync_run_id uuid references public.integration_sync_runs(id) on delete set null,
+  test_mode boolean not null default false,
+  test_run_key text,
+  document_date date,
+  currency_code text,
+  source_exchange_rate numeric(18,8),
+  source_exchange_rate_date date,
+  source_exchange_rate_kind text,
+  source_total_amount numeric(18,2),
+  source_net_amount numeric(18,2),
+  source_tax_amount numeric(18,2),
+  source_monetary_json jsonb not null default '{}'::jsonb,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, provider, entity_type, external_key)
+);
+
+create index if not exists idx_integration_raw_records_org_stream_seen
+  on public.integration_raw_records (organization_id, provider, stream, last_seen_at desc);
+
+create index if not exists idx_integration_raw_records_payload_hash
+  on public.integration_raw_records (organization_id, provider, payload_hash);
+
+create table if not exists public.document_source_refs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  document_id uuid not null references public.documents(id) on delete cascade,
+  provider text not null,
+  source_kind text not null,
+  raw_record_id uuid references public.integration_raw_records(id) on delete set null,
+  sync_run_id uuid references public.integration_sync_runs(id) on delete set null,
+  external_key text not null,
+  external_version_key text,
+  payload_hash_at_materialization text,
+  current_payload_hash text,
+  drift_status text not null default 'none',
+  factual_trust_mode text not null default 'external_deterministic',
+  source_pdf_url text,
+  source_pdf_url_expires_at timestamptz,
+  bandeja_compatibility_json jsonb not null default '{}'::jsonb,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, provider, source_kind, external_key)
+);
+
+create index if not exists idx_document_source_refs_document
+  on public.document_source_refs (document_id, provider, source_kind);
+
+create index if not exists idx_document_source_refs_raw_record
+  on public.document_source_refs (raw_record_id);
+
+create table if not exists public.integration_entity_links (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null,
+  external_entity_type text not null,
+  external_key text not null,
+  local_entity_type text not null,
+  local_entity_id uuid not null,
+  match_method text not null,
+  confidence numeric(5,4),
+  status text not null default 'active',
+  created_by_run_id uuid references public.integration_sync_runs(id) on delete set null,
+  reviewed_by_user_id uuid references public.profiles(id),
+  reviewed_at timestamptz,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, provider, external_entity_type, external_key)
+);
+
+create index if not exists idx_integration_entity_links_external
+  on public.integration_entity_links (organization_id, provider, external_entity_type, external_key);
+
+create index if not exists idx_integration_entity_links_local
+  on public.integration_entity_links (organization_id, provider, local_entity_type, local_entity_id);
 
 create table if not exists public.organization_cfe_email_connections (
   id uuid primary key default gen_random_uuid(),

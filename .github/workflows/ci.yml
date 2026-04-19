@@ -32,6 +32,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Build
+        run: npm run build
+
       - name: DB parity
         if: ${{ env.DATABASE_URL != '' || env.DIRECT_URL != '' }}
         run: npm run db:verify:parity

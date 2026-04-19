@@ -678,111 +678,160 @@ returns trigger
 language plpgsql
 as $$
 declare
-  period_record record;
-  locked_before date;
-  line_totals record;
+  v_entry_id uuid;
+  v_organization_id uuid;
+  v_status public.entry_status;
+  v_entry_date date;
+  v_fiscal_period_id uuid;
+  v_old_immutable_at timestamptz;
+  v_new_immutable_at timestamptz;
+  v_period_id uuid;
+  v_period_starts_on date;
+  v_period_ends_on date;
+  v_period_status public.fiscal_period_status;
+  v_period_locked_at timestamptz;
+  v_locked_before date;
+  v_line_count integer;
+  v_total_debit numeric(18,2);
+  v_total_credit numeric(18,2);
+  v_functional_total_debit numeric(18,2);
+  v_functional_total_credit numeric(18,2);
+  v_next_entry_number bigint;
 begin
   if tg_op <> 'UPDATE' then
     return new;
   end if;
 
-  if old.immutable_at is null and new.immutable_at is not null then
-    if new.status not in ('posted', 'exported') then
+  v_entry_id := new.id;
+  v_organization_id := new.organization_id;
+  v_status := new.status;
+  v_entry_date := new.entry_date;
+  v_fiscal_period_id := new.fiscal_period_id;
+  v_old_immutable_at := old.immutable_at;
+  v_new_immutable_at := new.immutable_at;
+
+  if v_old_immutable_at is null and v_new_immutable_at is not null then
+    if v_status not in ('posted'::public.entry_status, 'exported'::public.entry_status) then
       raise exception 'No se puede finalizar un asiento sin status posted/exported.';
     end if;
 
-    if new.fiscal_period_id is null then
+    if v_fiscal_period_id is null then
       raise exception 'No se puede finalizar un asiento sin fiscal_period_id.';
     end if;
 
-    select id, starts_on, ends_on, status, locked_at
-    into period_record
-    from public.fiscal_periods
-    where id = new.fiscal_period_id;
+    execute $sql$
+      select fp.id, fp.starts_on, fp.ends_on, fp.status, fp.locked_at
+      from public.fiscal_periods as fp
+      where fp.id = $1
+    $sql$
+    into
+      v_period_id,
+      v_period_starts_on,
+      v_period_ends_on,
+      v_period_status,
+      v_period_locked_at
+    using v_fiscal_period_id;
 
-    if period_record.id is null then
+    if v_period_id is null then
       raise exception 'No existe el periodo contable asociado al asiento.';
     end if;
 
-    if new.entry_date < period_record.starts_on or new.entry_date > period_record.ends_on then
+    if v_entry_date < v_period_starts_on or v_entry_date > v_period_ends_on then
       raise exception 'La fecha del asiento queda fuera del periodo contable seleccionado.';
     end if;
 
-    if period_record.status in (
-      'closed',
-      'locked',
-      'soft_closed',
-      'tax_locked',
-      'hard_closed',
-      'audit_frozen'
-    ) or period_record.locked_at is not null then
+    if v_period_status in (
+      'closed'::public.fiscal_period_status,
+      'locked'::public.fiscal_period_status,
+      'soft_closed'::public.fiscal_period_status,
+      'tax_locked'::public.fiscal_period_status,
+      'hard_closed'::public.fiscal_period_status,
+      'audit_frozen'::public.fiscal_period_status
+    ) or v_period_locked_at is not null then
       raise exception 'No se puede finalizar un asiento en un periodo cerrado o bloqueado.';
     end if;
 
-    select modifications_locked_before
-    into locked_before
-    from public.accounting_settings
-    where organization_id = new.organization_id
-    limit 1;
+    execute $sql$
+      select settings.modifications_locked_before
+      from public.accounting_settings as settings
+      where settings.organization_id = $1
+      limit 1
+    $sql$
+    into v_locked_before
+    using v_organization_id;
 
-    if locked_before is not null and new.entry_date <= locked_before then
+    if v_locked_before is not null and v_entry_date <= v_locked_before then
       raise exception 'La fecha del asiento cae antes del lock contable configurado.';
     end if;
 
-    select
-      count(*) as line_count,
-      coalesce(sum(debit), 0)::numeric(18,2) as total_debit,
-      coalesce(sum(credit), 0)::numeric(18,2) as total_credit,
-      coalesce(sum(functional_debit), 0)::numeric(18,2) as functional_total_debit,
-      coalesce(sum(functional_credit), 0)::numeric(18,2) as functional_total_credit
-    into line_totals
-    from public.journal_entry_lines
-    where journal_entry_id = new.id;
+    execute $sql$
+      select
+        count(*) as line_count,
+        coalesce(sum(jel.debit), 0)::numeric(18,2) as total_debit,
+        coalesce(sum(jel.credit), 0)::numeric(18,2) as total_credit,
+        coalesce(sum(jel.functional_debit), 0)::numeric(18,2) as functional_total_debit,
+        coalesce(sum(jel.functional_credit), 0)::numeric(18,2) as functional_total_credit
+      from public.journal_entry_lines as jel
+      where jel.journal_entry_id = $1
+    $sql$
+    into
+      v_line_count,
+      v_total_debit,
+      v_total_credit,
+      v_functional_total_debit,
+      v_functional_total_credit
+    using v_entry_id;
 
-    if coalesce(line_totals.line_count, 0) = 0 then
+    if coalesce(v_line_count, 0) = 0 then
       raise exception 'No se puede finalizar un asiento sin lineas.';
     end if;
 
-    if abs(coalesce(line_totals.total_debit, 0) - coalesce(line_totals.total_credit, 0)) > 0.01 then
+    if abs(coalesce(v_total_debit, 0) - coalesce(v_total_credit, 0)) > 0.01 then
       raise exception 'Debe y Haber no cuadran al finalizar el asiento.';
     end if;
 
     if abs(
-      coalesce(line_totals.functional_total_debit, 0)
-      - coalesce(line_totals.functional_total_credit, 0)
+      coalesce(v_functional_total_debit, 0)
+      - coalesce(v_functional_total_credit, 0)
     ) > 0.01 then
       raise exception 'Los montos funcionales no cuadran al finalizar el asiento.';
     end if;
 
-    if abs(coalesce(new.total_debit, 0) - coalesce(line_totals.total_debit, 0)) > 0.01
-      or abs(coalesce(new.total_credit, 0) - coalesce(line_totals.total_credit, 0)) > 0.01
+    if abs(coalesce(new.total_debit, 0) - coalesce(v_total_debit, 0)) > 0.01
+      or abs(coalesce(new.total_credit, 0) - coalesce(v_total_credit, 0)) > 0.01
       or abs(
         coalesce(new.functional_total_debit, 0)
-        - coalesce(line_totals.functional_total_debit, 0)
+        - coalesce(v_functional_total_debit, 0)
       ) > 0.01
       or abs(
         coalesce(new.functional_total_credit, 0)
-        - coalesce(line_totals.functional_total_credit, 0)
+        - coalesce(v_functional_total_credit, 0)
       ) > 0.01 then
       raise exception 'Los totales del encabezado no coinciden con las lineas del asiento.';
     end if;
 
-    new.total_debit := line_totals.total_debit;
-    new.total_credit := line_totals.total_credit;
-    new.functional_total_debit := line_totals.functional_total_debit;
-    new.functional_total_credit := line_totals.functional_total_credit;
-    new.immutable_at := coalesce(new.immutable_at, now());
+    new.total_debit := v_total_debit;
+    new.total_credit := v_total_credit;
+    new.functional_total_debit := v_functional_total_debit;
+    new.functional_total_credit := v_functional_total_credit;
+    new.immutable_at := coalesce(v_new_immutable_at, now());
 
     if new.entry_number is null then
-      perform pg_advisory_xact_lock(hashtext(new.organization_id::text));
+      perform pg_advisory_xact_lock(hashtext(v_organization_id::text));
 
-      select coalesce(max(entry_number), 0) + 1
-      into new.entry_number
-      from public.journal_entries
-      where organization_id = new.organization_id
-        and id <> new.id;
+      execute $sql$
+        select coalesce(max(je.entry_number), 0) + 1
+        from public.journal_entries as je
+        where je.organization_id = $1
+          and je.id <> $2
+      $sql$
+      into v_next_entry_number
+      using v_organization_id, v_entry_id;
+
+      new.entry_number := v_next_entry_number;
     end if;
-  elsif new.status in ('posted', 'exported') and new.immutable_at is null then
+  elsif v_status in ('posted'::public.entry_status, 'exported'::public.entry_status)
+    and v_new_immutable_at is null then
     raise exception 'No se puede dejar un asiento posted/exported sin immutable_at.';
   end if;
 
