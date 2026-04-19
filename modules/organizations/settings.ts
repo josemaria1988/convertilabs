@@ -9,7 +9,9 @@ import {
 } from "@/modules/integrations/cfe-email-settings";
 import {
   loadZetaConnectionSettings,
+  loadZetaSyncRunHistory,
   type ZetaConnectionSettings,
+  type ZetaSyncRunListItem,
 } from "@/modules/integrations/zeta/services/connection-service";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
@@ -70,6 +72,7 @@ export type OrganizationSettingsData = {
   ruleSnapshotHistory: RuleSnapshotRow[];
   currentUserCfeEmailConnection: UserOrganizationCfeEmailConnection | null;
   zetaConnection: ZetaConnectionSettings;
+  zetaSyncRuns: ZetaSyncRunListItem[];
 };
 
 function asRecord(value: unknown) {
@@ -153,6 +156,7 @@ export async function loadOrganizationSettingsData(
     snapshotResult,
     currentUserCfeEmailConnection,
     zetaConnection,
+    zetaSyncRuns,
   ] = await Promise.all([
     loadOrganizationRow(supabase, organizationId),
     supabase
@@ -176,6 +180,7 @@ export async function loadOrganizationSettingsData(
       userId,
     }),
     loadZetaConnectionSettings(supabase, organizationId),
+    loadZetaSyncRunHistory(supabase, organizationId),
   ]);
 
   if (profileResult.error) {
@@ -204,6 +209,7 @@ export async function loadOrganizationSettingsData(
     ruleSnapshotHistory,
     currentUserCfeEmailConnection,
     zetaConnection,
+    zetaSyncRuns,
   } satisfies OrganizationSettingsData;
 }
 

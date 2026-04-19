@@ -43,6 +43,11 @@ import {
   testZetaConnection,
 } from "@/modules/integrations/zeta/services/connection-service";
 import {
+  runZetaMonthlyDocumentSync,
+  runZetaSync,
+  type ZetaSyncStream,
+} from "@/modules/integrations/zeta/services/sync-service";
+import {
   importChartOfAccountsSpreadsheetDirect,
   runSpreadsheetImport,
 } from "@/modules/spreadsheets";
@@ -307,9 +312,10 @@ export async function upsertOrganizationZetaConnectionAction(formData: FormData)
     organizationId: organization.id,
     actorUserId: authState.user?.id ?? null,
     companyCode: String(formData.get("companyCode") ?? ""),
-    username: String(formData.get("username") ?? ""),
+    companySecret: String(formData.get("companySecret") ?? ""),
+    usuarioCodigo: String(formData.get("usuarioCodigo") ?? ""),
+    rolCodigo: String(formData.get("rolCodigo") ?? ""),
     baseUrl: String(formData.get("baseUrl") ?? ""),
-    secret: String(formData.get("secret") ?? ""),
     mockEnabled: formData.get("mockEnabled") === "on",
     isActive: formData.get("isActive") === "on",
   });
@@ -331,6 +337,46 @@ export async function testOrganizationZetaConnectionAction(formData: FormData) {
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+}
+
+export async function runOrganizationZetaSyncAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationIntegrationRole(organization.role);
+
+  const supabase = getSupabaseServiceRoleClient();
+  const stream = String(formData.get("stream") ?? "monthly_documents");
+  const period = String(formData.get("period") ?? "").trim();
+  const maxPagesRaw = Number(formData.get("maxPages") ?? 25);
+  const maxPages = Number.isFinite(maxPagesRaw) ? maxPagesRaw : 25;
+  const baseInput = {
+    supabase,
+    organizationId: organization.id,
+    actorUserId: authState.user?.id ?? null,
+    period,
+    maxPages,
+  };
+
+  if (stream === "monthly_documents") {
+    await runZetaMonthlyDocumentSync(baseInput);
+  } else {
+    const allowedStreams: ZetaSyncStream[] = ["masters", "sales_documents", "received_cfes"];
+
+    if (!allowedStreams.includes(stream as ZetaSyncStream)) {
+      throw new Error("Stream Zetasoftware no soportado.");
+    }
+
+    await runZetaSync({
+      ...baseInput,
+      stream: stream as ZetaSyncStream,
+    });
+  }
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
+  revalidatePath(`/app/o/${organization.slug}/tax`);
 }
 
 export async function updateOrganizationBusinessProfileAction(formData: FormData) {

@@ -29,13 +29,21 @@ Conteo observado: 262 endpoints REST.
 Variables de entorno server-only:
 
 - `ZETASOFTWARE_BASE_URL`
+- Si no esta definido, Convertilabs puede derivar la base URL desde `ZETASOFTWARE_API_STOCK`, `ZETASOFTWARE_API_PRECIO` o `ZETASOFTWARE_API_ARTICULOS` quitando el sufijo `/APIs/<EndpointName>`.
 - `ZETASOFTWARE_DESARROLLADOR_CODIGO`
 - `ZETASOFTWARE_DESARROLLADOR_CLAVE`
-- `ZETASOFTWARE_EMPRESA_CODIGO`
-- `ZETASOFTWARE_EMPRESA_CLAVE`
-- `ZETASOFTWARE_USUARIOCODIGO`
+- `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY`
+- `ZETASOFTWARE_EMPRESA_CODIGO` solo como fallback de desarrollo
+- `ZETASOFTWARE_EMPRESA_CLAVE` solo como fallback de desarrollo
+- `ZETASOFTWARE_USUARIOCODIGO` solo como fallback de desarrollo
 - `ZETASOFTWARE_USUARIOCLAVE` o `ZETASOFTWARE_USUARIO_CLAVE`, opcional mientras el entorno no lo requiera
-- `ZETASOFTWARE_ROLCODIGO`
+- `ZETASOFTWARE_ROLCODIGO` solo como fallback de desarrollo
+
+Para credenciales por organizacion hay dos modos:
+
+- Produccion recomendada: `credential_source = db_encrypted`. `DesarrolladorCodigo` y `DesarrolladorClave` son credenciales de Convertilabs y viven siempre en variables de entorno. `EmpresaCodigo`, `EmpresaClave`, `UsuarioCodigo` y `RolCodigo` son credenciales del cliente y se guardan cifradas en `organization_integration_connections.encrypted_credentials`.
+- Fallback de desarrollo: `credential_source = server_env`. El runtime lee primero `ZETASOFTWARE_<PROFILE>_EMPRESA_CODIGO`, `ZETASOFTWARE_<PROFILE>_EMPRESA_CLAVE`, `ZETASOFTWARE_<PROFILE>_USUARIOCODIGO` y `ZETASOFTWARE_<PROFILE>_ROLCODIGO`, y cae a `ZETASOFTWARE_*` si no existe el perfil.
+- Seguridad: `EmpresaClave` y `DesarrolladorClave` no se guardan en `config_json`, no se registran en `audit_log` y no se devuelven al cliente. La UI solo muestra un fingerprint corto no reversible cuando hay credenciales configuradas.
 
 ## Wrappers
 
@@ -77,6 +85,13 @@ CFEs recibidos usa wrappers propios:
 - `CFEsRecibidosIn` -> `CFEsRecibidosOut`
 - `CFERecibidoDetalleIn` -> `CFERecibidoDetalleOut`
 
+Facturas de Clientes usa wrappers propios:
+
+- `QueryVentasIn` -> `QueryVentasOut`
+- `VentaDetalladaIn` -> `VentaDetalladaOut`
+- `VentasDetalladasIn` -> `VentasDetalladasOut`
+- `URLPDFIn` -> `URLPDFOut`
+
 ## Registry Convertilabs
 
 El registry vive en `modules/integrations/zeta/client/endpoint-registry.ts`. Ningun endpoint real se invoca si no existe en la coleccion Postman.
@@ -86,13 +101,25 @@ El registry vive en `modules/integrations/zeta/client/endpoint-registry.ts`. Nin
 | `userRolesQuery` | `RESTUsuariosEmpresaV1Query` | `QueryIn/QueryOut` | `zeta.health.user_roles` |
 | `contactsQuery` | `RESTContactosV3Query` | `QueryIn/QueryOut` | `zeta.masters.contacts` |
 | `contactLoad` | `RESTContactosV3Load` | `LoadIn/LoadOut` | `zeta.masters.contacts` |
+| `customerCommercialDataQuery` | `RESTClienteV3Query` | `QueryIn/QueryOut` | `zeta.masters.customer_commercial_data` |
+| `supplierCommercialDataQuery` | `RESTProveedorV2Query` | `QueryIn/QueryOut` | `zeta.masters.supplier_commercial_data` |
+| `currenciesQuery` | `RESTMonedasV1Query` | `QueryIn/QueryOut` | `zeta.masters.currencies` |
 | `costCentersQuery` | `RESTCentrosCostoV1Query` | `QueryIn/QueryOut` | `zeta.masters.cost_centers` |
 | `taxRatesQuery` | `RESTTasasIVAV1Query` | `QueryIn/QueryOut` | `zeta.masters.vat_rates` |
 | `currencyRatesQuery` | `RESTMonedasCotizacionesV1Query` | `QueryIn/QueryOut` | `zeta.masters.currency_rates` |
+| `chartAccountsQuery` | `RESTPlanCuentasV2Query` | `QueryIn/QueryOut` | `zeta.masters.chart_accounts` |
+| `businessLocationsQuery` | `RESTLocalesComercialesV1Query` | `QueryIn/QueryOut` | `zeta.masters.business_locations` |
+| `referencesQuery` | `RESTReferenciasV1Query` | `QueryIn/QueryOut` | `zeta.masters.references` |
+| `rutNumbersQuery` | `RESTRUTV1Query` | `QueryIn/QueryOut` | `zeta.masters.rut_numbers` |
 | `journalTypesQuery` | `RESTTiposAsientosV1Query` | `QueryIn/QueryOut` | `zeta.masters.journal_types` |
 | `documentTypesQuery` | `RESTTipoCFEV1Query` | `QueryIn/QueryOut` | `zeta.masters.document_types` |
 | `salesDocumentTypesQuery` | `RESTComprobantesV1Query` | `QueryIn/QueryOut` | `zeta.masters.sales_document_types` |
-| `customerDocumentsQuery` | `RESTComprobantesClienteV1Query` | `QueryIn/QueryOut` | `zeta.documents.sales` |
+| `salesInvoicesQuery` | `RESTFacturaClienteV4QueryVentas` | `QueryVentasIn/QueryVentasOut` | `zeta.documents.sales` |
+| `salesInvoiceDetail` | `RESTFacturaClienteV4VentaDetallada` | `VentaDetalladaIn/VentaDetalladaOut` | `zeta.documents.sales` |
+| `salesInvoicesDetailedDaily` | `RESTFacturaClienteV4VentasDetalladas` | `VentasDetalladasIn/VentasDetalladasOut` | `zeta.documents.sales` |
+| `salesInvoicePdfUrl` | `RESTFacturaClienteV4URLPDF` | `URLPDFIn/URLPDFOut` | `zeta.documents.sales` |
+| `salesPendingBalancesQuery` | `RESTFacturaClienteV4QuerySaldosPendientes` | `QuerySaldosPendientesIn/QuerySaldosPendientesOut` | `zeta.documents.sales_balances` |
+| `customerDocumentsQuery` | `RESTComprobantesClienteV1Query` | `QueryIn/QueryOut` | `zeta.documents.customer_documents` |
 | `receivedCfesQuery` | `RESTCFEsRecibidosV1CFEsRecibidos` | `CFEsRecibidosIn/CFEsRecibidosOut` | `zeta.documents.received_cfes` |
 | `receivedCfeDetail` | `RESTCFEsRecibidosV1CFERecibidoDetalle` | `CFERecibidoDetalleIn/CFERecibidoDetalleOut` | `zeta.documents.received_cfes` |
 | `bandejaJournalEntriesQuery` | `RESTBandejaEntradaAsientosV1Query` | `QueryIn/QueryOut` | `zeta.outbound.bandeja_journal_entries` |
@@ -146,23 +173,50 @@ Campos relevantes:
 - `LocalCodigo`, `LocalNombre`
 - `CFE`, `IVA`, `Exportacion`, `NotaDebito`, `Activo`
 
-Movimientos por cliente: `RESTComprobantesClienteV1Query`.
+Fuente documental primaria v1: `RESTFacturaClienteV4QueryVentas`.
 
 Entrada:
 
-- `ClienteCodigo`
 - `Mes`, `Anio`
 - `FechaDesde`, `FechaHasta`
+- `Serie`, `NumeroDesde`, `NumeroHasta`
+- `ClienteCodigo`
+- `ComprobanteCodigo`
+- `MonedaCodigo`
+- `LocalCodigo`
+- `Page`
 
 Campos documentales y monetarios:
 
+- `RegistroId`
 - `ComprobanteCodigo`, `Serie`, `Numero`, `Fecha`
-- `MonedaCodigo`, `Cotizacion`
-- `ClienteCodigo`, `ClienteNombre`, `ClienteDocumento`
-- `CentroCostoCodigo`, `ReferenciaCodigo`
-- `TotalRecibo`, `CFETipo`, `CFEEstado`
-- `Lineas[]` con `ArticuloCodigo`, `Concepto`, `Cantidad`, `PrecioUnitario`, `Neto`, `IVA`, `Total`
-- `FormasPago[]` con moneda y montos de pago
+- `ComprobanteNombre`, `ComprobanteTipo`, `ComprobanteTipoNombre`
+- `EsCFE`, `TipodeCFECodigo`, `TipoCFENombre`, `Emitido`
+- `ClienteCodigo`, `ClienteNombre`, `ClienteRazonSocial`
+- `MonedaCodigo`, `MonedaSimbolo`, `CotizacionEspecial`
+- `LocalCodigo`, `CentroCostosCodigo`, `Referencia`
+- `Subtotal`, `SubtotalSigno`, `IVA`, `IVASigno`, `Total`, `TotalSigno`
+
+Detalle bajo demanda: `RESTFacturaClienteV4VentaDetallada`.
+
+Entrada:
+
+- `FacturaId`
+
+Campos de detalle para materializacion:
+
+- `FacturaFecha`, `FacturaSerie`, `FacturaNumero`, `FacturaSigno`
+- `ClienteCodigo`, `ClienteNombre`
+- `MonedaCodigo`, `MonedaSimbolo`, `Cotizacion`
+- `ArticuloCodigo`, `ConceptoCodigo`, `LineaConcepto`
+- `LineaCantidad`, `LineaPrecio`, `LineaSubtotal`, `LineaIVA`, `LineaTotal`
+- `IVACodigo`, `IVANombre`, `IVATasa`
+
+Detalle masivo controlado: `RESTFacturaClienteV4VentasDetalladas`. La coleccion/documentacion de Zeta indica uso maximo una vez por dia; Convertilabs no lo usa en la corrida mensual normal.
+
+PDF opcional: `RESTFacturaClienteV4URLPDF`, usado solo para guardar `URLComprobante` cuando haga falta abrir el PDF.
+
+API complementaria: `RESTComprobantesClienteV1Query`. No es la fuente documental primaria de ventas v1; queda para conciliacion por cliente, contexto comercial y narrativa operativa.
 
 ## CFEs recibidos
 

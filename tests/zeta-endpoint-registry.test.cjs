@@ -66,9 +66,19 @@ test("Zeta endpoint registry includes the PR-01 required domains", () => {
 
   assert.equal(zetaEndpointRegistry.userRolesQuery.endpointName, "RESTUsuariosEmpresaV1Query");
   assert.equal(zetaEndpointRegistry.contactsQuery.endpointName, "RESTContactosV3Query");
+  assert.equal(zetaEndpointRegistry.salesInvoicesQuery.endpointName, "RESTFacturaClienteV4QueryVentas");
+  assert.equal(zetaEndpointRegistry.salesInvoiceDetail.endpointName, "RESTFacturaClienteV4VentaDetallada");
+  assert.equal(zetaEndpointRegistry.salesInvoicesDetailedDaily.endpointName, "RESTFacturaClienteV4VentasDetalladas");
+  assert.equal(zetaEndpointRegistry.salesInvoicePdfUrl.endpointName, "RESTFacturaClienteV4URLPDF");
   assert.equal(zetaEndpointRegistry.customerDocumentsQuery.endpointName, "RESTComprobantesClienteV1Query");
   assert.equal(zetaEndpointRegistry.receivedCfesQuery.endpointName, "RESTCFEsRecibidosV1CFEsRecibidos");
   assert.equal(zetaEndpointRegistry.receivedCfeDetail.endpointName, "RESTCFEsRecibidosV1CFERecibidoDetalle");
+  assert.equal(zetaEndpointRegistry.customerCommercialDataQuery.endpointName, "RESTClienteV3Query");
+  assert.equal(zetaEndpointRegistry.supplierCommercialDataQuery.endpointName, "RESTProveedorV2Query");
+  assert.equal(zetaEndpointRegistry.chartAccountsQuery.endpointName, "RESTPlanCuentasV2Query");
+  assert.equal(zetaEndpointRegistry.businessLocationsQuery.endpointName, "RESTLocalesComercialesV1Query");
+  assert.equal(zetaEndpointRegistry.referencesQuery.endpointName, "RESTReferenciasV1Query");
+  assert.equal(zetaEndpointRegistry.rutNumbersQuery.endpointName, "RESTRUTV1Query");
   assert.equal(zetaEndpointRegistry.currencyRatesQuery.endpointName, "RESTMonedasCotizacionesV1Query");
   assert.equal(zetaEndpointRegistry.bandejaJournalEntrySave.outputWrapper, "SaveOut");
 });

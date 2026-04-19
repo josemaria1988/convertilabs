@@ -209,11 +209,11 @@ export async function queryZetaEndpoint<
 ): Promise<ZetaQueryResult<TRecord>> {
   const endpoint = getZetaEndpoint(key);
 
-  if (endpoint.inputWrapper !== "QueryIn") {
+  if (endpoint.kind !== "query") {
     throw new ZetaIntegrationError({
       code: "zeta_endpoint_not_query",
       endpointName: endpoint.endpointName,
-      message: `${endpoint.endpointName} no usa el wrapper QueryIn.`,
+      message: `${endpoint.endpointName} no es un endpoint Query.`,
     });
   }
 

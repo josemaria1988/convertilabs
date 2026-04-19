@@ -6,6 +6,10 @@ import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { applyDocumentAuditPreviewDecisions } from "@/modules/audit/document-import-audit";
 import { enqueueDocumentSpreadsheetImport } from "@/modules/documents/spreadsheet-import-background";
 import {
+  runZetaSync,
+  type ZetaSyncStream,
+} from "@/modules/integrations/zeta/services/sync-service";
+import {
   formatDocumentSpreadsheetImportStatusMessage,
   isDocumentSpreadsheetImportType,
   summarizeDocumentSpreadsheetImportRun,
@@ -22,6 +26,16 @@ function buildPaths(slug: string) {
 
 function canRunAudit(role: string) {
   return role !== "viewer";
+}
+
+function parseZetaDocumentStream(value: FormDataEntryValue | null): ZetaSyncStream {
+  const stream = typeof value === "string" ? value : "";
+
+  if (stream === "sales_documents" || stream === "received_cfes") {
+    return stream;
+  }
+
+  throw new Error("Selecciona si quieres sincronizar compras o ventas desde Zetasoftware.");
 }
 
 function isAcceptedSpreadsheetFile(fileName: string, mimeType: string) {
@@ -97,6 +111,34 @@ export async function createDocumentAuditImportAction(formData: FormData) {
     importableRowsDetected: result.importableRowsDetected,
     message: result.message,
   };
+}
+
+export async function runZetaDocumentSyncFromAuditAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  if (!canRunAudit(organization.role)) {
+    throw new Error("Tu rol no puede iniciar sincronizaciones documentales.");
+  }
+
+  const stream = parseZetaDocumentStream(formData.get("stream"));
+  const period = String(formData.get("period") ?? "").trim();
+  const maxPagesRaw = Number(formData.get("maxPages") ?? 200);
+  const maxPages = Number.isFinite(maxPagesRaw) ? maxPagesRaw : 200;
+
+  await runZetaSync({
+    supabase: getSupabaseServiceRoleClient(),
+    organizationId: organization.id,
+    actorUserId: authState.user?.id ?? null,
+    stream,
+    period,
+    maxPages,
+  });
+
+  revalidateAuditSurfaces(slug);
+  revalidatePath(`/app/o/${organization.slug}/tax`);
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
 }
 
 export async function loadDocumentAuditImportStatusesAction(input: {

@@ -3,9 +3,15 @@ import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-
 import { LoadingLink } from "@/components/ui/loading-link";
 import { DocumentAuditPreviewWorkspace } from "@/components/audit/document-audit-preview-workspace";
 import { DocumentAuditUploadPanel } from "@/components/audit/document-audit-upload-panel";
+import { ZetaSoftwareAuditSyncPanel } from "@/components/audit/zetasoftware-audit-sync-panel";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadDocumentAuditWorkspace } from "@/modules/audit/document-import-audit";
+import { runZetaDocumentSyncFromAuditAction } from "@/app/app/o/[slug]/audit/actions";
+import {
+  loadZetaConnectionSettings,
+  loadZetaSyncRunHistory,
+} from "@/modules/integrations/zeta/services/connection-service";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
   formatDocumentRoleLabel,
@@ -46,12 +52,23 @@ export default async function OrganizationAuditPage({
     ? resolvedSearchParams.run
     : null;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const { runs, selectedRun } = await loadDocumentAuditWorkspace({
-    supabase: getSupabaseServiceRoleClient(),
-    organizationId: organization.id,
-    selectedRunId,
-    limit: 12,
-  });
+  const supabase = getSupabaseServiceRoleClient();
+  const [
+    auditWorkspace,
+    zetaConnection,
+    zetaSyncRuns,
+  ] = await Promise.all([
+    loadDocumentAuditWorkspace({
+      supabase,
+      organizationId: organization.id,
+      selectedRunId,
+      limit: 12,
+    }),
+    loadZetaConnectionSettings(supabase, organization.id),
+    loadZetaSyncRunHistory(supabase, organization.id, 10),
+  ]);
+  const { runs, selectedRun } = auditWorkspace;
+  const canRunZetaSync = organization.role !== "viewer";
 
   return (
     <PrivateDashboardShell
@@ -78,6 +95,14 @@ export default async function OrganizationAuditPage({
               <span className="status-pill status-pill--info">Trazabilidad explicita</span>
             </div>
           </section>
+
+          <ZetaSoftwareAuditSyncPanel
+            slug={organization.slug}
+            isConfigured={zetaConnection.isConfigured}
+            canRun={canRunZetaSync}
+            runs={zetaSyncRuns}
+            syncAction={runZetaDocumentSyncFromAuditAction}
+          />
 
           <DocumentAuditUploadPanel slug={organization.slug} />
 

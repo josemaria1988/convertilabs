@@ -45,13 +45,123 @@ export function ZetaSoftwareConnectionCard({
   saveAction,
   testAction,
 }: ZetaSoftwareConnectionCardProps) {
+  const credentialForm = (
+    <form action={saveAction} className="space-y-4">
+      <input type="hidden" name="slug" value={slug} />
+
+      <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/55 px-4 py-3 text-sm text-[color:var(--color-muted)]">
+        Las credenciales del integrador Convertilabs viven solo en variables de entorno del servidor. Aca se guardan cifradas las credenciales de esta organizacion en Zeta; la clave no se muestra ni queda en auditoria.
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">EmpresaCodigo</span>
+          <input
+            name="companyCode"
+            defaultValue={connection.companyCode ?? ""}
+            disabled={!canManage}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
+            placeholder="Ej: RONTIL"
+            required={!connection.hasStoredSecret && !connection.mockEnabled}
+          />
+        </label>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">EmpresaClave</span>
+          <input
+            type="password"
+            name="companySecret"
+            disabled={!canManage}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
+            placeholder={connection.hasStoredSecret ? "Dejar vacio para conservar" : "Clave generada en Zeta"}
+            autoComplete="new-password"
+            required={!connection.hasStoredSecret && !connection.mockEnabled}
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">UsuarioCodigo</span>
+          <input
+            name="usuarioCodigo"
+            defaultValue={connection.usuarioCodigo ?? "1"}
+            disabled={!canManage}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
+            placeholder="1"
+            inputMode="numeric"
+            required={!connection.hasStoredSecret && !connection.mockEnabled}
+          />
+        </label>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">RolCodigo</span>
+          <input
+            name="rolCodigo"
+            defaultValue={connection.rolCodigo ?? "1"}
+            disabled={!canManage}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
+            placeholder="1"
+            inputMode="numeric"
+            required={!connection.hasStoredSecret && !connection.mockEnabled}
+          />
+        </label>
+
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">BaseUrl</span>
+          <input
+            name="baseUrl"
+            defaultValue={connection.baseUrl ?? ""}
+            disabled={!canManage}
+            className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
+            placeholder="https://api.zetasoftware.com/rest"
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="inline-flex items-center gap-3 text-sm text-[color:var(--color-muted)]">
+          <input
+            type="checkbox"
+            name="mockEnabled"
+            defaultChecked={connection.mockEnabled}
+            disabled={!canManage}
+            className="h-4 w-4 rounded border-white/20 bg-transparent disabled:opacity-60"
+          />
+          <span>Usar modo mock para pruebas sin llamar a Zeta</span>
+        </label>
+
+        <label className="inline-flex items-center gap-3 text-sm text-[color:var(--color-muted)]">
+          <input
+            type="checkbox"
+            name="isActive"
+            defaultChecked={connection.status !== "paused"}
+            disabled={!canManage}
+            className="h-4 w-4 rounded border-white/20 bg-transparent disabled:opacity-60"
+          />
+          <span>Mantener conexion activa</span>
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <SubmitButton
+          pendingLabel="Guardando Zeta..."
+          disabled={!canManage}
+          className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
+        >
+          Guardar conexion Zeta
+        </SubmitButton>
+      </div>
+    </form>
+  );
+
   return (
     <div className="space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-base font-semibold">Zetasoftware</p>
           <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-            Conexion de lectura para traer datos estructurados cuando el contrato REST este confirmado.
+            Conexion de lectura para traer documentos, maestros y trazabilidad desde las APIs REST confirmadas.
           </p>
         </div>
         <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName(connection.status)}`}>
@@ -63,7 +173,7 @@ export function ZetaSoftwareConnectionCard({
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-3 text-sm">
           <p className="font-semibold">Modo</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            {connection.mockEnabled ? "Mock controlado" : "Real pendiente de PR-01"}
+            {connection.mockEnabled ? "Mock controlado" : "Real read-only"}
           </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-3 text-sm">
@@ -73,9 +183,9 @@ export function ZetaSoftwareConnectionCard({
           </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-3 text-sm">
-          <p className="font-semibold">Secreto</p>
+          <p className="font-semibold">Credenciales</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            {connection.hasStoredSecret ? connection.maskedSecretLabel : "No guardado"}
+            {connection.maskedSecretLabel}
           </p>
         </div>
       </div>
@@ -92,92 +202,16 @@ export function ZetaSoftwareConnectionCard({
         </div>
       ) : null}
 
-      <form action={saveAction} className="space-y-4">
-        <input type="hidden" name="slug" value={slug} />
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Codigo de empresa Zeta</span>
-            <input
-              name="companyCode"
-              defaultValue={connection.companyCode ?? ""}
-              disabled={!canManage}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-              placeholder="Ej: RONTIL"
-            />
-          </label>
-
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Usuario o API key</span>
-            <input
-              name="username"
-              defaultValue={connection.username ?? ""}
-              disabled={!canManage}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-              placeholder="Usuario autorizado"
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Clave o secreto</span>
-            <input
-              type="password"
-              name="secret"
-              disabled={!canManage}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-              placeholder={connection.hasStoredSecret ? "Dejar vacio para conservar" : "Disponible cuando PR-01 confirme el contrato"}
-              autoComplete="new-password"
-            />
-          </label>
-
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Base URL aprobada</span>
-            <input
-              name="baseUrl"
-              defaultValue={connection.baseUrl ?? ""}
-              disabled={!canManage}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-              placeholder="Pendiente de Postman/PR-01"
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="inline-flex items-center gap-3 text-sm text-[color:var(--color-muted)]">
-            <input
-              type="checkbox"
-              name="mockEnabled"
-              defaultChecked={connection.mockEnabled}
-              disabled={!canManage}
-              className="h-4 w-4 rounded border-white/20 bg-transparent disabled:opacity-60"
-            />
-            <span>Usar modo mock hasta confirmar el health oficial</span>
-          </label>
-
-          <label className="inline-flex items-center gap-3 text-sm text-[color:var(--color-muted)]">
-            <input
-              type="checkbox"
-              name="isActive"
-              defaultChecked={connection.status !== "paused"}
-              disabled={!canManage}
-              className="h-4 w-4 rounded border-white/20 bg-transparent disabled:opacity-60"
-            />
-            <span>Mantener conexion activa</span>
-          </label>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <SubmitButton
-            pendingLabel="Guardando Zeta..."
-            disabled={!canManage}
-            className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
+      {connection.hasStoredSecret ? (
+        <details className="space-y-4">
+          <summary
+            className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} inline-flex w-fit cursor-pointer px-5 py-3 text-sm`}
           >
-            Guardar conexion Zeta
-          </SubmitButton>
-        </div>
-      </form>
+            Actualizar credenciales
+          </summary>
+          <div className="pt-2">{credentialForm}</div>
+        </details>
+      ) : credentialForm}
 
       <form action={testAction}>
         <input type="hidden" name="slug" value={slug} />

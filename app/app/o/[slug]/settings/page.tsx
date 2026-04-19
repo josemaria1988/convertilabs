@@ -51,6 +51,7 @@ import {
   applyOrganizationChartPresetAction,
   createOrganizationChartAccountAction,
   importOrganizationChartSpreadsheetAction,
+  runOrganizationZetaSyncAction,
   testOrganizationZetaConnectionAction,
   upsertOrganizationCfeEmailConnectionAction,
   upsertOrganizationZetaConnectionAction,
@@ -438,8 +439,13 @@ export default async function OrganizationSettingsPage({
                   saveAction={upsertOrganizationZetaConnectionAction}
                   testAction={testOrganizationZetaConnectionAction}
                 />
-                <ZetaSoftwareSyncPanel isConfigured={settings.zetaConnection.isConfigured} />
-                <ZetaSoftwareRunHistory />
+                <ZetaSoftwareSyncPanel
+                  slug={organization.slug}
+                  isConfigured={settings.zetaConnection.isConfigured}
+                  canManage={canManageIntegrations}
+                  syncAction={runOrganizationZetaSyncAction}
+                />
+                <ZetaSoftwareRunHistory runs={settings.zetaSyncRuns} />
               </div>
             </ExpandableSectionCard>
 

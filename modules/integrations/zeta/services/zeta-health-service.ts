@@ -2,6 +2,8 @@ import "server-only";
 
 import {
   loadZetaRuntimeConfig,
+  type ZetaCredentialOverrides,
+  type ZetaRuntimeConfig,
   ZetaConfigurationError,
 } from "@/modules/integrations/zeta/client/auth";
 import { normalizeZetaException } from "@/modules/integrations/zeta/client/errors";
@@ -43,6 +45,9 @@ export async function runZetaHealthCheck(input: {
   mockEnabled: boolean;
   requestedMode?: string | null;
   baseUrl?: string | null;
+  envProfile?: string | null;
+  credentialOverrides?: ZetaCredentialOverrides;
+  runtime?: ZetaRuntimeConfig;
   fetchImpl?: ZetaRestClientOptions["fetchImpl"];
 }) {
   const checkedAt = new Date().toISOString();
@@ -90,9 +95,11 @@ export async function runZetaHealthCheck(input: {
   }
 
   try {
-    const runtime = loadZetaRuntimeConfig({
+    const runtime = input.runtime ?? loadZetaRuntimeConfig({
+      envProfile: input.envProfile,
       overrides: {
-        baseUrl: input.baseUrl,
+        ...(input.credentialOverrides ?? {}),
+        baseUrl: input.baseUrl ?? input.credentialOverrides?.baseUrl,
       },
     });
     const client = createZetaRestClient({
@@ -130,21 +137,27 @@ export async function runZetaHealthCheck(input: {
         rows_seen: probe.rows.length,
         is_last_page: probe.isLastPage,
         has_usuario_clave: runtime.metadata.hasUsuarioClave,
+        credential_source: runtime.metadata.credentialSource,
       },
     } satisfies ZetaHealthCheckResult;
   } catch (error) {
     if (error instanceof ZetaConfigurationError) {
+      const usesStoredCredentials = Boolean(input.credentialOverrides);
+
       return {
         ok: false,
         status: "error",
         code: error.code,
         message: error.code === "zeta_base_url_missing"
           ? "Falta ZETASOFTWARE_BASE_URL o la base URL de Zetasoftware en la conexion."
-          : "Faltan credenciales Zetasoftware en variables de entorno del servidor.",
+          : usesStoredCredentials
+            ? "Faltan campos en las credenciales cifradas de Zetasoftware."
+            : "Faltan credenciales Zetasoftware en variables de entorno del servidor.",
         checkedAt,
         metadata: {
           health_mode: "real",
           contract_status: "confirmed_pr_01",
+          credential_source: usesStoredCredentials ? "db_encrypted" : "server_env",
           missing: error.missing,
         },
       } satisfies ZetaHealthCheckResult;
