@@ -361,7 +361,12 @@ export async function runOrganizationZetaSyncAction(formData: FormData) {
   if (stream === "monthly_documents") {
     await runZetaMonthlyDocumentSync(baseInput);
   } else {
-    const allowedStreams: ZetaSyncStream[] = ["masters", "sales_documents", "received_cfes"];
+    const allowedStreams: ZetaSyncStream[] = [
+      "masters",
+      "accounting_masters",
+      "sales_documents",
+      "received_cfes",
+    ];
 
     if (!allowedStreams.includes(stream as ZetaSyncStream)) {
       throw new Error("Stream Zetasoftware no soportado.");

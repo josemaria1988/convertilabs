@@ -252,6 +252,7 @@ test("buildZetaConnection decrypts DB credentials and combines integrator env cr
     assert.equal(runtime.credentials.DesarrolladorCodigo, "dev-code");
     assert.equal(runtime.credentials.EmpresaCodigo, "RONTIL");
     assert.equal(runtime.credentials.UsuarioCodigo, 42);
+    assert.equal(runtime.credentials.UsuarioClave, "");
     assert.equal(runtime.credentials.RolCodigo, 7);
     assert.equal(runtime.metadata.credentialSource, "db_encrypted");
   });
@@ -290,6 +291,7 @@ test("buildZetaConnection can load org credentials from server env fallback", as
 
     assert.equal(runtime.credentials.EmpresaCodigo, "ENVCO");
     assert.equal(runtime.credentials.UsuarioCodigo, 8);
+    assert.equal(runtime.credentials.UsuarioClave, "");
     assert.equal(runtime.metadata.credentialSource, "server_env");
   });
 });

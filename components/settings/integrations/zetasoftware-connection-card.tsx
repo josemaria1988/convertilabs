@@ -58,10 +58,10 @@ export function ZetaSoftwareConnectionCard({
           <span className="font-medium">EmpresaCodigo</span>
           <input
             name="companyCode"
-            defaultValue={connection.companyCode ?? ""}
+            defaultValue={connection.hasStoredSecret ? "" : connection.companyCode ?? ""}
             disabled={!canManage}
             className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-            placeholder="Ej: RONTIL"
+            placeholder={connection.hasStoredSecret ? "Completar solo para actualizar" : "Ej: RONTIL"}
             required={!connection.hasStoredSecret && !connection.mockEnabled}
           />
         </label>
@@ -85,23 +85,26 @@ export function ZetaSoftwareConnectionCard({
           <span className="font-medium">UsuarioCodigo</span>
           <input
             name="usuarioCodigo"
-            defaultValue={connection.usuarioCodigo ?? "1"}
+            defaultValue={connection.hasStoredSecret ? "" : connection.usuarioCodigo ?? "1"}
             disabled={!canManage}
             className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-            placeholder="1"
+            placeholder={connection.hasStoredSecret ? "Completar solo para actualizar" : "1"}
             inputMode="numeric"
             required={!connection.hasStoredSecret && !connection.mockEnabled}
           />
+          <span className="block text-xs text-[color:var(--color-muted)]">
+            Codigo numerico del usuario autorizado en Zeta.
+          </span>
         </label>
 
         <label className="space-y-2 text-sm">
           <span className="font-medium">RolCodigo</span>
           <input
             name="rolCodigo"
-            defaultValue={connection.rolCodigo ?? "1"}
+            defaultValue={connection.hasStoredSecret ? "" : connection.rolCodigo ?? "1"}
             disabled={!canManage}
             className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3 disabled:opacity-60"
-            placeholder="1"
+            placeholder={connection.hasStoredSecret ? "Completar solo para actualizar" : "1"}
             inputMode="numeric"
             required={!connection.hasStoredSecret && !connection.mockEnabled}
           />

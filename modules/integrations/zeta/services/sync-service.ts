@@ -14,6 +14,7 @@ import type { ZetaJsonRecord } from "@/modules/integrations/zeta/contracts/share
 import {
   createIntegrationSyncRun,
   finishIntegrationSyncRun,
+  fingerprintIntegrationPayload,
   integrationTables,
   recordIntegrationAuditEvent,
   upsertIntegrationCursor,
@@ -25,6 +26,15 @@ import {
 import {
   normalizeZetaSalesInvoice,
 } from "@/modules/integrations/zeta/normalizers/sales";
+import { normalizeZetaChartAccount } from "@/modules/integrations/zeta/normalizers/chart-account-normalizer";
+import type {
+  ZetaChartAccountRaw,
+  ZetaConceptoRaw,
+  ZetaJournalTypeRaw,
+} from "@/modules/integrations/zeta/contracts/plan-de-cuentas";
+import { materializeZetaChartAccounts } from "@/modules/integrations/zeta/services/materialize-chart-accounts";
+import { materializeZetaConcepts } from "@/modules/integrations/zeta/services/materialize-zeta-concepts";
+import { materializeZetaJournalTypes } from "@/modules/integrations/zeta/services/materialize-journal-types";
 import {
   asArray,
   asRecord,
@@ -34,7 +44,7 @@ import {
 } from "@/modules/integrations/zeta/normalizers/common";
 import { materializeZetaDocument } from "@/modules/integrations/zeta/services/materialization-service";
 
-export type ZetaSyncStream = "masters" | "sales_documents" | "received_cfes";
+export type ZetaSyncStream = "masters" | "accounting_masters" | "sales_documents" | "received_cfes";
 
 export type ZetaSyncInput = {
   supabase: SupabaseClient;
@@ -73,20 +83,24 @@ type SyncCounters = {
   failed: number;
   documentsMaterialized: number;
   documentsSkipped: number;
+  masterMaterialization: JsonRecord;
   warnings: string[];
 };
 
-const masterQueries: Array<{
+type MasterQueryDefinition = {
   key: ZetaEndpointKey;
   entityType: string;
   externalKeyFields: string[];
-}> = [
+};
+
+const masterQueries: MasterQueryDefinition[] = [
   { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo", "RUT", "Documento"] },
   { key: "customerCommercialDataQuery", entityType: "customer_commercial_data", externalKeyFields: ["Codigo"] },
   { key: "supplierCommercialDataQuery", entityType: "supplier_commercial_data", externalKeyFields: ["Codigo"] },
   { key: "currenciesQuery", entityType: "currency", externalKeyFields: ["Codigo", "CodigoISO"] },
   { key: "currencyRatesQuery", entityType: "currency_rate", externalKeyFields: ["MonedaCodigo", "Fecha"] },
   { key: "chartAccountsQuery", entityType: "chart_account", externalKeyFields: ["Codigo"] },
+  { key: "conceptsQuery", entityType: "concept", externalKeyFields: ["Codigo"] },
   { key: "taxRatesQuery", entityType: "vat_rate", externalKeyFields: ["Codigo"] },
   { key: "businessLocationsQuery", entityType: "business_location", externalKeyFields: ["Codigo"] },
   { key: "salesDocumentTypesQuery", entityType: "document_type", externalKeyFields: ["Codigo", "LocalCodigo"] },
@@ -94,6 +108,13 @@ const masterQueries: Array<{
   { key: "costCentersQuery", entityType: "cost_center", externalKeyFields: ["Codigo"] },
   { key: "referencesQuery", entityType: "reference", externalKeyFields: ["Codigo"] },
   { key: "rutNumbersQuery", entityType: "rut_number", externalKeyFields: ["RUT"] },
+  { key: "journalTypesQuery", entityType: "journal_type", externalKeyFields: ["Codigo"] },
+];
+
+const accountingMasterQueries: MasterQueryDefinition[] = [
+  { key: "chartAccountsQuery", entityType: "chart_account", externalKeyFields: ["Codigo"] },
+  { key: "conceptsQuery", entityType: "concept", externalKeyFields: ["Codigo"] },
+  { key: "journalTypesQuery", entityType: "journal_type", externalKeyFields: ["Codigo"] },
 ];
 
 function nowIso() {
@@ -227,6 +248,75 @@ function buildMasterExternalKey(row: JsonRecord, fields: string[], fallbackPrefi
   return `${fallbackPrefix}:${JSON.stringify(row).slice(0, 160)}`;
 }
 
+function chunkRows<T>(rows: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+async function upsertMasterRawRecords(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  connectionId: string;
+  runId: string;
+  testMode: boolean;
+  query: MasterQueryDefinition;
+  rows: JsonRecord[];
+}) {
+  if (input.rows.length === 0) {
+    return;
+  }
+
+  const timestamp = nowIso();
+  const payloads = input.rows.map((row) => {
+    const payload = {
+      endpoint_key: input.query.key,
+      row,
+    };
+
+    return {
+      organization_id: input.organizationId,
+      connection_id: input.connectionId,
+      provider: "zetasoftware",
+      stream: `zeta.masters.${input.query.entityType}`,
+      entity_type: input.query.entityType,
+      external_key: buildMasterExternalKey(
+        row,
+        input.query.externalKeyFields,
+        input.query.entityType,
+      ),
+      external_version_key: null,
+      payload_json: payload,
+      payload_hash: fingerprintIntegrationPayload(payload),
+      last_seen_at: timestamp,
+      last_sync_run_id: input.runId,
+      test_mode: input.testMode,
+      test_run_key: null,
+      source_monetary_json: {},
+      metadata_json: {
+        endpoint_key: input.query.key,
+      },
+      updated_at: timestamp,
+    };
+  });
+
+  for (const chunk of chunkRows(payloads, 500)) {
+    const { error } = await input.supabase
+      .from(integrationTables.rawRecords)
+      .upsert(chunk, {
+        onConflict: "organization_id,provider,entity_type,external_key",
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+}
+
 async function fetchAllQueryRows(
   client: ZetaRestClient,
   input: {
@@ -262,34 +352,79 @@ async function syncMasters(input: {
   maxPages: number;
   counters: SyncCounters;
   testMode: boolean;
+  queries: MasterQueryDefinition[];
 }) {
-  for (const query of masterQueries) {
+  const chartAccountRows: JsonRecord[] = [];
+  const conceptRows: JsonRecord[] = [];
+  const journalTypeRows: JsonRecord[] = [];
+
+  for (const query of input.queries) {
     const rows = await fetchAllQueryRows(input.client, {
       key: query.key,
       maxPages: input.maxPages,
     });
 
-    for (const row of rows) {
-      input.counters.seen += 1;
-      const externalKey = buildMasterExternalKey(row, query.externalKeyFields, query.entityType);
-      await upsertIntegrationRawRecord(input.supabase, {
-        organizationId: input.organizationId,
-        connectionId: input.connectionId,
-        provider: "zetasoftware",
-        stream: `zeta.masters.${query.entityType}`,
-        entityType: query.entityType,
-        externalKey,
-        payload: {
-          endpoint_key: query.key,
-          row,
-        },
-        lastSyncRunId: input.runId,
-        testMode: input.testMode,
-        metadata: {
-          endpoint_key: query.key,
-        },
-      });
-      input.counters.upserted += 1;
+    input.counters.seen += rows.length;
+    await upsertMasterRawRecords({
+      supabase: input.supabase,
+      organizationId: input.organizationId,
+      connectionId: input.connectionId,
+      runId: input.runId,
+      testMode: input.testMode,
+      query,
+      rows,
+    });
+    input.counters.upserted += rows.length;
+
+    if (query.entityType === "chart_account") {
+      chartAccountRows.push(...rows);
+    } else if (query.entityType === "concept") {
+      conceptRows.push(...rows);
+    } else if (query.entityType === "journal_type") {
+      journalTypeRows.push(...rows);
+    }
+  }
+
+  if (chartAccountRows.length > 0) {
+    const chartSummary = await materializeZetaChartAccounts(input.supabase, {
+      organizationId: input.organizationId,
+      candidates: chartAccountRows.map((row) =>
+        normalizeZetaChartAccount(row as unknown as ZetaChartAccountRaw)),
+      runId: input.runId,
+    });
+
+    input.counters.masterMaterialization.chart_accounts = chartSummary;
+    input.counters.failed += chartSummary.failed;
+    input.counters.warnings.push(...chartSummary.warnings);
+  }
+
+  if (conceptRows.length > 0) {
+    const conceptSummary = await materializeZetaConcepts(input.supabase, {
+      organizationId: input.organizationId,
+      concepts: conceptRows as unknown as ZetaConceptoRaw[],
+      runId: input.runId,
+    });
+
+    input.counters.masterMaterialization.concepts = conceptSummary;
+    input.counters.failed += conceptSummary.failed;
+    input.counters.warnings.push(...conceptSummary.warnings);
+  }
+
+  if (journalTypeRows.length > 0) {
+    try {
+      input.counters.masterMaterialization.journal_types =
+        await materializeZetaJournalTypes(input.supabase, {
+          organizationId: input.organizationId,
+          connectionId: input.connectionId,
+          journalTypes: journalTypeRows as unknown as ZetaJournalTypeRaw[],
+        });
+    } catch (error) {
+      input.counters.failed += 1;
+      input.counters.warnings.push(
+        error instanceof Error
+          ? `Tipos de asiento Zeta: ${error.message}`
+          : "No se pudieron materializar los tipos de asiento Zeta.",
+      );
     }
   }
 }
@@ -539,15 +674,42 @@ function cursorKey(input: {
   return input.period ? `${input.stream}:${input.period}` : input.stream;
 }
 
+async function markInterruptedRunningSyncs(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from(integrationTables.syncRuns)
+    .update({
+      status: "failed",
+      finished_at: nowIso(),
+      records_failed: 1,
+      error_code: "zeta_sync_interrupted",
+      error_message: "La corrida quedo interrumpida antes de completar. Reintenta la sincronizacion.",
+      updated_at: nowIso(),
+    })
+    .eq("organization_id", organizationId)
+    .eq("provider", "zetasoftware")
+    .eq("status", "running")
+    .lt("started_at", cutoff);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary> {
+  const isMasterStream = input.stream === "masters" || input.stream === "accounting_masters";
+  await markInterruptedRunningSyncs(input.supabase, input.organizationId);
   const connection = await loadConnection(input.supabase, input.organizationId);
   const client = await buildClient({
     supabase: input.supabase,
     organizationId: input.organizationId,
     fetchImpl: input.fetchImpl,
   });
-  const period = input.stream === "masters" ? null : parsePeriod(input.period);
-  const maxPages = clampMaxPages(input.maxPages, input.stream === "masters" ? 5 : 25);
+  const period = isMasterStream ? null : parsePeriod(input.period);
+  const maxPages = clampMaxPages(input.maxPages, isMasterStream ? 5 : 25);
   const run = await createIntegrationSyncRun(input.supabase, {
     organizationId: input.organizationId,
     connectionId: connection.id,
@@ -576,6 +738,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
     failed: 0,
     documentsMaterialized: 0,
     documentsSkipped: 0,
+    masterMaterialization: {},
     warnings: [],
   };
 
@@ -592,7 +755,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
   });
 
   try {
-    if (input.stream === "masters") {
+    if (input.stream === "masters" || input.stream === "accounting_masters") {
       await syncMasters({
         supabase: input.supabase,
         client,
@@ -602,6 +765,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         maxPages,
         counters,
         testMode: connection.test_mode,
+        queries: input.stream === "accounting_masters" ? accountingMasterQueries : masterQueries,
       });
     } else if (input.stream === "sales_documents" && period) {
       await syncSalesDocuments({
@@ -663,6 +827,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         period: period?.period ?? null,
         documents_materialized: counters.documentsMaterialized,
         documents_skipped: counters.documentsSkipped,
+        master_materialization: counters.masterMaterialization,
         warnings_count: counters.warnings.length,
       },
       warnings: Array.from(new Set(counters.warnings)).slice(0, 200),

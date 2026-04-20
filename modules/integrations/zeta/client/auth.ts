@@ -206,7 +206,6 @@ function buildPayload(input: {
     DesarrolladorClave: string;
   };
   org: ZetaOrgCredentials;
-  usuarioClave?: string | null;
 }): ZetaConnectionPayload {
   return {
     DesarrolladorCodigo: input.integrator.DesarrolladorCodigo,
@@ -214,7 +213,7 @@ function buildPayload(input: {
     EmpresaCodigo: input.org.EmpresaCodigo,
     EmpresaClave: input.org.EmpresaClave,
     UsuarioCodigo: parseIntegerCredential(input.org.UsuarioCodigo, "UsuarioCodigo"),
-    UsuarioClave: input.usuarioClave ?? "",
+    UsuarioClave: input.org.UsuarioClave ?? "",
     RolCodigo: parseIntegerCredential(input.org.RolCodigo, "RolCodigo"),
   };
 }
@@ -228,7 +227,7 @@ function mockRuntime(baseUrl?: string | null): ZetaRuntimeConfig {
       EmpresaCodigo: "mock",
       EmpresaClave: "mock",
       UsuarioCodigo: 1,
-      UsuarioClave: "",
+      UsuarioClave: "mock",
       RolCodigo: 1,
     },
     metadata: {
@@ -311,30 +310,28 @@ export function loadZetaRuntimeConfig(input: {
   const org = overrides.empresaCodigo
     || overrides.empresaClave
     || overrides.usuarioCodigo
+    || overrides.usuarioClave
     || overrides.rolCodigo
     ? {
       EmpresaCodigo: firstValue(overrides.empresaCodigo) ?? "",
       EmpresaClave: firstValue(overrides.empresaClave) ?? "",
       UsuarioCodigo: firstValue(overrides.usuarioCodigo) ?? "",
+      UsuarioClave: firstValue(
+        overrides.usuarioClave,
+        readEnvValue(env, zetaEnvironmentVariables.usuarioClave, envProfile),
+        readEnvValue(env, zetaEnvironmentVariables.usuarioClaveAlt, envProfile),
+      ) ?? undefined,
       RolCodigo: firstValue(overrides.rolCodigo) ?? "",
     }
     : loadOrgCredsFromEnv(envProfile, env);
 
   return {
     baseUrl,
-    credentials: buildPayload({
-      integrator,
-      org,
-      usuarioClave: firstValue(
-        overrides.usuarioClave,
-        readEnvValue(env, zetaEnvironmentVariables.usuarioClave, envProfile),
-        readEnvValue(env, zetaEnvironmentVariables.usuarioClaveAlt, envProfile),
-      ),
-    }),
+    credentials: buildPayload({ integrator, org }),
     metadata: {
       credentialSource: overrides.empresaCodigo ? "overrides" : "server_env",
       envProfile,
-      hasUsuarioClave: Boolean(overrides.usuarioClave),
+      hasUsuarioClave: Boolean(org.UsuarioClave),
     },
   };
 }
@@ -422,18 +419,11 @@ export async function buildZetaConnection(input: {
 
   return {
     baseUrl,
-    credentials: buildPayload({
-      integrator,
-      org,
-      usuarioClave: firstValue(
-        readEnvValue(env, zetaEnvironmentVariables.usuarioClave, envProfile),
-        readEnvValue(env, zetaEnvironmentVariables.usuarioClaveAlt, envProfile),
-      ),
-    }),
+    credentials: buildPayload({ integrator, org }),
     metadata: {
       credentialSource,
       envProfile,
-      hasUsuarioClave: Boolean(readEnvValue(env, zetaEnvironmentVariables.usuarioClave, envProfile)),
+      hasUsuarioClave: Boolean(org.UsuarioClave),
     },
   };
 }

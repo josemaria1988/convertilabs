@@ -11,6 +11,7 @@ export interface ZetaOrgCredentials {
   EmpresaCodigo: string;
   EmpresaClave: string;
   UsuarioCodigo: string;
+  UsuarioClave?: string;
   RolCodigo: string;
 }
 
@@ -124,12 +125,17 @@ export function decryptCredentials(blob: string): ZetaOrgCredentials {
       decipher.final(),
     ]).toString("utf8");
     const parsed = JSON.parse(plaintext) as ZetaOrgCredentials;
-    const credentials = {
+    const usuarioClave = nonEmpty(parsed.UsuarioClave);
+    const credentials: ZetaOrgCredentials = {
       EmpresaCodigo: nonEmpty(parsed.EmpresaCodigo) ?? "",
       EmpresaClave: nonEmpty(parsed.EmpresaClave) ?? "",
       UsuarioCodigo: nonEmpty(parsed.UsuarioCodigo) ?? "",
       RolCodigo: nonEmpty(parsed.RolCodigo) ?? "",
     };
+
+    if (usuarioClave) {
+      credentials.UsuarioClave = usuarioClave;
+    }
 
     assertCredentialsShape(credentials);
 
@@ -153,12 +159,18 @@ export function loadOrgCredsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ZetaOrgCredentials {
   const normalizedProfile = normalizeEnvProfile(envProfile);
-  const credentials = {
+  const usuarioClave = readEnv(env, "ZETASOFTWARE_USUARIOCLAVE", normalizedProfile)
+    ?? readEnv(env, "ZETASOFTWARE_USUARIO_CLAVE", normalizedProfile);
+  const credentials: ZetaOrgCredentials = {
     EmpresaCodigo: readEnv(env, "ZETASOFTWARE_EMPRESA_CODIGO", normalizedProfile) ?? "",
     EmpresaClave: readEnv(env, "ZETASOFTWARE_EMPRESA_CLAVE", normalizedProfile) ?? "",
     UsuarioCodigo: readEnv(env, "ZETASOFTWARE_USUARIOCODIGO", normalizedProfile) ?? "",
     RolCodigo: readEnv(env, "ZETASOFTWARE_ROLCODIGO", normalizedProfile) ?? "",
   };
+
+  if (usuarioClave) {
+    credentials.UsuarioClave = usuarioClave;
+  }
 
   assertCredentialsShape(credentials);
 

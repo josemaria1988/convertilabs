@@ -150,6 +150,46 @@ Tablas y artefactos clave:
 - `ledger_open_items`
 - `ledger_settlement_links`
 
+## 5.1 Zeta: role map y plantillas como siguiente pieza contable
+
+Cuando el plan de cuentas Zeta ya esta espejado en `chart_of_accounts`, el siguiente paso no es exportar a Zeta. El siguiente paso es resolver documentos con plantillas y roles:
+
+```text
+familia operativa
+-> plantilla contable base
+-> roles contables
+-> cuentas Zeta imputables
+-> preview multi-linea
+```
+
+Fuente ejecutable del PR:
+
+- `docs/pr-next-zeta-posting-templates-role-map.md`
+
+Reglas especificas:
+
+- el reviewer debe priorizar plantilla y familia operativa antes que cuenta suelta;
+- los roles internos se mapean por organizacion contra cuentas imputables del plan Zeta;
+- si falta un role critico, el documento queda asistido o bloqueado;
+- la IA solo puede sugerir dentro de templates y cuentas permitidas;
+- el caso "pagado por socio / a reintegrar" es una plantilla generica, no una excepcion por proveedor;
+- no se exporta a Bandeja hasta que exista preview multi-linea balanceado y bridge-ready.
+
+Roles principales del mapa minimo:
+
+- proveedores;
+- clientes / deudores por ventas;
+- ventas plaza;
+- ventas exportacion;
+- IVA compras basica;
+- IVA ventas basica;
+- caja pesos;
+- banco pesos;
+- cuenta a reintegrar a socio;
+- gasto operativo default;
+- activo fijo;
+- mercaderias / stock.
+
 ## 6. Chart of accounts y presets
 
 La estrategia oficial del chart es:

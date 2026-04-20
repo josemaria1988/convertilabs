@@ -4,6 +4,37 @@ Fecha original: 2026-04-18
 Revision: 2026-04-19  
 Estado: backlog revisado para ejecucion specs-driven-development con Codex.
 
+## Actualizacion 2026-04-20 - siguiente PR contable Zeta
+
+El estado operativo avanzo mas rapido que el backlog original: ya existe integracion Zeta real, importacion read-only de CFEs/ventas y un tramo de espejo contable para Plan de Cuentas, Conceptos y Tipos de Asiento.
+
+El siguiente PR recomendado queda documentado como fuente ejecutable en:
+
+- `docs/pr-next-zeta-posting-templates-role-map.md`
+
+Ese PR debe ser acotado y de valor inmediato: **plantillas base por familia operativa + role map contable Zeta**. El objetivo es que el reviewer deje de pedir "una cuenta suelta" como flujo principal y resuelva:
+
+```text
+documento
+-> hechos
+-> familia operativa
+-> plantilla contable
+-> roles contables
+-> cuentas reales del plan Zeta
+-> preview multi-linea
+```
+
+No entra todavia exportacion a Bandeja, sincronizacion de Articulos, Bancos, Cajas, Contactos masivos ni conciliacion. Esas piezas quedan como PRs separados.
+
+Orden recomendado despues de este PR:
+
+1. Tasas de IVA Zeta deterministicas, si todavia no quedaron materializadas.
+2. Rule runner Zeta-aware.
+3. Preview multi-linea consolidado.
+4. Export a Bandeja de Entrada de Asientos.
+5. Reconciliacion contra Zeta.
+6. Aprendizaje contable reusable.
+
 Este backlog convierte el spec `docs/convertilabs-zetasoftware-v1-specs-driven-development.md` en una secuencia ejecutable por PRs, contrastada contra el estado actual del repositorio e incorporando seis ajustes criticos antes de comenzar la integracion real:
 
 1. protocolo explicito para testing en produccion sin sandbox;

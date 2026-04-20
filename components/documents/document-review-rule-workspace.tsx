@@ -108,8 +108,36 @@ function normalizeAccountType(value: string | null | undefined) {
 
 function sortReviewAccounts(accounts: ReviewAccountOption[]) {
   return [...accounts].sort((left, right) =>
-    left.code.localeCompare(right.code, "es", { numeric: true, sensitivity: "base" }),
+    accountSortCode(left).localeCompare(accountSortCode(right), "es", { numeric: true, sensitivity: "base" }),
   );
+}
+
+function isZetaAccount(account: ReviewAccountOption) {
+  return account.providerManaged === true && account.sourceProvider === "zetasoftware";
+}
+
+function accountSortCode(account: ReviewAccountOption) {
+  return isZetaAccount(account)
+    ? account.externalCode || account.code
+    : account.code;
+}
+
+function formatReviewAccountLabel(account: ReviewAccountOption) {
+  if (isZetaAccount(account)) {
+    return account.displayCodeName || `${account.externalCode || account.code} - ${account.name}`;
+  }
+
+  return `${account.code} ${account.name}`;
+}
+
+function searchableAccountText(account: ReviewAccountOption) {
+  return [
+    account.code,
+    account.name,
+    account.externalCode,
+    account.displayCodeName,
+    isZetaAccount(account) ? "zeta" : null,
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
 function formatAccountTypeLabel(value: string | null | undefined) {
@@ -451,7 +479,7 @@ export function DocumentReviewRuleWorkspace({
       const normalizedSearch = accountSearch.trim().toLowerCase();
       const filteredAccounts = normalizedSearch
         ? compatibleAccounts.filter((account) =>
-          `${account.code} ${account.name}`.toLowerCase().includes(normalizedSearch))
+          searchableAccountText(account).includes(normalizedSearch))
         : compatibleAccounts;
       const selectableAccounts = selectedAccount
         && !filteredAccounts.some((account) => account.id === selectedAccount.id)
@@ -524,7 +552,7 @@ export function DocumentReviewRuleWorkspace({
     ?? null;
   const selectedPrimaryAccountLabel =
     primaryRoleRow?.selectedAccount
-      ? `${primaryRoleRow.selectedAccount.code} ${primaryRoleRow.selectedAccount.name}`
+      ? formatReviewAccountLabel(primaryRoleRow.selectedAccount)
       : primaryRoleRow?.assignment.accountLabel ?? "Sin cuenta principal resuelta";
   const primaryCompatibleAccounts = useMemo(() => {
     if (!primaryRoleRow) {
@@ -542,7 +570,7 @@ export function DocumentReviewRuleWorkspace({
     }
 
     return primaryCompatibleAccounts.filter((account) =>
-      `${account.code} ${account.name}`.toLowerCase().includes(normalizedSearch)).slice(0, 8);
+      searchableAccountText(account).includes(normalizedSearch)).slice(0, 8);
   }, [accountSearch, primaryCompatibleAccounts]);
   const canCreatePrimaryAccountInline =
     primaryRoleRow?.assignment.roleCode === "revenue_account"
@@ -633,7 +661,7 @@ export function DocumentReviewRuleWorkspace({
 
       if (!isAccountCompatibleWithRole(account, row.assignment.roleCode)) {
         return (
-          `La cuenta elegida (${account.code} - ${account.name}) `
+          `La cuenta elegida (${formatReviewAccountLabel(account)}) `
           + `no sirve como ${formatAccountRoleCodeLabel(row.assignment.roleCode).toLowerCase()}.`
         );
       }
@@ -876,7 +904,8 @@ export function DocumentReviewRuleWorkspace({
           <option value="">{placeholder}</option>
           {row.selectableAccounts.map((account) => (
             <option key={`${row.assignment.roleCode}-${account.id}`} value={account.id}>
-              {account.code} {account.name}
+              {isZetaAccount(account) ? "[Zeta] " : ""}
+              {formatReviewAccountLabel(account)}
             </option>
           ))}
         </select>
@@ -1065,9 +1094,10 @@ export function DocumentReviewRuleWorkspace({
                       className="review-rule-search-option"
                     >
                       <span>
-                        <strong>{account.code} {account.name}</strong>
+                        <strong>{formatReviewAccountLabel(account)}</strong>
                         <small>
                           {formatAccountTypeLabel(account.accountType)}
+                          {isZetaAccount(account) ? " | Zeta" : ""}
                           {account.isProvisional ? " | Provisoria" : ""}
                         </small>
                       </span>
@@ -1187,7 +1217,8 @@ export function DocumentReviewRuleWorkspace({
                           </option>
                           {row.selectableAccounts.map((account) => (
                             <option key={`${row.assignment.roleCode}-${account.id}`} value={account.id}>
-                              {account.code} {account.name}
+                              {isZetaAccount(account) ? "[Zeta] " : ""}
+                              {formatReviewAccountLabel(account)}
                             </option>
                           ))}
                         </select>

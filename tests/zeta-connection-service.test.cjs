@@ -255,7 +255,7 @@ test("Zeta real health reports missing runtime configuration before calling the 
     if (query.table === "organization_integration_connections" && query.mutation === "update") {
       assert.equal(query.payload.status, "error");
       assert.equal(query.payload.last_connection_test_ok, false);
-      assert.match(query.payload.last_error, /Faltan credenciales|configuracion Zetasoftware/);
+      assert.match(query.payload.last_error, /Faltan|Falta|UsuarioCodigo/);
 
       return {
         data: null,
@@ -283,6 +283,8 @@ test("Zeta real health reports missing runtime configuration before calling the 
     ZETASOFTWARE_EMPRESA_CODIGO: undefined,
     ZETASOFTWARE_EMPRESA_CLAVE: undefined,
     ZETASOFTWARE_USUARIOCODIGO: undefined,
+    ZETASOFTWARE_USUARIOCLAVE: undefined,
+    ZETASOFTWARE_USUARIO_CLAVE: undefined,
     ZETASOFTWARE_ROLCODIGO: undefined,
   }, () => testZetaConnection(supabase, {
     organizationId: "org-1",

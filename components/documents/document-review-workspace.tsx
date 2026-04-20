@@ -30,6 +30,8 @@ import {
 } from "@/modules/presentation/labels";
 import { formatCanonicalWorkflowStateLabel } from "@/modules/presentation/product-language";
 
+type ReviewAccountOption = DocumentReviewPageData["accountingOptions"]["accounts"][number];
+
 type StepCode =
   | "identity"
   | "fields"
@@ -75,13 +77,7 @@ type CreateReviewAccountAction = (input: {
 }) => Promise<{
   ok: boolean;
   message: string;
-  account: {
-    id: string;
-    code: string;
-    name: string;
-    accountType: string;
-    isProvisional: boolean;
-  } | null;
+  account: ReviewAccountOption | null;
 }>;
 
 type ReviewSimpleAction = () => Promise<{

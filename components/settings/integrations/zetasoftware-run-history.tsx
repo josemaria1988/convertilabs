@@ -8,6 +8,8 @@ function formatStream(value: string) {
   switch (value) {
     case "masters":
       return "Maestros";
+    case "accounting_masters":
+      return "Plan Zeta";
     case "sales_documents":
       return "Ventas";
     case "received_cfes":
@@ -15,6 +17,42 @@ function formatStream(value: string) {
     default:
       return value || "Corrida";
   }
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function formatMaterializationSummary(summary: Record<string, unknown>) {
+  const materialization = asRecord(summary.master_materialization);
+  const chartAccounts = asRecord(materialization.chart_accounts);
+  const concepts = asRecord(materialization.concepts);
+  const journalTypes = asRecord(materialization.journal_types);
+  const parts = [];
+
+  if (Object.keys(chartAccounts).length > 0) {
+    parts.push(
+      `Cuentas: ${asNumber(chartAccounts.upserted)} actualizadas, ${asNumber(chartAccounts.unchanged)} sin cambios, ${asNumber(chartAccounts.conflict)} conflictos`,
+    );
+  }
+
+  if (Object.keys(concepts).length > 0) {
+    parts.push(
+      `Conceptos: ${asNumber(concepts.linked)} vinculados, ${asNumber(concepts.missingAccount)} sin cuenta`,
+    );
+  }
+
+  if (Object.keys(journalTypes).length > 0) {
+    parts.push(`Tipos de asiento: ${asNumber(journalTypes.available)} disponibles`);
+  }
+
+  return parts;
 }
 
 function formatStatus(value: string) {
@@ -56,7 +94,7 @@ export function ZetaSoftwareRunHistory({
       </div>
 
       {runs.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-[color:var(--color-border)] bg-white/50 px-4 py-6 text-sm text-[color:var(--color-muted)]">
+        <div className="rounded-lg border border-dashed border-[color:var(--color-border)] bg-[rgba(37,46,63,0.76)] px-4 py-6 text-sm text-[color:var(--color-muted)]">
           Todavia no hay corridas Zetasoftware para esta organizacion.
         </div>
       ) : (
@@ -64,7 +102,7 @@ export function ZetaSoftwareRunHistory({
           {runs.map((run) => (
             <article
               key={run.id}
-              className="rounded-lg border border-[color:var(--color-border)] bg-white/70 p-4 text-sm"
+              className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(37,46,63,0.76)] p-4 text-sm"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -73,7 +111,7 @@ export function ZetaSoftwareRunHistory({
                     {formatDate(run.startedAt ?? run.createdAt)} - {formatStatus(run.status)}
                   </p>
                 </div>
-                <span className="rounded-full border border-[color:var(--color-border)] bg-white px-2.5 py-1 text-xs">
+                <span className="rounded-full border border-[color:var(--color-border)] bg-[rgba(72,82,102,0.4)] px-2.5 py-1 text-xs text-[color:var(--color-muted)]">
                   {run.testMode ? "test/mock" : "real read-only"}
                 </span>
               </div>
@@ -102,6 +140,12 @@ export function ZetaSoftwareRunHistory({
                   {run.errorMessage}
                 </p>
               ) : null}
+
+              {formatMaterializationSummary(run.summary).map((line) => (
+                <p key={line} className="mt-2 text-xs text-[color:var(--color-muted)]">
+                  {line}
+                </p>
+              ))}
 
               {run.warnings.length > 0 ? (
                 <p className="mt-3 text-xs text-[color:var(--color-muted)]">

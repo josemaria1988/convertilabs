@@ -209,6 +209,7 @@ test("Zeta runtime derives base URL from legacy endpoint env variables", () => {
 
   assert.equal(runtime.baseUrl, "https://api.zeta.example");
   assert.equal(runtime.credentials.UsuarioCodigo, 42);
+  assert.equal(runtime.credentials.UsuarioClave, "");
   assert.equal(runtime.credentials.RolCodigo, 7);
 });
 
@@ -234,6 +235,7 @@ test("Zeta runtime can read organization-specific env profiles", () => {
   assert.equal(runtime.credentials.DesarrolladorCodigo, "dev-code");
   assert.equal(runtime.credentials.EmpresaCodigo, "RONTIL");
   assert.equal(runtime.credentials.UsuarioCodigo, 99);
+  assert.equal(runtime.credentials.UsuarioClave, "");
   assert.equal(runtime.credentials.RolCodigo, 17);
   assert.equal(runtime.metadata.envProfile, "RONTIL");
 });

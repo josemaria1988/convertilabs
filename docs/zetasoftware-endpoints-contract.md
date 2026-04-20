@@ -36,12 +36,11 @@ Variables de entorno server-only:
 - `ZETASOFTWARE_EMPRESA_CODIGO` solo como fallback de desarrollo
 - `ZETASOFTWARE_EMPRESA_CLAVE` solo como fallback de desarrollo
 - `ZETASOFTWARE_USUARIOCODIGO` solo como fallback de desarrollo
-- `ZETASOFTWARE_USUARIOCLAVE` o `ZETASOFTWARE_USUARIO_CLAVE`, opcional mientras el entorno no lo requiera
 - `ZETASOFTWARE_ROLCODIGO` solo como fallback de desarrollo
 
 Para credenciales por organizacion hay dos modos:
 
-- Produccion recomendada: `credential_source = db_encrypted`. `DesarrolladorCodigo` y `DesarrolladorClave` son credenciales de Convertilabs y viven siempre en variables de entorno. `EmpresaCodigo`, `EmpresaClave`, `UsuarioCodigo` y `RolCodigo` son credenciales del cliente y se guardan cifradas en `organization_integration_connections.encrypted_credentials`.
+- Produccion recomendada: `credential_source = db_encrypted`. `DesarrolladorCodigo` y `DesarrolladorClave` son credenciales de Convertilabs y viven siempre en variables de entorno. `EmpresaCodigo`, `EmpresaClave`, `UsuarioCodigo` y `RolCodigo` se guardan cifradas en `organization_integration_connections.encrypted_credentials`.
 - Fallback de desarrollo: `credential_source = server_env`. El runtime lee primero `ZETASOFTWARE_<PROFILE>_EMPRESA_CODIGO`, `ZETASOFTWARE_<PROFILE>_EMPRESA_CLAVE`, `ZETASOFTWARE_<PROFILE>_USUARIOCODIGO` y `ZETASOFTWARE_<PROFILE>_ROLCODIGO`, y cae a `ZETASOFTWARE_*` si no existe el perfil.
 - Seguridad: `EmpresaClave` y `DesarrolladorClave` no se guardan en `config_json`, no se registran en `audit_log` y no se devuelven al cliente. La UI solo muestra un fingerprint corto no reversible cuando hay credenciales configuradas.
 

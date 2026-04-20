@@ -158,6 +158,22 @@ export function formatZetaConnectionStatusLabel(value: ZetaConnectionStatus) {
   }
 }
 
+function formatZetaConfigurationError(error: ZetaConfigurationError) {
+  if (error.code === "zeta_integrator_credentials_missing") {
+    return "Faltan ZETASOFTWARE_DESARROLLADOR_CODIGO o ZETASOFTWARE_DESARROLLADOR_CLAVE en las variables de entorno del servidor.";
+  }
+
+  if (error.code === "zeta_base_url_missing") {
+    return "Falta la base URL de Zetasoftware. Usa https://api.zetasoftware.com/rest o define ZETASOFTWARE_BASE_URL.";
+  }
+
+  if (error.code === "zeta_credentials_invalid") {
+    return "UsuarioCodigo y RolCodigo deben ser numericos segun el contrato REST de Zetasoftware.";
+  }
+
+  return "Faltan credenciales o configuracion Zetasoftware del lado servidor.";
+}
+
 function mapZetaConnectionRow(row: ZetaConnectionRow | null): ZetaConnectionSettings {
   if (!row) {
     const hasEnvCredentials = hasZetaRuntimeEnvCredentials();
@@ -313,8 +329,11 @@ export function normalizeZetaConnectionInput(input: {
   const usuarioCodigo = input.usuarioCodigo?.trim() || null;
   const rolCodigo = input.rolCodigo?.trim() || null;
   const baseUrl = input.baseUrl?.trim() || null;
-  const hasNewCredentials = Boolean(companySecret || companyCode || usuarioCodigo || rolCodigo);
-  const canReuseCredentials = Boolean(input.allowExistingStoredCredentials) && !companySecret;
+  const hasPublicCredentialInput = Boolean(companyCode || usuarioCodigo || rolCodigo);
+  const hasSecretCredentialInput = Boolean(companySecret);
+  const hasNewCredentials = Boolean(hasPublicCredentialInput || hasSecretCredentialInput);
+  const canReuseCredentials = Boolean(input.allowExistingStoredCredentials)
+    && !hasNewCredentials;
 
   if (!input.mockEnabled && !canReuseCredentials && (!companyCode || !companySecret || !usuarioCodigo || !rolCodigo)) {
     throw new Error(
@@ -471,7 +490,7 @@ export async function testZetaConnection(
         ? error.code
         : "zeta_credentials_unavailable",
       message: error instanceof ZetaConfigurationError
-        ? "Faltan credenciales o configuracion Zetasoftware del lado servidor."
+        ? formatZetaConfigurationError(error)
         : error instanceof Error
           ? error.message
           : "No se pudieron preparar las credenciales Zetasoftware.",

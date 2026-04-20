@@ -1,6 +1,7 @@
 # Documentacion Unificada de Convertilabs
 
 Generado: 2026-04-19.
+Ultima actualizacion manual: 2026-04-20.
 
 Este archivo integra la documentacion Markdown del proyecto en un unico documento legible y compartible. No reemplaza la documentacion fuente para edicion granular: cada bloque indica su ruta original.
 
@@ -40,6 +41,7 @@ Nota de alcance: se integra la documentacion Markdown del repositorio. Archivos 
   - PR-01 - Contrato REST Zetasoftware - `docs/pr-01-zeta-endpoints-contract.md`
   - PR-02 integration foundation - `docs/pr-02-integration-foundation.md`
   - PR-03 Zeta settings connection - `docs/pr-03-zeta-settings-connection.md`
+  - PR siguiente - Plantillas base por familia operativa y Role Map Zeta - `docs/pr-next-zeta-posting-templates-role-map.md`
 - [Contratos REST Zetasoftware](#contratos-rest-zetasoftware)
   - Contrato REST Zetasoftware PR-01 - `docs/zetasoftware-endpoints-contract.md`
   - Bandeja de Entrada de Asientos Zetasoftware - `docs/zetasoftware-bandeja-contract-notes.md`
@@ -77,6 +79,7 @@ Nota de alcance: se integra la documentacion Markdown del repositorio. Archivos 
 - `docs/pr-01-zeta-endpoints-contract.md`
 - `docs/pr-02-integration-foundation.md`
 - `docs/pr-03-zeta-settings-connection.md`
+- `docs/pr-next-zeta-posting-templates-role-map.md`
 - `docs/zetasoftware-endpoints-contract.md`
 - `docs/zetasoftware-bandeja-contract-notes.md`
 
@@ -7260,6 +7263,105 @@ Resultado:
 
 ---
 
+### PR siguiente - Plantillas base por familia operativa y Role Map Zeta
+
+Fuente: `docs/pr-next-zeta-posting-templates-role-map.md`
+
+Fecha de planificacion: 2026-04-20
+Estado: documentado, pendiente de implementacion.
+
+#### Objetivo
+
+Implementar el siguiente PR contable Zeta como una pieza acotada: plantillas base por familia operativa y role map por organizacion.
+
+La secuencia oficial del reviewer debe ser:
+
+```text
+documento
+-> hechos
+-> familia operativa
+-> plantilla contable base
+-> roles contables
+-> cuentas reales del plan Zeta
+-> preview multi-linea
+```
+
+#### Alcance
+
+- catalogo base de roles contables internos;
+- persistencia minima en `organization_account_role_mappings`;
+- servicio server-side para listar, sugerir, guardar y borrar mappings;
+- catalogo versionado de plantillas base;
+- resolver `template + facts + role map -> preview`;
+- extension del classification runner para ser template-aware;
+- soporte explicito del patron `paid_by_partner`;
+- UI de reviewer centrada en plantillas;
+- seccion compacta `Mapa contable Zeta` en Settings;
+- persistencia auditable de template, familia, settlement, role resolutions y preview;
+- tests de roles, templates, resolver, role map y smoke UI.
+
+#### Templates minimos
+
+- `purchase_expense_credit.v1`
+- `purchase_expense_paid_by_partner.v1`
+- `purchase_expense_cash_uyu.v1`
+- `purchase_expense_bank_uyu.v1`
+- `purchase_fixed_asset_credit.v1`
+- `purchase_inventory_credit.v1`
+- `sale_local_credit.v1`
+- `sale_local_cash_uyu.v1`
+- `sale_local_bank_uyu.v1`
+- `sale_export_credit.v1`
+- `supplier_credit_note.v1`
+- `customer_credit_note.v1`
+
+#### Roles principales del mapa minimo
+
+- proveedores;
+- clientes / deudores por ventas;
+- ventas plaza;
+- ventas exportacion;
+- IVA compras basica;
+- IVA ventas basica;
+- caja pesos;
+- banco pesos;
+- cuenta a reintegrar a socio;
+- gasto operativo default;
+- activo fijo;
+- mercaderias / stock.
+
+#### Caso pagado por socio
+
+La compra chica pagada con dinero personal se modela como plantilla generica:
+
+```text
+purchase_expense_paid_by_partner.v1
+```
+
+El Haber debe ir contra `partner_reimbursement_payable`, no contra banco, caja ni proveedores. No se hardcodea proveedor ni RUT.
+
+#### No scope
+
+- no exportar a Bandeja;
+- no consultar Bandeja ni asientos definitivos de Zeta;
+- no sincronizar Articulos, Contactos masivos, Bancos, Cajas ni Cuentas Bancarias;
+- no crear comprobantes en Zeta;
+- no crear un admin completo de plantillas;
+- no permitir cuentas no imputables;
+- no modificar cuentas locales `provider_managed = false`;
+- no vender como automatico un documento con roles faltantes.
+
+#### Roadmap posterior
+
+1. Tasas de IVA Zeta deterministicas, si todavia faltan.
+2. Rule runner Zeta-aware.
+3. Preview multi-linea consolidado.
+4. Export a Bandeja.
+5. Reconciliacion.
+6. Aprendizaje contable reusable.
+
+---
+
 ## Contratos REST Zetasoftware
 
 Contrato de endpoints REST, health, variables, bandeja futura y notas de integracion.
@@ -7673,4 +7775,3 @@ Campos minimos que PR-08/PR-11 deben preservar:
 - Los campos `Concepto` y `Referencia` deben contener una marca inequívoca de prueba durante smokes reales.
 
 ---
-

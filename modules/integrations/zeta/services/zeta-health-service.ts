@@ -39,6 +39,24 @@ export function resolveZetaHealthMode(input: {
   return "real" satisfies ZetaHealthMode;
 }
 
+function formatConfigurationErrorMessage(error: ZetaConfigurationError, usesStoredCredentials: boolean) {
+  if (error.code === "zeta_base_url_missing") {
+    return "Falta ZETASOFTWARE_BASE_URL o la base URL de Zetasoftware en la conexion.";
+  }
+
+  if (error.code === "zeta_integrator_credentials_missing") {
+    return "Faltan ZETASOFTWARE_DESARROLLADOR_CODIGO o ZETASOFTWARE_DESARROLLADOR_CLAVE en las variables de entorno del servidor.";
+  }
+
+  if (error.code === "zeta_credentials_invalid") {
+    return "UsuarioCodigo y RolCodigo deben ser numericos segun el contrato REST de Zetasoftware.";
+  }
+
+  return usesStoredCredentials
+    ? "Faltan campos en las credenciales cifradas de Zetasoftware."
+    : "Faltan credenciales Zetasoftware en variables de entorno del servidor.";
+}
+
 export async function runZetaHealthCheck(input: {
   isConfigured: boolean;
   isPaused: boolean;
@@ -148,11 +166,7 @@ export async function runZetaHealthCheck(input: {
         ok: false,
         status: "error",
         code: error.code,
-        message: error.code === "zeta_base_url_missing"
-          ? "Falta ZETASOFTWARE_BASE_URL o la base URL de Zetasoftware en la conexion."
-          : usesStoredCredentials
-            ? "Faltan campos en las credenciales cifradas de Zetasoftware."
-            : "Faltan credenciales Zetasoftware en variables de entorno del servidor.",
+        message: formatConfigurationErrorMessage(error, usesStoredCredentials),
         checkedAt,
         metadata: {
           health_mode: "real",

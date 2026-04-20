@@ -399,6 +399,44 @@ export const zetaEndpointRegistry = {
       },
     },
   },
+  conceptsQuery: {
+    endpointName: "RESTConceptosV1Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.masters.concepts",
+    description: "Management concepts with CodigoContable references for account suggestions.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          CodigoDesde: "",
+          CodigoHasta: "",
+          NombreContiene: "",
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          Codigo: "",
+          Nombre: "",
+          Tipo: "",
+          ConceptoActivo: "",
+          CodigoIVA: 0,
+          AbreviacionIVA: "",
+          NombreIVA: "",
+          TasaIVA: 0,
+          CodigoContable: "",
+          CodigoGrupo: "",
+          NombreGrupo: "",
+          TotalizarReportes: "",
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
   chartAccountsQuery: {
     endpointName: "RESTPlanCuentasV2Query",
     httpMethod: "POST",

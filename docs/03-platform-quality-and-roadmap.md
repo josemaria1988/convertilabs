@@ -400,6 +400,34 @@ Direccion correcta:
 
 ## 10. Roadmap condensado
 
+### Zeta contable inmediato
+
+El siguiente PR operativo para Zeta esta documentado en `docs/pr-next-zeta-posting-templates-role-map.md`.
+
+Objetivo:
+
+```text
+documento
+-> hechos
+-> familia operativa
+-> plantilla contable
+-> role map
+-> cuenta Zeta imputable
+-> preview multi-linea
+```
+
+Orden recomendado despues del espejo de Plan de Cuentas, Conceptos y Tipos de Asiento:
+
+1. Plantillas base por familia operativa + Role Map Zeta.
+2. Tasas de IVA Zeta deterministicas, si faltan.
+3. Rule runner Zeta-aware.
+4. Preview multi-linea consolidado.
+5. Export a Bandeja.
+6. Reconciliacion.
+7. Aprendizaje contable reusable.
+
+No adelantar exportacion a Zeta mientras falten roles criticos, preview balanceado o evidencia de cuentas imputables.
+
 ### Ya fuerte
 
 - onboarding y presets;

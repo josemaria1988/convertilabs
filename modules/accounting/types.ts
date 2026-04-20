@@ -427,9 +427,15 @@ export type PostableAccountRecord = {
   sort_order?: number | null;
   provider_managed?: boolean | null;
   source_provider?: string | null;
+  external_parent_code?: string | null;
+  account_level?: number | null;
+  is_imputable?: boolean | null;
+  uses_cost_centers?: boolean | null;
+  literal_tributario?: number | null;
   source_channel?: string | null;
   provider_meta_json?: JsonRecord | null;
   jurisdiction_meta_json?: JsonRecord | null;
+  last_synced_from_provider_at?: string | null;
   metadata: JsonRecord | null;
 };
 

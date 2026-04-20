@@ -75,7 +75,9 @@ test("Zeta endpoint registry includes the PR-01 required domains", () => {
   assert.equal(zetaEndpointRegistry.receivedCfeDetail.endpointName, "RESTCFEsRecibidosV1CFERecibidoDetalle");
   assert.equal(zetaEndpointRegistry.customerCommercialDataQuery.endpointName, "RESTClienteV3Query");
   assert.equal(zetaEndpointRegistry.supplierCommercialDataQuery.endpointName, "RESTProveedorV2Query");
+  assert.equal(zetaEndpointRegistry.conceptsQuery.endpointName, "RESTConceptosV1Query");
   assert.equal(zetaEndpointRegistry.chartAccountsQuery.endpointName, "RESTPlanCuentasV2Query");
+  assert.equal(zetaEndpointRegistry.journalTypesQuery.endpointName, "RESTTiposAsientosV1Query");
   assert.equal(zetaEndpointRegistry.businessLocationsQuery.endpointName, "RESTLocalesComercialesV1Query");
   assert.equal(zetaEndpointRegistry.referencesQuery.endpointName, "RESTReferenciasV1Query");
   assert.equal(zetaEndpointRegistry.rutNumbersQuery.endpointName, "RESTRUTV1Query");

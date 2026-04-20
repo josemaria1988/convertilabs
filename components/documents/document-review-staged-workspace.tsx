@@ -134,13 +134,7 @@ type CreateReviewAccountAction = (input: {
 }) => Promise<{
   ok: boolean;
   message: string;
-  account: {
-    id: string;
-    code: string;
-    name: string;
-    accountType: string;
-    isProvisional: boolean;
-  } | null;
+  account: ReviewAccountOption | null;
 }>;
 
 type ResolveDuplicateAction = (input: {

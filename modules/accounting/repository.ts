@@ -107,9 +107,15 @@ type ChartAccountRow = {
   sort_order?: number | null;
   provider_managed?: boolean | null;
   source_provider?: string | null;
+  external_parent_code?: string | null;
+  account_level?: number | null;
+  is_imputable?: boolean | null;
+  uses_cost_centers?: boolean | null;
+  literal_tributario?: number | null;
   source_channel?: string | null;
   provider_meta_json?: Record<string, unknown> | null;
   jurisdiction_meta_json?: Record<string, unknown> | null;
+  last_synced_from_provider_at?: string | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -332,9 +338,15 @@ export async function loadOrganizationPostableAccounts(
     "sort_order",
     "provider_managed",
     "source_provider",
+    "external_parent_code",
+    "account_level",
+    "is_imputable",
+    "uses_cost_centers",
+    "literal_tributario",
     "source_channel",
     "provider_meta_json",
     "jurisdiction_meta_json",
+    "last_synced_from_provider_at",
     "metadata",
   ].join(", ");
   const legacySelectClause = [
@@ -400,10 +412,17 @@ export async function loadOrganizationPostableAccounts(
       sort_order: asNumber(row.sort_order) ?? asNumber(metadata.sort_order),
       provider_managed: asBoolean(row.provider_managed) ?? asBoolean(metadata.provider_managed),
       source_provider: asString(row.source_provider) ?? asString(metadata.source_provider),
+      external_parent_code: asString(row.external_parent_code) ?? asString(metadata.external_parent_code),
+      account_level: asNumber(row.account_level) ?? asNumber(metadata.account_level),
+      is_imputable: asBoolean(row.is_imputable) ?? asBoolean(metadata.is_imputable),
+      uses_cost_centers: asBoolean(row.uses_cost_centers) ?? asBoolean(metadata.uses_cost_centers),
+      literal_tributario: asNumber(row.literal_tributario) ?? asNumber(metadata.literal_tributario),
       source_channel: asString(row.source_channel) ?? asString(metadata.source_channel),
       provider_meta_json: asRecord(row.provider_meta_json) ?? asRecord(metadata.provider_meta_json),
       jurisdiction_meta_json:
         asRecord(row.jurisdiction_meta_json) ?? asRecord(metadata.jurisdiction_meta_json),
+      last_synced_from_provider_at:
+        asString(row.last_synced_from_provider_at) ?? asString(metadata.last_synced_from_provider_at),
       metadata,
     } satisfies PostableAccountRecord;
   });
@@ -1254,9 +1273,15 @@ async function loadOrganizationChartAccounts(
     "sort_order",
     "provider_managed",
     "source_provider",
+    "external_parent_code",
+    "account_level",
+    "is_imputable",
+    "uses_cost_centers",
+    "literal_tributario",
     "source_channel",
     "provider_meta_json",
     "jurisdiction_meta_json",
+    "last_synced_from_provider_at",
     "metadata",
   ].join(", ");
   const legacySelectClause =

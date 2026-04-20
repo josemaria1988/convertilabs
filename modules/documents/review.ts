@@ -435,6 +435,11 @@ export type DocumentReviewPageData = {
       name: string;
       accountType: string;
       isProvisional: boolean;
+      providerManaged: boolean;
+      sourceProvider: string | null;
+      externalCode: string | null;
+      displayCodeName: string | null;
+      isImputable: boolean | null;
     }>;
     concepts: Array<{
       id: string;
@@ -3219,6 +3224,14 @@ export async function loadDocumentReviewPageData(input: {
         name: account.name,
         accountType: account.account_type,
         isProvisional: account.is_provisional,
+        providerManaged: account.provider_managed === true,
+        sourceProvider: account.source_provider ?? null,
+        externalCode: account.external_code ?? null,
+        displayCodeName:
+          typeof account.metadata?.display_code_name === "string"
+            ? account.metadata.display_code_name
+            : null,
+        isImputable: account.is_imputable ?? null,
       })),
       concepts: accountingState.runtimeContext.concepts.map((concept) => ({
         id: concept.id,
@@ -3299,6 +3312,11 @@ export async function createDocumentReviewOverrideAccount(input: {
       name: account.name,
       accountType: account.account_type,
       isProvisional: account.is_provisional,
+      providerManaged: false,
+      sourceProvider: null,
+      externalCode: null,
+      displayCodeName: null,
+      isImputable: null,
     },
   };
 }

@@ -37,9 +37,30 @@ alter table public.chart_of_accounts
   add column if not exists sort_order integer,
   add column if not exists provider_managed boolean not null default false,
   add column if not exists source_provider text,
+  add column if not exists external_parent_code text,
+  add column if not exists account_level integer,
+  add column if not exists is_imputable boolean,
+  add column if not exists uses_cost_centers boolean,
+  add column if not exists literal_tributario integer,
   add column if not exists source_channel text not null default 'document_workflow',
   add column if not exists provider_meta_json jsonb not null default '{}'::jsonb,
-  add column if not exists jurisdiction_meta_json jsonb not null default '{}'::jsonb;
+  add column if not exists jurisdiction_meta_json jsonb not null default '{}'::jsonb,
+  add column if not exists last_synced_from_provider_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'chart_of_accounts_org_provider_external_code_key'
+      and conrelid = 'public.chart_of_accounts'::regclass
+  ) then
+    alter table public.chart_of_accounts
+      add constraint chart_of_accounts_org_provider_external_code_key
+      unique (organization_id, source_provider, external_code);
+  end if;
+end
+$$;
 
 create table if not exists public.uy_locations (
   id uuid primary key default gen_random_uuid(),
@@ -72,6 +93,15 @@ create table if not exists public.account_groups (
 
 create index if not exists idx_account_groups_org_code
   on public.account_groups (organization_id, code);
+
+create index if not exists idx_chart_of_accounts_org_provider_imputable
+  on public.chart_of_accounts (
+    organization_id,
+    source_provider,
+    is_imputable,
+    external_code
+  )
+  where source_provider is not null;
 
 alter table public.chart_of_accounts
   drop constraint if exists chart_of_accounts_group_id_fkey;
