@@ -53,6 +53,7 @@ import {
   importOrganizationChartSpreadsheetAction,
   runOrganizationZetaSyncAction,
   testOrganizationZetaConnectionAction,
+  upsertOrganizationZetaAccountRoleMappingAction,
   upsertOrganizationCfeEmailConnectionAction,
   upsertOrganizationZetaConnectionAction,
   updateOrganizationBasicsAction,
@@ -444,6 +445,8 @@ export default async function OrganizationSettingsPage({
                   isConfigured={settings.zetaConnection.isConfigured}
                   canManage={canManageIntegrations}
                   syncAction={runOrganizationZetaSyncAction}
+                  roleMap={settings.zetaAccountRoleMap}
+                  roleMapAction={upsertOrganizationZetaAccountRoleMappingAction}
                 />
                 <ZetaSoftwareRunHistory runs={settings.zetaSyncRuns} />
               </div>

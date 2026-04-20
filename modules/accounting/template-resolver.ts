@@ -147,6 +147,7 @@ function normalizeSettlementMethod(value: string | null | undefined): Settlement
     case "bank_transfer":
     case "card":
     case "check":
+    case "paid_by_partner":
     case "mixed":
     case "unknown":
       return value;
@@ -365,6 +366,10 @@ function resolveTemplateCode(input: {
   }
 
   if (input.operationKind === "purchase_invoice") {
+    if (input.paymentTerms === "cash" && input.settlementMethod === "paid_by_partner") {
+      return "purchase_expense_paid_by_partner.v1" satisfies PostingTemplateCode;
+    }
+
     if (input.paymentTerms === "credit") {
       return "purchase_local_credit" satisfies PostingTemplateCode;
     }
@@ -476,7 +481,8 @@ export function resolveDocumentSettlementContext(input: {
   const settlementStatus =
     operationKind === "sale_invoice" && paymentTerms === "credit"
       ? "open_receivable"
-      : operationKind === "purchase_invoice" && paymentTerms === "credit"
+      : operationKind === "purchase_invoice"
+        && (paymentTerms === "credit" || settlementMethod === "paid_by_partner")
         ? "open_payable"
         : paymentTerms === "cash" && settlementMethod === "unknown"
           ? "pending_resolution"
@@ -492,7 +498,8 @@ export function resolveDocumentSettlementContext(input: {
   const openItemKind =
     operationKind === "sale_invoice" && paymentTerms === "credit"
       ? "receivable"
-      : operationKind === "purchase_invoice" && paymentTerms === "credit"
+      : operationKind === "purchase_invoice"
+        && (paymentTerms === "credit" || settlementMethod === "paid_by_partner")
         ? "payable"
         : paymentTerms === "cash"
           && (
@@ -525,7 +532,9 @@ export function resolveDocumentSettlementContext(input: {
     counterpartyRole,
     templateCode,
     requiresFollowupSettlement:
-      settlementStatus === "pending_followup_event" || settlementStatus === "pending_resolution",
+      settlementStatus === "pending_followup_event"
+      || settlementStatus === "pending_resolution"
+      || settlementMethod === "paid_by_partner",
     primaryAccountRole,
     openItemKind,
     blockers,

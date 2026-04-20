@@ -9,6 +9,10 @@ import {
   createOrganizationChartAccount,
   updateOrganizationChartAccount,
 } from "@/modules/accounting/chart-admin";
+import {
+  upsertAccountRoleMapping,
+} from "@/modules/accounting/account-role-map-service";
+import { isAccountRoleCode } from "@/modules/accounting/account-roles";
 import { applyPresetComposition } from "@/modules/accounting/preset-apply-service";
 import {
   attachPresetAiRunToOrganization,
@@ -382,6 +386,38 @@ export async function runOrganizationZetaSyncAction(formData: FormData) {
   revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
   revalidatePath(`/app/o/${organization.slug}/documents`);
   revalidatePath(`/app/o/${organization.slug}/tax`);
+}
+
+export async function upsertOrganizationZetaAccountRoleMappingAction(formData: FormData) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationIntegrationRole(organization.role);
+
+  const accountRoleCode = String(formData.get("accountRoleCode") ?? "").trim();
+  const chartAccountId = String(formData.get("chartAccountId") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!isAccountRoleCode(accountRoleCode)) {
+    throw new Error("Rol contable no soportado.");
+  }
+
+  if (!chartAccountId) {
+    throw new Error("Selecciona una cuenta imputable para guardar el mapping.");
+  }
+
+  await upsertAccountRoleMapping(getSupabaseServiceRoleClient(), {
+    organizationId: organization.id,
+    actorProfileId: authState.user?.id ?? null,
+    accountRoleCode,
+    chartAccountId,
+    source: "manual",
+    notes,
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }
 
 export async function updateOrganizationBusinessProfileAction(formData: FormData) {

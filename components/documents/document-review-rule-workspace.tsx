@@ -39,6 +39,7 @@ type SaveDraftReviewAction = (input: {
         | "bank_transfer"
         | "card"
         | "check"
+        | "paid_by_partner"
         | "mixed"
         | "unknown"
         | null;

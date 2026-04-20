@@ -8,6 +8,10 @@ import {
   type UserOrganizationCfeEmailConnection,
 } from "@/modules/integrations/cfe-email-settings";
 import {
+  loadAccountRoleMapSettings,
+  type AccountRoleMapSettings,
+} from "@/modules/accounting/account-role-map-service";
+import {
   loadZetaConnectionSettings,
   loadZetaSyncRunHistory,
   type ZetaConnectionSettings,
@@ -73,6 +77,7 @@ export type OrganizationSettingsData = {
   currentUserCfeEmailConnection: UserOrganizationCfeEmailConnection | null;
   zetaConnection: ZetaConnectionSettings;
   zetaSyncRuns: ZetaSyncRunListItem[];
+  zetaAccountRoleMap: AccountRoleMapSettings;
 };
 
 function asRecord(value: unknown) {
@@ -157,6 +162,7 @@ export async function loadOrganizationSettingsData(
     currentUserCfeEmailConnection,
     zetaConnection,
     zetaSyncRuns,
+    zetaAccountRoleMap,
   ] = await Promise.all([
     loadOrganizationRow(supabase, organizationId),
     supabase
@@ -181,6 +187,7 @@ export async function loadOrganizationSettingsData(
     }),
     loadZetaConnectionSettings(supabase, organizationId),
     loadZetaSyncRunHistory(supabase, organizationId),
+    loadAccountRoleMapSettings(supabase, { organizationId }),
   ]);
 
   if (profileResult.error) {
@@ -210,6 +217,7 @@ export async function loadOrganizationSettingsData(
     currentUserCfeEmailConnection,
     zetaConnection,
     zetaSyncRuns,
+    zetaAccountRoleMap,
   } satisfies OrganizationSettingsData;
 }
 

@@ -533,7 +533,7 @@ export type SaveDraftReviewInput = {
       learnedConceptName?: string | null;
       operationKind?: string | null;
       paymentTerms?: "cash" | "credit" | "unknown" | null;
-      settlementMethod?: "cash" | "bank_transfer" | "card" | "check" | "mixed" | "unknown" | null;
+      settlementMethod?: "cash" | "bank_transfer" | "card" | "check" | "paid_by_partner" | "mixed" | "unknown" | null;
       settlementEvidenceSource?:
         | "invoice_document"
         | "receipt_document"

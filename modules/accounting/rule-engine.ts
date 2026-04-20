@@ -1,5 +1,4 @@
 import type {
-  AccountRoleCode,
   AccountingDraftStepSnapshot,
   AccountingContextReasonCode,
   AccountingContextResolution,
@@ -15,6 +14,7 @@ import type {
   ResolvedAccountingRule,
 } from "@/modules/accounting/types";
 import { asNumber, asRecord, asString } from "@/modules/accounting/normalization";
+import { isAccountRoleCode } from "@/modules/accounting/account-roles";
 import { MISSING_FX_RATE_ERROR_CODE } from "@/modules/accounting/fx-policy";
 
 function parseStoredSettlementAllocations(value: unknown) {
@@ -46,29 +46,6 @@ function parseStoredSettlementAllocations(value: unknown) {
       return null;
     })
     .filter((entry): entry is { method: "cash" | "bank_transfer" | "card" | "check"; amount: number } => Boolean(entry));
-}
-
-const accountRoleCodes = new Set<AccountRoleCode>([
-  "revenue_account",
-  "expense_account",
-  "inventory_account",
-  "fixed_asset_account",
-  "output_vat_account",
-  "input_vat_account",
-  "accounts_receivable_account",
-  "accounts_payable_account",
-  "cash_account",
-  "bank_account",
-  "card_clearing_account",
-  "check_clearing_account",
-  "cash_sales_unidentified_account",
-  "cash_purchases_unidentified_account",
-  "bank_fees_account",
-  "fx_difference_account",
-]);
-
-function isAccountRoleCode(value: string): value is AccountRoleCode {
-  return accountRoleCodes.has(value as AccountRoleCode);
 }
 
 function parseStoredManualRoleOverrides(value: unknown) {
@@ -309,6 +286,7 @@ export function resolveAccountingContext(input: {
         || stored.settlementMethod === "bank_transfer"
         || stored.settlementMethod === "card"
         || stored.settlementMethod === "check"
+        || stored.settlementMethod === "paid_by_partner"
         || stored.settlementMethod === "mixed"
           ? stored.settlementMethod
           : "unknown",
@@ -449,6 +427,7 @@ export function resolveAccountingContext(input: {
       || stored.settlementMethod === "bank_transfer"
       || stored.settlementMethod === "card"
       || stored.settlementMethod === "check"
+      || stored.settlementMethod === "paid_by_partner"
       || stored.settlementMethod === "mixed"
         ? stored.settlementMethod
         : "unknown",

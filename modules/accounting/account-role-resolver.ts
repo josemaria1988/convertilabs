@@ -1,4 +1,5 @@
 import { normalizeTextToken } from "@/modules/accounting/normalization";
+import { getEquivalentBindingRoleCodes } from "@/modules/accounting/account-roles";
 import type {
   AccountRoleBindingRecord,
   AccountRoleCode,
@@ -34,6 +35,27 @@ const systemRoleAliases: Record<AccountRoleCode, string[]> = {
   cash_purchases_unidentified_account: ["cash_purchases_unidentified_account"],
   bank_fees_account: ["bank_fees_account"],
   fx_difference_account: ["fx_difference_account"],
+  purchase_expense_default: ["purchase_expense_default", "expense_account"],
+  purchase_inventory: ["purchase_inventory", "inventory_account"],
+  purchase_fixed_asset: ["purchase_fixed_asset", "fixed_asset_account"],
+  vat_purchase_basic: ["vat_purchase_basic", "input_vat_account", "vat_input_creditable"],
+  vat_purchase_minimum: ["vat_purchase_minimum", "input_vat_account", "vat_input_creditable"],
+  vat_purchase_other: ["vat_purchase_other", "input_vat_account", "vat_input_creditable"],
+  accounts_payable: ["accounts_payable", "accounts_payable_account"],
+  partner_reimbursement_payable: ["partner_reimbursement_payable", "partner_reimbursement"],
+  cash_uyu: ["cash_uyu", "cash_account"],
+  cash_usd: ["cash_usd", "cash_account"],
+  bank_uyu: ["bank_uyu", "bank_account"],
+  bank_usd: ["bank_usd", "bank_account"],
+  accounts_receivable: ["accounts_receivable", "accounts_receivable_account"],
+  sales_local: ["sales_local", "revenue_account"],
+  sales_export: ["sales_export", "revenue_account"],
+  vat_sales_basic: ["vat_sales_basic", "output_vat_account", "vat_output_payable"],
+  vat_sales_minimum: ["vat_sales_minimum", "output_vat_account", "vat_output_payable"],
+  vat_sales_other: ["vat_sales_other", "output_vat_account", "vat_output_payable"],
+  withholding_payable: ["withholding_payable"],
+  fx_gain: ["fx_gain", "fx_difference_account"],
+  fx_loss: ["fx_loss", "fx_difference_account"],
 };
 
 function isProvisionalAccount(account: PostableAccountRecord | null | undefined) {
@@ -79,10 +101,11 @@ function findAccountByBinding(input: {
   settlementMethod?: SettlementMethod | null;
 }) {
   const currencyCode = input.currencyCode?.trim().toUpperCase() ?? null;
+  const roleCodes = getEquivalentBindingRoleCodes(input.roleCode);
   const candidates = input.bindings
     .filter((binding) =>
       binding.is_active
-      && binding.role_code === input.roleCode
+      && roleCodes.includes(binding.role_code)
       && (binding.document_role === null || binding.document_role === input.documentRole)
       && (
         binding.currency_code === null
@@ -138,13 +161,70 @@ function findAccountByHeuristic(
   roleCode: AccountRoleCode,
 ) {
   switch (roleCode) {
+    case "purchase_expense_default":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["gasto", "gastos", "administrativo", "servicio"], ["expense"]),
+      ) ?? null;
+    case "purchase_inventory":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["mercaderia", "mercaderias", "inventario", "stock"], ["inventory"]),
+      ) ?? null;
+    case "purchase_fixed_asset":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["activo fijo", "bienes de uso", "maquinaria"], ["fixed_asset"]),
+      ) ?? null;
+    case "vat_purchase_basic":
+    case "vat_purchase_minimum":
+    case "vat_purchase_other":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["iva compras", "credito fiscal"], ["vat_input_creditable"]),
+      ) ?? null;
+    case "vat_sales_basic":
+    case "vat_sales_minimum":
+    case "vat_sales_other":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["iva ventas", "debito fiscal"], ["vat_output_payable"]),
+      ) ?? null;
+    case "accounts_payable":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["proveedores", "acreedores"], ["accounts_payable"]),
+      ) ?? null;
+    case "partner_reimbursement_payable":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["socio", "reintegrar", "reintegro", "anticipo"], ["partner_reimbursement"]),
+      ) ?? null;
+    case "accounts_receivable":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["clientes", "deudores"], ["accounts_receivable"]),
+      ) ?? null;
+    case "sales_local":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["ventas plaza", "ventas locales", "ventas gravadas"], ["sales_local"]),
+      ) ?? null;
+    case "sales_export":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["exportacion", "exportaciones", "exterior"], ["sales_export"]),
+      ) ?? null;
+    case "cash_uyu":
+    case "cash_usd":
     case "cash_account":
       return accounts.find((account) =>
         matchesHeuristic(account, ["caja", "cash"], ["cash_uyu", "cash"]),
       ) ?? null;
+    case "bank_uyu":
+    case "bank_usd":
     case "bank_account":
       return accounts.find((account) =>
         matchesHeuristic(account, ["banco", "bank"], ["bank_uyu", "bank_usd", "bank"]),
+      ) ?? null;
+    case "withholding_payable":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["retencion", "retenciones"], ["withholding_payable"]),
+      ) ?? null;
+    case "fx_gain":
+    case "fx_loss":
+      return accounts.find((account) =>
+        matchesHeuristic(account, ["diferencia de cambio", "resultado cambio"], ["fx_difference"]),
       ) ?? null;
     case "card_clearing_account":
       return accounts.find((account) =>

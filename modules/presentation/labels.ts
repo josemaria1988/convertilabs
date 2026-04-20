@@ -168,6 +168,8 @@ export function formatSettlementMethodLabel(value: string | null | undefined) {
       return "Tarjeta";
     case "check":
       return "Cheque";
+    case "paid_by_partner":
+      return "Pagado con dinero personal / a reintegrar";
     case "mixed":
       return "Mixto";
     case "unknown":
@@ -229,6 +231,30 @@ export function formatPostingTemplateCodeLabel(value: string | null | undefined)
       return "Compra local contado";
     case "purchase_local_credit":
       return "Compra local a credito";
+    case "purchase_expense_credit.v1":
+      return "Compra gasto operativo credito";
+    case "purchase_expense_paid_by_partner.v1":
+      return "Compra pagada con dinero personal / a reintegrar";
+    case "purchase_expense_cash_uyu.v1":
+      return "Compra gasto operativo contado caja";
+    case "purchase_expense_bank_uyu.v1":
+      return "Compra gasto operativo contado banco";
+    case "purchase_fixed_asset_credit.v1":
+      return "Compra activo fijo credito";
+    case "purchase_inventory_credit.v1":
+      return "Compra mercaderia / stock credito";
+    case "sale_local_credit.v1":
+      return "Venta plaza credito";
+    case "sale_local_cash_uyu.v1":
+      return "Venta plaza contado caja";
+    case "sale_local_bank_uyu.v1":
+      return "Venta plaza contado banco";
+    case "sale_export_credit.v1":
+      return "Venta exportacion credito";
+    case "supplier_credit_note.v1":
+      return "Nota de credito proveedor";
+    case "customer_credit_note.v1":
+      return "Nota de credito cliente";
     case "sale_credit_note":
       return "Nota de credito de venta";
     case "purchase_credit_note":
@@ -288,6 +314,48 @@ export function formatAccountRoleCodeLabel(value: string | null | undefined) {
       return "Cuenta de comisiones o gastos bancarios";
     case "fx_difference_account":
       return "Cuenta de diferencias de cambio";
+    case "purchase_expense_default":
+      return "Gasto operativo default";
+    case "purchase_inventory":
+      return "Mercaderias / stock";
+    case "purchase_fixed_asset":
+      return "Activo fijo";
+    case "vat_purchase_basic":
+      return "IVA compras basica";
+    case "vat_purchase_minimum":
+      return "IVA compras minima";
+    case "vat_purchase_other":
+      return "IVA compras otras tasas";
+    case "accounts_payable":
+      return "Proveedores";
+    case "partner_reimbursement_payable":
+      return "Cuenta a reintegrar a socio";
+    case "cash_uyu":
+      return "Caja pesos";
+    case "cash_usd":
+      return "Caja dolares";
+    case "bank_uyu":
+      return "Banco pesos";
+    case "bank_usd":
+      return "Banco dolares";
+    case "accounts_receivable":
+      return "Clientes / deudores por ventas";
+    case "sales_local":
+      return "Ventas plaza";
+    case "sales_export":
+      return "Ventas exportacion";
+    case "vat_sales_basic":
+      return "IVA ventas basica";
+    case "vat_sales_minimum":
+      return "IVA ventas minima";
+    case "vat_sales_other":
+      return "IVA ventas otras tasas";
+    case "withholding_payable":
+      return "Retenciones a pagar";
+    case "fx_gain":
+      return "Diferencia de cambio ganancia";
+    case "fx_loss":
+      return "Diferencia de cambio perdida";
     default:
       return value ? value.replace(/_/g, " ") : "Sin rol";
   }

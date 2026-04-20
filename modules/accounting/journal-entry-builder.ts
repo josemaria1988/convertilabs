@@ -57,6 +57,8 @@ function resolveSettlementRole(method: SettlementMethod, documentRole: DocumentR
       return "card_clearing_account" satisfies AccountRoleCode;
     case "check":
       return "check_clearing_account" satisfies AccountRoleCode;
+    case "paid_by_partner":
+      return "partner_reimbursement_payable" satisfies AccountRoleCode;
     case "unknown":
       return documentRole === "sale"
         ? "cash_sales_unidentified_account"
@@ -208,7 +210,16 @@ function resolveRoleLinePurpose(input: {
     return "main";
   }
 
-  if (input.roleCode === "input_vat_account" || input.roleCode === "output_vat_account") {
+  if (
+    input.roleCode === "input_vat_account"
+    || input.roleCode === "output_vat_account"
+    || input.roleCode === "vat_purchase_basic"
+    || input.roleCode === "vat_purchase_minimum"
+    || input.roleCode === "vat_purchase_other"
+    || input.roleCode === "vat_sales_basic"
+    || input.roleCode === "vat_sales_minimum"
+    || input.roleCode === "vat_sales_other"
+  ) {
     return "tax";
   }
 
@@ -228,6 +239,10 @@ function resolveRoleLinePurpose(input: {
 
   if (input.settlementContext.operationKind === "card_settlement") {
     return input.roleCode === "card_clearing_account" ? "counterparty" : "settlement";
+  }
+
+  if (input.roleCode === "partner_reimbursement_payable") {
+    return "counterparty";
   }
 
   return "settlement";

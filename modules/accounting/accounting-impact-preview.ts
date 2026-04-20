@@ -86,6 +86,41 @@ function formatMissingRoleMessage(roleCode: AccountRoleCode) {
       return "Falta resolver la cuenta de comisiones o gastos bancarios.";
     case "fx_difference_account":
       return "Falta resolver la cuenta de diferencias de cambio.";
+    case "purchase_expense_default":
+      return "Falta mapear el gasto operativo default.";
+    case "purchase_inventory":
+      return "Falta mapear la cuenta de mercaderias / stock.";
+    case "purchase_fixed_asset":
+      return "Falta mapear la cuenta de activo fijo.";
+    case "vat_purchase_basic":
+    case "vat_purchase_minimum":
+    case "vat_purchase_other":
+      return "Falta resolver la cuenta de IVA compras.";
+    case "accounts_payable":
+      return "Falta resolver la cuenta de proveedores.";
+    case "partner_reimbursement_payable":
+      return "Falta mapear la cuenta a reintegrar a socio.";
+    case "cash_uyu":
+    case "cash_usd":
+      return "Falta resolver la cuenta de caja para el cobro o pago.";
+    case "bank_uyu":
+    case "bank_usd":
+      return "Falta resolver la cuenta bancaria para el cobro o pago.";
+    case "accounts_receivable":
+      return "Falta resolver la cuenta de clientes.";
+    case "sales_local":
+      return "Falta mapear la cuenta de ventas plaza.";
+    case "sales_export":
+      return "Falta mapear la cuenta de ventas exportacion.";
+    case "vat_sales_basic":
+    case "vat_sales_minimum":
+    case "vat_sales_other":
+      return "Falta resolver la cuenta de IVA ventas.";
+    case "withholding_payable":
+      return "Falta resolver la cuenta de retenciones a pagar.";
+    case "fx_gain":
+    case "fx_loss":
+      return "Falta resolver la cuenta de diferencias de cambio.";
     default:
       return `Falta resolver ${formatAccountRoleCodeLabel(roleCode).toLowerCase()}.`;
   }
