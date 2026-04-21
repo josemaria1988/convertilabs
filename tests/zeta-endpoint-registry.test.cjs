@@ -82,5 +82,14 @@ test("Zeta endpoint registry includes the PR-01 required domains", () => {
   assert.equal(zetaEndpointRegistry.referencesQuery.endpointName, "RESTReferenciasV1Query");
   assert.equal(zetaEndpointRegistry.rutNumbersQuery.endpointName, "RESTRUTV1Query");
   assert.equal(zetaEndpointRegistry.currencyRatesQuery.endpointName, "RESTMonedasCotizacionesV1Query");
+  assert.equal(zetaEndpointRegistry.paymentTermsQuery.endpointName, "RESTCondicionesPagoV1Query");
+  assert.equal(zetaEndpointRegistry.paymentMethodsQuery.endpointName, "RESTFormasPagoV1Query");
+  assert.equal(zetaEndpointRegistry.cashboxesQuery.endpointName, "RESTCajasV1Query");
+  assert.equal(zetaEndpointRegistry.facturaProveedorAgregar.endpointName, "RESTFacturaProveedorV1Agregar");
+  assert.equal(zetaEndpointRegistry.facturaProveedorQueryCompras.inputWrapper, "QueryComprasIn");
+  assert.equal(zetaEndpointRegistry.facturaProveedorCompras.endpointName, "RESTFacturaProveedorV1Compras");
+  assert.equal(zetaEndpointRegistry.facturaProveedorComprasDetalladas.endpointName, "RESTFacturaProveedorV1ComprasDetalladas");
+  assert.equal(zetaEndpointRegistry.facturaProveedorQuerySaldosPendientes.endpointName, "RESTFacturaProveedorV1QuerySaldosPendientes");
+  assert.equal(zetaEndpointRegistry.asientoLista.endpointName, "RESTAsientoV1Lista");
   assert.equal(zetaEndpointRegistry.bandejaJournalEntrySave.outputWrapper, "SaveOut");
 });

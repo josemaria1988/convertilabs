@@ -447,6 +447,7 @@ export default async function OrganizationSettingsPage({
                   syncAction={runOrganizationZetaSyncAction}
                   roleMap={settings.zetaAccountRoleMap}
                   roleMapAction={upsertOrganizationZetaAccountRoleMappingAction}
+                  purchaseExpenseReadiness={settings.zetaPurchaseExpenseReadiness}
                 />
                 <ZetaSoftwareRunHistory runs={settings.zetaSyncRuns} />
               </div>

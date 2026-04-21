@@ -59,6 +59,10 @@ import {
 } from "@/modules/accounting/step5-schema-compat";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 import {
+  resolveZetaPurchaseExpenseInvoiceForDocument,
+} from "@/modules/integrations/zeta/export/export-purchase-expense-invoice";
+import type { ZetaPurchaseInvoiceExportResult } from "@/modules/integrations/zeta/export/types";
+import {
   type DeterministicRuleRef,
   type OrganizationFiscalProfile,
   type OrganizationRuleSnapshotContext,
@@ -473,6 +477,7 @@ export type DocumentReviewPageData = {
   latestClassificationRun: Awaited<ReturnType<typeof loadLatestDocumentAssignmentRun>>;
   ruleExplanation: ReturnType<typeof buildRuleApplicationExplanation>;
   accountingImpactPreview: ReturnType<typeof buildAccountingImpactPreview>;
+  zetaPurchaseExpenseExport: ZetaPurchaseInvoiceExportResult | null;
   certaintySummary: {
     level: "green" | "yellow" | "red";
     confidence: number | null;
@@ -1106,11 +1111,30 @@ async function buildPreviewUrl(document: DocumentRow) {
     .createSignedUrl(document.storage_path, 60 * 10);
 
   if (error) {
+    if (isStorageObjectNotFoundError(error)) {
+      return null;
+    }
+
     console.error("No se pudo crear signed URL para preview documental.", error);
     return null;
   }
 
   return data.signedUrl;
+}
+
+function isStorageObjectNotFoundError(error: unknown) {
+  const record = asRecord(error);
+  const message = asString(record.message)?.toLowerCase() ?? "";
+  const code = asString(record.code)?.toLowerCase() ?? "";
+  const errorCode = asString(record.error)?.toLowerCase() ?? "";
+  const statusCode = String(record.statusCode ?? record.status ?? "");
+
+  return (
+    statusCode === "404"
+    || code === "not_found"
+    || errorCode === "not_found"
+    || message.includes("object not found")
+  );
 }
 
 async function buildDocumentViewModel(
@@ -2989,6 +3013,48 @@ export async function loadDocumentOriginalPageData(input: {
   } satisfies DocumentOriginalPageData;
 }
 
+function buildUnavailableZetaPurchaseExport(input: {
+  documentId: string;
+  facts: DocumentIntakeFactMap;
+  message: string;
+}): ZetaPurchaseInvoiceExportResult {
+  return {
+    documentId: input.documentId,
+    exportable: false,
+    mode: "blocked",
+    status: "not_ready",
+    blockers: [{
+      code: "zeta_purchase_expense_not_ready",
+      message: input.message,
+    }],
+    warnings: [],
+    payload: null,
+    preview: {
+      supplierName: input.facts.issuer_name,
+      supplierRut: input.facts.issuer_tax_id,
+      zetaSupplierCode: null,
+      comprobanteCode: null,
+      comprobanteName: null,
+      fecha: input.facts.document_date,
+      serie: input.facts.series,
+      numero: typeof input.facts.document_number === "string"
+        ? Number.parseInt(input.facts.document_number.replace(/\D+/g, ""), 10) || null
+        : null,
+      monedaCode: null,
+      cotizacion: null,
+      conditionCode: null,
+      paymentMethodCode: null,
+      purchaseKind: "unknown",
+      lines: [],
+      paidByPartnerMessage: null,
+    },
+    fiscalFingerprint: null,
+    dryRun: true,
+    duplicate: null,
+    attemptRawRecordId: null,
+  };
+}
+
 export async function loadDocumentReviewPageData(input: {
   organizationId: string;
   organizationSlug: string;
@@ -3156,6 +3222,20 @@ export async function loadDocumentReviewPageData(input: {
     documentDate: facts.document_date ?? document.document_date,
     duplicateStatus: invoiceIdentity.duplicateStatus,
   });
+  const zetaPurchaseExpenseExport = draft.document_role === "purchase"
+    ? await resolveZetaPurchaseExpenseInvoiceForDocument({
+      organizationId: input.organizationId,
+      documentId: document.id,
+      actorProfileId: input.actorId ?? "system",
+    }, { supabase }).catch((error) =>
+      buildUnavailableZetaPurchaseExport({
+        documentId: document.id,
+        facts,
+        message: error instanceof Error
+          ? error.message
+          : "No se pudo validar la exportacion de gastos a Zeta.",
+      }))
+    : null;
 
   return {
     organizationId: input.organizationId,
@@ -3246,6 +3326,7 @@ export async function loadDocumentReviewPageData(input: {
     latestClassificationRun,
     ruleExplanation,
     accountingImpactPreview,
+    zetaPurchaseExpenseExport,
     certaintySummary,
     assistantRail,
     decisionLogs: decisionLogs.map((log) => ({

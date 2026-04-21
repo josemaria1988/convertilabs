@@ -11,7 +11,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createSupabaseStub(seedTables) {
+function createSupabaseStub(seedTables, options = {}) {
   const tables = Object.fromEntries(
     Object.entries(seedTables).map(([table, rows]) => [table, clone(rows)]),
   );
@@ -142,12 +142,13 @@ function createSupabaseStub(seedTables) {
     storage: {
       from() {
         return {
-          createSignedUrl: async () => ({
-            data: {
-              signedUrl: "https://example.test/preview",
-            },
-            error: null,
-          }),
+          createSignedUrl: options.createSignedUrl
+            ?? (async () => ({
+              data: {
+                signedUrl: "https://example.test/preview",
+              },
+              error: null,
+            })),
         };
       },
     },
@@ -272,6 +273,47 @@ test("paginated workspace documents sort by document date ascending", async () =
 
     assert.deepEqual(result.items.map((item) => item.id), ["doc-1", "doc-2", "doc-3"]);
   } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+  }
+});
+
+test("workspace documents treat missing storage previews as unavailable without logging error", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const originalConsoleError = console.error;
+  const consoleErrors = [];
+  const supabase = createSupabaseStub(buildSeed(), {
+    createSignedUrl: async () => ({
+      data: null,
+      error: {
+        name: "StorageApiError",
+        message: "Object not found",
+        statusCode: "404",
+      },
+    }),
+  });
+
+  supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+  console.error = (...args) => {
+    consoleErrors.push(args);
+  };
+
+  try {
+    const reviewModule = loadFresh("@/modules/documents/review");
+    const result = await reviewModule.listPaginatedOrganizationWorkspaceDocuments({
+      organizationId: "org-1",
+      organizationSlug: "demo",
+      page: 1,
+      pageSize: 1,
+      directionFilter: "all",
+      sortOrder: "date_desc",
+    });
+
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].previewUrl, null);
+    assert.equal(consoleErrors.length, 0);
+  } finally {
+    console.error = originalConsoleError;
     supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
   }
 });

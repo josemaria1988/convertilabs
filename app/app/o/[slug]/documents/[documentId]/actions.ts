@@ -21,6 +21,7 @@ import {
   saveDraftReview,
   loadDocumentReviewPageData,
 } from "@/modules/documents/review";
+import { exportPurchaseExpenseInvoiceToZeta } from "@/modules/integrations/zeta/export/export-purchase-expense-invoice";
 
 type SaveDraftPayload = Parameters<typeof saveDraftReview>[0]["payload"];
 
@@ -346,6 +347,51 @@ export async function saveDocumentLearningRuleAction(input: {
   revalidatePath(paths.review);
 
   return result;
+}
+
+export async function exportDocumentPurchaseExpenseToZetaAction(input: {
+  slug: string;
+  documentId: string;
+  dryRun?: boolean;
+  forceResend?: boolean;
+}) {
+  const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
+  const role = organization.role;
+
+  if (!["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(role)) {
+    return {
+      ok: false,
+      message: "Tu rol no puede enviar compras a Zeta.",
+      result: null,
+    };
+  }
+
+  const result = await exportPurchaseExpenseInvoiceToZeta({
+    organizationId: organization.id,
+    documentId: input.documentId,
+    actorProfileId: authState.user?.id ?? "system",
+    dryRun: input.dryRun ?? false,
+    forceResend: input.forceResend ?? false,
+  });
+  const paths = buildPaths(input.slug, input.documentId);
+
+  revalidatePath(paths.documents);
+  revalidatePath(paths.review);
+
+  return {
+    ok: result.status !== "zeta_error" && result.status !== "timeout_unknown",
+    message:
+      result.status === "dry_run_ready"
+        ? "Compra lista para enviar a Zeta."
+        : result.status === "success_pending_reconciliation"
+          ? "Compra enviada a Zeta. Queda pendiente reconciliacion."
+          : result.status === "already_exists_in_zeta"
+            ? "Zeta ya tiene una coincidencia fuerte para esta compra."
+            : result.status === "timeout_unknown"
+              ? "Zeta no respondio a tiempo. No se reintenta automaticamente."
+              : result.blockers[0]?.message ?? "Exportacion Zeta validada.",
+    result,
+  };
 }
 
 export async function refreshDocumentAssistantAction(input: {

@@ -1,5 +1,6 @@
 import { SubmitButton } from "@/components/ui/submit-button";
 import type { AccountRoleMapSettings } from "@/modules/accounting/account-role-map-service";
+import type { ZetaPurchaseExpenseExportReadiness } from "@/modules/integrations/zeta/export/readiness";
 
 type ZetaSoftwareSyncPanelProps = {
   slug: string;
@@ -8,6 +9,7 @@ type ZetaSoftwareSyncPanelProps = {
   syncAction: (formData: FormData) => void | Promise<void>;
   roleMap: AccountRoleMapSettings;
   roleMapAction: (formData: FormData) => void | Promise<void>;
+  purchaseExpenseReadiness: ZetaPurchaseExpenseExportReadiness;
 };
 
 export function ZetaSoftwareSyncPanel({
@@ -17,6 +19,7 @@ export function ZetaSoftwareSyncPanel({
   syncAction,
   roleMap,
   roleMapAction,
+  purchaseExpenseReadiness,
 }: ZetaSoftwareSyncPanelProps) {
   const currentPeriod = new Date().toISOString().slice(0, 7);
   const disabled = !isConfigured || !canManage;
@@ -41,7 +44,7 @@ export function ZetaSoftwareSyncPanel({
           <input type="hidden" name="maxPages" value="5" />
           <p className="font-semibold">Maestros</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            Contactos, monedas, IVA, plan, locales, comprobantes, tipos CFE y referencias.
+            Contactos, monedas, IVA, plan, locales, comprobantes, condiciones, formas de pago, cajas, tipos CFE y referencias.
           </p>
           <SubmitButton
             disabled={disabled}
@@ -148,6 +151,50 @@ export function ZetaSoftwareSyncPanel({
             ? "Los documentos estructurados se guardan con trazabilidad de origen y quedan disponibles para IVA cuando pasan los guardrails."
             : "Tu rol puede ver el estado, pero no ejecutar corridas de integracion."}
       </div>
+
+      <section className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(37,46,63,0.76)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-base font-semibold">Exportacion de gastos a Zeta</p>
+            <p className="mt-1 text-sm text-[color:var(--color-muted)]">
+              Facturas de proveedor para compras de gasto. Mercaderia queda pendiente hasta resolver articulos.
+            </p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.14em] ${
+            purchaseExpenseReadiness.status === "ready"
+              ? "badge-dark-success"
+              : "badge-dark-warning"
+          }`}>
+            {purchaseExpenseReadiness.readyCount}/{purchaseExpenseReadiness.totalCount} listo
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {purchaseExpenseReadiness.items.map((item) => (
+            <div
+              key={item.code}
+              className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(17,25,40,0.45)] px-3 py-2 text-sm"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold">{item.label}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] ${
+                  item.ready ? "badge-dark-success" : "badge-dark-warning"
+                }`}>
+                  {item.ready ? "Listo" : "Pendiente"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
+                {item.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 rounded-lg border border-dashed border-[color:var(--color-border)] bg-[rgba(17,25,40,0.35)] px-3 py-2 text-sm text-[color:var(--color-muted)]">
+          <p className="font-semibold text-[color:var(--color-foreground)]">Compras de mercaderia</p>
+          <p className="mt-1">{purchaseExpenseReadiness.merchandiseDetail}</p>
+        </div>
+      </section>
 
       <section className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(37,46,63,0.76)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">

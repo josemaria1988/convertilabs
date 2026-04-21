@@ -17,6 +17,7 @@ import type {
   ManualAccountRoleOverrides,
 } from "@/modules/accounting";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
+import type { ZetaPurchaseInvoiceExportResult } from "@/modules/integrations/zeta/export/types";
 import {
   formatAccountRoleCodeLabel,
   formatPostingTemplateCodeLabel,
@@ -75,6 +76,15 @@ type SaveLearningRuleAction = (input: {
   ruleId: string | null;
 }>;
 
+type ExportPurchaseExpenseToZetaAction = (input: {
+  dryRun?: boolean;
+  forceResend?: boolean;
+}) => Promise<{
+  ok: boolean;
+  message: string;
+  result: ZetaPurchaseInvoiceExportResult | null;
+}>;
+
 type ReviewAccountOption = DocumentReviewPageData["accountingOptions"]["accounts"][number];
 type CreateReviewAccountAction = (input: {
   code: string;
@@ -93,11 +103,12 @@ type Props = {
   confirmManualAssignmentAction: ConfirmManualAssignmentAction;
   createReviewAccountAction: CreateReviewAccountAction;
   saveLearningRuleAction: SaveLearningRuleAction;
+  exportPurchaseExpenseToZetaAction: ExportPurchaseExpenseToZetaAction;
 };
 
 type ReviewManualRoleOverrides = Partial<Record<AccountRoleCode, string>>;
 type LearningScope = ApprovalLearningInput["scope"];
-type PendingAction = "draft" | "confirm_accounts" | "save_rule" | null;
+type PendingAction = "draft" | "confirm_accounts" | "save_rule" | "zeta_validate" | "zeta_export" | null;
 type PendingInlineAction = "create_account" | null;
 type FeedbackTone = "neutral" | "success" | "danger";
 type RuleToggleKey = "issuer" | "receiver" | "concept";
@@ -315,6 +326,41 @@ function formatConfidence(value: number | null | undefined) {
     : "sin score";
 }
 
+function formatZetaExportStatus(value: ZetaPurchaseInvoiceExportResult["status"]) {
+  switch (value) {
+    case "dry_run_ready":
+      return "Listo para enviar";
+    case "blocked":
+      return "Bloqueado";
+    case "not_ready":
+      return "No listo";
+    case "success_pending_reconciliation":
+      return "Enviado";
+    case "found_in_zeta":
+      return "Encontrado en Zeta";
+    case "already_exists_in_zeta":
+      return "Ya existe en Zeta";
+    case "amount_mismatch":
+      return "Importes no cierran";
+    case "timeout_unknown":
+      return "Timeout sin certeza";
+    case "zeta_error":
+      return "Error Zeta";
+    case "sent":
+      return "Enviado";
+    default:
+      return "Estado Zeta";
+  }
+}
+
+function zetaStatusTone(value: ZetaPurchaseInvoiceExportResult["status"]) {
+  return value === "dry_run_ready" || value === "success_pending_reconciliation" || value === "found_in_zeta"
+    ? "success"
+    : value === "not_ready" || value === "blocked" || value === "timeout_unknown" || value === "zeta_error"
+      ? "warning"
+      : "neutral";
+}
+
 function getInvoiceCode(pageData: DocumentReviewPageData) {
   const number = pageData.draft.facts.document_number?.trim();
   const series = pageData.draft.facts.series?.trim();
@@ -346,6 +392,7 @@ export function DocumentReviewRuleWorkspace({
   confirmManualAssignmentAction,
   createReviewAccountAction,
   saveLearningRuleAction,
+  exportPurchaseExpenseToZetaAction,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -468,6 +515,7 @@ export function DocumentReviewRuleWorkspace({
     || pageData.learningSuggestions.suggestedConceptName
     || pageData.derived.conceptResolution.primaryConceptLabels[0]
     || "Concepto detectado";
+  const zetaExport = pageData.zetaPurchaseExpenseExport;
   const roleRows = useMemo(() =>
     pageData.accountRoleAssignments.map((assignment, index) => {
       const overrideAccountId = manualRoleOverrides[assignment.roleCode]?.trim() || "";
@@ -804,6 +852,31 @@ export function DocumentReviewRuleWorkspace({
     });
   }
 
+  function handleZetaExport(dryRun: boolean) {
+    setPendingAction(dryRun ? "zeta_validate" : "zeta_export");
+    startTransition(async () => {
+      try {
+        const result = await exportPurchaseExpenseToZetaAction({ dryRun });
+
+        setFeedback({
+          tone: result.ok ? "success" : "danger",
+          text: result.message,
+        });
+
+        router.refresh();
+      } catch (error) {
+        setFeedback({
+          tone: "danger",
+          text: error instanceof Error
+            ? error.message
+            : "No pudimos procesar la exportacion a Zeta.",
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
   function handleCreatePrimaryAccount() {
     if (!primaryRoleRow) {
       setFeedback({
@@ -858,7 +931,7 @@ export function DocumentReviewRuleWorkspace({
           payload: buildAccountingContextPayload(nextManualRoleOverrides),
         });
         const message = saved.ok
-          ? `Cuenta ${created.account.code} creada y aplicada al asiento.`
+          ? `Cuenta ${created.account.code} creada y aplicada a la resolucion.`
           : buildBlockingMessage(saved.blockers);
         setFeedback({
           tone: saved.ok ? "success" : "danger",
@@ -1013,7 +1086,7 @@ export function DocumentReviewRuleWorkspace({
 
         <section className="review-rule-main">
           <div className="review-rule-mainbar">
-            Analisis de IA y Creacion de Asiento / Regla
+            Analisis de IA y decision contable / regla
           </div>
 
           <div className="review-rule-main-title">
@@ -1029,7 +1102,7 @@ export function DocumentReviewRuleWorkspace({
             <section className="review-rule-card">
               <div className="review-rule-card__header review-rule-card__header--stack">
                 <div>
-                  <h2>Crear Asiento Contable</h2>
+                  <h2>Resolver impacto contable</h2>
                   <p>Cuenta sugerida, IVA y contrapartida en una sola vista.</p>
                 </div>
               </div>
@@ -1161,7 +1234,7 @@ export function DocumentReviewRuleWorkspace({
                     </label>
                   </div>
                   <p className="review-rule-search__hint">
-                    La cuenta se crea como postable y queda asignada a este asiento.
+                    La cuenta se crea como postable y queda asignada a esta resolucion.
                   </p>
                   <div className="review-rule-inline-actions">
                     <button
@@ -1267,7 +1340,7 @@ export function DocumentReviewRuleWorkspace({
                   className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
                 >
                   {pendingAction === "confirm_accounts" && isPending ? <InlineSpinner /> : null}
-                  Confirmar Asiento Contable
+                  Confirmar asignacion contable
                 </button>
                 <button
                   type="button"
@@ -1403,6 +1476,148 @@ export function DocumentReviewRuleWorkspace({
               </div>
             </section>
           </div>
+
+          {zetaExport ? (
+            <section className="review-rule-card">
+              <div className="review-rule-card__header review-rule-card__header--stack">
+                <div>
+                  <h2>Enviar gasto a Zeta</h2>
+                  <p>Factura de proveedor operativa, no asiento manual.</p>
+                </div>
+                <span
+                  className="review-rule-chip"
+                  data-tone={zetaStatusTone(zetaExport.status)}
+                >
+                  {formatZetaExportStatus(zetaExport.status)}
+                </span>
+              </div>
+
+              {zetaExport.preview.purchaseKind === "merchandise" ? (
+                <div className="review-rule-note">
+                  <p className="review-rule-note__label">Mercaderia</p>
+                  <p className="review-rule-note__text">
+                    Esta factura parece ser una compra de mercaderia. Para exportarla a Zeta se requiere resolver articulos de stock. Esta fase todavia no exporta mercaderia.
+                  </p>
+                </div>
+              ) : null}
+
+              {zetaExport.preview.paidByPartnerMessage ? (
+                <div className="review-rule-note">
+                  <p className="review-rule-note__label">Pago por socio</p>
+                  <p className="review-rule-note__text">{zetaExport.preview.paidByPartnerMessage}</p>
+                </div>
+              ) : null}
+
+              <div className="review-rule-fact-list">
+                <div className="review-rule-fact">
+                  <span>Proveedor Zeta</span>
+                  <strong>
+                    {zetaExport.preview.zetaSupplierCode
+                      ? `${zetaExport.preview.zetaSupplierCode} - ${zetaExport.preview.supplierName ?? "Sin nombre"}`
+                      : "Pendiente"}
+                  </strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>RUT</span>
+                  <strong>{zetaExport.preview.supplierRut ?? "Sin dato"}</strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Comprobante Zeta</span>
+                  <strong>
+                    {zetaExport.preview.comprobanteCode
+                      ? `${zetaExport.preview.comprobanteCode} - ${zetaExport.preview.comprobanteName ?? "Comprobante"}`
+                      : "Pendiente"}
+                  </strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Serie / Numero</span>
+                  <strong>{zetaExport.preview.serie ?? "-"} / {zetaExport.preview.numero ?? "-"}</strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Fecha</span>
+                  <strong>{zetaExport.preview.fecha ?? "Pendiente"}</strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Moneda / Cotizacion</span>
+                  <strong>
+                    {zetaExport.preview.monedaCode ?? "Pendiente"}
+                    {" / "}
+                    {zetaExport.preview.cotizacion ?? "N/A"}
+                  </strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Condicion</span>
+                  <strong>{zetaExport.preview.conditionCode ?? "Pendiente"}</strong>
+                </div>
+                <div className="review-rule-fact">
+                  <span>Forma de pago</span>
+                  <strong>{zetaExport.preview.paymentMethodCode ?? "No aplica"}</strong>
+                </div>
+              </div>
+
+              <div className="review-rule-table">
+                <div className="review-rule-table__head">
+                  <span>Concepto Zeta</span>
+                  <span>IVA</span>
+                  <span>Neto</span>
+                  <span>Total</span>
+                  <span>Detalle</span>
+                </div>
+                <div className="review-rule-table__body">
+                  {zetaExport.preview.lines.length > 0 ? zetaExport.preview.lines.map((line, index) => (
+                    <div key={`${line.conceptCode}-${line.ivaCode}-${index}`} className="review-rule-table__row">
+                      <div className="review-rule-role">
+                        <span className="review-rule-role__label">
+                          {line.conceptCode ?? "Pendiente"}
+                        </span>
+                        <span>{line.conceptName ?? "Concepto de gasto"}</span>
+                      </div>
+                      <div className="review-rule-table__side">{line.ivaCode ?? "-"}</div>
+                      <div className="review-rule-table__amount">{formatMoney(line.netAmount, currencyCode)}</div>
+                      <div className="review-rule-table__amount">{formatMoney(line.totalAmount, currencyCode)}</div>
+                      <div className="review-rule-table__note">{line.description}</div>
+                    </div>
+                  )) : (
+                    <div className="review-rule-search-empty">
+                      Todavia no hay lineas listas para enviar a Zeta.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {zetaExport.blockers.length > 0 ? (
+                <div className="review-rule-note">
+                  <p className="review-rule-note__label">Blockers</p>
+                  <ul className="review-rule-note__text">
+                    {zetaExport.blockers.map((blocker) => (
+                      <li key={`${blocker.code}-${blocker.field ?? "general"}`}>{blocker.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="review-rule-actions review-rule-actions--compact">
+                <button
+                  type="button"
+                  onClick={() => handleZetaExport(true)}
+                  disabled={isPending}
+                  className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} review-rule-action-button`}
+                >
+                  {pendingAction === "zeta_validate" && isPending ? <InlineSpinner /> : null}
+                  Validar para Zeta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleZetaExport(false)}
+                  disabled={!zetaExport.exportable || isPending}
+                  className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
+                >
+                  {pendingAction === "zeta_export" && isPending ? <InlineSpinner /> : null}
+                  Enviar gasto a Zeta
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           {feedback.text ? (
             <div className="review-rule-feedback" data-tone={feedback.tone}>

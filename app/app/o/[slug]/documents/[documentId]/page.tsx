@@ -18,6 +18,7 @@ import { buildOrganizationPrivateNavItems } from "@/modules/organizations/privat
 import {
   confirmDocumentManualAssignmentAction,
   createDocumentReviewOverrideAccountAction,
+  exportDocumentPurchaseExpenseToZetaAction,
   saveDocumentDraftReviewAction,
   saveDocumentLearningRuleAction,
 } from "./actions";
@@ -189,6 +190,14 @@ export default async function DocumentReviewPage({
         saveLearningRuleAction={async (payload) => {
           "use server";
           return saveDocumentLearningRuleAction({
+            slug,
+            documentId,
+            ...payload,
+          });
+        }}
+        exportPurchaseExpenseToZetaAction={async (payload) => {
+          "use server";
+          return exportDocumentPurchaseExpenseToZetaAction({
             slug,
             documentId,
             ...payload,

@@ -197,6 +197,95 @@ export const zetaEndpointRegistry = {
       IsLastPage: true,
     },
   },
+  paymentTermsQuery: {
+    endpointName: "RESTCondicionesPagoV1Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.masters.payment_terms",
+    description: "Payment term catalog required for supplier invoice exports.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          CodigoDesde: "",
+          CodigoHasta: "",
+          NombreContiene: "",
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          Codigo: "",
+          Nombre: "",
+          Activo: "",
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
+  paymentMethodsQuery: {
+    endpointName: "RESTFormasPagoV1Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.masters.payment_methods",
+    description: "Payment method catalog required for cash/partner-paid supplier invoice exports.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          CodigoDesde: 0,
+          CodigoHasta: 0,
+          NombreContiene: "",
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          Codigo: 0,
+          Nombre: "",
+          Activo: "",
+          RequiereCaja: "",
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
+  cashboxesQuery: {
+    endpointName: "RESTCajasV1Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.masters.cashboxes",
+    description: "Cashbox catalog used only when a Zeta comprobante/payment method requires caja.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          CodigoDesde: 0,
+          CodigoHasta: 0,
+          NombreContiene: "",
+          Activo: "",
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          Codigo: 0,
+          Nombre: "",
+          Activo: "",
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
   currencyRatesQuery: {
     endpointName: "RESTMonedasCotizacionesV1Query",
     httpMethod: "POST",
@@ -1011,6 +1100,228 @@ export const zetaEndpointRegistry = {
             },
           ],
         },
+      },
+    },
+  },
+  facturaProveedorAgregar: {
+    endpointName: "RESTFacturaProveedorV1Agregar",
+    httpMethod: "POST",
+    inputWrapper: "AgregarIn",
+    outputWrapper: "AgregarOut",
+    kind: "save",
+    stream: "zeta.outbound.purchase_supplier_invoices",
+    description: "Create supplier invoice/comprobante movements in Zeta. Main outbound path for expense purchases.",
+    requestShape: {
+      Data: {
+        Movimiento: [
+          {
+            CodigoComprobante: 0,
+            Serie: "",
+            Numero: 0,
+            Fecha: "",
+            CodigoMoneda: 0,
+            Cotizacion: 0,
+            CodigoProveedor: "",
+            CodigoCondicionPago: "",
+            CodigoLocal: 0,
+            CodigoUsuario: 0,
+            CodigoCaja: 0,
+            Lineas: [
+              {
+                CodigoArticulo: "",
+                Concepto: "",
+                Cantidad: 1,
+                PrecioUnitario: 0,
+                Descuento1: 0,
+                Descuento2: 0,
+                Descuento3: 0,
+                CodigoIVA: 0,
+                Notas: "",
+              },
+            ],
+            FormasPago: [
+              {
+                CodigoFormaPago: 0,
+                CodigoMonedaPago: 0,
+                MontoMonedaPago: 0,
+                MontoMonedaMovimiento: 0,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    responseShape: {
+      Response: {
+        Succeed: true,
+        Mensaje: "",
+      },
+      Error: null,
+    },
+  },
+  facturaProveedorQueryCompras: {
+    endpointName: "RESTFacturaProveedorV1QueryCompras",
+    httpMethod: "POST",
+    inputWrapper: "QueryComprasIn",
+    outputWrapper: "QueryComprasOut",
+    kind: "query",
+    stream: "zeta.documents.purchase_invoices",
+    description: "Supplier invoice summary query used for duplicate preflight and reconciliation.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          Mes: 0,
+          Anio: 0,
+          FechaDesde: "",
+          FechaHasta: "",
+          ProveedorCodigo: "",
+          ComprobanteCodigo: 0,
+          MonedaCodigo: 0,
+          LocalCodigo: 0,
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          RegistroId: 0,
+          Fecha: "",
+          ComprobanteCodigo: 0,
+          ComprobanteNombre: "",
+          ComprobanteTipo: 0,
+          ComprobanteTipoNombre: "",
+          EsGasto: "",
+          Serie: "",
+          Numero: 0,
+          ProveedorCodigo: "",
+          ProveedorNombre: "",
+          MonedaCodigo: 0,
+          Total: 0,
+          Saldo: 0,
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
+  facturaProveedorCompras: {
+    endpointName: "RESTFacturaProveedorV1Compras",
+    httpMethod: "POST",
+    inputWrapper: "ComprasIn",
+    outputWrapper: "ComprasOut",
+    kind: "query",
+    stream: "zeta.documents.purchase_invoices",
+    description: "Supplier purchase movements query for purchase-side reconciliation.",
+    requestShape: {
+      Data: {
+        ProveedorCodigo: "",
+        Mes: 0,
+        Anio: 0,
+        FechaDesde: "",
+        FechaHasta: "",
+      },
+    },
+    responseShape: {
+      Response: {
+        ListaMovimientos: [],
+      },
+    },
+  },
+  facturaProveedorComprasDetalladas: {
+    endpointName: "RESTFacturaProveedorV1ComprasDetalladas",
+    httpMethod: "POST",
+    inputWrapper: "ComprasDetalladasIn",
+    outputWrapper: "ComprasDetalladasOut",
+    kind: "load",
+    stream: "zeta.documents.purchase_invoice_details",
+    description: "Supplier purchase line detail for reconciliation and audit evidence.",
+    requestShape: {
+      Data: {
+        Mes: 0,
+        Anio: 0,
+        Moneda: 0,
+      },
+    },
+    responseShape: {
+      Response: {
+        ComprasDetalladas: [],
+      },
+    },
+  },
+  facturaProveedorQuerySaldosPendientes: {
+    endpointName: "RESTFacturaProveedorV1QuerySaldosPendientes",
+    httpMethod: "POST",
+    inputWrapper: "QuerySaldosPendientesIn",
+    outputWrapper: "QuerySaldosPendientesOut",
+    kind: "query",
+    stream: "zeta.documents.purchase_balances",
+    description: "Supplier pending balances query used for later open-item reconciliation.",
+    requestShape: {
+      Data: {
+        Page: 1,
+        Filters: {
+          ProveedorCodigo: "",
+          RegistroId: 0,
+          ComprobanteCodigo: 0,
+          FechaDesde: "",
+          FechaHasta: "",
+          Serie: "",
+          Numero: 0,
+          MonedaCodigo: 0,
+          LocalCodigo: 0,
+        },
+      },
+    },
+    responseShape: {
+      Response: [
+        {
+          RegistroId: 0,
+          Fecha: "",
+          Serie: "",
+          Numero: 0,
+          ProveedorCodigo: "",
+          Total: 0,
+          Saldo: 0,
+        },
+      ],
+      IsLastPage: true,
+    },
+  },
+  asientoLista: {
+    endpointName: "RESTAsientoV1Lista",
+    httpMethod: "POST",
+    inputWrapper: "ListaIn",
+    outputWrapper: "ListaOut",
+    kind: "query",
+    stream: "zeta.accounting.journal_entries",
+    description: "Accounting entry list used only for reconciliation after Zeta generated the entry.",
+    requestShape: {
+      Ejercicio: 0,
+      FechaInicio: "",
+      FechaFin: "",
+      TipoAsiento: "",
+    },
+    responseShape: {
+      Response: {
+        Asientos: [
+          {
+            Numero: 0,
+            Fecha: "",
+            Cuenta: "",
+            CuentaNombre: "",
+            Concepto: "",
+            Moneda: 0,
+            Debe: 0,
+            Haber: 0,
+            Tipo: "",
+            Centro: "",
+            Referencia: "",
+            Local: 0,
+            Contacto: "",
+            RUT: "",
+            Tributo: "",
+          },
+        ],
       },
     },
   },
