@@ -141,6 +141,27 @@ function buildTaxTreatment(input: {
   };
 }
 
+function buildAmountBreakdown(input: ZetaCanonicalDocument) {
+  return input.taxBreakdown.map((entry) => ({
+    label: entry.label,
+    amount: entry.netAmount,
+    tax_rate: entry.taxRate,
+    tax_code: entry.taxCode,
+  }));
+}
+
+function buildSourceTaxBreakdown(input: ZetaCanonicalDocument) {
+  return input.taxBreakdown.map((entry) => ({
+    label: entry.label,
+    net_amount: entry.netAmount,
+    tax_rate: entry.taxRate,
+    tax_amount: entry.taxAmount,
+    total_amount: entry.totalAmount,
+    tax_code: entry.taxCode,
+    source: entry.source,
+  }));
+}
+
 function buildFieldsJson(input: {
   document: ZetaCanonicalDocument;
   organization: OrganizationIdentityRow;
@@ -169,6 +190,19 @@ function buildFieldsJson(input: {
       zeta_reference: input.document.reference,
       purchase_category_candidate: isSale ? null : "zeta_received_cfe",
       sale_category_candidate: isSale ? "zeta_sales" : null,
+    },
+    amount_breakdown: buildAmountBreakdown(input.document),
+    source_tax_breakdown: buildSourceTaxBreakdown(input.document),
+    source_amounts: {
+      provider: "zetasoftware",
+      source_kind: input.document.sourceKind,
+      total_payable: input.document.amounts.total,
+      tax_amount: input.document.amounts.tax,
+      net_amount: input.document.amounts.net,
+      currency_code: input.document.currency.currencyCode,
+      source: input.document.sourceKind === "zeta_received_cfe"
+        ? "RESTCFEsRecibidosV1CFERecibidoDetalle.Totales"
+        : "RESTFacturaClienteV4VentaDetallada",
     },
     source: {
       provider: "zetasoftware",

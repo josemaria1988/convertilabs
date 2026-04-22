@@ -431,6 +431,16 @@ export type AccountingDraftFields = {
   lineItems: DocumentIntakeLineItem[];
 };
 
+export type SourceTaxBreakdownItem = {
+  label: string;
+  netAmount: number | null;
+  taxRate: number | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
+  taxCode: string | null;
+  source: string | null;
+};
+
 export type PostableAccountRecord = {
   id: string;
   organization_id: string;

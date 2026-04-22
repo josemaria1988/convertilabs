@@ -22,6 +22,16 @@ export type ZetaCanonicalLineItem = {
   metadata: JsonRecord;
 };
 
+export type ZetaCanonicalTaxBreakdownItem = {
+  label: string;
+  netAmount: number | null;
+  taxRate: number | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
+  taxCode: string | null;
+  source: string;
+};
+
 export type ZetaCanonicalDocument = {
   provider: "zetasoftware";
   sourceKind: "zeta_sales" | "zeta_received_cfe";
@@ -61,6 +71,7 @@ export type ZetaCanonicalDocument = {
     tax: number | null;
     total: number | null;
   };
+  taxBreakdown: ZetaCanonicalTaxBreakdownItem[];
   cfe: {
     typeCode: string | number | null;
     state: string | null;

@@ -72,6 +72,30 @@ function formatMoney(value: number | null | undefined, currency = "UYU") {
   }).format(value);
 }
 
+function formatTaxBreakdown(input: {
+  sourceTaxBreakdown?: DocumentWorkspaceListItem["sourceTaxBreakdown"];
+  taxAmount?: number | null;
+  currency?: string | null;
+}) {
+  const currency = input.currency ?? "UYU";
+  const visibleBreakdown = (input.sourceTaxBreakdown ?? []).filter((entry) =>
+    typeof entry.taxAmount === "number"
+    || typeof entry.netAmount === "number"
+    || typeof entry.totalAmount === "number");
+
+  if (visibleBreakdown.length > 0) {
+    return visibleBreakdown
+      .map((entry) => `${entry.label}: ${formatMoney(entry.taxAmount, currency)}`)
+      .join(" / ");
+  }
+
+  if (typeof input.taxAmount === "number") {
+    return `IVA total ${formatMoney(input.taxAmount, currency)}`;
+  }
+
+  return "IVA fuente --";
+}
+
 function formatConfidence(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value)
     ? `${Math.round(value * 100)}%`
@@ -90,7 +114,7 @@ function buildTrayHref(slug: string, documentId: string) {
 
 const trayRowGridStyle = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1.45fr) minmax(0, 1.15fr) 96px 100px 102px 142px 120px",
+  gridTemplateColumns: "minmax(0, 1.45fr) minmax(0, 1.15fr) 90px 118px 128px 100px 140px 120px",
   gap: "12px",
   alignItems: "center",
   width: "100%",
@@ -264,7 +288,8 @@ export function DocumentOperationalTray({
               <span>Documento</span>
               <span>Contraparte</span>
               <span>Confianza</span>
-              <span>Monto</span>
+              <span>Total</span>
+              <span>IVA</span>
               <span>Fecha</span>
               <span>Estado</span>
               <span>Accion</span>
@@ -300,6 +325,12 @@ export function DocumentOperationalTray({
                       </div>
                       <div className="document-tray-table__cell text-white">{formatConfidence(document.certaintyConfidence)}</div>
                       <div className="document-tray-table__cell text-white">{formatMoney(document.totalAmount)}</div>
+                      <div className="document-tray-table__cell text-white text-[12px] leading-5">
+                        {formatTaxBreakdown({
+                          sourceTaxBreakdown: document.sourceTaxBreakdown,
+                          taxAmount: document.taxAmount,
+                        })}
+                      </div>
                       <div className="document-tray-table__cell text-white">{formatDate(document.documentDate ?? document.createdAt)}</div>
                       <div className="document-tray-table__cell">
                         <span className={getDocumentOperationalStatusVariant(document.canonicalState)}>
@@ -354,6 +385,16 @@ export function DocumentOperationalTray({
                               <div>
                                 <span>Total</span>
                                 <strong>{formatMoney(selectedReview.draft.facts.total_amount, selectedReview.draft.facts.currency_code ?? selectedReview.derived.journalSuggestion.currencyCode ?? "UYU")}</strong>
+                              </div>
+                              <div>
+                                <span>IVA discriminado</span>
+                                <strong>
+                                  {formatTaxBreakdown({
+                                    sourceTaxBreakdown: selectedReview.draft.sourceTaxBreakdown,
+                                    taxAmount: selectedReview.draft.facts.tax_amount,
+                                    currency: selectedReview.draft.facts.currency_code ?? selectedReview.derived.journalSuggestion.currencyCode ?? "UYU",
+                                  })}
+                                </strong>
                               </div>
                             </div>
                           </section>

@@ -132,6 +132,15 @@ test("workspace documents ignore missing confidence tables on older schemas", as
       };
     }
 
+    if (query.table === "document_source_refs") {
+      return {
+        data: null,
+        error: {
+          message: "relation \"public.document_source_refs\" does not exist",
+        },
+      };
+    }
+
     throw new Error(`Unexpected query: ${query.table}`);
   });
 

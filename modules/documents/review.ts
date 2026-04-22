@@ -36,6 +36,7 @@ import {
   parseAmountBreakdown,
   parseDraftFacts,
   parseLineItems,
+  parseSourceTaxBreakdown,
   persistApprovedAccountingArtifacts,
   resolveDocumentDuplicateStatus,
   syncApprovedDocumentOpenItems,
@@ -52,6 +53,7 @@ import {
   type ManualAccountRoleOverrides,
   type PostableAccountRecord,
   type SettlementAllocation,
+  type SourceTaxBreakdownItem,
 } from "@/modules/accounting";
 import {
   isMissingDocumentStep5ColumnError,
@@ -62,6 +64,9 @@ import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rul
 import {
   resolveZetaPurchaseExpenseInvoiceForDocument,
 } from "@/modules/integrations/zeta/export/export-purchase-expense-invoice";
+import { integrationTables } from "@/modules/integrations/repository";
+import { buildZetaReceivedCfeTaxBreakdownFromRaw } from "@/modules/integrations/zeta/normalizers/received-cfe";
+import { buildZetaSalesTaxBreakdownFromRaw } from "@/modules/integrations/zeta/normalizers/sales";
 import type { ZetaPurchaseInvoiceExportResult } from "@/modules/integrations/zeta/export/types";
 import {
   type DeterministicRuleRef,
@@ -292,6 +297,7 @@ export type DocumentWorkspaceListItem = {
   documentNumber: string | null;
   documentSeries: string | null;
   taxAmount: number | null;
+  sourceTaxBreakdown: SourceTaxBreakdownItem[];
   totalAmount: number | null;
   hasProcessedDraft: boolean;
   certaintyLevel: "green" | "yellow" | "red" | null;
@@ -382,6 +388,7 @@ export type DocumentReviewPageData = {
     warnings: string[];
     facts: DocumentIntakeFactMap;
     amountBreakdown: DocumentIntakeAmountBreakdown[];
+    sourceTaxBreakdown: SourceTaxBreakdownItem[];
     lineItems: DocumentIntakeLineItem[];
     documentRole: DocumentRoleCandidate;
     documentType: string;
@@ -1491,6 +1498,101 @@ async function loadProfileDisplayLookup(
   );
 }
 
+function buildZetaSourceTaxBreakdown(input: {
+  sourceKind: string | null;
+  payload: unknown;
+}) {
+  if (input.sourceKind === "zeta_received_cfe") {
+    return buildZetaReceivedCfeTaxBreakdownFromRaw(input.payload);
+  }
+
+  if (input.sourceKind === "zeta_sales") {
+    return buildZetaSalesTaxBreakdownFromRaw(input.payload);
+  }
+
+  return [];
+}
+
+async function loadZetaSourceTaxBreakdownFallbacks(
+  supabase: SupabaseClient,
+  documentIds: string[],
+) {
+  const uniqueDocumentIds = Array.from(new Set(documentIds));
+
+  if (uniqueDocumentIds.length === 0) {
+    return new Map<string, SourceTaxBreakdownItem[]>();
+  }
+
+  const refsResult = await supabase
+    .from(integrationTables.documentSourceRefs)
+    .select("document_id, source_kind, raw_record_id")
+    .eq("provider", "zetasoftware")
+    .in("document_id", uniqueDocumentIds);
+
+  if (refsResult.error) {
+    if (isMissingSupabaseRelationError(refsResult.error, integrationTables.documentSourceRefs)) {
+      return new Map<string, SourceTaxBreakdownItem[]>();
+    }
+
+    throw new Error(refsResult.error.message);
+  }
+
+  const refs = ((refsResult.data as Array<{
+    document_id: string;
+    source_kind: string | null;
+    raw_record_id: string | null;
+  }> | null) ?? [])
+    .filter((ref) =>
+      ref.raw_record_id
+      && (ref.source_kind === "zeta_received_cfe" || ref.source_kind === "zeta_sales"));
+  const rawRecordIds = Array.from(new Set(
+    refs.map((ref) => ref.raw_record_id).filter((value): value is string => Boolean(value)),
+  ));
+
+  if (rawRecordIds.length === 0) {
+    return new Map<string, SourceTaxBreakdownItem[]>();
+  }
+
+  const rawResult = await supabase
+    .from(integrationTables.rawRecords)
+    .select("id, payload_json")
+    .in("id", rawRecordIds);
+
+  if (rawResult.error) {
+    if (isMissingSupabaseRelationError(rawResult.error, integrationTables.rawRecords)) {
+      return new Map<string, SourceTaxBreakdownItem[]>();
+    }
+
+    throw new Error(rawResult.error.message);
+  }
+
+  const rawById = new Map(
+    ((rawResult.data as Array<{
+      id: string;
+      payload_json: unknown;
+    }> | null) ?? []).map((row) => [row.id, row.payload_json]),
+  );
+  const result = new Map<string, SourceTaxBreakdownItem[]>();
+
+  for (const ref of refs) {
+    if (!ref.raw_record_id || result.has(ref.document_id)) {
+      continue;
+    }
+
+    const payload = rawById.get(ref.raw_record_id);
+    const breakdown = buildZetaSourceTaxBreakdown({
+      sourceKind: ref.source_kind,
+      payload,
+    });
+
+    if (breakdown.length > 0) {
+      result.set(ref.document_id, breakdown);
+    }
+  }
+
+  return result;
+}
+
 export function buildClassificationActionHint(input: {
   canRunClassification: boolean;
   canRunClassificationByRole: boolean;
@@ -2430,6 +2532,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
     .map((row) => row.current_draft_id)
     .filter((value): value is string => typeof value === "string");
   const draftFactsById = new Map<string, DocumentIntakeFactMap>();
+  const draftSourceTaxBreakdownById = new Map<string, SourceTaxBreakdownItem[]>();
 
   if (draftIds.length > 0) {
     const { data: draftRows, error: draftError } = await supabase
@@ -2446,6 +2549,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       fields_json: JsonRecord | null;
     }> | null) ?? [])) {
       draftFactsById.set(row.id, parseDraftFacts(row.fields_json));
+      draftSourceTaxBreakdownById.set(row.id, parseSourceTaxBreakdown(row.fields_json));
     }
   }
 
@@ -2592,11 +2696,22 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       (value): value is string => typeof value === "string",
     ),
   );
+  const sourceTaxBreakdownFallbackByDocumentId = await loadZetaSourceTaxBreakdownFallbacks(
+    supabase,
+    documentIds,
+  );
 
   return Promise.all(rows.map(async (row) => {
     const facts = row.current_draft_id
       ? draftFactsById.get(row.current_draft_id) ?? null
       : null;
+    const sourceTaxBreakdown = row.current_draft_id
+      ? draftSourceTaxBreakdownById.get(row.current_draft_id) ?? []
+      : [];
+    const visibleSourceTaxBreakdown =
+      sourceTaxBreakdown.length > 0
+        ? sourceTaxBreakdown
+        : sourceTaxBreakdownFallbackByDocumentId.get(row.id) ?? [];
     const counterpartyName = row.direction === "purchase"
       ? facts?.issuer_name ?? null
       : row.direction === "sale"
@@ -2692,6 +2807,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       documentNumber: facts?.document_number ?? null,
       documentSeries: facts?.series ?? null,
       taxAmount: facts?.tax_amount ?? null,
+      sourceTaxBreakdown: visibleSourceTaxBreakdown,
       totalAmount: facts?.total_amount ?? null,
       hasProcessedDraft: Boolean(row.current_draft_id),
       certaintyLevel: decision?.certainty_level ?? null,
@@ -3076,6 +3192,12 @@ export async function loadDocumentReviewPageData(input: {
   const draft = await loadCurrentDraft(supabase, document);
   const facts = parseDraftFacts(draft.fields_json);
   const amountBreakdown = parseAmountBreakdown(draft.fields_json);
+  const parsedSourceTaxBreakdown = parseSourceTaxBreakdown(draft.fields_json);
+  const sourceTaxBreakdown =
+    parsedSourceTaxBreakdown.length > 0
+      ? parsedSourceTaxBreakdown
+      : await loadZetaSourceTaxBreakdownFallbacks(supabase, [document.id])
+        .then((fallbacks) => fallbacks.get(document.id) ?? []);
   const lineItems = parseLineItems(draft.fields_json);
   const operationCategory = getOperationCategoryValue(draft, facts);
   const [{ profileVersion, ruleSnapshot }, steps, processingRun, revision, confirmations, documentView, persistedInvoiceIdentity, decisionLogs, latestClassificationRun] =
@@ -3262,6 +3384,7 @@ export async function loadDocumentReviewPageData(input: {
       warnings: asStringArray(draft.warnings_json),
       facts,
       amountBreakdown,
+      sourceTaxBreakdown,
       lineItems,
       documentRole: draft.document_role,
       documentType: draft.document_type ?? "",

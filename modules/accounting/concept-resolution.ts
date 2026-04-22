@@ -9,6 +9,7 @@ import type {
   JsonRecord,
   OrganizationConceptAliasRecord,
   OrganizationConceptRecord,
+  SourceTaxBreakdownItem,
 } from "@/modules/accounting/types";
 import {
   asNumber,
@@ -82,6 +83,25 @@ export function parseLineItems(fieldsJson: JsonRecord | null) {
       tax_amount: asNumber(record.tax_amount),
       total_amount: asNumber(record.total_amount),
     } satisfies DocumentIntakeLineItem;
+  });
+}
+
+export function parseSourceTaxBreakdown(fieldsJson: JsonRecord | null) {
+  const fields = asRecord(fieldsJson);
+  const entries = Array.isArray(fields.source_tax_breakdown) ? fields.source_tax_breakdown : [];
+
+  return entries.map((entry) => {
+    const record = asRecord(entry);
+
+    return {
+      label: asString(record.label) ?? "IVA fuente",
+      netAmount: asNumber(record.net_amount),
+      taxRate: asNumber(record.tax_rate),
+      taxAmount: asNumber(record.tax_amount),
+      totalAmount: asNumber(record.total_amount),
+      taxCode: asString(record.tax_code),
+      source: asString(record.source),
+    } satisfies SourceTaxBreakdownItem;
   });
 }
 

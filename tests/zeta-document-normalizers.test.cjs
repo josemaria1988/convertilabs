@@ -62,6 +62,9 @@ test("Zeta sales normalizer maps Facturas de Clientes into canonical VAT-ready f
   assert.equal(normalized.issueDate, "2026-03-15");
   assert.equal(normalized.currency.currencyCode, "UYU");
   assert.equal(normalized.amounts.total, 1220);
+  assert.equal(normalized.taxBreakdown.length, 1);
+  assert.equal(normalized.taxBreakdown[0].label, "IVA basico 22%");
+  assert.equal(normalized.taxBreakdown[0].taxAmount, 220);
   assert.equal(normalized.lines.length, 1);
   assert.equal(normalized.lines[0].taxRate, 22);
   assert.equal(normalized.warnings.length, 0);
@@ -140,10 +143,119 @@ test("Zeta received CFE normalizer maps purchases with fiscal credit totals", ()
   assert.equal(normalized.amounts.net, 500);
   assert.equal(normalized.amounts.tax, 110);
   assert.equal(normalized.amounts.total, 610);
+  assert.equal(normalized.taxBreakdown.length, 1);
+  assert.equal(normalized.taxBreakdown[0].label, "IVA basico 22%");
+  assert.equal(normalized.taxBreakdown[0].netAmount, 500);
+  assert.equal(normalized.taxBreakdown[0].taxAmount, 110);
   assert.equal(normalized.lines.length, 1);
   assert.equal(normalized.warnings.length, 0);
   assert.equal(
     buildZetaReceivedCfeIdentityKey(normalized),
     "purchase|21999888777|111|b|456",
   );
+});
+
+test("Zeta received CFE normalizer preserves mixed VAT from CFE totals without recomputing", () => {
+  const {
+    normalizeZetaReceivedCfe,
+  } = require("@/modules/integrations/zeta/normalizers/received-cfe");
+  const normalized = normalizeZetaReceivedCfe({
+    summary: {
+      RUT: "21.111.222.333",
+      DenominacionSocial: "Sergio Morin",
+      EmisorCFETipo: 111,
+      Serie: "M",
+      Numero: 77,
+      FechaEmision: "2026-04-10",
+      Moneda: "UYU",
+      TipoCambio: 1,
+      MontoAPagar: 782,
+    },
+    detailPayload: {
+      Response: {
+        CFEDetalle: {
+          Emisor: {
+            RUT: "21.111.222.333",
+            DenominacionSocial: "Sergio Morin",
+          },
+          Documento: {
+            FechaEmision: "10/04/2026",
+            CFESerie: "M",
+            CFENumero: 77,
+          },
+          Totales: {
+            Moneda: "UYU",
+            TipoCambio: 1,
+            MontoNetoConIVATasaMinima: 200,
+            MontoIVAMinimo: 20,
+            MontoNetoConIVATasaBasica: 400,
+            MontoIVABasico: 88,
+            MontoAPagar: 708,
+          },
+          Detalle: [],
+        },
+      },
+    },
+  });
+
+  assert.equal(normalized.amounts.net, 600);
+  assert.equal(normalized.amounts.tax, 108);
+  assert.equal(normalized.amounts.total, 708);
+  assert.deepEqual(
+    normalized.taxBreakdown.map((entry) => ({
+      label: entry.label,
+      netAmount: entry.netAmount,
+      taxRate: entry.taxRate,
+      taxAmount: entry.taxAmount,
+      totalAmount: entry.totalAmount,
+    })),
+    [
+      {
+        label: "IVA minimo 10%",
+        netAmount: 200,
+        taxRate: 10,
+        taxAmount: 20,
+        totalAmount: 220,
+      },
+      {
+        label: "IVA basico 22%",
+        netAmount: 400,
+        taxRate: 22,
+        taxAmount: 88,
+        totalAmount: 488,
+      },
+    ],
+  );
+});
+
+test("Zeta received CFE normalizer does not invent VAT when fiscal totals are missing", () => {
+  const {
+    normalizeZetaReceivedCfe,
+  } = require("@/modules/integrations/zeta/normalizers/received-cfe");
+  const normalized = normalizeZetaReceivedCfe({
+    summary: {
+      RUT: "21.444.555.666",
+      DenominacionSocial: "Proveedor sin detalle",
+      EmisorCFETipo: 111,
+      Serie: "S",
+      Numero: 9,
+      FechaEmision: "2026-04-11",
+      Moneda: "UYU",
+      TipoCambio: 1,
+      MontoAPagar: 1220,
+    },
+    detailPayload: {
+      Response: {
+        CFEDetalle: {
+          Detalle: [],
+        },
+      },
+    },
+  });
+
+  assert.equal(normalized.amounts.net, null);
+  assert.equal(normalized.amounts.tax, null);
+  assert.equal(normalized.amounts.total, 1220);
+  assert.equal(normalized.taxBreakdown.length, 0);
+  assert.ok(normalized.warnings.some((warning) => warning.includes("no se recalculo IVA")));
 });

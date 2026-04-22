@@ -99,7 +99,7 @@ export function VatRunPreviewCard({ preview, organizationSlug }: VatRunPreviewCa
                   <div className="min-w-0">
                     <p className="font-medium text-white">{formatDocumentTitle(document)}</p>
                     <p className="mt-1 text-[color:var(--color-muted)]">
-                      {formatDate(document.documentDate)} / {document.role} / IVA {formatAmount(document.taxAmount)}
+                      {formatDate(document.documentDate)} / {document.role} / Total {formatAmount(document.display.totalAmount)} / IVA {formatAmount(document.taxAmount)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

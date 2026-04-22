@@ -54,6 +54,15 @@ type DocumentsWorkspaceTableItem = {
   documentNumber: string | null;
   documentSeries: string | null;
   taxAmount: number | null;
+  sourceTaxBreakdown: Array<{
+    label: string;
+    netAmount: number | null;
+    taxRate: number | null;
+    taxAmount: number | null;
+    totalAmount: number | null;
+    taxCode: string | null;
+    source: string | null;
+  }>;
   totalAmount: number | null;
   hasProcessedDraft: boolean;
   certaintyLevel: "green" | "yellow" | "red" | null;
@@ -100,6 +109,25 @@ function formatAmount(value: number | null) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatTaxBreakdown(document: DocumentsWorkspaceTableItem) {
+  const visibleBreakdown = document.sourceTaxBreakdown.filter((entry) =>
+    typeof entry.taxAmount === "number"
+    || typeof entry.netAmount === "number"
+    || typeof entry.totalAmount === "number");
+
+  if (visibleBreakdown.length > 0) {
+    return visibleBreakdown
+      .map((entry) => `${entry.label}: IVA ${formatAmount(entry.taxAmount)}`)
+      .join(" / ");
+  }
+
+  if (typeof document.taxAmount === "number") {
+    return `IVA total ${formatAmount(document.taxAmount)}`;
+  }
+
+  return "IVA fuente --";
 }
 
 function getCertaintyClasses(level: "green" | "yellow" | "red" | null) {
@@ -589,7 +617,7 @@ export function DocumentsWorkspaceTable({
                 <th>Estado por etapa</th>
                 <th>Tipo</th>
                 <th>Confianza</th>
-                <th className="text-right">Monto</th>
+                <th className="text-right">Total / IVA</th>
                 <th className="text-right">Acciones</th>
               </tr>
             </thead>
@@ -742,10 +770,10 @@ export function DocumentsWorkspaceTable({
                     </td>
                     <td className="text-right">
                       <div className="font-semibold text-white">
-                        {formatAmount(document.totalAmount)}
+                        Total a pagar {formatAmount(document.totalAmount)}
                       </div>
                       <div className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                        IVA {formatAmount(document.taxAmount)}
+                        {formatTaxBreakdown(document)}
                       </div>
                     </td>
                     <td className="text-right">

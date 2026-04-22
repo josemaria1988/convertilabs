@@ -321,6 +321,29 @@ function formatMoney(value: number | null | undefined, currency = "UYU") {
   }
 }
 
+function formatSourceTaxBreakdown(input: {
+  sourceTaxBreakdown: DocumentReviewPageData["draft"]["sourceTaxBreakdown"];
+  fallbackTaxAmount: number | null;
+  currencyCode: string;
+}) {
+  const visibleBreakdown = input.sourceTaxBreakdown.filter((entry) =>
+    typeof entry.taxAmount === "number"
+    || typeof entry.netAmount === "number"
+    || typeof entry.totalAmount === "number");
+
+  if (visibleBreakdown.length > 0) {
+    return visibleBreakdown
+      .map((entry) => `${entry.label}: ${formatMoney(entry.taxAmount, input.currencyCode)}`)
+      .join(" / ");
+  }
+
+  if (typeof input.fallbackTaxAmount === "number") {
+    return `IVA total ${formatMoney(input.fallbackTaxAmount, input.currencyCode)}`;
+  }
+
+  return "IVA fuente --";
+}
+
 function formatConfidence(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value)
     ? `${Math.round(value * 100)}%`
@@ -476,6 +499,11 @@ export function DocumentReviewRuleWorkspace({
     ?? pageData.derived.monetarySnapshot?.totalAmountOriginal
     ?? pageData.derived.taxTreatment.totalAmountUyu
     ?? null;
+  const sourceTaxBreakdownText = formatSourceTaxBreakdown({
+    sourceTaxBreakdown: pageData.draft.sourceTaxBreakdown,
+    fallbackTaxAmount: pageData.draft.facts.tax_amount,
+    currencyCode,
+  });
   const criteriaText =
     stripMarkdown(pageData.derived.assistantSuggestion.rationale)
     ?? stripMarkdown(pageData.assistantRail?.latestMessage?.structuredPayload.summaryMd)
@@ -1059,8 +1087,12 @@ export function DocumentReviewRuleWorkspace({
                   <strong>{currencyCode}</strong>
                 </div>
                 <div className="review-rule-fact review-rule-fact--total">
-                  <span>Monto Total</span>
+                  <span>Total a pagar</span>
                   <strong>{formatMoney(totalAmount, currencyCode)}</strong>
+                </div>
+                <div className="review-rule-fact review-rule-fact--total">
+                  <span>IVA discriminado</span>
+                  <strong className="break-words" title={sourceTaxBreakdownText}>{sourceTaxBreakdownText}</strong>
                 </div>
               </div>
             </div>

@@ -16,6 +16,7 @@ import {
   type JsonRecord,
   type ZetaCanonicalDocument,
   type ZetaCanonicalLineItem,
+  type ZetaCanonicalTaxBreakdownItem,
 } from "@/modules/integrations/zeta/normalizers/common";
 
 function normalizeCfeExternalKey(summary: JsonRecord) {
@@ -90,6 +91,107 @@ function fallbackSummaryLine(total: number | null) {
   } satisfies ZetaCanonicalLineItem;
 }
 
+function sumSourceAmounts(values: Array<number | null>) {
+  const present = values.filter((value): value is number => typeof value === "number");
+
+  return present.length > 0
+    ? roundCurrency(present.reduce((sum, value) => sum + value, 0))
+    : null;
+}
+
+function sourceTotal(netAmount: number | null, taxAmount: number | null) {
+  return typeof netAmount === "number" || typeof taxAmount === "number"
+    ? roundCurrency((netAmount ?? 0) + (taxAmount ?? 0))
+    : null;
+}
+
+function addTaxBreakdownItem(
+  items: ZetaCanonicalTaxBreakdownItem[],
+  item: Omit<ZetaCanonicalTaxBreakdownItem, "source">,
+) {
+  const hasSourceAmount =
+    typeof item.netAmount === "number"
+    || typeof item.taxAmount === "number"
+    || typeof item.totalAmount === "number";
+
+  if (!hasSourceAmount) {
+    return;
+  }
+
+  const hasNonZeroAmount = [
+    item.netAmount,
+    item.taxAmount,
+    item.totalAmount,
+  ].some((value) => typeof value === "number" && Math.abs(value) > 0.009);
+
+  if (!hasNonZeroAmount) {
+    return;
+  }
+
+  items.push({
+    ...item,
+    source: "zetasoftware_cfe_totales",
+  });
+}
+
+function buildReceivedCfeTaxBreakdown(totales: JsonRecord) {
+  const noGravado = firstNumber(totales.MontoNoGravado);
+  const exportado = firstNumber(totales.MontoExportado);
+  const netMinimo = firstNumber(totales.MontoNetoConIVATasaMinima);
+  const ivaMinimo = firstNumber(totales.MontoIVAMinimo);
+  const netBasico = firstNumber(totales.MontoNetoConIVATasaBasica);
+  const ivaBasico = firstNumber(totales.MontoIVABasico);
+  const items: ZetaCanonicalTaxBreakdownItem[] = [];
+
+  addTaxBreakdownItem(items, {
+    label: "No gravado",
+    netAmount: noGravado,
+    taxRate: 0,
+    taxAmount: typeof noGravado === "number" ? 0 : null,
+    totalAmount: noGravado,
+    taxCode: "uy_vat_non_taxed",
+  });
+  addTaxBreakdownItem(items, {
+    label: "Exportado",
+    netAmount: exportado,
+    taxRate: 0,
+    taxAmount: typeof exportado === "number" ? 0 : null,
+    totalAmount: exportado,
+    taxCode: "uy_vat_export",
+  });
+  addTaxBreakdownItem(items, {
+    label: "IVA minimo 10%",
+    netAmount: netMinimo,
+    taxRate: 10,
+    taxAmount: ivaMinimo,
+    totalAmount: sourceTotal(netMinimo, ivaMinimo),
+    taxCode: "uy_vat_minimum",
+  });
+  addTaxBreakdownItem(items, {
+    label: "IVA basico 22%",
+    netAmount: netBasico,
+    taxRate: 22,
+    taxAmount: ivaBasico,
+    totalAmount: sourceTotal(netBasico, ivaBasico),
+    taxCode: "uy_vat_basic",
+  });
+
+  return {
+    items,
+    net: sumSourceAmounts([noGravado, exportado, netMinimo, netBasico]),
+    taxFromVatTotals: sumSourceAmounts([ivaMinimo, ivaBasico]),
+  };
+}
+
+export function buildZetaReceivedCfeTaxBreakdownFromRaw(rawPayload: unknown) {
+  const raw = asRecord(rawPayload);
+  const detailPayload = raw.detail ?? rawPayload;
+  const detail = detailFromPayload(detailPayload);
+  const totales = asRecord(detail.Totales);
+
+  return buildReceivedCfeTaxBreakdown(totales).items;
+}
+
 export function normalizeZetaReceivedCfe(input: {
   summary: JsonRecord;
   detailPayload?: unknown;
@@ -109,15 +211,11 @@ export function normalizeZetaReceivedCfe(input: {
     name: firstString(totales.Moneda, summary.Moneda),
   });
   const sourceRate = firstNumber(totales.TipoCambio, summary.TipoCambio);
+  const taxBreakdown = buildReceivedCfeTaxBreakdown(totales);
   const tax = firstNumber(totales.MontoCreditosFiscales)
-    ?? roundCurrency((firstNumber(totales.MontoIVAMinimo) ?? 0) + (firstNumber(totales.MontoIVABasico) ?? 0));
+    ?? taxBreakdown.taxFromVatTotals;
   const total = firstNumber(totales.MontoAPagar, totales.MontoTotal, summary.MontoAPagar);
-  const net = roundCurrency(
-    (firstNumber(totales.MontoNoGravado) ?? 0)
-    + (firstNumber(totales.MontoExportado) ?? 0)
-    + (firstNumber(totales.MontoNetoConIVATasaMinima) ?? 0)
-    + (firstNumber(totales.MontoNetoConIVATasaBasica) ?? 0),
-  );
+  const net = taxBreakdown.net;
   const lines = detalleRows.length > 0
     ? detalleRows.map(normalizeDetailLine)
     : [fallbackSummaryLine(total)];
@@ -133,6 +231,9 @@ export function normalizeZetaReceivedCfe(input: {
   const warnings = [
     ...(detalleRows.length === 0
       ? ["Zeta no devolvio detalle de lineas para este CFE recibido; se creo una linea resumen."]
+      : []),
+    ...((typeof tax !== "number" || typeof net !== "number")
+      ? ["Zeta no devolvio totales fiscales completos para este CFE recibido; no se recalculo IVA."]
       : []),
     ...(!currencyCode ? ["No pudimos mapear la moneda Zeta a ISO para este CFE recibido."] : []),
     ...(currencyCode && currencyCode !== "UYU" && (!sourceRate || sourceRate <= 0)
@@ -184,6 +285,7 @@ export function normalizeZetaReceivedCfe(input: {
       tax,
       total,
     },
+    taxBreakdown: taxBreakdown.items,
     cfe: {
       typeCode: firstString(summary.EmisorCFETipo, summary.CFETipo),
       state: firstString(summary.EstadoLocal),

@@ -18,6 +18,7 @@ import {
   type JsonRecord,
   type ZetaCanonicalDocument,
   type ZetaCanonicalLineItem,
+  type ZetaCanonicalTaxBreakdownItem,
 } from "@/modules/integrations/zeta/normalizers/common";
 
 function normalizeSalesExternalKey(summary: JsonRecord) {
@@ -136,6 +137,130 @@ function fallbackSummaryLine(summary: JsonRecord) {
   } satisfies ZetaCanonicalLineItem;
 }
 
+function taxRateKey(value: number | null) {
+  return typeof value === "number" ? String(value) : "unknown";
+}
+
+function formatTaxBreakdownLabel(rate: number | null) {
+  if (rate === 22) {
+    return "IVA basico 22%";
+  }
+
+  if (rate === 10) {
+    return "IVA minimo 10%";
+  }
+
+  if (rate === 0) {
+    return "Sin IVA";
+  }
+
+  return "IVA fuente Zeta";
+}
+
+function taxCodeForRate(rate: number | null) {
+  if (rate === 22) {
+    return "uy_vat_basic";
+  }
+
+  if (rate === 10) {
+    return "uy_vat_minimum";
+  }
+
+  if (rate === 0) {
+    return "uy_vat_zero";
+  }
+
+  return "uy_vat_source";
+}
+
+function buildSalesTaxBreakdown(input: {
+  lines: ZetaCanonicalLineItem[];
+  summary: JsonRecord;
+}) {
+  const grouped = new Map<string, ZetaCanonicalTaxBreakdownItem>();
+
+  for (const line of input.lines) {
+    const hasSourceAmount =
+      typeof line.netAmount === "number"
+      || typeof line.taxAmount === "number"
+      || typeof line.totalAmount === "number";
+
+    if (!hasSourceAmount) {
+      continue;
+    }
+
+    const key = taxRateKey(line.taxRate);
+    const current = grouped.get(key) ?? {
+      label: formatTaxBreakdownLabel(line.taxRate),
+      netAmount: 0,
+      taxRate: line.taxRate,
+      taxAmount: 0,
+      totalAmount: 0,
+      taxCode: taxCodeForRate(line.taxRate),
+      source: "zetasoftware_sales_detail",
+    };
+
+    current.netAmount = roundCurrency((current.netAmount ?? 0) + (line.netAmount ?? 0));
+    current.taxAmount = roundCurrency((current.taxAmount ?? 0) + (line.taxAmount ?? 0));
+    current.totalAmount = roundCurrency((current.totalAmount ?? 0) + (line.totalAmount ?? 0));
+    grouped.set(key, current);
+  }
+
+  const items = Array.from(grouped.values())
+    .filter((entry) =>
+      [entry.netAmount, entry.taxAmount, entry.totalAmount]
+        .some((value) => typeof value === "number" && Math.abs(value) > 0.009));
+
+  if (items.length > 0) {
+    return items;
+  }
+
+  const net = signedAmount({
+    signed: input.summary.SubtotalSigno,
+    unsigned: input.summary.Subtotal,
+  });
+  const tax = signedAmount({
+    signed: input.summary.IVASigno,
+    unsigned: input.summary.IVA,
+  });
+  const total = signedAmount({
+    signed: input.summary.TotalSigno,
+    unsigned: input.summary.Total,
+  });
+
+  if (
+    typeof net !== "number"
+    && typeof tax !== "number"
+    && typeof total !== "number"
+  ) {
+    return [];
+  }
+
+  return [{
+    label: "IVA fuente Zeta",
+    netAmount: net,
+    taxRate: null,
+    taxAmount: tax,
+    totalAmount: total,
+    taxCode: "uy_vat_source",
+    source: "zetasoftware_sales_summary",
+  }] satisfies ZetaCanonicalTaxBreakdownItem[];
+}
+
+export function buildZetaSalesTaxBreakdownFromRaw(rawPayload: unknown) {
+  const raw = asRecord(rawPayload);
+  const summary = asRecord(raw.summary);
+  const detailRows = detailRowsFromPayload(raw.detail ?? rawPayload);
+  const lines = detailRows.length > 0
+    ? detailRows.map((row, index) => normalizeDetailLine(summary, row, index))
+    : [fallbackSummaryLine(summary)];
+
+  return buildSalesTaxBreakdown({
+    lines,
+    summary,
+  });
+}
+
 export function normalizeZetaSalesInvoice(input: {
   summary: JsonRecord;
   detailPayload?: unknown;
@@ -169,6 +294,10 @@ export function normalizeZetaSalesInvoice(input: {
   const lines = detailRows.length > 0
     ? detailRows.map((row, index) => normalizeDetailLine(summary, row, index))
     : [fallbackSummaryLine(summary)];
+  const taxBreakdown = buildSalesTaxBreakdown({
+    lines,
+    summary,
+  });
   const externalKey = normalizeSalesExternalKey(summary);
   const series = firstString(firstDetail.FacturaSerie, summary.Serie);
   const number = firstString(firstDetail.FacturaNumero, summary.Numero);
@@ -231,6 +360,7 @@ export function normalizeZetaSalesInvoice(input: {
       tax,
       total,
     },
+    taxBreakdown,
     cfe: {
       typeCode: firstString(summary.TipodeCFECodigo),
       state: firstString(summary.Emitido),

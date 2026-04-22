@@ -1085,6 +1085,7 @@ export const zetaEndpointRegistry = {
             MontoNetoConIVATasaBasica: 0,
             MontoIVAMinimo: 0,
             MontoIVABasico: 0,
+            MontoCreditosFiscales: 0,
             MontoTotal: 0,
             MontoAPagar: 0,
           },
