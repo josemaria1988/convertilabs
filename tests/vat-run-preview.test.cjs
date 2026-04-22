@@ -111,6 +111,15 @@ test("vat preview includes provisional and final documents without mutating offi
             document_id: "doc-provisional",
             document_role: "purchase",
             status: "confirmed",
+            fields_json: {
+              facts: {
+                issuer_name: "Antel",
+                document_number: "A-100",
+                document_type: "e-Factura",
+                currency_code: "UYU",
+                total_amount: 122,
+              },
+            },
             tax_treatment_json: {
               ready: true,
               vat_bucket: "input_creditable",
@@ -124,6 +133,16 @@ test("vat preview includes provisional and final documents without mutating offi
             document_id: "doc-final",
             document_role: "sale",
             status: "confirmed",
+            fields_json: {
+              facts: {
+                receiver_name: "Cliente SA",
+                series: "A",
+                document_number: "200",
+                document_type: "e-Factura",
+                currency_code: "UYU",
+                total_amount: 244,
+              },
+            },
             tax_treatment_json: {
               ready: true,
               vat_bucket: "output_vat",
@@ -137,6 +156,12 @@ test("vat preview includes provisional and final documents without mutating offi
             document_id: "doc-draft",
             document_role: "purchase",
             status: "open",
+            fields_json: {
+              facts: {
+                issuer_name: "Proveedor pendiente",
+                document_number: "P-1",
+              },
+            },
             tax_treatment_json: {
               ready: true,
               vat_bucket: "input_creditable",
@@ -153,6 +178,22 @@ test("vat preview includes provisional and final documents without mutating offi
     if (query.table === "document_invoice_identities" && query.mode === "execute") {
       return {
         data: [],
+        error: null,
+      };
+    }
+
+    if (query.table === "v_journal_entries_read" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            source_document_id: "doc-final",
+            journal_entry_id: "je-final",
+            entry_number: 44,
+            entry_date: "2026-03-11",
+            status: "posted",
+            is_active_leaf: true,
+          },
+        ],
         error: null,
       };
     }
@@ -199,6 +240,8 @@ test("vat preview includes provisional and final documents without mutating offi
     assert.equal(preview.totals.inputVatCreditable, 22);
     assert.equal(preview.officialRunComparison.deltaNetVatPayable, 2);
     assert.match(preview.warnings.join(" "), /cuenta provisional/i);
+    assert.equal(preview.includedDocuments[0].display.counterpartyName, "Antel");
+    assert.equal(preview.includedDocuments[1].journalEntryId, "je-final");
   } finally {
     server.getSupabaseServiceRoleClient = originalFactory;
   }

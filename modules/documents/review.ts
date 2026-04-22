@@ -57,6 +57,7 @@ import {
   isMissingDocumentStep5ColumnError,
   omitDocumentStep5Columns,
 } from "@/modules/accounting/step5-schema-compat";
+import { loadDocumentJournalAuditState } from "@/modules/accounting/read-model-repository";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 import {
   resolveZetaPurchaseExpenseInvoiceForDocument,
@@ -478,6 +479,7 @@ export type DocumentReviewPageData = {
   ruleExplanation: ReturnType<typeof buildRuleApplicationExplanation>;
   accountingImpactPreview: ReturnType<typeof buildAccountingImpactPreview>;
   zetaPurchaseExpenseExport: ZetaPurchaseInvoiceExportResult | null;
+  journalAuditState: Awaited<ReturnType<typeof loadDocumentJournalAuditState>>;
   certaintySummary: {
     level: "green" | "yellow" | "red";
     confidence: number | null;
@@ -3150,6 +3152,10 @@ export async function loadDocumentReviewPageData(input: {
     appliedRule: derived.appliedRule,
     settlementContext: derived.settlementContext,
   });
+  const journalAuditState = await loadDocumentJournalAuditState(supabase, {
+    organizationId: input.organizationId,
+    documentId: document.id,
+  });
   const workflowState = deriveDocumentWorkflowState({
     documentStatus: document.status,
     postingStatus: document.posting_status,
@@ -3327,6 +3333,7 @@ export async function loadDocumentReviewPageData(input: {
     ruleExplanation,
     accountingImpactPreview,
     zetaPurchaseExpenseExport,
+    journalAuditState,
     certaintySummary,
     assistantRail,
     decisionLogs: decisionLogs.map((log) => ({

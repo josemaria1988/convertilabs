@@ -300,7 +300,7 @@ export default async function OrganizationTaxPage({
                   </div>
                 ) : (
                   <>
-                    <VatRunPreviewCard preview={vatPreview} />
+                    <VatRunPreviewCard preview={vatPreview} organizationSlug={organization.slug} />
                     <form
                       action={async () => {
                         "use server";
@@ -334,7 +334,7 @@ export default async function OrganizationTaxPage({
                   <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4"><p className="text-[13px] text-[color:var(--color-muted)]">Estado</p><p className="mt-2 text-lg font-semibold text-white">{formatLifecycleStatusLabel(selectedRun.status)}</p></div>
                 </div>
               ) : (
-                <VatRunPreviewCard preview={vatPreview} />
+                <VatRunPreviewCard preview={vatPreview} organizationSlug={organization.slug} />
               )}
 
               {selectedRun ? (

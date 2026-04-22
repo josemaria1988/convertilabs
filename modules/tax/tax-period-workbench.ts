@@ -55,6 +55,8 @@ export type TaxPeriodWorkbenchFilters = {
 export type TaxPeriodWorkbenchItem = {
   documentId: string;
   reviewHref: string;
+  journalEntryId: string | null;
+  journalHref: string | null;
   workflowState: DocumentReviewPageData["decisionSnapshot"]["workflowState"];
   workflowLabel: string;
   resolutionSource: DocumentReviewPageData["decisionSnapshot"]["resolutionSource"];
@@ -317,6 +319,14 @@ function buildWorkbenchItem(input: {
   return {
     documentId: input.pageData.document.id,
     reviewHref: `/app/o/${input.pageData.organizationSlug}/documents/${input.pageData.document.id}`,
+    journalEntryId:
+      input.pageData.journalAuditState.mode === "materialized"
+        ? input.pageData.journalAuditState.detail.entry.journalEntryId
+        : null,
+    journalHref:
+      input.pageData.journalAuditState.mode === "materialized"
+        ? `/app/o/${input.pageData.organizationSlug}/journal-entries?entry=${input.pageData.journalAuditState.detail.entry.journalEntryId}`
+        : null,
     workflowState: input.pageData.decisionSnapshot.workflowState,
     workflowLabel: header.workflowLabel,
     resolutionSource: input.pageData.decisionSnapshot.resolutionSource,
@@ -384,6 +394,8 @@ function buildFallbackWorkbenchItem(input: {
   return {
     documentId: input.document.documentId,
     reviewHref: `/app/o/${input.organizationSlug}/documents/${input.document.documentId}`,
+    journalEntryId: null,
+    journalHref: null,
     workflowState: "processing",
     workflowLabel: "Procesando",
     resolutionSource: "unknown",

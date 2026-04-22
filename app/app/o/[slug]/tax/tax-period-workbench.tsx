@@ -146,6 +146,16 @@ function renderQuickActionButtons(input: {
         </LoadingLink>
       ) : null}
 
+      {input.item.journalHref ? (
+        <LoadingLink
+          href={input.item.journalHref}
+          pendingLabel="Abriendo..."
+          className="ui-button ui-button--secondary min-h-[30px] px-3 text-[12px]"
+        >
+          Ver asiento
+        </LoadingLink>
+      ) : null}
+
       <form
         action={async () => {
           "use server";
@@ -345,6 +355,15 @@ function renderFocusDrawer(input: {
             >
               Abrir reviewer completo
             </LoadingLink>
+            {input.item.journalHref ? (
+              <LoadingLink
+                href={input.item.journalHref}
+                pendingLabel="Abriendo..."
+                className="ui-button ui-button--secondary w-full justify-center"
+              >
+                Ver asiento generado
+              </LoadingLink>
+            ) : null}
           </div>
         </div>
       </div>

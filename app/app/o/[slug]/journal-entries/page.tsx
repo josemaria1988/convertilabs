@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AccountingWorkspaceTabs } from "@/components/accounting/accounting-workspace-tabs";
+import { JournalEntryDetailPanel } from "@/components/accounting/journal-entry-detail-panel";
 import { ReadModelUnavailablePanel } from "@/components/accounting/read-model-unavailable-panel";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { LoadingLink } from "@/components/ui/loading-link";
@@ -14,7 +15,10 @@ import {
   getLifecycleStatusPillClass,
   getLineagePillClass,
 } from "@/modules/accounting/read-model-presenters";
-import { loadJournalEntriesWorkspaceData } from "@/modules/accounting/read-model-repository";
+import {
+  loadJournalEntriesWorkspaceData,
+  loadJournalEntryDetail,
+} from "@/modules/accounting/read-model-repository";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import {
   formatLifecycleStatusLabel,
@@ -100,6 +104,12 @@ export default async function OrganizationJournalEntriesPage({
     searchTerm: resolvedSearchParams.q ?? null,
   });
   const selectedEntry = data.rows.find((row) => row.journalEntryId === resolvedSearchParams.entry) ?? data.rows[0] ?? null;
+  const selectedEntryDetail = selectedEntry
+    ? await loadJournalEntryDetail(supabase, {
+      organizationId: organization.id,
+      journalEntryId: selectedEntry.journalEntryId,
+    })
+    : null;
   const selectedLineageRows = selectedEntry
     ? data.lineageRows.filter((row) =>
       row.journalEntryId === selectedEntry.journalEntryId
@@ -319,6 +329,13 @@ export default async function OrganizationJournalEntriesPage({
               </section>
 
               <div className="space-y-4">
+                <JournalEntryDetailPanel
+                  detail={selectedEntryDetail}
+                  organizationSlug={organization.slug}
+                  title="Asiento materializado"
+                  emptyMessage="Selecciona un asiento para ver las lineas Debe/Haber generadas por el kernel."
+                />
+
                 <section className="ui-panel">
                   <div className="ui-panel-header">
                     <div>

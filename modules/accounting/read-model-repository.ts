@@ -6,6 +6,7 @@ import {
   getAccountingMonthKey,
   sortAccountingMonthKeysDesc,
 } from "@/modules/accounting/periods";
+import { isFiscalPeriodMutableForDocument } from "@/modules/accounting/fiscal-period-status";
 import {
   buildBalanceSheetRows,
   buildIncomeStatementRows,
@@ -21,6 +22,8 @@ type SupabaseErrorLike = {
   details?: string | null;
   hint?: string | null;
 };
+
+type JsonRecord = Record<string, unknown>;
 
 type JournalEntryReadRowRaw = {
   organization_id: string;
@@ -162,6 +165,109 @@ type GeneralLedgerLineRaw = {
   line_purpose?: string | null;
 };
 
+type ChartAccountRelationRaw =
+  | {
+      id?: string | null;
+      code?: string | null;
+      name?: string | null;
+      account_type?: string | null;
+      normal_side?: "debit" | "credit" | null;
+      external_code?: string | null;
+      provider_managed?: boolean | null;
+      source_provider?: string | null;
+      is_postable?: boolean | null;
+      is_imputable?: boolean | null;
+      metadata?: JsonRecord | null;
+    }
+  | Array<{
+      id?: string | null;
+      code?: string | null;
+      name?: string | null;
+      account_type?: string | null;
+      normal_side?: "debit" | "credit" | null;
+      external_code?: string | null;
+      provider_managed?: boolean | null;
+      source_provider?: string | null;
+      is_postable?: boolean | null;
+      is_imputable?: boolean | null;
+      metadata?: JsonRecord | null;
+    }>
+  | null;
+
+type JournalEntryDetailLineRaw = {
+  id: string;
+  journal_entry_id: string;
+  line_no: number | null;
+  account_id: string | null;
+  debit: number | null;
+  credit: number | null;
+  currency_code?: string | null;
+  original_currency_code?: string | null;
+  original_amount?: number | null;
+  debit_original?: number | null;
+  credit_original?: number | null;
+  fx_rate?: number | null;
+  fx_rate_applied?: number | null;
+  functional_debit?: number | null;
+  functional_credit?: number | null;
+  functional_amount_uyu?: number | null;
+  functional_currency_code?: string | null;
+  tax_tag?: string | null;
+  description: string | null;
+  role_code?: string | null;
+  line_purpose?: string | null;
+  tax_component?: string | null;
+  settlement_component?: string | null;
+  source_ref_json?: JsonRecord | null;
+  source_hash?: string | null;
+  provider_managed?: boolean | null;
+  metadata?: JsonRecord | null;
+  chart_of_accounts: ChartAccountRelationRaw;
+};
+
+type PostingProposalAuditRaw = {
+  id: string;
+  source_event_id: string | null;
+  source_event_facts_id: string | null;
+  source_event_facts_version_no: number | null;
+  accounting_snapshot_id: string | null;
+  accounting_snapshot_fingerprint: string | null;
+  proposal_version_no: number | null;
+  status: string | null;
+  posting_mode: string | null;
+  proposal_hash: string | null;
+  economic_hash: string | null;
+  confirmability_status: string | null;
+  explanation: string | null;
+  journal_preview_json: JsonRecord | null;
+  warnings_json: unknown;
+  blockers_json: unknown;
+  metadata_json: JsonRecord | null;
+  invalidated_at: string | null;
+  invalidated_reason: string | null;
+  materialized_journal_entry_id: string | null;
+  confirmed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type SourceEventAuditRaw = {
+  id: string;
+  source_channel: string | null;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  source_external_id: string | null;
+  source_document_id: string | null;
+  binary_hash: string | null;
+  payload_hash: string | null;
+  source_ref_json: JsonRecord | null;
+  metadata_json: JsonRecord | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export type JournalEntryReadRow = {
   organizationId: string;
   journalEntryId: string;
@@ -242,6 +348,126 @@ export type JournalLineageReadRow = {
   relatedLineageRootJournalEntryId: string | null;
   relationType: "reverses" | "reversed_by" | "adjusts";
 };
+
+export type JournalEntryDetailLine = {
+  id: string;
+  journalEntryId: string;
+  lineNo: number;
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  accountType: string | null;
+  accountNormalSide: "debit" | "credit" | null;
+  externalAccountCode: string | null;
+  accountProviderManaged: boolean;
+  accountSourceProvider: string | null;
+  accountIsPostable: boolean | null;
+  accountIsImputable: boolean | null;
+  debit: number;
+  credit: number;
+  currencyCode: string | null;
+  originalCurrencyCode: string | null;
+  originalAmount: number;
+  debitOriginal: number;
+  creditOriginal: number;
+  functionalDebit: number;
+  functionalCredit: number;
+  functionalAmount: number;
+  functionalCurrencyCode: string | null;
+  fxRate: number | null;
+  fxRateApplied: number | null;
+  description: string | null;
+  taxTag: string | null;
+  roleCode: string | null;
+  linePurpose: string | null;
+  taxComponent: string | null;
+  settlementComponent: string | null;
+  sourceRef: JsonRecord;
+  sourceHash: string | null;
+  providerManaged: boolean;
+  metadata: JsonRecord;
+};
+
+export type JournalEntryDetail = {
+  isAvailable: true;
+  entry: JournalEntryReadRow;
+  lines: JournalEntryDetailLine[];
+  totals: {
+    debit: number;
+    credit: number;
+    imbalance: number;
+    functionalDebit: number;
+    functionalCredit: number;
+    functionalImbalance: number;
+    lineCount: number;
+  };
+  sourceEvent: {
+    id: string;
+    sourceChannel: string | null;
+    sourceEntityType: string | null;
+    sourceEntityId: string | null;
+    sourceExternalId: string | null;
+    sourceDocumentId: string | null;
+    binaryHash: string | null;
+    payloadHash: string | null;
+    sourceRef: JsonRecord;
+    metadata: JsonRecord;
+    firstSeenAt: string | null;
+    lastSeenAt: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  } | null;
+  proposal: {
+    id: string;
+    sourceEventId: string | null;
+    sourceEventFactsId: string | null;
+    sourceEventFactsVersionNo: number | null;
+    accountingSnapshotId: string | null;
+    accountingSnapshotFingerprint: string | null;
+    proposalVersionNo: number | null;
+    status: string | null;
+    postingMode: string | null;
+    proposalHash: string | null;
+    economicHash: string | null;
+    confirmabilityStatus: string | null;
+    explanation: string | null;
+    journalPreview: JsonRecord;
+    warnings: string[];
+    blockers: string[];
+    metadata: JsonRecord;
+    invalidatedAt: string | null;
+    invalidatedReason: string | null;
+    materializedJournalEntryId: string | null;
+    confirmedAt: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  } | null;
+  lineageRows: JournalLineageReadRow[];
+  adjustment: {
+    canPrepare: boolean;
+    unavailableReason: string | null;
+  };
+};
+
+export type DocumentJournalAuditState =
+  | {
+      mode: "materialized";
+      documentId: string;
+      detail: JournalEntryDetail;
+      previewReason: null;
+    }
+  | {
+      mode: "preview";
+      documentId: string;
+      detail: null;
+      previewReason: string;
+    }
+  | {
+      mode: "unavailable";
+      documentId: string;
+      detail: null;
+      previewReason: string;
+    };
 
 export type OpenItemOutstandingRow = {
   organizationId: string;
@@ -551,6 +777,100 @@ const GENERAL_LEDGER_LINE_SELECT_LEGACY = [
   "description",
 ].join(", ");
 
+const JOURNAL_ENTRY_DETAIL_LINE_SELECT = [
+  "id",
+  "journal_entry_id",
+  "line_no",
+  "account_id",
+  "debit",
+  "credit",
+  "currency_code",
+  "original_currency_code",
+  "original_amount",
+  "debit_original",
+  "credit_original",
+  "fx_rate",
+  "fx_rate_applied",
+  "functional_debit",
+  "functional_credit",
+  "functional_amount_uyu",
+  "functional_currency_code",
+  "tax_tag",
+  "description",
+  "role_code",
+  "line_purpose",
+  "tax_component",
+  "settlement_component",
+  "source_ref_json",
+  "source_hash",
+  "provider_managed",
+  "metadata",
+  "chart_of_accounts(id, code, name, account_type, normal_side, external_code, provider_managed, source_provider, is_postable, is_imputable, metadata)",
+].join(", ");
+
+const JOURNAL_ENTRY_DETAIL_LINE_SELECT_LEGACY = [
+  "id",
+  "journal_entry_id",
+  "line_no",
+  "account_id",
+  "debit",
+  "credit",
+  "currency_code",
+  "original_currency_code",
+  "original_amount",
+  "fx_rate",
+  "functional_debit",
+  "functional_credit",
+  "functional_amount_uyu",
+  "tax_tag",
+  "description",
+  "metadata",
+  "chart_of_accounts(id, code, name, account_type, normal_side, is_postable, metadata)",
+].join(", ");
+
+const POSTING_PROPOSAL_AUDIT_SELECT = [
+  "id",
+  "source_event_id",
+  "source_event_facts_id",
+  "source_event_facts_version_no",
+  "accounting_snapshot_id",
+  "accounting_snapshot_fingerprint",
+  "proposal_version_no",
+  "status",
+  "posting_mode",
+  "proposal_hash",
+  "economic_hash",
+  "confirmability_status",
+  "explanation",
+  "journal_preview_json",
+  "warnings_json",
+  "blockers_json",
+  "metadata_json",
+  "invalidated_at",
+  "invalidated_reason",
+  "materialized_journal_entry_id",
+  "confirmed_at",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+const SOURCE_EVENT_AUDIT_SELECT = [
+  "id",
+  "source_channel",
+  "source_entity_type",
+  "source_entity_id",
+  "source_external_id",
+  "source_document_id",
+  "binary_hash",
+  "payload_hash",
+  "source_ref_json",
+  "metadata_json",
+  "first_seen_at",
+  "last_seen_at",
+  "created_at",
+  "updated_at",
+].join(", ");
+
 const TRIAL_BALANCE_LINE_SELECT = [
   "journal_entry_id",
   "account_id",
@@ -590,6 +910,24 @@ function sortTextValues(values: Iterable<string>) {
 
 function roundAmount(value: number | null | undefined) {
   return roundCurrency(typeof value === "number" ? value : 0);
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function getChartAccountRelation(row: { chart_of_accounts: ChartAccountRelationRaw }) {
+  return Array.isArray(row.chart_of_accounts)
+    ? row.chart_of_accounts[0] ?? null
+    : row.chart_of_accounts;
 }
 
 function includesSearch(values: Array<string | number | null | undefined>, searchTerm: string | null | undefined) {
@@ -684,6 +1022,147 @@ function mapJournalLineageRow(row: JournalLineageRowRaw): JournalLineageReadRow 
     relatedEntryStatus: row.related_entry_status,
     relatedLineageRootJournalEntryId: row.related_lineage_root_journal_entry_id,
     relationType: row.relation_type,
+  };
+}
+
+function mapJournalEntryDetailLine(
+  row: JournalEntryDetailLineRaw,
+  entry: Pick<JournalEntryReadRow, "currencyCode" | "functionalCurrencyCode" | "fxRate">,
+): JournalEntryDetailLine {
+  const account = getChartAccountRelation(row);
+  const debit = roundAmount(row.debit);
+  const credit = roundAmount(row.credit);
+  const functionalDebit = roundAmount(row.functional_debit ?? row.debit);
+  const functionalCredit = roundAmount(row.functional_credit ?? row.credit);
+  const debitOriginal = roundAmount(row.debit_original ?? row.debit);
+  const creditOriginal = roundAmount(row.credit_original ?? row.credit);
+
+  return {
+    id: row.id,
+    journalEntryId: row.journal_entry_id,
+    lineNo: row.line_no ?? 0,
+    accountId: row.account_id ?? account?.id ?? null,
+    accountCode: account?.code ?? null,
+    accountName: account?.name ?? null,
+    accountType: account?.account_type ?? null,
+    accountNormalSide: account?.normal_side ?? null,
+    externalAccountCode: account?.external_code ?? null,
+    accountProviderManaged: account?.provider_managed === true,
+    accountSourceProvider: account?.source_provider ?? null,
+    accountIsPostable: typeof account?.is_postable === "boolean" ? account.is_postable : null,
+    accountIsImputable: typeof account?.is_imputable === "boolean" ? account.is_imputable : null,
+    debit,
+    credit,
+    currencyCode: row.currency_code ?? entry.currencyCode ?? null,
+    originalCurrencyCode: row.original_currency_code ?? row.currency_code ?? entry.currencyCode ?? null,
+    originalAmount: roundAmount(row.original_amount ?? (debit > 0 ? debitOriginal : creditOriginal)),
+    debitOriginal,
+    creditOriginal,
+    functionalDebit,
+    functionalCredit,
+    functionalAmount: roundAmount(row.functional_amount_uyu ?? (functionalDebit - functionalCredit)),
+    functionalCurrencyCode: row.functional_currency_code ?? entry.functionalCurrencyCode ?? null,
+    fxRate: row.fx_rate ?? entry.fxRate ?? null,
+    fxRateApplied: row.fx_rate_applied ?? row.fx_rate ?? entry.fxRate ?? null,
+    description: row.description,
+    taxTag: row.tax_tag ?? null,
+    roleCode: row.role_code ?? null,
+    linePurpose: row.line_purpose ?? null,
+    taxComponent: row.tax_component ?? null,
+    settlementComponent: row.settlement_component ?? null,
+    sourceRef: asRecord(row.source_ref_json),
+    sourceHash: row.source_hash ?? null,
+    providerManaged: row.provider_managed === true,
+    metadata: asRecord(row.metadata),
+  };
+}
+
+function mapPostingProposalAuditRow(row: PostingProposalAuditRaw): JournalEntryDetail["proposal"] {
+  return {
+    id: row.id,
+    sourceEventId: row.source_event_id,
+    sourceEventFactsId: row.source_event_facts_id,
+    sourceEventFactsVersionNo: row.source_event_facts_version_no,
+    accountingSnapshotId: row.accounting_snapshot_id,
+    accountingSnapshotFingerprint: row.accounting_snapshot_fingerprint,
+    proposalVersionNo: row.proposal_version_no,
+    status: row.status,
+    postingMode: row.posting_mode,
+    proposalHash: row.proposal_hash,
+    economicHash: row.economic_hash,
+    confirmabilityStatus: row.confirmability_status,
+    explanation: row.explanation,
+    journalPreview: asRecord(row.journal_preview_json),
+    warnings: asStringArray(row.warnings_json),
+    blockers: asStringArray(row.blockers_json),
+    metadata: asRecord(row.metadata_json),
+    invalidatedAt: row.invalidated_at,
+    invalidatedReason: row.invalidated_reason,
+    materializedJournalEntryId: row.materialized_journal_entry_id,
+    confirmedAt: row.confirmed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSourceEventAuditRow(row: SourceEventAuditRaw): JournalEntryDetail["sourceEvent"] {
+  return {
+    id: row.id,
+    sourceChannel: row.source_channel,
+    sourceEntityType: row.source_entity_type,
+    sourceEntityId: row.source_entity_id,
+    sourceExternalId: row.source_external_id,
+    sourceDocumentId: row.source_document_id,
+    binaryHash: row.binary_hash,
+    payloadHash: row.payload_hash,
+    sourceRef: asRecord(row.source_ref_json),
+    metadata: asRecord(row.metadata_json),
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function buildJournalEntryAdjustmentPolicy(entry: JournalEntryReadRow) {
+  if (!entry.sourceDocumentId) {
+    return {
+      canPrepare: false,
+      unavailableReason: "Este asiento no tiene un documento origen para remapear.",
+    };
+  }
+
+  if (entry.providerManaged) {
+    return {
+      canPrepare: false,
+      unavailableReason: "Los asientos administrados por proveedor quedan solo lectura en v1.",
+    };
+  }
+
+  if (!entry.isActiveLeaf) {
+    return {
+      canPrepare: false,
+      unavailableReason: "Este asiento ya fue reemplazado por una reversa o ajuste posterior.",
+    };
+  }
+
+  if (!["posted", "exported"].includes(entry.status ?? "")) {
+    return {
+      canPrepare: false,
+      unavailableReason: "Solo los asientos posteados pueden ajustarse mediante reversa y reemplazo.",
+    };
+  }
+
+  if (!isFiscalPeriodMutableForDocument(entry.fiscalPeriodStatus)) {
+    return {
+      canPrepare: false,
+      unavailableReason: "El periodo contable no admite ajustes documentales sin reapertura formal.",
+    };
+  }
+
+  return {
+    canPrepare: true,
+    unavailableReason: null,
   };
 }
 
@@ -997,6 +1476,254 @@ export async function loadJournalEntriesWorkspaceData(
       rows,
       fiscalPeriodCodes: availablePeriodCodes,
     }),
+  };
+}
+
+async function loadJournalEntryLineageRows(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    journalEntryIds: string[];
+  },
+) {
+  if (input.journalEntryIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("v_journal_lineage")
+    .select(JOURNAL_LINEAGE_SELECT)
+    .eq("organization_id", input.organizationId)
+    .limit(500);
+
+  if (error) {
+    if (isMissingAccountingReadModelRelationError(error)) {
+      return [];
+    }
+
+    throw new Error(error.message);
+  }
+
+  const entryIds = new Set(input.journalEntryIds);
+
+  return ((data as unknown as JournalLineageRowRaw[] | null) ?? [])
+    .map(mapJournalLineageRow)
+    .filter((row) =>
+      entryIds.has(row.journalEntryId)
+      || entryIds.has(row.relatedJournalEntryId));
+}
+
+async function loadPostingProposalAudit(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    postingProposalId: string | null;
+  },
+) {
+  if (!input.postingProposalId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("posting_proposals")
+    .select(POSTING_PROPOSAL_AUDIT_SELECT)
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.postingProposalId)
+    .limit(1);
+
+  if (error) {
+    if (isMissingSupabaseRelationError(error, "posting_proposals")) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  const row = ((data as unknown as PostingProposalAuditRaw[] | null) ?? [])[0] ?? null;
+
+  return row ? mapPostingProposalAuditRow(row) : null;
+}
+
+async function loadSourceEventAudit(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    sourceEventId: string | null;
+  },
+) {
+  if (!input.sourceEventId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("source_events")
+    .select(SOURCE_EVENT_AUDIT_SELECT)
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.sourceEventId)
+    .limit(1);
+
+  if (error) {
+    if (isMissingSupabaseRelationError(error, "source_events")) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  const row = ((data as unknown as SourceEventAuditRaw[] | null) ?? [])[0] ?? null;
+
+  return row ? mapSourceEventAuditRow(row) : null;
+}
+
+export async function loadJournalEntryDetail(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    journalEntryId: string;
+  },
+): Promise<JournalEntryDetail | null> {
+  const entryResult = await supabase
+    .from("v_journal_entries_read")
+    .select(JOURNAL_ENTRY_READ_SELECT)
+    .eq("organization_id", input.organizationId)
+    .eq("journal_entry_id", input.journalEntryId)
+    .limit(1);
+
+  if (entryResult.error) {
+    if (isMissingAccountingReadModelRelationError(entryResult.error)) {
+      return null;
+    }
+
+    throw new Error(entryResult.error.message);
+  }
+
+  const entryRaw = ((entryResult.data as unknown as JournalEntryReadRowRaw[] | null) ?? [])[0] ?? null;
+
+  if (!entryRaw) {
+    return null;
+  }
+
+  const entry = mapJournalEntryRow(entryRaw);
+  const runLineQuery = async (selectClause: string) =>
+    supabase
+      .from("journal_entry_lines")
+      .select(selectClause)
+      .eq("journal_entry_id", input.journalEntryId)
+      .order("line_no", { ascending: true })
+      .limit(400);
+
+  let { data: linesData, error: linesError } = await runLineQuery(JOURNAL_ENTRY_DETAIL_LINE_SELECT);
+
+  if (linesError && isMissingJournalEntryLineStep5ColumnError(linesError)) {
+    ({ data: linesData, error: linesError } = await runLineQuery(JOURNAL_ENTRY_DETAIL_LINE_SELECT_LEGACY));
+  }
+
+  if (linesError) {
+    throw new Error(linesError.message);
+  }
+
+  const lines = ((linesData as unknown as JournalEntryDetailLineRaw[] | null) ?? [])
+    .map((line) => mapJournalEntryDetailLine(line, entry));
+  const [lineageRows, proposal, sourceEvent] = await Promise.all([
+    loadJournalEntryLineageRows(supabase, {
+      organizationId: input.organizationId,
+      journalEntryIds: [input.journalEntryId],
+    }),
+    loadPostingProposalAudit(supabase, {
+      organizationId: input.organizationId,
+      postingProposalId: entry.postingProposalId,
+    }),
+    loadSourceEventAudit(supabase, {
+      organizationId: input.organizationId,
+      sourceEventId: entry.sourceEventId,
+    }),
+  ]);
+  const debit = roundAmount(lines.reduce((sum, line) => sum + line.debit, 0));
+  const credit = roundAmount(lines.reduce((sum, line) => sum + line.credit, 0));
+  const functionalDebit = roundAmount(lines.reduce((sum, line) => sum + line.functionalDebit, 0));
+  const functionalCredit = roundAmount(lines.reduce((sum, line) => sum + line.functionalCredit, 0));
+
+  return {
+    isAvailable: true,
+    entry,
+    lines,
+    totals: {
+      debit,
+      credit,
+      imbalance: roundAmount(debit - credit),
+      functionalDebit,
+      functionalCredit,
+      functionalImbalance: roundAmount(functionalDebit - functionalCredit),
+      lineCount: lines.length,
+    },
+    sourceEvent,
+    proposal,
+    lineageRows,
+    adjustment: buildJournalEntryAdjustmentPolicy(entry),
+  };
+}
+
+export async function loadDocumentJournalAuditState(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    documentId: string;
+  },
+): Promise<DocumentJournalAuditState> {
+  const { data, error } = await supabase
+    .from("v_journal_entries_read")
+    .select(JOURNAL_ENTRY_READ_SELECT)
+    .eq("organization_id", input.organizationId)
+    .eq("source_document_id", input.documentId)
+    .in("status", ["posted", "exported"])
+    .order("is_active_leaf", { ascending: false })
+    .order("entry_date", { ascending: false })
+    .order("entry_number", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    if (isMissingAccountingReadModelRelationError(error)) {
+      return {
+        mode: "unavailable",
+        documentId: input.documentId,
+        detail: null,
+        previewReason: "El read model de asientos todavia no esta disponible en esta base.",
+      };
+    }
+
+    throw new Error(error.message);
+  }
+
+  const row = ((data as unknown as JournalEntryReadRowRaw[] | null) ?? [])[0] ?? null;
+
+  if (!row) {
+    return {
+      mode: "preview",
+      documentId: input.documentId,
+      detail: null,
+      previewReason: "El documento todavia no tiene un asiento materializado; se muestra la propuesta del kernel.",
+    };
+  }
+
+  const detail = await loadJournalEntryDetail(supabase, {
+    organizationId: input.organizationId,
+    journalEntryId: row.journal_entry_id,
+  });
+
+  if (!detail) {
+    return {
+      mode: "unavailable",
+      documentId: input.documentId,
+      detail: null,
+      previewReason: "No pudimos cargar el detalle del asiento materializado.",
+    };
+  }
+
+  return {
+    mode: "materialized",
+    documentId: input.documentId,
+    detail,
+    previewReason: null,
   };
 }
 

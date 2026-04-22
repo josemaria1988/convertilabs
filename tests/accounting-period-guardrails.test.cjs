@@ -10,6 +10,7 @@ const {
 } = require("@/modules/accounting/periods");
 const {
   loadJournalEntriesWorkspaceData,
+  loadJournalEntryDetail,
   loadOpenItemsWorkspaceData,
   loadTrialBalanceWorkspaceData,
 } = require("@/modules/accounting/read-model-repository");
@@ -235,6 +236,272 @@ test("journal entries workspace defaults to the latest monthly period", async ()
   assert.equal(data.selectedFiscalPeriodCode, "2026-03");
   assert.equal(data.rows.length, 1);
   assert.deepEqual(data.filterOptions.fiscalPeriodCodes, ["2026-03", "2026-02"]);
+});
+
+test("journal entry detail loads lines, totals, source and lineage", async () => {
+  const supabase = createSupabaseStub((query) => {
+    if (query.table === "v_journal_entries_read" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            organization_id: "org-1",
+            journal_entry_id: "je-1",
+            entry_number: 10,
+            entry_date: "2026-03-15",
+            status: "posted",
+            posting_mode: "final",
+            source_channel: "documents",
+            source_system: "convertilabs",
+            source_provider: null,
+            provider_managed: false,
+            source_document_id: "doc-1",
+            source_event_id: "event-1",
+            source_entity_type: "document",
+            source_entity_id: "doc-1",
+            source_external_id: "A-100",
+            posting_proposal_id: "proposal-1",
+            posting_proposal_confirmability_status: "confirmable",
+            accounting_snapshot_fingerprint: "snapshot-abcdef",
+            fiscal_period_id: "fp-2026-03",
+            fiscal_period_code: "2026-03",
+            fiscal_period_label: "Periodo 2026-03",
+            fiscal_period_status: "open",
+            journal_type_id: null,
+            journal_type_code: "COMPRAS",
+            journal_type_name: "Compras",
+            auxiliary_book_id: null,
+            auxiliary_book_code: null,
+            auxiliary_book_name: null,
+            reference: "A-100",
+            description: "Compra",
+            currency_code: "UYU",
+            functional_currency_code: "UYU",
+            fx_rate: 1,
+            fx_rate_date: "2026-03-15",
+            fx_rate_source: "same_currency",
+            total_debit: 122,
+            total_credit: 122,
+            functional_total_debit: 122,
+            functional_total_credit: 122,
+            source_hash: "source-hash",
+            economic_hash: "economic-hash",
+            line_count: 2,
+            distinct_account_count: 2,
+            open_item_count: 1,
+            open_item_outstanding_amount: 122,
+            open_item_functional_amount: 122,
+            settlement_link_count: 0,
+            settlement_amount: 0,
+            settlement_functional_amount: 0,
+            last_settled_at: null,
+            lineage_kind: "base",
+            lineage_root_journal_entry_id: "je-1",
+            lineage_depth: 0,
+            reverses_journal_entry_id: null,
+            reversed_by_journal_entry_id: null,
+            adjusts_journal_entry_id: null,
+            annulment_reason: null,
+            is_immutable: true,
+            is_active_leaf: true,
+            first_seen_at: "2026-03-15T10:00:00.000Z",
+            last_seen_at: "2026-03-15T10:00:00.000Z",
+            created_at: "2026-03-15T10:00:00.000Z",
+            updated_at: "2026-03-15T10:00:00.000Z",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "journal_entry_lines" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "line-1",
+            journal_entry_id: "je-1",
+            line_no: 1,
+            account_id: "acct-expense",
+            debit: 100,
+            credit: 0,
+            currency_code: "UYU",
+            original_currency_code: "UYU",
+            original_amount: 100,
+            debit_original: 100,
+            credit_original: 0,
+            fx_rate: 1,
+            fx_rate_applied: 1,
+            functional_debit: 100,
+            functional_credit: 0,
+            functional_amount_uyu: 100,
+            functional_currency_code: "UYU",
+            tax_tag: null,
+            description: "Gasto",
+            role_code: "expense_account",
+            line_purpose: "main",
+            tax_component: null,
+            settlement_component: null,
+            source_ref_json: { documentId: "doc-1" },
+            source_hash: "line-source-1",
+            provider_managed: false,
+            metadata: {},
+            chart_of_accounts: {
+              id: "acct-expense",
+              code: "6101",
+              name: "Gastos",
+              account_type: "expense",
+              normal_side: "debit",
+              external_code: "6101",
+              provider_managed: false,
+              source_provider: null,
+              is_postable: true,
+              is_imputable: true,
+              metadata: {},
+            },
+          },
+          {
+            id: "line-2",
+            journal_entry_id: "je-1",
+            line_no: 2,
+            account_id: "acct-payable",
+            debit: 0,
+            credit: 100,
+            currency_code: "UYU",
+            original_currency_code: "UYU",
+            original_amount: 100,
+            debit_original: 0,
+            credit_original: 100,
+            fx_rate: 1,
+            fx_rate_applied: 1,
+            functional_debit: 0,
+            functional_credit: 100,
+            functional_amount_uyu: -100,
+            functional_currency_code: "UYU",
+            tax_tag: null,
+            description: "Proveedor",
+            role_code: "accounts_payable_account",
+            line_purpose: "counterparty",
+            tax_component: null,
+            settlement_component: "open_item",
+            source_ref_json: { documentId: "doc-1" },
+            source_hash: "line-source-2",
+            provider_managed: false,
+            metadata: {},
+            chart_of_accounts: {
+              id: "acct-payable",
+              code: "2101",
+              name: "Proveedores",
+              account_type: "liability",
+              normal_side: "credit",
+              external_code: "2101",
+              provider_managed: false,
+              source_provider: null,
+              is_postable: true,
+              is_imputable: true,
+              metadata: {},
+            },
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "v_journal_lineage" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            organization_id: "org-1",
+            journal_entry_id: "je-1",
+            entry_number: 10,
+            entry_date: "2026-03-15",
+            entry_status: "posted",
+            lineage_root_journal_entry_id: "je-1",
+            related_journal_entry_id: "je-2",
+            related_entry_number: 11,
+            related_entry_date: "2026-03-16",
+            related_entry_status: "posted",
+            related_lineage_root_journal_entry_id: "je-1",
+            relation_type: "adjusts",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "posting_proposals" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "proposal-1",
+            source_event_id: "event-1",
+            source_event_facts_id: "facts-1",
+            source_event_facts_version_no: 1,
+            accounting_snapshot_id: "snapshot-1",
+            accounting_snapshot_fingerprint: "snapshot-abcdef",
+            proposal_version_no: 2,
+            status: "materialized",
+            posting_mode: "final",
+            proposal_hash: "proposal-hash",
+            economic_hash: "economic-hash",
+            confirmability_status: "confirmable",
+            explanation: "Kernel proposal",
+            journal_preview_json: { totalDebit: 100 },
+            warnings_json: [],
+            blockers_json: [],
+            metadata_json: { rule: "auto" },
+            invalidated_at: null,
+            invalidated_reason: null,
+            materialized_journal_entry_id: "je-1",
+            confirmed_at: "2026-03-15T10:00:00.000Z",
+            created_at: "2026-03-15T09:59:00.000Z",
+            updated_at: "2026-03-15T10:00:00.000Z",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    if (query.table === "source_events" && query.mode === "execute") {
+      return {
+        data: [
+          {
+            id: "event-1",
+            source_channel: "documents",
+            source_entity_type: "document",
+            source_entity_id: "doc-1",
+            source_external_id: "A-100",
+            source_document_id: "doc-1",
+            binary_hash: "binary-hash",
+            payload_hash: "payload-hash",
+            source_ref_json: { documentId: "doc-1" },
+            metadata_json: { imported: false },
+            first_seen_at: "2026-03-15T09:58:00.000Z",
+            last_seen_at: "2026-03-15T10:00:00.000Z",
+            created_at: "2026-03-15T09:58:00.000Z",
+            updated_at: "2026-03-15T10:00:00.000Z",
+          },
+        ],
+        error: null,
+      };
+    }
+
+    throw new Error(`Unexpected query: ${query.table}/${query.mode}`);
+  });
+
+  const detail = await loadJournalEntryDetail(supabase, {
+    organizationId: "org-1",
+    journalEntryId: "je-1",
+  });
+
+  assert.equal(detail.entry.journalEntryId, "je-1");
+  assert.equal(detail.lines.length, 2);
+  assert.equal(detail.lines[0].accountCode, "6101");
+  assert.equal(detail.totals.debit, 100);
+  assert.equal(detail.totals.credit, 100);
+  assert.equal(detail.totals.imbalance, 0);
+  assert.equal(detail.sourceEvent.sourceExternalId, "A-100");
+  assert.equal(detail.proposal.confirmabilityStatus, "confirmable");
+  assert.equal(detail.lineageRows.length, 1);
+  assert.equal(detail.adjustment.canPrepare, true);
 });
 
 test("open items workspace defaults to the latest monthly period", async () => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { JournalEntryModalTrigger } from "@/components/accounting/journal-entry-modal-trigger";
 import { DocumentPreview } from "@/components/documents/document-preview";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
 import {
@@ -1015,15 +1016,23 @@ export function DocumentReviewRuleWorkspace({
           <section className="review-rule-card">
             <div className="review-rule-card__header">
               <h2>Detalle de Factura N&deg; {invoiceCode}</h2>
-              <DocumentOriginalModalTrigger
-                previewUrl={pageData.document.previewUrl}
-                mimeType={pageData.document.mimeType}
-                originalFilename={pageData.document.originalFilename}
-                triggerLabel="Ver original"
-                triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
-                modalTitle={pageData.document.originalFilename}
-                modalDescription="Original cargado por la organizacion."
-              />
+              <div className="flex flex-wrap gap-2">
+                <JournalEntryModalTrigger
+                  organizationSlug={slug}
+                  documentTitle={`Factura ${invoiceCode}`}
+                  auditState={pageData.journalAuditState}
+                  preview={pageData.accountingImpactPreview}
+                />
+                <DocumentOriginalModalTrigger
+                  previewUrl={pageData.document.previewUrl}
+                  mimeType={pageData.document.mimeType}
+                  originalFilename={pageData.document.originalFilename}
+                  triggerLabel="Ver original"
+                  triggerClassName={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-4 py-2 text-sm`}
+                  modalTitle={pageData.document.originalFilename}
+                  modalDescription="Original cargado por la organizacion."
+                />
+              </div>
             </div>
 
             <div className="review-rule-detail-grid">
