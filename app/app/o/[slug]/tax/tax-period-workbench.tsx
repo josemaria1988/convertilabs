@@ -589,15 +589,16 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
             </form>
           </details>
 
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/8">
-            <div className="grid grid-cols-[32px_minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 border-b border-[color:var(--color-border)] px-4 py-3 text-[12px] uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
-              <span />
-              <span>Documento</span>
-              <span>Estado</span>
-              <span>Impacto IVA</span>
-              <span>Acciones</span>
-            </div>
-            <div className="divide-y divide-[color:var(--color-border)]">
+          <div className="overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white/8">
+            <div className="min-w-[1180px]" data-testid="tax-workbench-table">
+              <div className="grid grid-cols-[40px_minmax(320px,2.2fr)_minmax(260px,1.2fr)_minmax(190px,1fr)_minmax(270px,auto)] gap-4 border-b border-[color:var(--color-border)] px-4 py-3 text-[12px] uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+                <span />
+                <span>Documento</span>
+                <span>Estado</span>
+                <span>Impacto IVA</span>
+                <span>Acciones</span>
+              </div>
+              <div className="divide-y divide-[color:var(--color-border)]">
               {props.workbench.items.length === 0 ? (
                 <div className="px-4 py-8 text-sm text-[color:var(--color-muted)]">
                   No hay documentos para el filtro actual.
@@ -627,7 +628,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                   : null;
 
                 return (
-                  <div key={item.documentId} className="grid grid-cols-[32px_minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-3 px-4 py-4">
+                  <div key={item.documentId} className="grid grid-cols-[40px_minmax(320px,2.2fr)_minmax(260px,1.2fr)_minmax(190px,1fr)_minmax(270px,auto)] gap-4 px-4 py-4">
                     <label className="flex items-start justify-center pt-1">
                       <input
                         form="bulk-tax-workbench-form"
@@ -637,8 +638,8 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         className="h-4 w-4 rounded border border-[color:var(--color-border)] bg-transparent"
                       />
                     </label>
-                    <div className="space-y-2">
-                      <div>
+                    <div className="min-w-0 space-y-2">
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold text-white">{item.display.title}</p>
                         <p className="text-[13px] text-[color:var(--color-muted)]">{item.display.subtitle}</p>
                       </div>
@@ -655,7 +656,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         {item.taxStateSummary}
                       </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="min-w-0 space-y-2">
                       <div className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2 text-[13px] text-[color:var(--color-muted)]">
                         <p className="font-medium text-white">{item.workflowLabel}</p>
                         <p className="mt-1">{item.nextBestAction ?? "Sin accion sugerida"}</p>
@@ -665,7 +666,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         <p className="mt-1">{item.vatRunSummary}</p>
                       </div>
                     </div>
-                    <div className="space-y-2 text-[13px]">
+                    <div className="min-w-0 space-y-2 text-[13px]">
                       <div className="rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(53,63,82,0.42)] px-3 py-2">
                         <p className="text-white">{item.display.impactLabel}</p>
                         <p className="mt-1 text-[color:var(--color-muted)]">{formatAmount(item.display.impactAmount)}</p>
@@ -674,7 +675,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         {item.blockersCount} blockers · {item.warningsCount} warnings
                       </div>
                     </div>
-                    <div className="flex min-w-[220px] flex-col gap-2">
+                    <div className="flex min-w-[270px] flex-col gap-2">
                       <LoadingLink href={focusHref} pendingLabel="Abriendo..." className="ui-button ui-button--secondary justify-center text-[12px]">
                         Ver detalle
                       </LoadingLink>
@@ -689,6 +690,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
 

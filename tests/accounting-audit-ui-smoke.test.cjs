@@ -32,3 +32,12 @@ test("vat preview card uses enriched document drilldown and journal links", () =
   assert.match(source, /Ver comprobante/);
   assert.match(source, /Ver asiento/);
 });
+
+test("tax workbench table keeps stable columns instead of squeezing content", () => {
+  const source = readProjectFile("app", "app", "o", "[slug]", "tax", "tax-period-workbench.tsx");
+
+  assert.match(source, /overflow-x-auto/);
+  assert.match(source, /data-testid="tax-workbench-table"/);
+  assert.match(source, /min-w-\[1180px\]/);
+  assert.match(source, /minmax\(320px,2\.2fr\)/);
+});
