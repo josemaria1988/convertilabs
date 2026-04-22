@@ -38,6 +38,8 @@ test("tax workbench table keeps stable columns instead of squeezing content", ()
 
   assert.match(source, /overflow-x-auto/);
   assert.match(source, /data-testid="tax-workbench-table"/);
-  assert.match(source, /min-w-\[1180px\]/);
-  assert.match(source, /minmax\(320px,2\.2fr\)/);
+  assert.match(source, /min-w-\[1260px\]/);
+  assert.match(source, /minmax\(340px,2\.2fr\)/);
+  assert.match(source, /hasFocusPanel \? "mt-4 grid gap-4 xl:grid-cols-\[minmax\(0,1fr\)_360px\]" : "mt-4"/);
+  assert.doesNotMatch(source, /La bandeja prioriza la resolucion fiscal del mes/);
 });

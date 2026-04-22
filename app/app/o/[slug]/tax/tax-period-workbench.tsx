@@ -376,6 +376,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
     Boolean(props.manualResolveDocumentId)
     && props.workbench.focusItem?.documentId === props.manualResolveDocumentId
     && props.workbench.focusPageData?.document.id === props.manualResolveDocumentId;
+  const hasFocusPanel = Boolean(props.workbench.focusItem);
   const manualResolveCloseHref = props.workbench.focusItem
     ? buildTaxWorkbenchHref({
       slug: props.slug,
@@ -438,7 +439,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
         </article>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className={hasFocusPanel ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" : "mt-4"}>
         <div className="space-y-4">
           <form method="get" className="rounded-2xl border border-[color:var(--color-border)] bg-white/8 p-4">
             <input type="hidden" name="periodYear" value={props.selectedYear} />
@@ -590,8 +591,8 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
           </details>
 
           <div className="overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white/8">
-            <div className="min-w-[1180px]" data-testid="tax-workbench-table">
-              <div className="grid grid-cols-[40px_minmax(320px,2.2fr)_minmax(260px,1.2fr)_minmax(190px,1fr)_minmax(270px,auto)] gap-4 border-b border-[color:var(--color-border)] px-4 py-3 text-[12px] uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
+            <div className="min-w-[1260px]" data-testid="tax-workbench-table">
+              <div className="grid grid-cols-[40px_minmax(340px,2.2fr)_minmax(270px,1.2fr)_minmax(200px,1fr)_minmax(330px,auto)] gap-4 border-b border-[color:var(--color-border)] px-4 py-3 text-[12px] uppercase tracking-[0.12em] text-[color:var(--color-muted)]">
                 <span />
                 <span>Documento</span>
                 <span>Estado</span>
@@ -628,7 +629,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                   : null;
 
                 return (
-                  <div key={item.documentId} className="grid grid-cols-[40px_minmax(320px,2.2fr)_minmax(260px,1.2fr)_minmax(190px,1fr)_minmax(270px,auto)] gap-4 px-4 py-4">
+                  <div key={item.documentId} className="grid grid-cols-[40px_minmax(340px,2.2fr)_minmax(270px,1.2fr)_minmax(200px,1fr)_minmax(330px,auto)] gap-4 px-4 py-4">
                     <label className="flex items-start justify-center pt-1">
                       <input
                         form="bulk-tax-workbench-form"
@@ -675,7 +676,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
                         {item.blockersCount} blockers · {item.warningsCount} warnings
                       </div>
                     </div>
-                    <div className="flex min-w-[270px] flex-col gap-2">
+                    <div className="flex min-w-[330px] flex-col gap-2">
                       <LoadingLink href={focusHref} pendingLabel="Abriendo..." className="ui-button ui-button--secondary justify-center text-[12px]">
                         Ver detalle
                       </LoadingLink>
@@ -772,21 +773,7 @@ export function TaxPeriodWorkbench(props: TaxPeriodWorkbenchProps) {
               </LoadingLink>
             </div>
           </aside>
-        ) : (
-          <aside className="ui-panel h-fit xl:sticky xl:top-4">
-            <div className="ui-panel-header">
-              <div>
-                <h3 className="text-[16px] font-semibold text-white">Detalle fiscal</h3>
-                <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                  Selecciona un documento para ver resumen humano, preview contable, impacto IVA y blockers sin salir del periodo.
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/8 px-4 py-6 text-sm text-[color:var(--color-muted)]">
-              La bandeja prioriza la resolucion fiscal del mes. El detalle profundo del documento sigue disponible en el reviewer completo.
-            </div>
-          </aside>
-        )}
+        ) : null}
       </div>
 
       {manualResolveActive && props.workbench.focusItem && props.workbench.focusPageData ? (
