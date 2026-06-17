@@ -37,6 +37,10 @@ import type {
   ZetaJournalTypeRaw,
 } from "@/modules/integrations/zeta/contracts/plan-de-cuentas";
 import { materializeZetaChartAccounts } from "@/modules/integrations/zeta/services/materialize-chart-accounts";
+import {
+  materializeZetaContacts,
+  type ZetaContactMaterializationProgress,
+} from "@/modules/integrations/zeta/services/materialize-zeta-contacts";
 import { materializeZetaConcepts } from "@/modules/integrations/zeta/services/materialize-zeta-concepts";
 import { materializeZetaJournalTypes } from "@/modules/integrations/zeta/services/materialize-journal-types";
 import {
@@ -48,7 +52,12 @@ import {
 } from "@/modules/integrations/zeta/normalizers/common";
 import { materializeZetaDocument } from "@/modules/integrations/zeta/services/materialization-service";
 
-export type ZetaSyncStream = "masters" | "accounting_masters" | "sales_documents" | "received_cfes";
+export type ZetaSyncStream =
+  | "contacts"
+  | "masters"
+  | "accounting_masters"
+  | "sales_documents"
+  | "received_cfes";
 
 export type ZetaSyncInput = {
   supabase: SupabaseClient;
@@ -62,7 +71,25 @@ export type ZetaSyncInput = {
   testMode?: boolean;
   testRunKey?: string | null;
   fetchImpl?: ZetaFetch;
+  progressEvery?: number | null;
+  onProgress?: (progress: ZetaSyncProgress) => void | Promise<void>;
 };
+
+export type ZetaSyncProgress =
+  | {
+    stage: "zeta_master_query_fetched";
+    runId: string;
+    stream: ZetaSyncStream;
+    queryKey: ZetaEndpointKey;
+    entityType: string;
+    rows: number;
+    recordsSeen: number;
+    recordsUpserted: number;
+  }
+  | (ZetaContactMaterializationProgress & {
+    runId: string;
+    stream: ZetaSyncStream;
+  });
 
 export type ZetaSyncSummary = {
   runId: string;
@@ -100,10 +127,11 @@ type MasterQueryDefinition = {
   key: ZetaEndpointKey;
   entityType: string;
   externalKeyFields: string[];
+  stream?: string;
 };
 
 const masterQueries: MasterQueryDefinition[] = [
-  { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo", "RUT", "Documento"] },
+  { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo"], stream: "zeta.masters.contacts" },
   { key: "customerCommercialDataQuery", entityType: "customer_commercial_data", externalKeyFields: ["Codigo"] },
   { key: "supplierCommercialDataQuery", entityType: "supplier_commercial_data", externalKeyFields: ["Codigo"] },
   { key: "currenciesQuery", entityType: "currency", externalKeyFields: ["Codigo", "CodigoISO"] },
@@ -127,6 +155,10 @@ const accountingMasterQueries: MasterQueryDefinition[] = [
   { key: "chartAccountsQuery", entityType: "chart_account", externalKeyFields: ["Codigo"] },
   { key: "conceptsQuery", entityType: "concept", externalKeyFields: ["Codigo"] },
   { key: "journalTypesQuery", entityType: "journal_type", externalKeyFields: ["Codigo"] },
+];
+
+const contactMasterQueries: MasterQueryDefinition[] = [
+  { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo"], stream: "zeta.masters.contacts" },
 ];
 
 function nowIso() {
@@ -295,7 +327,7 @@ async function upsertMasterRawRecords(input: {
       organization_id: input.organizationId,
       connection_id: input.connectionId,
       provider: "zetasoftware",
-      stream: `zeta.masters.${input.query.entityType}`,
+      stream: input.query.stream ?? `zeta.masters.${input.query.entityType}`,
       entity_type: input.query.entityType,
       external_key: buildMasterExternalKey(
         row,
@@ -361,13 +393,18 @@ async function syncMasters(input: {
   client: ZetaRestClient;
   organizationId: string;
   connectionId: string;
+  actorUserId?: string | null;
   runId: string;
   maxPages: number;
   counters: SyncCounters;
   testMode: boolean;
   testRunKey?: string | null;
   queries: MasterQueryDefinition[];
+  stream: ZetaSyncStream;
+  progressEvery?: number | null;
+  onProgress?: (progress: ZetaSyncProgress) => void | Promise<void>;
 }) {
+  const contactRows: JsonRecord[] = [];
   const chartAccountRows: JsonRecord[] = [];
   const conceptRows: JsonRecord[] = [];
   const journalTypeRows: JsonRecord[] = [];
@@ -390,14 +427,46 @@ async function syncMasters(input: {
       rows,
     });
     input.counters.upserted += rows.length;
+    await input.onProgress?.({
+      stage: "zeta_master_query_fetched",
+      runId: input.runId,
+      stream: input.stream,
+      queryKey: query.key,
+      entityType: query.entityType,
+      rows: rows.length,
+      recordsSeen: input.counters.seen,
+      recordsUpserted: input.counters.upserted,
+    });
 
-    if (query.entityType === "chart_account") {
+    if (query.entityType === "contact") {
+      contactRows.push(...rows);
+    } else if (query.entityType === "chart_account") {
       chartAccountRows.push(...rows);
     } else if (query.entityType === "concept") {
       conceptRows.push(...rows);
     } else if (query.entityType === "journal_type") {
       journalTypeRows.push(...rows);
     }
+  }
+
+  if (contactRows.length > 0) {
+    const contactSummary = await materializeZetaContacts(input.supabase, {
+      organizationId: input.organizationId,
+      contacts: contactRows,
+      runId: input.runId,
+      actorUserId: input.actorUserId ?? null,
+      progressEvery: input.progressEvery,
+      onProgress: (progress) =>
+        input.onProgress?.({
+          ...progress,
+          runId: input.runId,
+          stream: input.stream,
+        }),
+    });
+
+    input.counters.masterMaterialization.contacts = contactSummary;
+    input.counters.failed += contactSummary.failed;
+    input.counters.warnings.push(...contactSummary.warnings);
   }
 
   if (chartAccountRows.length > 0) {
@@ -714,9 +783,14 @@ async function markInterruptedRunningSyncs(
 }
 
 export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary> {
-  const isMasterStream = input.stream === "masters" || input.stream === "accounting_masters";
+  const isMasterStream = input.stream === "masters"
+    || input.stream === "accounting_masters"
+    || input.stream === "contacts";
   const period = isMasterStream ? null : parsePeriod(input.period);
-  const maxPages = clampMaxPages(input.maxPages, isMasterStream ? 5 : 25);
+  const maxPages = clampMaxPages(
+    input.maxPages,
+    input.stream === "contacts" ? 200 : isMasterStream ? 5 : 25,
+  );
   let runId = input.runId ?? null;
   let testMode = input.testMode ?? true;
   let testRunKey = input.testRunKey ?? null;
@@ -804,18 +878,30 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
       fetchImpl: input.fetchImpl,
     });
 
-    if (input.stream === "masters" || input.stream === "accounting_masters") {
+    if (
+      input.stream === "masters"
+      || input.stream === "accounting_masters"
+      || input.stream === "contacts"
+    ) {
       await syncMasters({
         supabase: input.supabase,
         client,
         organizationId: input.organizationId,
         connectionId: connection.id,
+        actorUserId: input.actorUserId,
         runId,
         maxPages,
         counters,
         testMode,
         testRunKey,
-        queries: input.stream === "accounting_masters" ? accountingMasterQueries : masterQueries,
+        queries: input.stream === "accounting_masters"
+          ? accountingMasterQueries
+          : input.stream === "contacts"
+            ? contactMasterQueries
+            : masterQueries,
+        stream: input.stream,
+        progressEvery: input.progressEvery,
+        onProgress: input.onProgress,
       });
     } else if (input.stream === "sales_documents" && period) {
       await syncSalesDocuments({

@@ -13,6 +13,7 @@ function createSupabaseStub(resolver) {
       filters: [],
       inFilters: [],
       orderCalls: [],
+      rangeCall: null,
       selectClause: null,
       limitCount: null,
     };
@@ -22,6 +23,7 @@ function createSupabaseStub(resolver) {
       filters: [...state.filters],
       inFilters: [...state.inFilters],
       orderCalls: [...state.orderCalls],
+      rangeCall: state.rangeCall,
       mode,
     });
     const execute = (mode) => {
@@ -65,6 +67,10 @@ function createSupabaseStub(resolver) {
       },
       limit(value) {
         state.limitCount = value;
+        return builder;
+      },
+      range(from, to) {
+        state.rangeCall = { from, to };
         return builder;
       },
       single() {

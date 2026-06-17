@@ -34,6 +34,18 @@ test("onboarding validation accepts valid refined secondary activities", () => {
   assert.equal(result.success, true);
 });
 
+test("onboarding validation accepts empty traits because they refine but do not block onboarding", () => {
+  const result = validateOrganizationOnboardingInput(
+    {
+      ...buildBaseInput(),
+      selectedTraits: [],
+    },
+    { requireBusinessProfile: true },
+  );
+
+  assert.equal(result.success, true);
+});
+
 test("onboarding validation rejects secondary activities outside the official catalog", () => {
   const result = validateOrganizationOnboardingInput(
     {

@@ -52,6 +52,7 @@ type ZetaConnectionForSync = {
 };
 
 const zetaSyncStreams: ZetaSyncStream[] = [
+  "contacts",
   "masters",
   "accounting_masters",
   "sales_documents",
@@ -85,7 +86,7 @@ function clampMaxPages(value: number | null | undefined, fallback: number) {
 }
 
 function isMasterStream(stream: ZetaSyncStream) {
-  return stream === "masters" || stream === "accounting_masters";
+  return stream === "contacts" || stream === "masters" || stream === "accounting_masters";
 }
 
 function normalizePeriod(stream: ZetaSyncStream, value: string | null | undefined) {
@@ -164,7 +165,7 @@ export async function enqueueZetaSyncRun(input: {
   const period = normalizePeriod(input.stream, input.period);
   const maxPages = clampMaxPages(
     input.maxPages,
-    isMasterStream(input.stream) ? 5 : 25,
+    input.stream === "contacts" ? 200 : isMasterStream(input.stream) ? 5 : 25,
   );
   const activeRun = await findActiveIntegrationSyncRun(input.supabase, {
     organizationId: input.organizationId,
@@ -348,7 +349,7 @@ export async function runQueuedZetaSyncRun(input: {
   const runInput = asRecord(run.input_json);
   const maxPages = clampMaxPages(
     numberOrNull(runInput.max_pages),
-    isMasterStream(stream) ? 5 : 25,
+    stream === "contacts" ? 200 : isMasterStream(stream) ? 5 : 25,
   );
 
   return runZetaSync({

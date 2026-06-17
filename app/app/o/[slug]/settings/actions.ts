@@ -369,6 +369,7 @@ export async function runOrganizationZetaSyncAction(formData: FormData) {
     });
   } else {
     const allowedStreams: ZetaSyncStream[] = [
+      "contacts",
       "masters",
       "accounting_masters",
       "sales_documents",

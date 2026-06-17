@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { createOrganizationAction } from "@/app/onboarding/actions";
 import { BusinessProfileConfigurator } from "@/components/onboarding/business-profile-configurator";
 import { HelpHint } from "@/components/ui/help-hint";
@@ -68,6 +68,9 @@ export function OrganizationOnboardingForm({
     initialOnboardingActionState,
   );
   const safeState = normalizeOnboardingActionState(state);
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const fieldErrorEntries = Object.entries(safeState.fieldErrors)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0);
   const slugPreview = slugifyOrganizationNamePreview(organizationName);
   const showGuidedBusinessProfile = featureFlags.onboardingActivityBasedPresetsEnabled;
   const launchScope = evaluateOrganizationLaunchScope({
@@ -77,14 +80,40 @@ export function OrganizationOnboardingForm({
     vatRegime,
   });
 
+  useEffect(() => {
+    if (safeState.status !== "error" || !safeState.message) {
+      return;
+    }
+
+    errorSummaryRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    errorSummaryRef.current?.focus({
+      preventScroll: true,
+    });
+  }, [safeState.message, safeState.status]);
+
   return (
     <form className="space-y-6" action={formAction}>
       {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
 
       <div aria-live="polite" className="min-h-6">
         {safeState.message ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            {safeState.message}
+          <div
+            ref={errorSummaryRef}
+            role="alert"
+            tabIndex={-1}
+            className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950 outline-none"
+          >
+            <p className="font-medium">{safeState.message}</p>
+            {fieldErrorEntries.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                {fieldErrorEntries.map(([field, message]) => (
+                  <p key={field}>{message}</p>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

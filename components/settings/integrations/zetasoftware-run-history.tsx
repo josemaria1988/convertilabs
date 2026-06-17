@@ -6,6 +6,8 @@ type ZetaSoftwareRunHistoryProps = {
 
 function formatStream(value: string) {
   switch (value) {
+    case "contacts":
+      return "Contactos";
     case "masters":
       return "Maestros";
     case "accounting_masters":

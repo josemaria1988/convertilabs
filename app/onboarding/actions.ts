@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getAuthStateForUser,
@@ -60,6 +61,48 @@ function parseStringArray(value: FormDataEntryValue | null) {
       : [];
   } catch {
     return [];
+  }
+}
+
+function readUserMetadataString(
+  user: User,
+  key: "full_name" | "avatar_url",
+) {
+  const value = user.user_metadata?.[key];
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
+}
+
+async function ensureAuthenticatedUserProfile(
+  serviceRole: ReturnType<typeof getSupabaseServiceRoleClient>,
+  user: User,
+) {
+  const { data: existingProfile, error: lookupError } = await serviceRole
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(lookupError.message);
+  }
+
+  if (existingProfile) {
+    return;
+  }
+
+  const { error } = await serviceRole
+    .from("profiles")
+    .insert({
+      id: user.id,
+      email: user.email ?? null,
+      full_name: readUserMetadataString(user, "full_name"),
+      avatar_url: readUserMetadataString(user, "avatar_url"),
+    });
+
+  if (error && error.code !== "23505") {
+    throw new Error(error.message);
   }
 }
 
@@ -128,6 +171,12 @@ function mapCreateOrganizationError(message: string) {
     return buildActionError("Falta el estado CFE de la organizacion.", {
       cfeStatus: "Selecciona el estado CFE para continuar.",
     });
+  }
+
+  if (normalizedMessage.includes("profile missing for authenticated user")) {
+    return buildActionError(
+      "Tu perfil de usuario no estaba sincronizado con la base publica. Vuelve a intentar crear la organizacion.",
+    );
   }
 
   return buildActionError(
@@ -334,13 +383,23 @@ export async function createOrganizationAction(
     );
   }
 
+  const serviceRole = getSupabaseServiceRoleClient();
+
+  try {
+    await ensureAuthenticatedUserProfile(serviceRole, user);
+  } catch (error) {
+    console.error("Failed to ensure authenticated user profile before organization onboarding.", error);
+    return buildActionError(
+      "No pudimos sincronizar tu perfil de usuario antes de crear la organizacion. Recarga la pagina e intenta de nuevo.",
+    );
+  }
+
   const authState = await getAuthStateForUser(supabase, user);
 
   if (authState.primaryOrganization) {
     redirect(resolvePostAuthDestination(authState, nextPath));
   }
 
-  const serviceRole = getSupabaseServiceRoleClient();
   const recommendation = buildPresetRecommendation({
     primaryActivityCode: validation.data.primaryActivityCode ?? "",
     secondaryActivityCodes: validation.data.secondaryActivityCodes ?? [],

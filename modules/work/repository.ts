@@ -347,23 +347,37 @@ export async function listWorkUnitCustomerOptions(
   supabase: SupabaseClient,
   organizationId: string,
 ) {
-  const { data, error } = await supabase
-    .from("parties")
-    .select("id, display_name, legal_name, tax_id, status")
-    .eq("organization_id", organizationId)
-    .eq("status", "active")
-    .order("display_name", { ascending: true })
-    .limit(200);
+  const rows: PartyRow[] = [];
+  const pageSize = 1000;
+  const maxRows = 10000;
 
-  if (error) {
-    if (isMissingSupabaseRelationError(error, "parties")) {
-      return [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const to = Math.min(from + pageSize - 1, maxRows - 1);
+    const { data, error } = await supabase
+      .from("parties")
+      .select("id, display_name, legal_name, tax_id, status")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .order("display_name", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      if (isMissingSupabaseRelationError(error, "parties")) {
+        return [];
+      }
+
+      throw new Error(error.message);
     }
 
-    throw new Error(error.message);
+    const page = (data as PartyRow[] | null) ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) {
+      break;
+    }
   }
 
-  return ((data as PartyRow[] | null) ?? []).map(mapParty);
+  return rows.map(mapParty);
 }
 
 export async function listOrganizationWorkUnits(

@@ -9,6 +9,7 @@ import {
 type JsonRecord = Record<string, unknown>;
 
 export type ZetaCursorStream =
+  | "contacts"
   | "masters"
   | "accounting_masters"
   | "sales_documents"

@@ -17,6 +17,8 @@ type SecondaryActivitiesSelectorProps = {
   helpHintKey?: string;
 };
 
+const activitySearchResultLimit = 16;
+
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -40,7 +42,7 @@ export function SecondaryActivitiesSelector({
   const hasLegacySelections = selectedActivities.some((activity) => activity.isLegacySelection);
   const results = useMemo(
     () =>
-      searchActivities(query, 8, {
+      searchActivities(query, activitySearchResultLimit, {
         includeSpecialAnnex: showSpecialCases,
         selectableOnly: false,
       }).filter((activity) =>
@@ -52,10 +54,10 @@ export function SecondaryActivitiesSelector({
     () =>
       refinementParentCode
         ? getActivityChildren(refinementParentCode, {
-            selectableOnly: true,
-            includeSpecialAnnex: showSpecialCases,
-            limit: 8,
-          }).filter((activity) =>
+          selectableOnly: true,
+          includeSpecialAnnex: showSpecialCases,
+          limit: activitySearchResultLimit,
+        }).filter((activity) =>
             activity.code !== primaryActivityCode
             && !selectedSet.has(activity.code))
         : [],
@@ -144,7 +146,7 @@ export function SecondaryActivitiesSelector({
             ) : null}
 
             {query.trim() && results.length > 0 ? (
-              <div className="max-h-72 overflow-y-auto space-y-1">
+              <div className="max-h-96 overflow-y-auto space-y-1">
                 {results.map((activity) => (
                   <button
                     key={activity.code}

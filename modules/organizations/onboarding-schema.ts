@@ -187,10 +187,6 @@ export function validateOrganizationOnboardingInput(
       }
     }
 
-    if (selectedTraits.length === 0) {
-      errors.selectedTraits = "Marca al menos un rasgo operativo o fiscal que describa la empresa.";
-    }
-
     if ((planSetupMode === "recommended" || planSetupMode === "alternative") && !selectedPresetComposition) {
       errors.selectedPresetComposition = "No pudimos identificar la composicion elegida. Revisa la recomendacion antes de continuar.";
     }

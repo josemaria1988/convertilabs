@@ -55,10 +55,29 @@
   {
     "code": "33120",
     "aliases": [
+      "asistencia tecnica maquinaria",
+      "mantenimiento equipos agroindustriales",
+      "mantenimiento maquinaria agricola",
+      "mantenimiento maquinaria agroindustrial",
       "instalacion tecnica",
       "mantenimiento",
+      "postventa maquinaria",
       "reparacion",
+      "reparacion maquinaria agricola",
+      "reparacion maquinaria agroindustrial",
+      "servicio postventa",
       "servicio tecnico"
+    ]
+  },
+  {
+    "code": "33200",
+    "aliases": [
+      "instalacion equipos agroindustriales",
+      "instalacion equipos industriales",
+      "instalacion maquinaria agricola",
+      "instalacion maquinaria agroindustrial",
+      "montaje equipos industriales",
+      "puesta en marcha maquinaria"
     ]
   },
   {
@@ -71,13 +90,100 @@
     ]
   },
   {
+    "code": "46530",
+    "aliases": [
+      "agroindustrial",
+      "agroindustriales",
+      "comercio mayorista agroindustrial",
+      "comercio mayorista maquinaria agricola",
+      "equipamiento agricola",
+      "equipamiento agroindustrial",
+      "equipos agricolas",
+      "equipos agroindustriales",
+      "equipos agropecuarios",
+      "importacion",
+      "importacion equipos agricolas",
+      "importacion equipos agroindustriales",
+      "importacion maquinaria",
+      "importacion maquinaria agricola",
+      "importacion maquinaria agroindustrial",
+      "importador",
+      "importador agroindustrial",
+      "importador de equipos",
+      "importador equipos agricolas",
+      "importador equipos agroindustriales",
+      "importador maquinaria",
+      "importador maquinaria agricola",
+      "importador maquinaria agroindustrial",
+      "importador mayorista",
+      "maquinaria agricola",
+      "maquinaria agroindustrial",
+      "maquinaria agropecuaria",
+      "suministros agricolas",
+      "venta equipos agricolas",
+      "venta equipos agroindustriales",
+      "venta maquinaria agricola",
+      "venta maquinaria agroindustrial"
+    ]
+  },
+  {
     "code": "46590",
     "aliases": [
+      "comercio mayorista equipos",
+      "comercio mayorista maquinaria",
+      "equipamiento industrial",
       "equipamiento",
       "equipos",
+      "equipos industriales",
+      "importacion equipos",
+      "importacion maquinaria industrial",
+      "importador",
+      "importador de equipos",
+      "importador equipos industriales",
+      "importador maquinaria industrial",
+      "importador mayorista",
       "maquinaria",
+      "maquinaria industrial",
       "mayorista",
-      "repuestos"
+      "repuestos",
+      "venta equipos industriales",
+      "venta maquinaria industrial"
+    ]
+  },
+  {
+    "code": "46699",
+    "aliases": [
+      "basureros",
+      "contenedores para residuos",
+      "contenedores residuos",
+      "equipamiento urbano",
+      "importador",
+      "importador otros productos",
+      "mayorista otros productos",
+      "mayorista otros productos ncp",
+      "mobiliario urbano",
+      "papeleras",
+      "papeleras residuos",
+      "recipientes residuos",
+      "tachos residuos",
+      "venta contenedores",
+      "venta papeleras"
+    ]
+  },
+  {
+    "code": "46900",
+    "aliases": [
+      "comercio mayorista no especializado",
+      "comercio mayorista productos varios",
+      "importacion productos varios",
+      "importador",
+      "importador mayorista productos varios",
+      "importador productos varios",
+      "mayorista general",
+      "mayorista productos varios",
+      "productos varios",
+      "productos varios mayorista",
+      "venta mayorista productos varios"
     ]
   },
   {
@@ -108,12 +214,102 @@
     ]
   },
   {
+    "code": "47739",
+    "aliases": [
+      "basureros",
+      "consumidor final",
+      "contenedores para residuos",
+      "contenedores residuos",
+      "papeleras",
+      "papeleras residuos",
+      "productos nuevos varios",
+      "recipientes residuos",
+      "retail productos varios",
+      "tachos residuos",
+      "venta al publico",
+      "venta consumidor final",
+      "venta minorista productos varios"
+    ]
+  },
+  {
     "code": "62010",
     "aliases": [
+      "app",
+      "aplicacion",
+      "aplicaciones",
+      "automatizar contabilidad",
+      "automatizacion",
+      "automatizacion contable",
+      "contabilidad automatizada",
+      "contabilidad con ia",
       "desarrollo",
+      "desarrollo de software",
+      "desarrollo web",
+      "herramientas ia",
+      "ia",
+      "ia contable",
+      "inteligencia artificial",
+      "plataforma contable",
+      "plataforma de software",
+      "producto digital",
       "programacion",
+      "saas",
       "servicios digitales",
-      "software"
+      "sistema contable",
+      "software",
+      "software as a service",
+      "software contable",
+      "software para contadores",
+      "soluciones digitales"
+    ]
+  },
+  {
+    "code": "62020",
+    "aliases": [
+      "administracion de sistemas",
+      "consultoria informatica",
+      "consultoria tecnologica",
+      "implementacion de sistemas",
+      "integracion de software",
+      "soporte informatico",
+      "transformacion digital"
+    ]
+  },
+  {
+    "code": "62090",
+    "aliases": [
+      "infraestructura informatica",
+      "it",
+      "servicios de computacion",
+      "servicios informaticos",
+      "soporte ti",
+      "tecnologia",
+      "ti"
+    ]
+  },
+  {
+    "code": "63110",
+    "aliases": [
+      "base de datos",
+      "cloud",
+      "data center",
+      "hosting",
+      "hospedaje",
+      "nube",
+      "plataforma en la nube",
+      "procesamiento de datos",
+      "servicios cloud"
+    ]
+  },
+  {
+    "code": "63120",
+    "aliases": [
+      "internet",
+      "marketplace",
+      "plataforma web",
+      "portal web",
+      "portales web",
+      "sitio web"
     ]
   },
   {

@@ -1,5 +1,6 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { CustomerPartySearchField } from "@/components/work/customer-party-search-field";
 import type {
   WorkUnitCustomerOption,
   WorkUnitListItem,
@@ -185,21 +186,11 @@ export function WorkListPage({
               <option value="administration">Administracion</option>
             </select>
           </label>
-          <label className="space-y-1 lg:col-span-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--color-muted)]">Cliente existente</span>
-            <select
-              name="customerPartyId"
-              disabled={!canManage || !isAvailable}
-              className="input-surface-dark min-h-[42px] w-full rounded-lg border border-[color:var(--color-border)] px-3 text-sm text-white"
-            >
-              <option value="">Sin cliente asignado</option>
-              {customerOptions.map((party) => (
-                <option key={party.id} value={party.id}>
-                  {party.displayName}{party.taxId ? ` / ${party.taxId}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          <CustomerPartySearchField
+            name="customerPartyId"
+            options={customerOptions}
+            disabled={!canManage || !isAvailable}
+          />
           <label className="space-y-1 lg:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--color-muted)]">Nuevo cliente</span>
             <input

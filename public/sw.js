@@ -1,4 +1,4 @@
-const CACHE_NAME = "convertilabs-static-v1";
+const CACHE_NAME = "convertilabs-static-v2";
 const OFFLINE_URL = "/offline";
 const STATIC_CACHE_PATHS = [
   OFFLINE_URL,
@@ -19,7 +19,6 @@ function isCacheableStaticPath(pathname) {
     pathname === OFFLINE_URL
     || pathname === "/manifest.webmanifest"
     || pathname.startsWith("/pwa/")
-    || pathname.startsWith("/_next/static/")
     || pathname === "/assistant/accounting-assistant.svg"
   );
 }

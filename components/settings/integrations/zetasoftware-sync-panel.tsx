@@ -37,7 +37,24 @@ export function ZetaSoftwareSyncPanel({
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <form action={syncAction} className={cardClassName}>
+          <input type="hidden" name="slug" value={slug} />
+          <input type="hidden" name="stream" value="contacts" />
+          <input type="hidden" name="maxPages" value="200" />
+          <p className="font-semibold">Contactos</p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            Clientes y proveedores desde Zeta al directorio de Convertilabs.
+          </p>
+          <SubmitButton
+            disabled={disabled}
+            pendingLabel="Trayendo contactos..."
+            className={secondaryButtonClassName}
+          >
+            Traer contactos
+          </SubmitButton>
+        </form>
+
         <form action={syncAction} className={cardClassName}>
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="stream" value="masters" />

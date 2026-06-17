@@ -20,7 +20,7 @@ export type DocumentSpreadsheetImportRequestedEventData = {
 export type ZetaSyncRequestedEventData = {
   runId: string;
   organizationId: string;
-  stream: "masters" | "accounting_masters" | "sales_documents" | "received_cfes";
+  stream: "contacts" | "masters" | "accounting_masters" | "sales_documents" | "received_cfes";
   requestedBy: string | null;
 };
 

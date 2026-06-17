@@ -20,6 +20,8 @@ type ActivityCodeSearchProps = {
   disabledCodes?: string[];
 };
 
+const activitySearchResultLimit = 16;
+
 function getActivityLabel(activity: ActivityCatalogEntry | null) {
   return activity ? `${activity.displayCode} - ${activity.title}` : "";
 }
@@ -67,7 +69,7 @@ export function ActivityCodeSearch({
   }, [selectedActivity]);
 
   const results = useMemo(() => {
-    const baseResults = searchActivities(query, 8, {
+    const baseResults = searchActivities(query, activitySearchResultLimit, {
       includeSpecialAnnex: showSpecialCases,
       selectableOnly: false,
     });
@@ -85,10 +87,10 @@ export function ActivityCodeSearch({
     () =>
       refinementParentCode
         ? getActivityChildren(refinementParentCode, {
-            selectableOnly: true,
-            includeSpecialAnnex: showSpecialCases,
-            limit: 8,
-          }).filter((activity) => !disabledSet.has(activity.code))
+          selectableOnly: true,
+          includeSpecialAnnex: showSpecialCases,
+          limit: activitySearchResultLimit,
+        }).filter((activity) => !disabledSet.has(activity.code))
         : [],
     [disabledSet, refinementParentCode, showSpecialCases],
   );
@@ -203,7 +205,7 @@ export function ActivityCodeSearch({
             ) : null}
 
             {results.length > 0 ? (
-              <div className="max-h-72 overflow-y-auto space-y-1">
+              <div className="max-h-96 overflow-y-auto space-y-1">
                 {results.map((activity) => (
                   <button
                     key={activity.code}
