@@ -200,6 +200,10 @@ create index if not exists idx_integration_sync_runs_org_provider_stream_created
 create index if not exists idx_integration_sync_runs_org_status
   on public.integration_sync_runs (organization_id, status, created_at desc);
 
+create unique index if not exists idx_integration_sync_runs_one_active_per_stream
+  on public.integration_sync_runs (organization_id, provider, stream)
+  where status in ('queued', 'running');
+
 create table if not exists public.integration_sync_cursors (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

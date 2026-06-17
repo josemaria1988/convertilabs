@@ -16,10 +16,14 @@ import {
   finishIntegrationSyncRun,
   fingerprintIntegrationPayload,
   integrationTables,
+  markIntegrationSyncRunRunning,
   recordIntegrationAuditEvent,
-  upsertIntegrationCursor,
   upsertIntegrationRawRecord,
 } from "@/modules/integrations/repository";
+import {
+  readZetaSyncCursor,
+  writeZetaSyncCursor,
+} from "@/modules/integrations/zeta/sync/cursors";
 import {
   normalizeZetaReceivedCfe,
 } from "@/modules/integrations/zeta/normalizers/received-cfe";
@@ -53,6 +57,10 @@ export type ZetaSyncInput = {
   stream: ZetaSyncStream;
   period?: string | null;
   maxPages?: number | null;
+  runId?: string | null;
+  runKind?: string;
+  testMode?: boolean;
+  testRunKey?: string | null;
   fetchImpl?: ZetaFetch;
 };
 
@@ -66,6 +74,7 @@ export type ZetaSyncSummary = {
   recordsFailed: number;
   documentsMaterialized: number;
   documentsSkipped: number;
+  testRunKey: string | null;
   warnings: string[];
 };
 
@@ -269,6 +278,7 @@ async function upsertMasterRawRecords(input: {
   testMode: boolean;
   query: MasterQueryDefinition;
   rows: JsonRecord[];
+  testRunKey?: string | null;
 }) {
   if (input.rows.length === 0) {
     return;
@@ -298,7 +308,7 @@ async function upsertMasterRawRecords(input: {
       last_seen_at: timestamp,
       last_sync_run_id: input.runId,
       test_mode: input.testMode,
-      test_run_key: null,
+      test_run_key: input.testRunKey ?? null,
       source_monetary_json: {},
       metadata_json: {
         endpoint_key: input.query.key,
@@ -355,6 +365,7 @@ async function syncMasters(input: {
   maxPages: number;
   counters: SyncCounters;
   testMode: boolean;
+  testRunKey?: string | null;
   queries: MasterQueryDefinition[];
 }) {
   const chartAccountRows: JsonRecord[] = [];
@@ -374,6 +385,7 @@ async function syncMasters(input: {
       connectionId: input.connectionId,
       runId: input.runId,
       testMode: input.testMode,
+      testRunKey: input.testRunKey,
       query,
       rows,
     });
@@ -465,6 +477,7 @@ async function upsertAndMaterialize(
     actorUserId?: string | null;
     runId: string;
     testMode: boolean;
+    testRunKey?: string | null;
     document: ZetaCanonicalDocument;
     counters: SyncCounters;
   },
@@ -481,6 +494,7 @@ async function upsertAndMaterialize(
     payloadHash: input.document.payloadHash,
     lastSyncRunId: input.runId,
     testMode: input.testMode,
+    testRunKey: input.testRunKey ?? null,
     documentDate: input.document.issueDate,
     currencyCode: input.document.currency.currencyCode,
     sourceExchangeRate: input.document.currency.sourceRate,
@@ -535,6 +549,7 @@ async function syncSalesDocuments(input: {
   maxPages: number;
   counters: SyncCounters;
   testMode: boolean;
+  testRunKey?: string | null;
 }) {
   for (let page = 1; page <= input.maxPages; page += 1) {
     const result = await queryZetaEndpoint<JsonRecord>(input.client, "salesInvoicesQuery", {
@@ -563,6 +578,7 @@ async function syncSalesDocuments(input: {
           actorUserId: input.actorUserId,
           runId: input.runId,
           testMode: input.testMode,
+          testRunKey: input.testRunKey,
           document: normalized,
           counters: input.counters,
         });
@@ -621,6 +637,7 @@ async function syncReceivedCfes(input: {
   maxPages: number;
   counters: SyncCounters;
   testMode: boolean;
+  testRunKey?: string | null;
 }) {
   for (let page = 1; page <= input.maxPages; page += 1) {
     const output = await callZetaEndpoint(input.client, "receivedCfesQuery", {
@@ -651,6 +668,7 @@ async function syncReceivedCfes(input: {
           actorUserId: input.actorUserId,
           runId: input.runId,
           testMode: input.testMode,
+          testRunKey: input.testRunKey,
           document: normalized,
           counters: input.counters,
         });
@@ -668,13 +686,6 @@ async function syncReceivedCfes(input: {
       break;
     }
   }
-}
-
-function cursorKey(input: {
-  stream: ZetaSyncStream;
-  period: string | null;
-}) {
-  return input.period ? `${input.stream}:${input.period}` : input.stream;
 }
 
 async function markInterruptedRunningSyncs(
@@ -704,36 +715,11 @@ async function markInterruptedRunningSyncs(
 
 export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary> {
   const isMasterStream = input.stream === "masters" || input.stream === "accounting_masters";
-  await markInterruptedRunningSyncs(input.supabase, input.organizationId);
-  const connection = await loadConnection(input.supabase, input.organizationId);
-  const client = await buildClient({
-    supabase: input.supabase,
-    organizationId: input.organizationId,
-    fetchImpl: input.fetchImpl,
-  });
   const period = isMasterStream ? null : parsePeriod(input.period);
   const maxPages = clampMaxPages(input.maxPages, isMasterStream ? 5 : 25);
-  const run = await createIntegrationSyncRun(input.supabase, {
-    organizationId: input.organizationId,
-    connectionId: connection.id,
-    provider: "zetasoftware",
-    stream: input.stream,
-    runKind: "manual",
-    status: "running",
-    testMode: connection.test_mode,
-    initiatedByUserId: input.actorUserId ?? null,
-    cursorFrom: null,
-    input: {
-      period: period?.period ?? null,
-      max_pages: maxPages,
-      execution: connection.test_mode ? "mock_or_test" : "real_read_only",
-    },
-    metadata: {
-      provider: "zetasoftware",
-      started_from: "settings_integrations",
-    },
-  });
-  const runId = String(run.id);
+  let runId = input.runId ?? null;
+  let testMode = input.testMode ?? true;
+  let testRunKey = input.testRunKey ?? null;
   const counters: SyncCounters = {
     seen: 0,
     upserted: 0,
@@ -745,19 +731,79 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
     warnings: [],
   };
 
-  await recordIntegrationAuditEvent(input.supabase, {
-    organizationId: input.organizationId,
-    actorUserId: input.actorUserId ?? null,
-    entityType: "integration_sync_run",
-    entityId: runId,
-    action: "zeta_sync_started",
-    metadata: {
+  try {
+    await markInterruptedRunningSyncs(input.supabase, input.organizationId);
+
+    const cursor = await readZetaSyncCursor(input.supabase, {
+      organizationId: input.organizationId,
       stream: input.stream,
       period: period?.period ?? null,
-    },
-  });
+    });
+    const cursorFrom = typeof cursor?.cursor_value === "string"
+      ? cursor.cursor_value
+      : null;
+    const connection = await loadConnection(input.supabase, input.organizationId);
 
-  try {
+    testMode = input.testMode ?? connection.test_mode;
+    testRunKey = input.testRunKey ?? null;
+
+    if (runId) {
+      await markIntegrationSyncRunRunning(input.supabase, {
+        organizationId: input.organizationId,
+        runId,
+        cursorFrom,
+        metadata: {
+          provider: "zetasoftware",
+          runner: "zeta_sync_runner",
+          claimed_from: "inngest",
+        },
+      });
+    } else {
+      const run = await createIntegrationSyncRun(input.supabase, {
+        organizationId: input.organizationId,
+        connectionId: connection.id,
+        provider: "zetasoftware",
+        stream: input.stream,
+        runKind: input.runKind ?? "manual",
+        status: "running",
+        testMode,
+        testRunKey,
+        initiatedByUserId: input.actorUserId ?? null,
+        cursorFrom,
+        input: {
+          period: period?.period ?? null,
+          max_pages: maxPages,
+          execution: testMode ? "mock_or_test" : "real_read_only",
+        },
+        metadata: {
+          provider: "zetasoftware",
+          runner: "zeta_sync_runner",
+          started_from: "direct_call",
+        },
+      });
+
+      runId = String(run.id);
+    }
+
+    await recordIntegrationAuditEvent(input.supabase, {
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId ?? null,
+      entityType: "integration_sync_run",
+      entityId: runId,
+      action: "zeta_sync_started",
+      metadata: {
+        stream: input.stream,
+        period: period?.period ?? null,
+        test_run_key: testRunKey,
+      },
+    });
+
+    const client = await buildClient({
+      supabase: input.supabase,
+      organizationId: input.organizationId,
+      fetchImpl: input.fetchImpl,
+    });
+
     if (input.stream === "masters" || input.stream === "accounting_masters") {
       await syncMasters({
         supabase: input.supabase,
@@ -767,7 +813,8 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         runId,
         maxPages,
         counters,
-        testMode: connection.test_mode,
+        testMode,
+        testRunKey,
         queries: input.stream === "accounting_masters" ? accountingMasterQueries : masterQueries,
       });
     } else if (input.stream === "sales_documents" && period) {
@@ -781,7 +828,8 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         period,
         maxPages,
         counters,
-        testMode: connection.test_mode,
+        testMode,
+        testRunKey,
       });
     } else if (input.stream === "received_cfes" && period) {
       await syncReceivedCfes({
@@ -794,27 +842,27 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         period,
         maxPages,
         counters,
-        testMode: connection.test_mode,
+        testMode,
+        testRunKey,
       });
     }
 
-    await upsertIntegrationCursor(input.supabase, {
+    const finishedAt = nowIso();
+
+    await writeZetaSyncCursor(input.supabase, {
       organizationId: input.organizationId,
       connectionId: connection.id,
-      provider: "zetasoftware",
       stream: input.stream,
-      cursorKey: cursorKey({
-        stream: input.stream,
-        period: period?.period ?? null,
-      }),
-      cursorValue: nowIso(),
+      period: period?.period ?? null,
+      cursorValue: finishedAt,
       cursor: {
         period: period?.period ?? null,
         records_seen: counters.seen,
         records_upserted: counters.upserted,
+        test_run_key: testRunKey,
       },
       lastSuccessRunId: runId,
-      lastSyncedAt: nowIso(),
+      lastSyncedAt: finishedAt,
     });
 
     await finishIntegrationSyncRun(input.supabase, {
@@ -825,13 +873,14 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
       recordsUpserted: counters.upserted,
       recordsSkipped: counters.skipped + counters.documentsSkipped,
       recordsFailed: counters.failed,
-      cursorTo: nowIso(),
+      cursorTo: finishedAt,
       summary: {
         period: period?.period ?? null,
         documents_materialized: counters.documentsMaterialized,
         documents_skipped: counters.documentsSkipped,
         master_materialization: counters.masterMaterialization,
         warnings_count: counters.warnings.length,
+        test_run_key: testRunKey,
       },
       warnings: Array.from(new Set(counters.warnings)).slice(0, 200),
       cleanupStatus: "not_required",
@@ -852,6 +901,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
         records_seen: counters.seen,
         records_upserted: counters.upserted,
         documents_materialized: counters.documentsMaterialized,
+        test_run_key: testRunKey,
       },
     });
 
@@ -865,35 +915,39 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
       recordsFailed: counters.failed,
       documentsMaterialized: counters.documentsMaterialized,
       documentsSkipped: counters.documentsSkipped,
+      testRunKey,
       warnings: Array.from(new Set(counters.warnings)),
     };
   } catch (error) {
-    await finishIntegrationSyncRun(input.supabase, {
-      organizationId: input.organizationId,
-      runId,
-      status: "failed",
-      recordsSeen: counters.seen,
-      recordsUpserted: counters.upserted,
-      recordsSkipped: counters.skipped + counters.documentsSkipped,
-      recordsFailed: counters.failed + 1,
-      errorCode: "zeta_sync_failed",
-      errorMessage: error instanceof Error ? error.message : "No se pudo ejecutar la sincronizacion Zeta.",
-      warnings: counters.warnings,
-      cleanupStatus: "not_required",
-    });
+    if (runId) {
+      await finishIntegrationSyncRun(input.supabase, {
+        organizationId: input.organizationId,
+        runId,
+        status: "failed",
+        recordsSeen: counters.seen,
+        recordsUpserted: counters.upserted,
+        recordsSkipped: counters.skipped + counters.documentsSkipped,
+        recordsFailed: counters.failed + 1,
+        errorCode: "zeta_sync_failed",
+        errorMessage: error instanceof Error ? error.message : "No se pudo ejecutar la sincronizacion Zeta.",
+        warnings: counters.warnings,
+        cleanupStatus: "not_required",
+      });
 
-    await recordIntegrationAuditEvent(input.supabase, {
-      organizationId: input.organizationId,
-      actorUserId: input.actorUserId ?? null,
-      entityType: "integration_sync_run",
-      entityId: runId,
-      action: "zeta_sync_failed",
-      metadata: {
-        stream: input.stream,
-        period: period?.period ?? null,
-        error_message: error instanceof Error ? error.message : null,
-      },
-    });
+      await recordIntegrationAuditEvent(input.supabase, {
+        organizationId: input.organizationId,
+        actorUserId: input.actorUserId ?? null,
+        entityType: "integration_sync_run",
+        entityId: runId,
+        action: "zeta_sync_failed",
+        metadata: {
+          stream: input.stream,
+          period: period?.period ?? null,
+          test_run_key: testRunKey,
+          error_message: error instanceof Error ? error.message : null,
+        },
+      });
+    }
 
     throw error;
   }

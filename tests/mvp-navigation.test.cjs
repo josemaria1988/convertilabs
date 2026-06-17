@@ -42,7 +42,7 @@ test("private navigation exposes the Convertilabs 2.0 operating menu", () => {
       "/app/o/rontil/dashboard",
       "/app/o/rontil/work",
       "/app/o/rontil/documents",
-      "/app/o/rontil/open-items",
+      "/app/o/rontil/money",
       "/app/o/rontil/agenda",
       "/app/o/rontil/advanced",
     ],

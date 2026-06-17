@@ -35,6 +35,8 @@ test("PR-02 canonical schema defines the generic integration persistence layer",
   assert.match(schemaSql, /unique \(organization_id, provider, entity_type, external_key\)/i);
   assert.match(schemaSql, /unique \(organization_id, provider, source_kind, external_key\)/i);
   assert.match(schemaSql, /unique \(organization_id, provider, external_entity_type, external_key\)/i);
+  assert.match(schemaSql, /idx_integration_sync_runs_one_active_per_stream/i);
+  assert.match(schemaSql, /where status in \('queued', 'running'\)/i);
 });
 
 test("PR-02 schema keeps test cleanup, monetary envelope and document source provenance", () => {

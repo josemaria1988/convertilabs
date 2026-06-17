@@ -46,6 +46,7 @@ export type ZetaSyncRunListItem = {
   status: string;
   runKind: string;
   testMode: boolean;
+  testRunKey: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   recordsSeen: number;
@@ -277,7 +278,7 @@ export async function loadZetaSyncRunHistory(
   const { data, error } = await supabase
     .from(integrationTables.syncRuns)
     .select(
-      "id, stream, status, run_kind, test_mode, started_at, finished_at, records_seen, records_upserted, records_skipped, records_failed, cleanup_status, error_message, summary_json, warnings_json, created_at",
+      "id, stream, status, run_kind, test_mode, test_run_key, started_at, finished_at, records_seen, records_upserted, records_skipped, records_failed, cleanup_status, error_message, summary_json, warnings_json, created_at",
     )
     .eq("organization_id", organizationId)
     .eq("provider", zetaProviderCode)
@@ -298,6 +299,7 @@ export async function loadZetaSyncRunHistory(
     status: String(row.status ?? ""),
     runKind: String(row.run_kind ?? ""),
     testMode: row.test_mode === true,
+    testRunKey: typeof row.test_run_key === "string" ? row.test_run_key : null,
     startedAt: typeof row.started_at === "string" ? row.started_at : null,
     finishedAt: typeof row.finished_at === "string" ? row.finished_at : null,
     recordsSeen: typeof row.records_seen === "number" ? row.records_seen : 0,

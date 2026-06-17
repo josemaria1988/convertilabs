@@ -7,6 +7,7 @@ import {
   runCloseValidator,
   transitionFiscalPeriodStatus,
 } from "@/modules/close/service";
+import { createCloseCheckTasks } from "@/modules/close/task-suggestions";
 import type { CanonicalFiscalPeriodStatus } from "@/modules/accounting/fiscal-period-status";
 
 function closePath(slug: string) {
@@ -18,6 +19,8 @@ function canManageClose(role: string) {
 }
 
 function revalidateCloseSurfaces(slug: string) {
+  revalidatePath(`/app/o/${slug}`);
+  revalidatePath(`/app/o/${slug}/agenda`);
   revalidatePath(closePath(slug));
   revalidatePath(`/app/o/${slug}/documents`);
   revalidatePath(`/app/o/${slug}/trial-balance`);
@@ -42,6 +45,13 @@ export async function runCloseValidatorAction(input: {
     fiscalPeriodId: input.fiscalPeriodId,
     actorId: authState.user?.id ?? null,
   });
+  const taskCount = await createCloseCheckTasks(getSupabaseServiceRoleClient(), {
+    organizationId: organization.id,
+    fiscalPeriodId: input.fiscalPeriodId,
+    periodCode: result.snapshot.period.code,
+    actorId: authState.user?.id ?? null,
+    closeCheckRun: result,
+  });
 
   revalidateCloseSurfaces(input.slug);
 
@@ -49,9 +59,9 @@ export async function runCloseValidatorAction(input: {
     ok: true,
     message:
       result.blockerCount > 0
-        ? `Validator ejecutado con ${result.blockerCount} blocker(s).`
+        ? `Validator ejecutado con ${result.blockerCount} blocker(s) y ${taskCount} tarea(s) sugerida(s).`
         : result.warningCount > 0
-          ? `Validator ejecutado con ${result.warningCount} warning(s).`
+          ? `Validator ejecutado con ${result.warningCount} warning(s) y ${taskCount} tarea(s) sugerida(s).`
           : "Validator ejecutado sin blockers ni warnings.",
   };
 }

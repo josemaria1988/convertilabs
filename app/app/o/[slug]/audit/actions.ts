@@ -6,9 +6,9 @@ import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { applyDocumentAuditPreviewDecisions } from "@/modules/audit/document-import-audit";
 import { enqueueDocumentSpreadsheetImport } from "@/modules/documents/spreadsheet-import-background";
 import {
-  runZetaSync,
+  enqueueZetaSyncRun,
   type ZetaSyncStream,
-} from "@/modules/integrations/zeta/services/sync-service";
+} from "@/modules/integrations/zeta/sync/sync-runner";
 import {
   formatDocumentSpreadsheetImportStatusMessage,
   isDocumentSpreadsheetImportType,
@@ -126,13 +126,14 @@ export async function runZetaDocumentSyncFromAuditAction(formData: FormData) {
   const maxPagesRaw = Number(formData.get("maxPages") ?? 200);
   const maxPages = Number.isFinite(maxPagesRaw) ? maxPagesRaw : 200;
 
-  await runZetaSync({
+  await enqueueZetaSyncRun({
     supabase: getSupabaseServiceRoleClient(),
     organizationId: organization.id,
     actorUserId: authState.user?.id ?? null,
     stream,
     period,
     maxPages,
+    requestSource: "audit_import",
   });
 
   revalidateAuditSurfaces(slug);

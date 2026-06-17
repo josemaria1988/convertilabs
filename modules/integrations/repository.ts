@@ -229,6 +229,86 @@ export async function finishIntegrationSyncRun(
   return data as JsonRecord;
 }
 
+export async function loadIntegrationSyncRun(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    runId: string;
+  },
+) {
+  const { data, error } = await supabase
+    .from(integrationTables.syncRuns)
+    .select("*")
+    .eq("id", input.runId)
+    .eq("organization_id", input.organizationId)
+    .limit(1)
+    .maybeSingle();
+
+  throwSupabaseError(error, "No se pudo cargar el sync run de integracion.");
+
+  if (!data) {
+    throw new Error("No encontramos el sync run de integracion solicitado.");
+  }
+
+  return data as JsonRecord;
+}
+
+export async function findActiveIntegrationSyncRun(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    provider: string;
+    stream: string;
+  },
+) {
+  const { data, error } = await supabase
+    .from(integrationTables.syncRuns)
+    .select("*")
+    .eq("organization_id", input.organizationId)
+    .eq("provider", input.provider)
+    .eq("stream", input.stream)
+    .in("status", ["queued", "running"])
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  throwSupabaseError(error, "No se pudo verificar corridas activas de integracion.");
+
+  return (data as JsonRecord | null) ?? null;
+}
+
+export async function markIntegrationSyncRunRunning(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    runId: string;
+    cursorFrom?: string | null;
+    metadata?: JsonRecord;
+  },
+) {
+  const payload = compactRecord({
+    status: "running",
+    started_at: nowIso(),
+    cursor_from: input.cursorFrom,
+    metadata_json: input.metadata,
+    updated_at: nowIso(),
+  });
+
+  const { data, error } = await supabase
+    .from(integrationTables.syncRuns)
+    .update(payload)
+    .eq("id", input.runId)
+    .eq("organization_id", input.organizationId)
+    .in("status", ["queued", "running"])
+    .select("*")
+    .limit(1)
+    .single();
+
+  throwSupabaseError(error, "No se pudo marcar el sync run como en curso.");
+
+  return data as JsonRecord;
+}
+
 export async function upsertIntegrationCursor(
   supabase: SupabaseClient,
   input: {

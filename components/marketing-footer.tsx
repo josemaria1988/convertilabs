@@ -17,9 +17,8 @@ export function MarketingFooter() {
         <div className="space-y-3">
           <p className="text-lg font-semibold tracking-[-0.04em]">{siteConfig.name}</p>
           <p className="max-w-md text-sm text-[color:var(--color-muted)]">
-            Capa de inteligencia y captura operativa nacida para una operación real en
-            Uruguay. Hoy funciona en beta privada, con acceso por invitación y prueba sin
-            costo.
+            Sistema operativo integral nacido para una operacion real en Uruguay. El acceso
+            se abre de forma selectiva y guiada sobre flujos administrativos concretos.
           </p>
           <p className="text-sm text-[color:var(--color-muted)]">
             {siteConfig.contactEmail}
@@ -54,7 +53,7 @@ export function MarketingFooter() {
       </div>
 
       <div className="border-t border-[color:var(--color-border)] px-6 py-4 text-center text-sm text-[color:var(--color-muted)]">
-        {year} {siteConfig.name}. Captura operativa, trazabilidad y control humano para alimentar sistemas contables legacy.
+        {year} {siteConfig.name}. Empresa conectada, trazabilidad y control humano sobre documentos, dinero, IVA y continuidad.
       </div>
     </footer>
   );

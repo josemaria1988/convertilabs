@@ -110,6 +110,9 @@ type OpenItemOutstandingRowRaw = {
   organization_id: string;
   open_item_id: string;
   party_id: string | null;
+  work_unit_id: string | null;
+  work_unit_name: string | null;
+  work_unit_code: string | null;
   counterparty_type: string | null;
   counterparty_id: string | null;
   counterparty_name: string | null;
@@ -473,6 +476,9 @@ export type OpenItemOutstandingRow = {
   organizationId: string;
   openItemId: string;
   partyId: string | null;
+  workUnitId: string | null;
+  workUnitName: string | null;
+  workUnitCode: string | null;
   counterpartyType: string | null;
   counterpartyId: string | null;
   counterpartyName: string | null;
@@ -714,6 +720,9 @@ const OPEN_ITEMS_OUTSTANDING_SELECT = [
   "organization_id",
   "open_item_id",
   "party_id",
+  "work_unit_id",
+  "work_unit_name",
+  "work_unit_code",
   "counterparty_type",
   "counterparty_id",
   "counterparty_name",
@@ -1171,6 +1180,9 @@ function mapOpenItemRow(row: OpenItemOutstandingRowRaw): OpenItemOutstandingRow 
     organizationId: row.organization_id,
     openItemId: row.open_item_id,
     partyId: row.party_id,
+    workUnitId: row.work_unit_id,
+    workUnitName: row.work_unit_name,
+    workUnitCode: row.work_unit_code,
     counterpartyType: row.counterparty_type,
     counterpartyId: row.counterparty_id,
     counterpartyName: row.counterparty_name,

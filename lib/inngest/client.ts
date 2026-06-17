@@ -17,12 +17,22 @@ export type DocumentSpreadsheetImportRequestedEventData = {
   requestedBy: string | null;
 };
 
+export type ZetaSyncRequestedEventData = {
+  runId: string;
+  organizationId: string;
+  stream: "masters" | "accounting_masters" | "sales_documents" | "received_cfes";
+  requestedBy: string | null;
+};
+
 export type ConvertilabsEvents = {
   "documents/process.requested": {
     data: DocumentProcessRequestedEventData;
   };
   "documents/spreadsheet-import.requested": {
     data: DocumentSpreadsheetImportRequestedEventData;
+  };
+  "integrations/zeta.sync.requested": {
+    data: ZetaSyncRequestedEventData;
   };
 };
 

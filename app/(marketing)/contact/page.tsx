@@ -82,9 +82,9 @@ export default function ContactPage() {
         </SectionCard>
         <SectionCard
           title="Estado actual"
-          description="Hoy funciona en beta privada y no tiene comercialización abierta."
+          description="Hoy se abre de forma selectiva para flujos administrativos reales."
         >
-          <p className="text-lg font-semibold">Acceso selectivo y sin costo</p>
+          <p className="text-lg font-semibold">Piloto guiado y operativo</p>
         </SectionCard>
         <SectionCard
           title="Formato"
@@ -97,7 +97,7 @@ export default function ContactPage() {
       <section className="grid gap-4 lg:grid-cols-[0.9fr_minmax(0,1fr)]">
         <SectionCard
           title="Cómo avanza"
-          description="Buscamos ver rápido si el producto ya te sirve en documentos, IVA, auditoría o captura de campo."
+          description="Buscamos ver rapido si el sistema ya ordena trabajos, documentos, dinero, IVA y continuidad."
         />
 
         <div className="panel px-6 py-7 md:px-8 md:py-8">

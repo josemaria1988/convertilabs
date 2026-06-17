@@ -43,7 +43,15 @@ type DocumentRow = {
   organization_id: string;
   document_date: string | null;
   current_draft_id: string | null;
+  work_unit_id: string | null;
   metadata: JsonRecord | null;
+};
+
+type WorkUnitRow = {
+  id: string;
+  code: string | null;
+  name: string | null;
+  metadata_json: JsonRecord | null;
 };
 
 type DraftRow = {
@@ -241,7 +249,7 @@ async function loadDocumentRow(input: {
 }) {
   const { data, error } = await input.supabase
     .from("documents")
-    .select("id, organization_id, document_date, current_draft_id, metadata")
+    .select("id, organization_id, document_date, current_draft_id, work_unit_id, metadata")
     .eq("organization_id", input.organizationId)
     .eq("id", input.documentId)
     .limit(1)
@@ -252,6 +260,41 @@ async function loadDocumentRow(input: {
   }
 
   return data as DocumentRow;
+}
+
+async function loadWorkUnitForDocument(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  workUnitId: string | null;
+}) {
+  if (!input.workUnitId) {
+    return null;
+  }
+
+  const { data, error } = await input.supabase
+    .from("work_units")
+    .select("id, code, name, metadata_json")
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.workUnitId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as WorkUnitRow | null;
+}
+
+function getZetaCostCenterCode(workUnit: WorkUnitRow | null) {
+  const metadata = asRecord(workUnit?.metadata_json);
+
+  return asString(metadata.zeta_cost_center_code)
+    ?? asString(metadata.zeta_centro_costo_codigo)
+    ?? asString(metadata.external_code)
+    ?? asString(metadata.cost_center_external_code)
+    ?? workUnit?.code
+    ?? null;
 }
 
 async function loadDraftRow(input: {
@@ -315,6 +358,11 @@ async function buildDocumentInput(input: {
   documentId: string;
 }): Promise<ZetaPurchaseExpenseDocumentInput> {
   const document = await loadDocumentRow(input);
+  const workUnit = await loadWorkUnitForDocument({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    workUnitId: document.work_unit_id,
+  });
   const draft = await loadDraftRow({
     supabase: input.supabase,
     document,
@@ -382,6 +430,10 @@ async function buildDocumentInput(input: {
     totalAmount: facts.total_amount,
     sourceReference: `Convertilabs document ${input.documentId}`,
     cfeTypeCode: asString(asRecord(draft.intake_context_json).cfe_type_code),
+    workUnitId: workUnit?.id ?? null,
+    workUnitCode: workUnit?.code ?? null,
+    workUnitName: workUnit?.name ?? null,
+    workUnitExternalCode: getZetaCostCenterCode(workUnit),
     lines,
   };
 }

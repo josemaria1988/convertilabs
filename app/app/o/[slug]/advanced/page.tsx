@@ -12,6 +12,27 @@ type OrganizationAdvancedPageProps = {
 
 const advancedSections = [
   {
+    title: "Operacion y continuidad",
+    description: "Directorio, procesos y continuidad para que la empresa no dependa de memoria dispersa.",
+    links: [
+      {
+        href: "directory",
+        label: "Directorio",
+        description: "Parties, contactos, roles e historial vinculado.",
+      },
+      {
+        href: "processes",
+        label: "Procesos",
+        description: "Recetas versionadas, obligaciones y captura de conocimiento operativo.",
+      },
+      {
+        href: "continuity",
+        label: "Continuidad",
+        description: "Riesgos por dependencia humana, tareas sueltas y procesos criticos.",
+      },
+    ],
+  },
+  {
     title: "Importacion y staging",
     description: "Herramientas para lotes asistidos, previews auditados y planillas fuera del loop diario.",
     links: [
@@ -131,7 +152,7 @@ export default async function OrganizationAdvancedPage({
                   key={link.href}
                   href={`/app/o/${organization.slug}/${link.href}`}
                   pendingLabel="Abriendo..."
-                  className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85"
+                  className="rounded-[6px] border border-[color:var(--color-border)] bg-white/70 p-4 transition hover:bg-white/85"
                 >
                   <p className="text-sm font-semibold text-white">{link.label}</p>
                   <p className="mt-2 text-sm text-[color:var(--color-muted)]">

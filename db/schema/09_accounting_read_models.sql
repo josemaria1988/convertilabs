@@ -271,6 +271,9 @@ select
   loi.organization_id,
   loi.id as open_item_id,
   loi.party_id,
+  loi.work_unit_id,
+  wu.name as work_unit_name,
+  wu.code as work_unit_code,
   loi.counterparty_type,
   loi.counterparty_id,
   coalesce(p.display_name, p.legal_name, v.name, c.name) as counterparty_name,
@@ -317,6 +320,8 @@ select
 from public.ledger_open_items as loi
 left join public.parties as p
   on p.id = loi.party_id
+left join public.work_units as wu
+  on wu.id = loi.work_unit_id
 left join public.vendors as v
   on loi.counterparty_type = 'vendor'
  and v.id = loi.counterparty_id

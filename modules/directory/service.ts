@@ -52,6 +52,10 @@ function requiredText(value: string | null | undefined, label: string) {
   return normalized;
 }
 
+export function canManageDirectory(role: string) {
+  return ["owner", "admin", "admin_processing", "accountant", "reviewer", "operator"].includes(role);
+}
+
 export function buildPartyCreatePayload(input: PartyCreateInput): PartyCreatePayload {
   const displayName = requiredText(input.displayName, "Party display name");
   const legalName = compactText(input.legalName) ?? displayName;

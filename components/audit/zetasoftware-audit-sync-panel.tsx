@@ -27,6 +27,8 @@ function formatStream(value: string) {
 
 function formatStatus(value: string) {
   switch (value) {
+    case "queued":
+      return "En cola";
     case "completed":
       return "Completada";
     case "completed_with_warnings":

@@ -139,6 +139,26 @@ test("CFE de gasto con proveedor existente genera payload valido para Factura Pr
   assert.equal(movimiento.Lineas[0].PrecioUnitario, 1000);
 });
 
+test("Export de compra incluye work_unit como CodigoCentroCosto cuando existe mapping", () => {
+  const {
+    resolveZetaPurchaseExpenseInvoiceFromInputs,
+  } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+    document: document({
+      workUnitId: "work-1",
+      workUnitCode: "NP-2026-001",
+      workUnitName: "Trabajo Nueva Palmira",
+      workUnitExternalCode: "NP01",
+    }),
+    catalogs: catalogs(),
+  });
+
+  assert.equal(result.blockers.length, 0);
+  assert.equal(result.preview.workUnitName, "Trabajo Nueva Palmira");
+  assert.equal(result.preview.centroCostoCode, "NP01");
+  assert.equal(result.payload.Data.Movimiento[0].CodigoCentroCosto, "NP01");
+});
+
 test("Documento con varias tasas genera lineas agrupadas por concepto e IVA", () => {
   const {
     resolveZetaPurchaseExpenseInvoiceFromInputs,

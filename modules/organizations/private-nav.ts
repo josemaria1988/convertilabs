@@ -8,6 +8,9 @@ export type OrganizationPrivateSection =
   | "tax"
   | "money"
   | "agenda"
+  | "directory"
+  | "processes"
+  | "continuity"
   | "settings"
   | "advanced";
 
@@ -25,7 +28,7 @@ function isDocumentsCurrent(currentSection: OrganizationPrivateSection) {
 }
 
 function isMoreCurrent(currentSection: OrganizationPrivateSection) {
-  return ["advanced", "audit", "close", "settings", "tax"].includes(currentSection);
+  return ["advanced", "audit", "close", "continuity", "directory", "processes", "settings", "tax"].includes(currentSection);
 }
 
 export function buildOrganizationPrivateNavItems(
@@ -55,7 +58,7 @@ export function buildOrganizationPrivateNavItems(
       current: isDocumentsCurrent(currentSection),
     },
     {
-      href: `/app/o/${organizationSlug}/open-items`,
+      href: `/app/o/${organizationSlug}/money`,
       label: "Dinero",
       description: "Deudores, acreedores, vencimientos y saldos vivos",
       icon: "money",

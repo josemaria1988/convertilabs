@@ -98,11 +98,16 @@ async function signInAsUser(supabaseUrl, anonKey, email, password) {
   return client;
 }
 
-function buildOrganizationPayload(name) {
+function buildSmokeTaxId(suffix, offset) {
+  const base = BigInt(`0x${suffix}`) % 10000000000n;
+  return `21${(base + BigInt(offset)).toString().padStart(10, "0").slice(-10)}`;
+}
+
+function buildOrganizationPayload(name, taxId) {
   return {
     p_name: name,
     p_legal_entity_type: "SAS",
-    p_tax_id: "211234560019",
+    p_tax_id: taxId,
     p_tax_regime_code: "IRAE_GENERAL",
     p_vat_regime: "GENERAL",
     p_dgi_group: "NO_CEDE",
@@ -110,9 +115,9 @@ function buildOrganizationPayload(name) {
   };
 }
 
-async function createOrganization(client, name) {
+async function createOrganization(client, name, taxId) {
   const { data, error } = await client
-    .rpc("create_organization_with_owner", buildOrganizationPayload(name))
+    .rpc("create_organization_with_owner", buildOrganizationPayload(name, taxId))
     .single();
 
   if (error) {
@@ -126,7 +131,7 @@ async function createOrganization(client, name) {
   return data;
 }
 
-async function assertOrganizationOwner(serviceClient, organizationId, userId) {
+async function assertOrganizationOwner(serviceClient, organizationId, userId, taxId) {
   const { data: organization, error: organizationError } = await serviceClient
     .from("organizations")
     .select("id, slug, created_by, legal_entity_type, tax_id, tax_regime_code, vat_regime, dgi_group, cfe_status")
@@ -143,7 +148,7 @@ async function assertOrganizationOwner(serviceClient, organizationId, userId) {
 
   if (
     organization.legal_entity_type !== "SAS"
-    || organization.tax_id !== "211234560019"
+    || organization.tax_id !== taxId
     || organization.tax_regime_code !== "IRAE_GENERAL"
     || organization.vat_regime !== "GENERAL"
     || organization.dgi_group !== "NO_CEDE"
@@ -192,6 +197,8 @@ async function main() {
   const suffix = crypto.randomBytes(5).toString("hex");
   const organizationName = `Smoke Org ${suffix}`;
   const expectedBaseSlug = slugifyPreview(organizationName);
+  const firstTaxId = buildSmokeTaxId(suffix, 1);
+  const secondTaxId = buildSmokeTaxId(suffix, 2);
   const createdUsers = [];
   const createdOrganizationIds = [];
 
@@ -210,7 +217,7 @@ async function main() {
       firstUser.email,
       firstUser.password,
     );
-    const firstOrganization = await createOrganization(firstClient, organizationName);
+    const firstOrganization = await createOrganization(firstClient, organizationName, firstTaxId);
     createdOrganizationIds.push(firstOrganization.organization_id);
 
     if (firstOrganization.slug !== expectedBaseSlug) {
@@ -223,6 +230,7 @@ async function main() {
       serviceClient,
       firstOrganization.organization_id,
       firstUser.userId,
+      firstTaxId,
     );
 
     const secondUser = await createConfirmedUser(
@@ -239,7 +247,7 @@ async function main() {
       secondUser.email,
       secondUser.password,
     );
-    const secondOrganization = await createOrganization(secondClient, organizationName);
+    const secondOrganization = await createOrganization(secondClient, organizationName, secondTaxId);
     createdOrganizationIds.push(secondOrganization.organization_id);
 
     if (secondOrganization.slug !== `${expectedBaseSlug}-1`) {
@@ -252,6 +260,7 @@ async function main() {
       serviceClient,
       secondOrganization.organization_id,
       secondUser.userId,
+      secondTaxId,
     );
 
     console.log("Organization onboarding smoke test passed.");

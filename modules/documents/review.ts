@@ -78,6 +78,7 @@ import {
   assertVatPeriodMutableForDocument,
   rebuildMonthlyVatRunFromConfirmations,
 } from "@/modules/tax/vat-runs";
+import { buildBusinessEventPayload } from "@/modules/events";
 import {
   loadOrCreateDocumentAssistantRail,
   markDocumentAssistantThreadStale,
@@ -164,6 +165,55 @@ type DraftRow = {
   updated_at: string;
   confirmed_at: string | null;
 };
+
+async function recordDocumentPostingBusinessEvent(
+  supabase: SupabaseClient,
+  input: {
+    document: DocumentRow;
+    actorId: string | null;
+    eventCode: "document_confirmed" | "document_posted_provisional" | "document_posted_final" | "vat_relevant_document_ready";
+    summary: string;
+    accountingArtifacts?: {
+      journalEntryId?: string | null;
+      suggestionId?: string | null;
+    } | null;
+    metadata?: JsonRecord;
+  },
+) {
+  const partyId =
+    input.document.party_id
+    ?? input.document.vendor_party_id
+    ?? input.document.customer_party_id
+    ?? null;
+  const payload = buildBusinessEventPayload({
+    organizationId: input.document.organization_id,
+    eventType: "document_posted",
+    eventDate: input.document.document_date,
+    sourceEntityType: "document",
+    sourceEntityId: input.document.id,
+    partyId,
+    workUnitId: input.document.work_unit_id,
+    documentId: input.document.id,
+    actorProfileId: input.actorId,
+    summary: input.summary,
+    metadata: {
+      ...input.metadata,
+      event_code: input.eventCode,
+      document_posting_status: input.document.posting_status,
+      journal_entry_id: input.accountingArtifacts?.journalEntryId ?? null,
+      accounting_suggestion_id: input.accountingArtifacts?.suggestionId ?? null,
+      party_id: partyId,
+      work_unit_id: input.document.work_unit_id,
+    },
+  });
+  const { error } = await supabase
+    .from("business_events")
+    .insert(payload);
+
+  if (error && !isMissingSupabaseRelationError(error, "business_events")) {
+    throw new Error(error.message);
+  }
+}
 
 type DraftStepRow = {
   step_code: string;
@@ -4061,6 +4111,31 @@ async function postDocumentReviewInternal(input: {
       );
     }
 
+    await recordDocumentPostingBusinessEvent(supabase, {
+      document,
+      actorId: input.actorId,
+      eventCode: "document_posted_provisional",
+      summary: "Documento posteado en modo provisional.",
+      accountingArtifacts,
+      metadata: {
+        posting_mode: "provisional",
+      },
+    });
+
+    if (derived.validation.postingStatus === "vat_ready") {
+      await recordDocumentPostingBusinessEvent(supabase, {
+        document,
+        actorId: input.actorId,
+        eventCode: "vat_relevant_document_ready",
+        summary: "Documento listo para IVA desde posting provisional.",
+        accountingArtifacts,
+        metadata: {
+          posting_mode: "provisional",
+          vat_status: derived.validation.postingStatus,
+        },
+      });
+    }
+
     await resolveAssistantSuggestionsForTarget(supabase, {
       organizationId: document.organization_id,
       targetKind: "document",
@@ -4307,6 +4382,29 @@ async function postDocumentReviewInternal(input: {
       input.actorId,
     );
   }
+
+  await recordDocumentPostingBusinessEvent(supabase, {
+    document,
+    actorId: input.actorId,
+    eventCode: "document_confirmed",
+    summary: "Documento confirmado por revision humana.",
+    accountingArtifacts,
+    metadata: {
+      confirmation_type: confirmationType,
+      posting_mode: "final",
+    },
+  });
+  await recordDocumentPostingBusinessEvent(supabase, {
+    document,
+    actorId: input.actorId,
+    eventCode: "document_posted_final",
+    summary: "Documento posteado en modo final.",
+    accountingArtifacts,
+    metadata: {
+      confirmation_type: confirmationType,
+      posting_mode: "final",
+    },
+  });
 
   await resolveAssistantSuggestionsForTarget(supabase, {
     organizationId: document.organization_id,

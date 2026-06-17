@@ -8,9 +8,11 @@ import {
   type CompanyHomeDashboard,
   type CompanyHomeDocumentSignal,
   type CompanyHomeMoneySignal,
+  type CompanyHomeOperationsSignal,
   type CompanyHomePartySignal,
   type CompanyHomeWorkUnitSignal,
 } from "@/modules/presentation/company-home";
+import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 
 type WorkUnitHomeRow = {
   id: string;
@@ -21,6 +23,13 @@ type WorkUnitHomeRow = {
   actual_cost: number | null;
   margin_status: string | null;
   updated_at: string | null;
+};
+
+type WorkUnitDocumentSummaryRow = {
+  work_unit_id: string | null;
+  direction: string | null;
+  total_amount_uyu: number | null;
+  document_total_amount_original: number | null;
 };
 
 type PartyHomeRow = {
@@ -44,18 +53,53 @@ type OpenItemHomeRow = {
   source_document_id: string | null;
 };
 
+type TaskHomeRow = {
+  status: string | null;
+  due_date: string | null;
+};
+
+type ProcessHomeRow = {
+  criticality: string | null;
+  future_owner_label: string | null;
+  status: string | null;
+};
+
+type CaptureNoteHomeRow = {
+  status: string | null;
+};
+
+type CloseHomeRow = {
+  status: string | null;
+  summary_json: Record<string, unknown> | null;
+};
+
 function asNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function mapWorkUnitRow(row: WorkUnitHomeRow): CompanyHomeWorkUnitSignal {
+function asUnknownNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function mapWorkUnitRow(
+  row: WorkUnitHomeRow,
+  documentAmountsByWorkUnitId: Map<string, { revenue: number; cost: number }> = new Map(),
+): CompanyHomeWorkUnitSignal {
+  const documentAmounts = documentAmountsByWorkUnitId.get(row.id);
+  const actualRevenue = asNumber(row.actual_revenue);
+  const actualCost = asNumber(row.actual_cost);
+
   return {
     id: row.id,
     name: row.name ?? "Trabajo sin nombre",
     status: row.status ?? "planned",
     kind: row.kind ?? "job",
-    actualRevenue: asNumber(row.actual_revenue),
-    actualCost: asNumber(row.actual_cost),
+    actualRevenue: documentAmounts && documentAmounts.revenue > 0
+      ? documentAmounts.revenue
+      : actualRevenue,
+    actualCost: documentAmounts && documentAmounts.cost > 0
+      ? documentAmounts.cost
+      : actualCost,
     marginStatus: row.margin_status,
     updatedAt: row.updated_at,
   };
@@ -82,6 +126,16 @@ function mapMoneyRow(row: OpenItemHomeRow): CompanyHomeMoneySignal {
     status: row.status,
     sourceDocumentId: row.source_document_id,
   };
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 async function loadWorkUnitSignals(
@@ -115,10 +169,48 @@ async function loadWorkUnitSignals(
     throw new Error(error.message);
   }
 
+  const rows = (data as WorkUnitHomeRow[] | null) ?? [];
+  const workUnitIds = rows.map((row) => row.id);
+  const documentAmountsByWorkUnitId = new Map<string, { revenue: number; cost: number }>();
+
+  if (workUnitIds.length > 0) {
+    const { data: documentRows, error: documentError } = await supabase
+      .from("documents")
+      .select("work_unit_id, direction, total_amount_uyu, document_total_amount_original")
+      .eq("organization_id", organizationId)
+      .in("work_unit_id", workUnitIds)
+      .limit(500);
+
+    if (documentError && !isMissingSupabaseRelationError(documentError, "documents")) {
+      throw new Error(documentError.message);
+    }
+
+    for (const document of ((documentRows as WorkUnitDocumentSummaryRow[] | null) ?? [])) {
+      if (!document.work_unit_id) {
+        continue;
+      }
+
+      const current = documentAmountsByWorkUnitId.get(document.work_unit_id) ?? {
+        revenue: 0,
+        cost: 0,
+      };
+      const amount = asNumber(document.total_amount_uyu)
+        || asNumber(document.document_total_amount_original);
+
+      if (document.direction === "sale") {
+        current.revenue += amount;
+      } else if (document.direction === "purchase") {
+        current.cost += amount;
+      }
+
+      documentAmountsByWorkUnitId.set(document.work_unit_id, current);
+    }
+  }
+
   return {
     isAvailable: true,
     totalCount: count ?? data?.length ?? 0,
-    recent: ((data as WorkUnitHomeRow[] | null) ?? []).map(mapWorkUnitRow),
+    recent: rows.map((row) => mapWorkUnitRow(row, documentAmountsByWorkUnitId)),
   };
 }
 
@@ -196,6 +288,131 @@ async function loadMoneySignals(
   };
 }
 
+async function loadOperationsSignals(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<CompanyHomeOperationsSignal> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("status, due_date")
+    .eq("organization_id", organizationId)
+    .limit(500);
+
+  if (error) {
+    if (isMissingSupabaseRelationError(error, "tasks")) {
+      return {
+        isAvailable: false,
+        totalTasks: 0,
+        blockedTasks: 0,
+        dueThisWeek: 0,
+        continuityRiskCount: 0,
+        rawCaptures: 0,
+        latestVatStatus: null,
+        vatReviewFlags: 0,
+        vatTracedDocuments: 0,
+        latestCloseStatus: null,
+        closeBlockers: 0,
+        closeWarnings: 0,
+      };
+    }
+
+    throw new Error(error.message);
+  }
+
+  const rows = (data as TaskHomeRow[] | null) ?? [];
+  const today = todayIso();
+  const weekEnd = addDaysIso(today, 7);
+  const openTasks = rows.filter((row) => !["done", "cancelled"].includes(row.status ?? ""));
+  const blockedTasks = rows.filter((row) => row.status === "blocked").length;
+  const dueThisWeek = openTasks.filter((row) =>
+    row.due_date && row.due_date >= today && row.due_date <= weekEnd).length;
+
+  const [processesResult, capturesResult, closeResult] = await Promise.all([
+    supabase
+      .from("processes")
+      .select("criticality, future_owner_label, status")
+      .eq("organization_id", organizationId)
+      .neq("status", "archived")
+      .limit(500),
+    supabase
+      .from("capture_notes")
+      .select("status")
+      .eq("organization_id", organizationId)
+      .neq("status", "archived")
+      .limit(500),
+    supabase
+      .from("close_check_runs")
+      .select("status, summary_json")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (processesResult.error && !isMissingSupabaseRelationError(processesResult.error, "processes")) {
+    throw new Error(processesResult.error.message);
+  }
+
+  if (capturesResult.error && !isMissingSupabaseRelationError(capturesResult.error, "capture_notes")) {
+    throw new Error(capturesResult.error.message);
+  }
+
+  if (closeResult.error && !isMissingSupabaseRelationError(closeResult.error, "close_check_runs")) {
+    throw new Error(closeResult.error.message);
+  }
+
+  const criticalProcessesWithoutFutureOwner = ((processesResult.data as ProcessHomeRow[] | null) ?? [])
+    .filter((process) =>
+      ["high", "critical"].includes(process.criticality ?? "")
+      && !process.future_owner_label
+      && process.status !== "archived").length;
+  const rawCaptures = ((capturesResult.data as CaptureNoteHomeRow[] | null) ?? [])
+    .filter((capture) => capture.status === "captured").length;
+  const closeRow = (closeResult.data as CloseHomeRow | null) ?? null;
+  const closeSummary = closeRow?.summary_json ?? {};
+  let latestVatStatus: string | null = null;
+  let vatReviewFlags = 0;
+  let vatTracedDocuments = 0;
+
+  try {
+    const vatRuns = await loadOrganizationVatRuns(supabase, organizationId);
+    const latestVatRun = vatRuns[0] ?? null;
+
+    latestVatStatus = latestVatRun?.status ?? null;
+    vatReviewFlags = latestVatRun?.reviewFlagsCount ?? 0;
+    vatTracedDocuments = latestVatRun?.tracedDocuments.length ?? 0;
+  } catch (error) {
+    const supabaseError = error as { code?: string; message?: string; details?: string; hint?: string };
+
+    if (
+      !isMissingSupabaseRelationError(supabaseError, "vat_runs")
+      && !isMissingSupabaseRelationError(supabaseError, "vat_run_documents")
+      && !isMissingSupabaseRelationError(supabaseError, "tax_periods")
+    ) {
+      throw error;
+    }
+  }
+
+  return {
+    isAvailable: true,
+    totalTasks: openTasks.length,
+    blockedTasks,
+    dueThisWeek,
+    continuityRiskCount:
+      blockedTasks
+      + criticalProcessesWithoutFutureOwner
+      + rawCaptures
+      + asUnknownNumber(closeSummary.blocker_count),
+    rawCaptures,
+    latestVatStatus,
+    vatReviewFlags,
+    vatTracedDocuments,
+    latestCloseStatus: closeRow?.status ?? null,
+    closeBlockers: asUnknownNumber(closeSummary.blocker_count),
+    closeWarnings: asUnknownNumber(closeSummary.warning_count),
+  };
+}
+
 function mapDocumentSignal(input: {
   organizationSlug: string;
   document: Awaited<ReturnType<typeof listAllOrganizationWorkspaceDocuments>>[number];
@@ -218,7 +435,7 @@ export async function loadCompanyHomeDashboard(
     organizationSlug: string;
   },
 ): Promise<CompanyHomeDashboard> {
-  const [documents, work, directory, money] = await Promise.all([
+  const [documents, work, directory, money, operations] = await Promise.all([
     listAllOrganizationWorkspaceDocuments({
       organizationId: input.organizationId,
       organizationSlug: input.organizationSlug,
@@ -228,6 +445,7 @@ export async function loadCompanyHomeDashboard(
     loadWorkUnitSignals(supabase, input.organizationId),
     loadPartySignals(supabase, input.organizationId),
     loadMoneySignals(supabase, input.organizationId),
+    loadOperationsSignals(supabase, input.organizationId),
   ]);
 
   return buildCompanyHomeDashboard({
@@ -240,5 +458,6 @@ export async function loadCompanyHomeDashboard(
     work,
     directory,
     money,
+    operations,
   });
 }

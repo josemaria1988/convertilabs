@@ -231,7 +231,7 @@ export function DocumentOperationalTray({
     return (
       <div className="document-tray-layout">
         <section className="ui-panel">
-          <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">Bandeja Documental Operativa</h1>
+          <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">Documentos operativos</h1>
           <p className="mt-2 text-[14px] text-[color:var(--color-muted)]">
             Cuando entren documentos veras aqui la factura, la foto si existe, el criterio IA y la sugerencia de cuentas sin salir de la bandeja.
           </p>
@@ -240,7 +240,7 @@ export function DocumentOperationalTray({
           </div>
         </section>
         <aside className="ui-panel">
-          <h2 className="text-[15px] font-semibold text-white">Estado de bandeja</h2>
+          <h2 className="text-[15px] font-semibold text-white">Estado documental</h2>
           <div className="mt-4 space-y-3 text-sm text-[color:var(--color-muted)]">
             <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-4 py-3">Sin pendientes operativos</div>
             <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-4 py-3">Sin bloqueos visibles</div>
@@ -256,7 +256,7 @@ export function DocumentOperationalTray({
         <section className="ui-panel">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">Bandeja Documental Operativa</h1>
+              <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">Documentos operativos</h1>
               <p className="mt-2 text-[14px] text-[color:var(--color-muted)]">
                 La revision vive aqui: seleccionas un documento, ves la factura, entiendes el criterio de IA y decides si confirmarlo o abrir la sugerencia completa.
               </p>

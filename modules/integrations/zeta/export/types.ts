@@ -101,6 +101,10 @@ export type ZetaPurchaseExpenseDocumentInput = {
   totalAmount?: number | null;
   sourceReference?: string | null;
   cfeTypeCode?: string | number | null;
+  workUnitId?: string | null;
+  workUnitCode?: string | null;
+  workUnitName?: string | null;
+  workUnitExternalCode?: string | null;
   lines: ZetaPurchaseExpenseDocumentLineInput[];
 };
 
@@ -132,6 +136,8 @@ export type ZetaPurchaseInvoiceExportPreview = {
   purchaseKind: ZetaPurchaseKind;
   lines: ZetaPurchaseInvoiceExportPreviewLine[];
   paidByPartnerMessage?: string | null;
+  workUnitName?: string | null;
+  centroCostoCode?: string | null;
 };
 
 export type ZetaPurchaseInvoiceExportResolution = {

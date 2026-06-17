@@ -6,6 +6,7 @@ import type {
   CompanyHomeTone,
   CompanyHomeWorkUnitSignal,
 } from "@/modules/presentation/company-home";
+import { buildCompanyStatusBrief } from "@/modules/intelligence/service";
 import {
   formatDocumentRoleLabel,
   formatLifecycleStatusLabel,
@@ -143,6 +144,11 @@ export function CompanyHomeDashboard({
   data,
   organizationSlug,
 }: CompanyHomeDashboardProps) {
+  const assistantBrief = buildCompanyStatusBrief({
+    actions: data.actions,
+    fallbackHref: `/app/o/${organizationSlug}/documents`,
+  });
+
   return (
     <div className="space-y-4">
       <section className="ui-panel">
@@ -164,7 +170,7 @@ export function CompanyHomeDashboard({
           </LoadingLink>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {data.metrics.map((metric) => (
             <LoadingLink
               key={metric.key}
@@ -195,6 +201,22 @@ export function CompanyHomeDashboard({
           </div>
 
           <div className="mt-4 space-y-3">
+            <article className="rounded-[6px] border border-[rgba(124,157,255,0.3)] bg-[rgba(124,157,255,0.12)] px-4 py-3 text-white">
+              <p className="text-sm font-semibold">{assistantBrief.question}</p>
+              <p className="mt-2 text-sm text-[color:var(--color-muted)]">{assistantBrief.answer}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {assistantBrief.links.map((link) => (
+                  <LoadingLink
+                    key={`${link.href}-${link.title}`}
+                    href={link.href}
+                    pendingLabel="Abriendo..."
+                    className="status-pill status-pill--info"
+                  >
+                    {link.title}
+                  </LoadingLink>
+                ))}
+              </div>
+            </article>
             {data.actions.length === 0 ? (
               <div className="rounded-[6px] border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
                 No hay acciones urgentes detectadas. Carga trabajos, documentos o saldos para que Inicio muestre prioridades reales.
@@ -232,6 +254,22 @@ export function CompanyHomeDashboard({
             <div className="ui-subtle-row">
               <span>Open items visibles</span>
               <span>{data.availability.money ? data.summary.openMoneyItems : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
+              <span>Tareas abiertas</span>
+              <span>{data.availability.operations ? data.summary.openTasks : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
+              <span>Riesgos continuidad</span>
+              <span>{data.availability.operations ? data.summary.continuityRisks : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
+              <span>Flags IVA</span>
+              <span>{data.availability.operations ? data.summary.vatReviewFlags : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
+              <span>Blockers cierre</span>
+              <span>{data.availability.operations ? data.summary.closeBlockers : "--"}</span>
             </div>
           </div>
         </section>
@@ -316,7 +354,7 @@ export function CompanyHomeDashboard({
               </p>
             </div>
             <LoadingLink
-              href={`/app/o/${organizationSlug}/open-items`}
+              href={`/app/o/${organizationSlug}/money`}
               pendingLabel="Abriendo..."
               className="ui-button ui-button--secondary"
             >
@@ -357,7 +395,12 @@ export function CompanyHomeDashboard({
               <div className="text-sm text-[color:var(--color-muted)]">Todavia no hay parties visibles.</div>
             ) : (
               data.parties.map((party) => (
-                <div key={party.id} className="ui-subtle-row">
+                <LoadingLink
+                  key={party.id}
+                  href={`/app/o/${organizationSlug}/directory/${party.id}`}
+                  pendingLabel="Abriendo..."
+                  className="ui-subtle-row"
+                >
                   <div className="min-w-0">
                     <p className="truncate text-white">{party.displayName}</p>
                     <p className="mt-1 text-[12px] text-[color:var(--color-muted)]">
@@ -365,7 +408,7 @@ export function CompanyHomeDashboard({
                     </p>
                   </div>
                   <span>{formatDate(party.updatedAt)}</span>
-                </div>
+                </LoadingLink>
               ))
             )}
           </div>
@@ -376,7 +419,7 @@ export function CompanyHomeDashboard({
             <div>
               <h2 className="text-[16px] font-semibold text-white">Agenda</h2>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                La agenda no inventa tareas. Por ahora muestra la entrada al dominio y deriva vencimientos reales a dinero/cierre.
+                Tareas, vencimientos operativos y senales de continuidad derivadas de datos reales.
               </p>
             </div>
             <LoadingLink
@@ -388,21 +431,28 @@ export function CompanyHomeDashboard({
             </LoadingLink>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <article className="metric-card">
-              <span className="metric-card__label">Tareas publicadas</span>
-              <span className="metric-card__value">0</span>
-              <p className="metric-card__hint">El modelo de tareas entra en el corte operativo de agenda.</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <article className="metric-card" data-tone={data.summary.openTasks > 0 ? "info" : undefined}>
+              <span className="metric-card__label">Tareas abiertas</span>
+              <span className="metric-card__value">{data.availability.operations ? data.summary.openTasks : "--"}</span>
+              <p className="metric-card__hint">Pendientes o en curso dentro de Agenda.</p>
             </article>
-            <article className="metric-card" data-tone={data.summary.overdueMoneyItems > 0 ? "warning" : undefined}>
-              <span className="metric-card__label">Dinero vencido</span>
-              <span className="metric-card__value">{data.summary.overdueMoneyItems}</span>
-              <p className="metric-card__hint">Vencimientos reales tomados desde open items.</p>
+            <article className="metric-card" data-tone={data.summary.blockedTasks > 0 ? "warning" : undefined}>
+              <span className="metric-card__label">Tareas bloqueadas</span>
+              <span className="metric-card__value">{data.availability.operations ? data.summary.blockedTasks : "--"}</span>
+              <p className="metric-card__hint">Bloqueos operativos a destrabar.</p>
             </article>
-            <article className="metric-card" data-tone={data.summary.blockedDocuments > 0 ? "warning" : undefined}>
-              <span className="metric-card__label">Bloqueos</span>
-              <span className="metric-card__value">{data.summary.blockedDocuments}</span>
-              <p className="metric-card__hint">Documentos que impiden avanzar flujo operativo.</p>
+            <article className="metric-card" data-tone={data.summary.continuityRisks > 0 ? "warning" : undefined}>
+              <span className="metric-card__label">Continuidad</span>
+              <span className="metric-card__value">{data.availability.operations ? data.summary.continuityRisks : "--"}</span>
+              <p className="metric-card__hint">Riesgos por procesos, tareas o capturas.</p>
+            </article>
+            <article className="metric-card" data-tone={data.summary.closeBlockers > 0 || data.summary.vatReviewFlags > 0 ? "warning" : undefined}>
+              <span className="metric-card__label">IVA/cierre</span>
+              <span className="metric-card__value">
+                {data.availability.operations ? data.summary.vatReviewFlags + data.summary.closeBlockers : "--"}
+              </span>
+              <p className="metric-card__hint">Flags fiscales y blockers de close.</p>
             </article>
           </div>
         </section>

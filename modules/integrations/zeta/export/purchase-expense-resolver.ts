@@ -670,6 +670,8 @@ function fiscalFingerprint(input: {
 }
 
 function emptyPreview(document: ZetaPurchaseExpenseDocumentInput): ZetaPurchaseInvoiceExportPreview {
+  const centroCostoCode = firstText(document.workUnitExternalCode, document.workUnitCode);
+
   return {
     supplierName: document.supplierName,
     supplierRut: document.supplierRut,
@@ -686,6 +688,8 @@ function emptyPreview(document: ZetaPurchaseExpenseDocumentInput): ZetaPurchaseI
     purchaseKind: "unknown",
     lines: [],
     paidByPartnerMessage: null,
+    workUnitName: document.workUnitName ?? null,
+    centroCostoCode,
   };
 }
 
@@ -865,6 +869,7 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
       CodigoLocal: input.catalogs.config?.defaults?.localCode,
       CodigoUsuario: input.catalogs.config?.defaults?.userCode,
       CodigoCaja: payment.cashboxCode,
+      CodigoCentroCosto: preview.centroCostoCode ?? undefined,
       Lineas: grouped.map((line) => line.zetaLine),
       FormasPago: payment.formasPago,
     })

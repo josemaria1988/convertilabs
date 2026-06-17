@@ -1,3 +1,5 @@
+import type { InteractionItem } from "@/modules/communications";
+
 export const PARTY_ROLE_TYPES = [
   "customer",
   "vendor",
@@ -99,4 +101,89 @@ export type PartyContactPayload = {
   is_primary: boolean;
   metadata_json: Record<string, unknown>;
   created_by: string | null;
+};
+
+export type DirectoryPartyListItem = {
+  id: string;
+  displayName: string;
+  legalName: string | null;
+  taxId: string | null;
+  status: string | null;
+  source: string | null;
+  updatedAt: string | null;
+  roles: PartyRoleType[];
+  contactCount: number;
+  interactionCount: number;
+};
+
+export type DirectoryDashboardData = {
+  isAvailable: boolean;
+  parties: DirectoryPartyListItem[];
+  summary: {
+    totalParties: number;
+    customers: number;
+    vendors: number;
+    contacts: number;
+    interactions: number;
+  };
+};
+
+export type DirectoryIdentifierItem = {
+  id: string;
+  identifierType: PartyIdentifierType;
+  identifierValue: string;
+  isPrimary: boolean;
+};
+
+export type DirectoryContactItem = {
+  id: string;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+  mobile: string | null;
+  relationshipLabel: string | null;
+  isPrimary: boolean;
+  notes: string | null;
+};
+
+export type DirectoryWorkUnitItem = {
+  id: string;
+  name: string;
+  status: string | null;
+  kind: string | null;
+};
+
+export type DirectoryDocumentItem = {
+  id: string;
+  label: string;
+  documentDate: string | null;
+  lifecycleStatus: string | null;
+};
+
+export type DirectoryMoneyItem = {
+  id: string;
+  documentRole: string | null;
+  dueDate: string | null;
+  outstandingAmount: number;
+  status: string | null;
+};
+
+export type DirectoryTaskItem = {
+  id: string;
+  title: string;
+  status: string;
+  dueDate: string | null;
+};
+
+export type PartyProfileData = {
+  isAvailable: boolean;
+  party: DirectoryPartyListItem | null;
+  identifiers: DirectoryIdentifierItem[];
+  contacts: DirectoryContactItem[];
+  workUnits: DirectoryWorkUnitItem[];
+  documents: DirectoryDocumentItem[];
+  moneyItems: DirectoryMoneyItem[];
+  tasks: DirectoryTaskItem[];
+  interactionsAvailable: boolean;
+  interactions: InteractionItem[];
 };

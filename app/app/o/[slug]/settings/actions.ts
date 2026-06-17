@@ -47,10 +47,10 @@ import {
   testZetaConnection,
 } from "@/modules/integrations/zeta/services/connection-service";
 import {
-  runZetaMonthlyDocumentSync,
-  runZetaSync,
+  enqueueZetaMonthlyDocumentSyncRun,
+  enqueueZetaSyncRun,
   type ZetaSyncStream,
-} from "@/modules/integrations/zeta/services/sync-service";
+} from "@/modules/integrations/zeta/sync/sync-runner";
 import {
   importChartOfAccountsSpreadsheetDirect,
   runSpreadsheetImport,
@@ -363,7 +363,10 @@ export async function runOrganizationZetaSyncAction(formData: FormData) {
   };
 
   if (stream === "monthly_documents") {
-    await runZetaMonthlyDocumentSync(baseInput);
+    await enqueueZetaMonthlyDocumentSyncRun({
+      ...baseInput,
+      requestSource: "settings_integrations",
+    });
   } else {
     const allowedStreams: ZetaSyncStream[] = [
       "masters",
@@ -376,9 +379,10 @@ export async function runOrganizationZetaSyncAction(formData: FormData) {
       throw new Error("Stream Zetasoftware no soportado.");
     }
 
-    await runZetaSync({
+    await enqueueZetaSyncRun({
       ...baseInput,
       stream: stream as ZetaSyncStream,
+      requestSource: "settings_integrations",
     });
   }
 

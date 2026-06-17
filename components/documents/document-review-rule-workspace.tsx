@@ -1032,7 +1032,7 @@ export function DocumentReviewRuleWorkspace({
             pendingLabel="Volviendo..."
             className="review-rule-breadcrumb__link"
           >
-            Bandeja Documental
+            Documentos
           </LoadingLink>
           <span className="review-rule-breadcrumb__separator">{">"}</span>
           <span>Revision Factura {invoiceCode}</span>

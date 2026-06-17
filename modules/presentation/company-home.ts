@@ -40,6 +40,21 @@ export type CompanyHomeMoneySignal = {
   sourceDocumentId: string | null;
 };
 
+export type CompanyHomeOperationsSignal = {
+  isAvailable: boolean;
+  totalTasks: number;
+  blockedTasks: number;
+  dueThisWeek: number;
+  continuityRiskCount: number;
+  rawCaptures: number;
+  latestVatStatus: string | null;
+  vatReviewFlags: number;
+  vatTracedDocuments: number;
+  latestCloseStatus: string | null;
+  closeBlockers: number;
+  closeWarnings: number;
+};
+
 export type CompanyHomePresenterInput = {
   organizationSlug: string;
   documents: CompanyHomeDocumentSignal[];
@@ -58,6 +73,7 @@ export type CompanyHomePresenterInput = {
     totalCount: number;
     recent: CompanyHomeMoneySignal[];
   };
+  operations?: CompanyHomeOperationsSignal;
 };
 
 export type CompanyHomeMetricCard = {
@@ -88,6 +104,14 @@ export type CompanyHomeDashboard = {
     overdueMoneyItems: number;
     outstandingAmount: number;
     directoryParties: number;
+    openTasks: number;
+    blockedTasks: number;
+    continuityRisks: number;
+    rawCaptures: number;
+    vatReviewFlags: number;
+    vatTracedDocuments: number;
+    closeBlockers: number;
+    closeWarnings: number;
   };
   metrics: CompanyHomeMetricCard[];
   actions: CompanyHomeAction[];
@@ -99,6 +123,7 @@ export type CompanyHomeDashboard = {
     work: boolean;
     directory: boolean;
     money: boolean;
+    operations: boolean;
   };
 };
 
@@ -137,6 +162,20 @@ export function buildCompanyHomeDashboard(
     (sum, item) => sum + item.outstandingAmount,
     0,
   );
+  const operations = input.operations ?? {
+    isAvailable: false,
+    totalTasks: 0,
+    blockedTasks: 0,
+    dueThisWeek: 0,
+    continuityRiskCount: 0,
+    rawCaptures: 0,
+    latestVatStatus: null,
+    vatReviewFlags: 0,
+    vatTracedDocuments: 0,
+    latestCloseStatus: null,
+    closeBlockers: 0,
+    closeWarnings: 0,
+  };
   const slug = input.organizationSlug;
 
   const metrics: CompanyHomeMetricCard[] = [
@@ -167,18 +206,41 @@ export function buildCompanyHomeDashboard(
       hint: input.money.isAvailable
         ? "Suma visible de deudores y acreedores con saldo vivo."
         : "La vista de open items no esta disponible.",
-      href: `/app/o/${slug}/open-items`,
+      href: `/app/o/${slug}/money`,
       cta: "Abrir dinero",
       tone: overdueMoneyItems.length > 0 ? "warning" : outstandingAmount > 0 ? "info" : "neutral",
     },
     {
       key: "agenda",
       label: "Agenda operativa",
-      value: "0",
-      hint: "Todavia no hay tareas publicadas; vencimientos contables viven en dinero/cierre.",
+      value: operations.isAvailable ? formatCount(operations.totalTasks) : "--",
+      hint: operations.isAvailable
+        ? "Tareas abiertas y vencimientos operativos materializados."
+        : "La tabla tasks no esta disponible en esta base.",
       href: `/app/o/${slug}/agenda`,
       cta: "Abrir agenda",
-      tone: "neutral",
+      tone: operations.blockedTasks > 0 || operations.continuityRiskCount > 0
+        ? "warning"
+        : operations.totalTasks > 0
+          ? "info"
+          : "neutral",
+    },
+    {
+      key: "tax_close",
+      label: "IVA y cierre",
+      value: operations.isAvailable
+        ? formatCount(operations.vatReviewFlags + operations.closeBlockers)
+        : "--",
+      hint: operations.isAvailable
+        ? "Flags de IVA y blockers de cierre visibles fuera de /tax."
+        : "Las senales fiscales todavia no estan disponibles.",
+      href: `/app/o/${slug}/agenda`,
+      cta: "Abrir agenda",
+      tone: operations.closeBlockers > 0
+        ? "warning"
+        : operations.vatReviewFlags > 0
+          ? "info"
+          : "neutral",
     },
   ];
 
@@ -208,8 +270,48 @@ export function buildCompanyHomeDashboard(
         key: "overdue_money",
         title: `Mirar ${formatCount(overdueMoneyItems.length)} vencido(s)`,
         description: "Hay saldos vivos con fecha vencida en cuentas a cobrar o pagar.",
-        href: `/app/o/${slug}/open-items?due=overdue`,
+        href: `/app/o/${slug}/money?due=overdue`,
         cta: "Abrir vencidos",
+        tone: "warning",
+      }
+      : null,
+    operations.blockedTasks > 0
+      ? {
+        key: "blocked_tasks",
+        title: `Destrabar ${formatCount(operations.blockedTasks)} tarea(s)`,
+        description: "Hay tareas bloqueadas que pueden frenar trabajo, dinero o continuidad.",
+        href: `/app/o/${slug}/agenda`,
+        cta: "Abrir agenda",
+        tone: "warning",
+      }
+      : null,
+    operations.continuityRiskCount > 0
+      ? {
+        key: "continuity_risks",
+        title: `Mirar ${formatCount(operations.continuityRiskCount)} riesgo(s) de continuidad`,
+        description: "Hay procesos, obligaciones o conocimiento crudo que conviene documentar.",
+        href: `/app/o/${slug}/continuity`,
+        cta: "Abrir continuidad",
+        tone: "warning",
+      }
+      : null,
+    operations.vatReviewFlags > 0
+      ? {
+        key: "vat_review_flags",
+        title: `Revisar ${formatCount(operations.vatReviewFlags)} flag(s) de IVA`,
+        description: "Hay documentos trazados al ultimo VAT run con senales que requieren revision.",
+        href: `/app/o/${slug}/tax`,
+        cta: "Abrir tax",
+        tone: "info",
+      }
+      : null,
+    operations.closeBlockers > 0
+      ? {
+        key: "close_blockers",
+        title: `Resolver ${formatCount(operations.closeBlockers)} blocker(s) de cierre`,
+        description: "El ultimo validator de cierre dejo problemas accionables en tareas y cockpit.",
+        href: `/app/o/${slug}/close`,
+        cta: "Abrir cierre",
         tone: "warning",
       }
       : null,
@@ -254,6 +356,14 @@ export function buildCompanyHomeDashboard(
       overdueMoneyItems: overdueMoneyItems.length,
       outstandingAmount,
       directoryParties: input.directory.totalCount,
+      openTasks: operations.totalTasks,
+      blockedTasks: operations.blockedTasks,
+      continuityRisks: operations.continuityRiskCount,
+      rawCaptures: operations.rawCaptures,
+      vatReviewFlags: operations.vatReviewFlags,
+      vatTracedDocuments: operations.vatTracedDocuments,
+      closeBlockers: operations.closeBlockers,
+      closeWarnings: operations.closeWarnings,
     },
     metrics,
     actions,
@@ -265,6 +375,7 @@ export function buildCompanyHomeDashboard(
       work: input.work.isAvailable,
       directory: input.directory.isAvailable,
       money: input.money.isAvailable,
+      operations: operations.isAvailable,
     },
   };
 }
