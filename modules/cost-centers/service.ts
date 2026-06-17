@@ -1,6 +1,11 @@
 import "server-only";
 
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import {
+  buildDocumentCostCenterBridgeMetadata,
+  buildWorkUnitPayloadFromLegacyCostCenter,
+  type LegacyCostCenterBridgeRow,
+} from "@/modules/work";
 
 export type CostCenterAssignmentSource =
   | "mobile_field"
@@ -16,9 +21,10 @@ export type OrganizationCostCenterSummary = {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  workUnitId: string | null;
 };
 
-type CostCenterRow = {
+type CostCenterRow = LegacyCostCenterBridgeRow & {
   id: string;
   organization_id: string;
   name: string;
@@ -29,7 +35,10 @@ type CostCenterRow = {
   archived_at: string | null;
 };
 
-function mapCostCenterRow(row: CostCenterRow): OrganizationCostCenterSummary {
+function mapCostCenterRow(
+  row: CostCenterRow,
+  workUnitId: string | null = null,
+): OrganizationCostCenterSummary {
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -39,11 +48,92 @@ function mapCostCenterRow(row: CostCenterRow): OrganizationCostCenterSummary {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
+    workUnitId,
   };
 }
 
 function normalizeName(value: string) {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function isMissingWorkUnitsRelation(error: { message?: string | null } | null | undefined) {
+  return Boolean(error?.message && (
+    /work_units/i.test(error.message)
+    && (
+      /does not exist/i.test(error.message)
+      || /schema cache/i.test(error.message)
+      || /relation/i.test(error.message)
+    )
+  ));
+}
+
+async function loadWorkUnitIdsByCostCenter(input: {
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>;
+  organizationId: string;
+  costCenterIds: string[];
+}) {
+  if (input.costCenterIds.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const { data, error } = await input.supabase
+    .from("work_units")
+    .select("id, legacy_cost_center_id")
+    .eq("organization_id", input.organizationId)
+    .in("legacy_cost_center_id", input.costCenterIds);
+
+  if (error) {
+    if (isMissingWorkUnitsRelation(error)) {
+      return new Map<string, string>();
+    }
+
+    throw new Error(error.message);
+  }
+
+  return new Map(
+    (((data as Array<{ id: string; legacy_cost_center_id: string | null }> | null) ?? [])
+      .filter((row) => Boolean(row.legacy_cost_center_id))
+      .map((row) => [row.legacy_cost_center_id as string, row.id])),
+  );
+}
+
+async function ensureWorkUnitForCostCenter(input: {
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>;
+  costCenter: CostCenterRow;
+  actorId: string | null;
+}) {
+  const existing = await input.supabase
+    .from("work_units")
+    .select("id")
+    .eq("organization_id", input.costCenter.organization_id)
+    .eq("legacy_cost_center_id", input.costCenter.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing.error) {
+    if (isMissingWorkUnitsRelation(existing.error)) {
+      return null;
+    }
+
+    throw new Error(existing.error.message);
+  }
+
+  if ((existing.data as { id?: string } | null)?.id) {
+    return (existing.data as { id: string }).id;
+  }
+
+  const payload = buildWorkUnitPayloadFromLegacyCostCenter(input.costCenter, input.actorId);
+  const inserted = await input.supabase
+    .from("work_units")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (inserted.error || !inserted.data) {
+    throw new Error(inserted.error?.message ?? "No se pudo crear el trabajo asociado al proyecto.");
+  }
+
+  return (inserted.data as { id: string }).id;
 }
 
 export function canCreateOrganizationCostCenter(role: string) {
@@ -80,7 +170,14 @@ export async function listOrganizationCostCenters(input: {
     throw new Error(error.message);
   }
 
-  return (((data as CostCenterRow[] | null) ?? []).map(mapCostCenterRow));
+  const rows = ((data as CostCenterRow[] | null) ?? []);
+  const workUnitIdsByCostCenter = await loadWorkUnitIdsByCostCenter({
+    supabase,
+    organizationId: input.organizationId,
+    costCenterIds: rows.map((row) => row.id),
+  });
+
+  return rows.map((row) => mapCostCenterRow(row, workUnitIdsByCostCenter.get(row.id) ?? null));
 }
 
 export async function loadOrganizationDocumentsCountByCostCenter(organizationId: string) {
@@ -156,7 +253,14 @@ export async function createOrganizationCostCenter(input: {
     throw new Error(settingsError.message);
   }
 
-  return mapCostCenterRow(data as CostCenterRow);
+  const costCenterRow = data as CostCenterRow;
+  const workUnitId = await ensureWorkUnitForCostCenter({
+    supabase,
+    costCenter: costCenterRow,
+    actorId: input.actorId,
+  });
+
+  return mapCostCenterRow(costCenterRow, workUnitId);
 }
 
 export async function archiveOrganizationCostCenter(input: {
@@ -189,7 +293,28 @@ export async function archiveOrganizationCostCenter(input: {
     throw new Error("No encontramos ese proyecto activo para archivar.");
   }
 
-  return mapCostCenterRow(data as CostCenterRow);
+  const workUnitUpdate = await supabase
+    .from("work_units")
+    .update({
+      status: "archived",
+      archived_at: archivedAt,
+      archived_by: input.actorId,
+      updated_at: archivedAt,
+      updated_by: input.actorId,
+    })
+    .eq("organization_id", input.organizationId)
+    .eq("legacy_cost_center_id", input.costCenterId)
+    .select("id")
+    .maybeSingle();
+
+  if (workUnitUpdate.error && !isMissingWorkUnitsRelation(workUnitUpdate.error)) {
+    throw new Error(workUnitUpdate.error.message);
+  }
+
+  return mapCostCenterRow(
+    data as CostCenterRow,
+    (workUnitUpdate.data as { id?: string } | null)?.id ?? null,
+  );
 }
 
 export async function assignDocumentCostCenter(input: {
@@ -200,11 +325,12 @@ export async function assignDocumentCostCenter(input: {
   assignmentSource?: CostCenterAssignmentSource;
 }) {
   const supabase = getSupabaseServiceRoleClient();
+  let workUnitId: string | null = null;
 
   if (input.costCenterId) {
     const { data: costCenter, error: costCenterError } = await supabase
       .from("organization_cost_centers")
-      .select("id")
+      .select("id, organization_id, name, description, is_active, metadata, created_by, updated_by, archived_by, archived_at, created_at, updated_at")
       .eq("organization_id", input.organizationId)
       .eq("id", input.costCenterId)
       .eq("is_active", true)
@@ -217,6 +343,12 @@ export async function assignDocumentCostCenter(input: {
     if (!costCenter?.id) {
       throw new Error("Selecciona un proyecto activo de esta organizacion.");
     }
+
+    workUnitId = await ensureWorkUnitForCostCenter({
+      supabase,
+      costCenter: costCenter as CostCenterRow,
+      actorId: input.actorId,
+    });
   }
 
   const currentTimestamp = new Date().toISOString();
@@ -246,17 +378,20 @@ export async function assignDocumentCostCenter(input: {
     .from("documents")
     .update({
       cost_center_id: input.costCenterId,
+      work_unit_id: workUnitId,
       updated_at: currentTimestamp,
-      metadata: {
-        ...currentMetadata,
-        cost_center_last_assignment_source: assignmentSource,
-        cost_center_last_assignment_at: currentTimestamp,
-        cost_center_last_assignment_by: input.actorId,
-      },
+      metadata: buildDocumentCostCenterBridgeMetadata({
+        currentMetadata,
+        costCenterId: input.costCenterId,
+        workUnitId,
+        actorId: input.actorId,
+        assignmentSource,
+        assignedAt: currentTimestamp,
+      }),
     })
     .eq("organization_id", input.organizationId)
     .eq("id", input.documentId)
-    .select("id, cost_center_id")
+    .select("id, cost_center_id, work_unit_id")
     .maybeSingle();
 
   if (error) {
@@ -270,5 +405,6 @@ export async function assignDocumentCostCenter(input: {
   return {
     documentId: data.id,
     costCenterId: data.cost_center_id ?? null,
+    workUnitId: data.work_unit_id ?? null,
   };
 }

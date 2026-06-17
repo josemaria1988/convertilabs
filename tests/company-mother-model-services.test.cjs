@@ -12,10 +12,17 @@ const {
 } = require("@/modules/directory");
 const {
   buildWorkUnitCreatePayload,
+  buildDocumentCostCenterBridgeMetadata,
+  buildWorkUnitPayloadFromLegacyCostCenter,
   canArchiveWorkUnit,
   canMutateWorkUnit,
   summarizeWorkUnitFinancials,
 } = require("@/modules/work");
+const {
+  bindLegacyPartyPayloadIds,
+  buildPartyBridgePayloadFromLegacyCustomer,
+  buildPartyBridgePayloadFromLegacyVendor,
+} = require("@/modules/directory");
 const {
   buildBusinessEventPayload,
   buildDocumentWorkUnitLinkPayload,
@@ -179,4 +186,65 @@ test("events helpers create business events, entity links and evidence refs", ()
       evidenceType: "note",
     });
   }, /Evidence requires/i);
+});
+
+test("legacy bridge helpers adapt cost centers and parties into canonical payloads", () => {
+  const workUnit = buildWorkUnitPayloadFromLegacyCostCenter({
+    id: "cc-1",
+    organization_id: "org-1",
+    name: " Nueva  Palmira ",
+    description: "Obra principal",
+    is_active: true,
+    created_at: "2026-06-01T10:00:00.000Z",
+    updated_at: "2026-06-02T10:00:00.000Z",
+    archived_at: null,
+    metadata: { old: true },
+  }, "user-1");
+
+  assert.equal(workUnit.name, "Nueva Palmira");
+  assert.equal(workUnit.kind, "cost_center");
+  assert.equal(workUnit.status, "active");
+  assert.equal(workUnit.legacy_cost_center_id, "cc-1");
+  assert.equal(workUnit.metadata_json.legacy_source_table, "organization_cost_centers");
+
+  const metadata = buildDocumentCostCenterBridgeMetadata({
+    currentMetadata: { existing: true },
+    costCenterId: "cc-1",
+    workUnitId: "work-1",
+    actorId: "user-1",
+    assignmentSource: "desktop_documents",
+    assignedAt: "2026-06-17T10:00:00.000Z",
+  });
+
+  assert.equal(metadata.existing, true);
+  assert.equal(metadata.bridged_cost_center_id, "cc-1");
+  assert.equal(metadata.bridged_work_unit_id, "work-1");
+
+  const vendorPayload = buildPartyBridgePayloadFromLegacyVendor({
+    id: "vendor-1",
+    organization_id: "org-1",
+    name: "Proveedor SA",
+    tax_id: "21.999999.0012",
+    tax_id_normalized: "219999990012",
+    metadata: { source: "legacy" },
+  }, "user-1");
+  const boundVendor = bindLegacyPartyPayloadIds(vendorPayload, "party-1");
+
+  assert.equal(boundVendor.party.legacy_vendor_id, "vendor-1");
+  assert.equal(boundVendor.role.party_id, "party-1");
+  assert.equal(boundVendor.role.role_type, "vendor");
+  assert.equal(boundVendor.identifier.party_id, "party-1");
+
+  const customerPayload = buildPartyBridgePayloadFromLegacyCustomer({
+    id: "customer-1",
+    organization_id: "org-1",
+    name: "Cliente SA",
+    tax_id: null,
+    tax_id_normalized: null,
+    metadata: null,
+  });
+
+  assert.equal(customerPayload.party.legacy_customer_id, "customer-1");
+  assert.equal(customerPayload.role.role_type, "customer");
+  assert.equal(customerPayload.identifier, null);
 });

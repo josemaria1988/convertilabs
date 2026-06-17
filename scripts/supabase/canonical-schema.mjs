@@ -18,6 +18,7 @@ export const canonicalFileOrder = [
   "db/schema/08_document_ai_pipeline.sql",
   "db/schema/09_accounting_read_models.sql",
   "db/schema/10_company_mother_model.sql",
+  "db/schema/11_legacy_bridges.sql",
   "db/rls/supabase_rls_policies.sql",
 ];
 
@@ -75,14 +76,16 @@ function parseTableDefinitions(sql) {
     const uniqueConstraints = [];
     const foreignKeys = [];
 
-    for (const rawLine of body.split("\n")) {
-      const line = rawLine.trim().replace(/,$/, "");
+    for (const rawDefinition of splitTopLevelDefinitions(body)) {
+      const line = rawDefinition.trim().replace(/,$/, "").replace(/\s+/g, " ");
 
       if (!line) {
         continue;
       }
 
-      const uniqueMatch = line.match(/^unique\s*\(([^)]+)\)$/i);
+      const uniqueMatch = line.match(
+        /^(?:constraint\s+[a-z_][a-z0-9_]*\s+)?unique\s*\(([^)]+)\)$/i,
+      );
       if (uniqueMatch) {
         uniqueConstraints.push(
           uniqueMatch[1]
@@ -134,6 +137,70 @@ function parseTableDefinitions(sql) {
   }
 
   return tables;
+}
+
+function splitTopLevelDefinitions(body) {
+  const definitions = [];
+  let current = "";
+  let parenDepth = 0;
+  let inSingleQuote = false;
+
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    const nextChar = body[index + 1];
+
+    if (inSingleQuote) {
+      current += char;
+
+      if (char === "'" && nextChar === "'") {
+        current += nextChar;
+        index += 1;
+        continue;
+      }
+
+      if (char === "'") {
+        inSingleQuote = false;
+      }
+
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      current += char;
+      continue;
+    }
+
+    if (char === "(") {
+      parenDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === "," && parenDepth === 0) {
+      const definition = current.trim();
+      if (definition) {
+        definitions.push(definition);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const finalDefinition = current.trim();
+  if (finalDefinition) {
+    definitions.push(finalDefinition);
+  }
+
+  return definitions;
 }
 
 function parseAlterTableAddColumnDefinitions(sql) {

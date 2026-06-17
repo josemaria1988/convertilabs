@@ -29,29 +29,32 @@ test("post auth destination defaults to the dashboard workspace", () => {
   );
 });
 
-test("private navigation exposes the new operational tray menu", () => {
-  const navItems = buildOrganizationPrivateNavItems("rontil", "documents");
+test("private navigation exposes the Convertilabs 2.0 operating menu", () => {
+  const navItems = buildOrganizationPrivateNavItems("rontil", "home");
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Bandeja Documental", "Contabilidad", "Impuestos (IVA)", "Auditoria", "Configuracion"],
+    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
     [
+      "/app/o/rontil/dashboard",
+      "/app/o/rontil/work",
       "/app/o/rontil/documents",
-      "/app/o/rontil/settings?tab=chart",
-      "/app/o/rontil/tax",
-      "/app/o/rontil/audit",
-      "/app/o/rontil/settings",
+      "/app/o/rontil/open-items",
+      "/app/o/rontil/agenda",
+      "/app/o/rontil/advanced",
     ],
   );
+  assert.equal(navItems[0].current, true);
+  assert.equal(navItems.find((item) => item.label === "Agenda").mobilePrimary, false);
 });
 
 test("public and workspace navigation mirror the operational primary sections", () => {
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Bandeja Documental", "Contabilidad", "Impuestos (IVA)", "Auditoria", "Configuracion"],
+    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
   );
 });

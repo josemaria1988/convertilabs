@@ -17,6 +17,7 @@ Este directorio existe para reconstruir una base Supabase no productiva desde ce
    - `db/schema/08_document_ai_pipeline.sql`
    - `db/schema/09_accounting_read_models.sql`
    - `db/schema/10_company_mother_model.sql`
+   - `db/schema/11_legacy_bridges.sql`
    - `db/rls/supabase_rls_policies.sql`
 
 ## Alternativa sin reset
@@ -24,6 +25,7 @@ Este directorio existe para reconstruir una base Supabase no productiva desde ce
 Para una base existente, ejecutar solo:
 
 - `supabase/migrations/20260617_pr01_company_mother_model.sql`
+- `supabase/migrations/20260617_pr02_legacy_bridges.sql`
 
 ## Nota
 

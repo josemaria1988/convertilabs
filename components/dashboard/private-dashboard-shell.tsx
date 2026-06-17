@@ -8,8 +8,9 @@ export type PrivateDashboardNavItem = {
   href: string;
   label: string;
   description: string;
-  icon?: "tray" | "accounting" | "tax" | "audit" | "settings";
+  icon?: "home" | "work" | "tray" | "money" | "agenda" | "more" | "accounting" | "tax" | "audit" | "settings";
   current?: boolean;
+  mobilePrimary?: boolean;
 };
 
 type PrivateDashboardShellProps = {
@@ -49,6 +50,45 @@ function TrayIcon({ className }: IconProps) {
   );
 }
 
+function HomeIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4.5 11.5 12 5l7.5 6.5" />
+      <path d="M6.5 10.5v8h11v-8" />
+      <path d="M10 18.5v-5h4v5" />
+    </svg>
+  );
+}
+
+function WorkIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5" />
+      <path d="M4.5 8h15v10.5h-15z" />
+      <path d="M4.5 12.5h15" />
+      <path d="M10 12.5v1.8h4v-1.8" />
+    </svg>
+  );
+}
+
 function AccountingIcon({ className }: IconProps) {
   return (
     <svg
@@ -65,6 +105,67 @@ function AccountingIcon({ className }: IconProps) {
       <path d="M8 9.5h8" />
       <path d="M8 13.5h3" />
       <path d="M14.5 12 16 13.5l2.5-3" />
+    </svg>
+  );
+}
+
+function MoneyIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 7h14v10H5z" />
+      <path d="M8 12h.01" />
+      <path d="M16 12h.01" />
+      <path d="M12 9.5a2.5 2.5 0 1 1 0 5" />
+    </svg>
+  );
+}
+
+function AgendaIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 5.5h12v14H6z" />
+      <path d="M8.5 4v3" />
+      <path d="M15.5 4v3" />
+      <path d="M6 9h12" />
+      <path d="M9 13h1.5" />
+      <path d="M9 16h4.5" />
+    </svg>
+  );
+}
+
+function MoreIcon({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 7.5h14" />
+      <path d="M5 12h14" />
+      <path d="M5 16.5h14" />
     </svg>
   );
 }
@@ -198,8 +299,18 @@ function CaretIcon({ className }: IconProps) {
 
 function getNavIcon(iconKey?: PrivateDashboardNavItem["icon"]) {
   switch (iconKey) {
+    case "home":
+      return HomeIcon;
+    case "work":
+      return WorkIcon;
     case "accounting":
       return AccountingIcon;
+    case "money":
+      return MoneyIcon;
+    case "agenda":
+      return AgendaIcon;
+    case "more":
+      return MoreIcon;
     case "tax":
       return TaxIcon;
     case "audit":
@@ -213,7 +324,11 @@ function getNavIcon(iconKey?: PrivateDashboardNavItem["icon"]) {
 }
 
 function isPrimaryMobileNavItem(item: PrivateDashboardNavItem) {
-  return ["tray", "accounting", "tax", "audit", "settings"].includes(item.icon ?? "tray");
+  if (item.mobilePrimary === false) {
+    return false;
+  }
+
+  return ["home", "work", "tray", "money", "more"].includes(item.icon ?? "tray");
 }
 
 function getMobileNavLabel(item: PrivateDashboardNavItem) {

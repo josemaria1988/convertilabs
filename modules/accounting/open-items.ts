@@ -45,6 +45,7 @@ export type OpenItemCreatePayload = {
   counterparty_type: OpenItemCounterpartyType;
   counterparty_id: string | null;
   party_id?: string | null;
+  work_unit_id?: string | null;
   source_document_id: string;
   source_channel?: string;
   source_entity_type?: string | null;
@@ -82,6 +83,7 @@ export type SettlementLinkPayload = {
   settlement_document_id: string;
   settlement_journal_entry_id: string | null;
   settlement_journal_entry_line_id?: string | null;
+  work_unit_id?: string | null;
   source_channel?: string;
   source_entity_type?: string | null;
   source_entity_id?: string | null;
@@ -292,6 +294,8 @@ export function buildOpenItemMutationPlan(input: {
   openItemKind?: "receivable" | "payable" | "clearing" | null;
   counterpartyType: OpenItemCounterpartyType;
   counterpartyId: string | null;
+  partyId?: string | null;
+  workUnitId?: string | null;
   journalEntryId: string | null;
   issueDate: string | null;
   dueDate: string | null;
@@ -329,7 +333,8 @@ export function buildOpenItemMutationPlan(input: {
     organization_id: input.organizationId,
     counterparty_type: input.counterpartyType,
     counterparty_id: input.counterpartyId,
-    party_id: input.counterpartyId,
+    party_id: input.partyId ?? null,
+    work_unit_id: input.workUnitId ?? null,
     source_document_id: input.documentId,
     source_channel: "documents",
     source_entity_type: "document",
@@ -444,6 +449,7 @@ export function buildOpenItemMutationPlan(input: {
       settlement_document_id: input.documentId,
       settlement_journal_entry_id: input.journalEntryId,
       settlement_journal_entry_line_id: null,
+      work_unit_id: input.workUnitId ?? null,
       source_channel: "documents",
       source_entity_type: "document",
       source_entity_id: input.documentId,
@@ -668,6 +674,195 @@ async function ensureVendorCounterparty(input: {
   return data.id as string;
 }
 
+async function upsertCounterpartyPartyCompanions(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  partyId: string;
+  roleType: OpenItemCounterpartyType;
+  taxId: string | null;
+  taxIdNormalized: string | null;
+}) {
+  const roleResult = await input.supabase
+    .from("party_roles")
+    .upsert({
+      organization_id: input.organizationId,
+      party_id: input.partyId,
+      role_type: input.roleType,
+      status: "active",
+      metadata_json: {
+        source: "open_item_counterparty_bridge",
+      },
+    }, {
+      onConflict: "organization_id,party_id,role_type",
+    });
+
+  if (roleResult.error) {
+    throw new Error(roleResult.error.message);
+  }
+
+  if (!input.taxIdNormalized) {
+    return;
+  }
+
+  const identifierResult = await input.supabase
+    .from("party_identifiers")
+    .upsert({
+      organization_id: input.organizationId,
+      party_id: input.partyId,
+      identifier_type: "rut",
+      identifier_value: input.taxId ?? input.taxIdNormalized,
+      identifier_value_normalized: input.taxIdNormalized,
+      country_code: "UY",
+      is_primary: true,
+      source: "open_item_counterparty_bridge",
+      metadata_json: {
+        source: "open_item_counterparty_bridge",
+      },
+    }, {
+      onConflict: "organization_id,identifier_type,identifier_value_normalized",
+    });
+
+  if (identifierResult.error) {
+    throw new Error(identifierResult.error.message);
+  }
+}
+
+async function ensurePartyForLegacyCounterparty(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  counterpartyType: OpenItemCounterpartyType;
+  counterpartyId: string | null;
+  name: string | null;
+  taxId: string | null;
+}) {
+  const legacyColumn =
+    input.counterpartyType === "vendor"
+      ? "legacy_vendor_id"
+      : "legacy_customer_id";
+  const normalizedTaxId = normalizeTaxId(input.taxId);
+  const displayName =
+    input.name?.trim()
+    || (input.counterpartyType === "vendor" ? "Proveedor sin nombre" : "Cliente sin nombre");
+
+  if (input.counterpartyId) {
+    const { data, error } = await input.supabase
+      .from("parties")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq(legacyColumn, input.counterpartyId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const partyId = (data as { id?: string } | null)?.id ?? null;
+
+    if (partyId) {
+      await upsertCounterpartyPartyCompanions({
+        supabase: input.supabase,
+        organizationId: input.organizationId,
+        partyId,
+        roleType: input.counterpartyType,
+        taxId: input.taxId,
+        taxIdNormalized: normalizedTaxId,
+      });
+
+      return partyId;
+    }
+  }
+
+  if (normalizedTaxId) {
+    const { data, error } = await input.supabase
+      .from("parties")
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("tax_id_normalized", normalizedTaxId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const partyId = (data as { id?: string } | null)?.id ?? null;
+
+    if (partyId) {
+      if (input.counterpartyId) {
+        const { error: updateError } = await input.supabase
+          .from("parties")
+          .update({
+            [legacyColumn]: input.counterpartyId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", partyId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      }
+
+      await upsertCounterpartyPartyCompanions({
+        supabase: input.supabase,
+        organizationId: input.organizationId,
+        partyId,
+        roleType: input.counterpartyType,
+        taxId: input.taxId,
+        taxIdNormalized: normalizedTaxId,
+      });
+
+      return partyId;
+    }
+  }
+
+  const normalizedName = normalizeTextToken(displayName);
+  const legacyPayload =
+    input.counterpartyType === "vendor"
+      ? { legacy_vendor_id: input.counterpartyId }
+      : { legacy_customer_id: input.counterpartyId };
+  const metadata = {
+    source: "open_item_counterparty_bridge",
+    legacy_counterparty_type: input.counterpartyType,
+    legacy_counterparty_id: input.counterpartyId,
+  };
+  const { data, error } = await input.supabase
+    .from("parties")
+    .insert({
+      organization_id: input.organizationId,
+      party_kind: "external",
+      legal_name: displayName,
+      display_name: displayName,
+      normalized_name: normalizedName ?? displayName.toLowerCase(),
+      tax_id: input.taxId?.trim() || null,
+      tax_id_normalized: normalizedTaxId,
+      source: "open_item_counterparty_bridge",
+      metadata,
+      metadata_json: metadata,
+      ...legacyPayload,
+    })
+    .select("id")
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "No se pudo crear la party asociada a la contraparte.");
+  }
+
+  const partyId = (data as { id: string }).id;
+
+  await upsertCounterpartyPartyCompanions({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    partyId,
+    roleType: input.counterpartyType,
+    taxId: input.taxId,
+    taxIdNormalized: normalizedTaxId,
+  });
+
+  return partyId;
+}
+
 export async function syncApprovedDocumentOpenItems(input: {
   supabase: SupabaseClient;
   organizationId: string;
@@ -691,6 +886,7 @@ export async function syncApprovedDocumentOpenItems(input: {
   receiverName: string | null;
   receiverTaxId: string | null;
   journalEntryId: string | null;
+  workUnitId?: string | null;
 }) {
   if (input.documentRole !== "purchase" && input.documentRole !== "sale") {
     return;
@@ -738,6 +934,14 @@ export async function syncApprovedDocumentOpenItems(input: {
           name: input.receiverName,
           taxId: input.receiverTaxId,
         });
+  const partyId = await ensurePartyForLegacyCounterparty({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    counterpartyType,
+    counterpartyId,
+    name: counterpartyType === "vendor" ? input.issuerName : input.receiverName,
+    taxId: counterpartyType === "vendor" ? input.issuerTaxId : input.receiverTaxId,
+  });
   const operationKind = input.settlementContext?.operationKind ?? null;
   const requestedOpenItemKind = input.settlementContext?.openItemKind ?? null;
   const isSettlementDocument =
@@ -799,6 +1003,8 @@ export async function syncApprovedDocumentOpenItems(input: {
     openItemKind: requestedOpenItemKind,
     counterpartyType,
     counterpartyId,
+    partyId,
+    workUnitId: input.workUnitId ?? null,
     journalEntryId: input.journalEntryId,
     issueDate: input.documentDate,
     dueDate: input.dueDate,

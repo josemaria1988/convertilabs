@@ -1,10 +1,13 @@
 export type OrganizationPrivateSection =
   | "home"
+  | "work"
   | "documents"
   | "review"
   | "audit"
   | "close"
   | "tax"
+  | "money"
+  | "agenda"
   | "settings"
   | "advanced";
 
@@ -12,16 +15,17 @@ type OrganizationPrivateNavItem = {
   href: string;
   label: string;
   description: string;
-  icon: "tray" | "accounting" | "tax" | "audit" | "settings";
+  icon: "home" | "work" | "tray" | "money" | "agenda" | "more" | "accounting" | "tax" | "audit" | "settings";
   current: boolean;
+  mobilePrimary?: boolean;
 };
 
 function isDocumentsCurrent(currentSection: OrganizationPrivateSection) {
-  return currentSection === "home" || currentSection === "documents" || currentSection === "review";
+  return currentSection === "documents" || currentSection === "review";
 }
 
-function isAccountingCurrent(currentSection: OrganizationPrivateSection) {
-  return currentSection === "advanced" || currentSection === "close";
+function isMoreCurrent(currentSection: OrganizationPrivateSection) {
+  return ["advanced", "audit", "close", "settings", "tax"].includes(currentSection);
 }
 
 export function buildOrganizationPrivateNavItems(
@@ -30,39 +34,47 @@ export function buildOrganizationPrivateNavItems(
 ): OrganizationPrivateNavItem[] {
   return [
     {
+      href: `/app/o/${organizationSlug}/dashboard`,
+      label: "Inicio",
+      description: "Estado operativo real de la empresa y proximas acciones",
+      icon: "home",
+      current: currentSection === "home",
+    },
+    {
+      href: `/app/o/${organizationSlug}/work`,
+      label: "Trabajos",
+      description: "Trabajos, proyectos y centros de costo conectados al modelo madre",
+      icon: "work",
+      current: currentSection === "work",
+    },
+    {
       href: `/app/o/${organizationSlug}/documents`,
-      label: "Bandeja Documental",
-      description: "Inicio operativo, revision y criterio de IA por documento",
+      label: "Documentos",
+      description: "Ingreso, revision y trazabilidad de comprobantes",
       icon: "tray",
       current: isDocumentsCurrent(currentSection),
     },
     {
-      href: `/app/o/${organizationSlug}/settings?tab=chart`,
-      label: "Contabilidad",
-      description: "Plan de cuentas, cierres y superficies contables",
-      icon: "accounting",
-      current: isAccountingCurrent(currentSection),
+      href: `/app/o/${organizationSlug}/open-items`,
+      label: "Dinero",
+      description: "Deudores, acreedores, vencimientos y saldos vivos",
+      icon: "money",
+      current: currentSection === "money",
     },
     {
-      href: `/app/o/${organizationSlug}/tax`,
-      label: "Impuestos (IVA)",
-      description: "Reporte IVA y contraste operativo contra DGI",
-      icon: "tax",
-      current: currentSection === "tax",
+      href: `/app/o/${organizationSlug}/agenda`,
+      label: "Agenda",
+      description: "Vencimientos, tareas y obligaciones operativas",
+      icon: "agenda",
+      current: currentSection === "agenda",
+      mobilePrimary: false,
     },
     {
-      href: `/app/o/${organizationSlug}/audit`,
-      label: "Auditoria",
-      description: "Ingreso masivo, staging y control documental",
-      icon: "audit",
-      current: currentSection === "audit",
-    },
-    {
-      href: `/app/o/${organizationSlug}/settings`,
-      label: "Configuracion",
-      description: "Empresa, accesos, fiscalidad e integraciones",
-      icon: "settings",
-      current: currentSection === "settings",
+      href: `/app/o/${organizationSlug}/advanced`,
+      label: "Mas",
+      description: "Contabilidad, IVA, cierre, auditoria, integraciones y ajustes",
+      icon: "more",
+      current: isMoreCurrent(currentSection),
     },
   ];
 }

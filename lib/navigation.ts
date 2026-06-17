@@ -9,9 +9,10 @@ export const marketingNav: NavItem[] = [
 ];
 
 export const workspaceNav: NavItem[] = [
-  { href: "/documents", label: "Bandeja Documental", description: "Inicio operativo y revision" },
-  { href: "/settings?tab=chart", label: "Contabilidad", description: "Plan de cuentas" },
-  { href: "/tax", label: "Impuestos (IVA)", description: "Reporte y estado del IVA" },
-  { href: "/audit", label: "Auditoria", description: "Ingreso masivo documental" },
-  { href: "/settings", label: "Configuracion", description: "Empresa e integraciones" },
+  { href: "/dashboard", label: "Inicio", description: "Estado operativo y proximas acciones" },
+  { href: "/work", label: "Trabajos", description: "Trabajos y proyectos" },
+  { href: "/documents", label: "Documentos", description: "Ingreso y revision" },
+  { href: "/open-items", label: "Dinero", description: "Saldos vivos y vencimientos" },
+  { href: "/agenda", label: "Agenda", description: "Tareas y obligaciones" },
+  { href: "/advanced", label: "Mas", description: "Contabilidad, IVA, cierre y ajustes" },
 ];

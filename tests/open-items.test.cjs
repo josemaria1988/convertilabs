@@ -15,6 +15,8 @@ test("open items create AP rows for purchase invoices", () => {
     documentType: "purchase_invoice",
     counterpartyType: "vendor",
     counterpartyId: "vendor-1",
+    partyId: "party-1",
+    workUnitId: "work-1",
     journalEntryId: "je-1",
     issueDate: "2026-03-14",
     dueDate: "2026-03-30",
@@ -30,6 +32,9 @@ test("open items create AP rows for purchase invoices", () => {
   assert.equal(result.createOpenItems.length, 1);
   assert.equal(result.createOpenItems[0].outstanding_amount, 122);
   assert.equal(result.createOpenItems[0].counterparty_type, "vendor");
+  assert.equal(result.createOpenItems[0].counterparty_id, "vendor-1");
+  assert.equal(result.createOpenItems[0].party_id, "party-1");
+  assert.equal(result.createOpenItems[0].work_unit_id, "work-1");
 });
 
 test("open items keep foreign currency information for AR invoices", () => {
@@ -233,8 +238,62 @@ test("open items do not auto-settle across currencies in MVP", () => {
 
 test("open items persist the fiscal FX resolved for foreign currency documents", async () => {
   const insertedOpenItems = [];
+  const insertedParties = [];
+  const upsertedRoles = [];
+  const upsertedIdentifiers = [];
   const supabase = {
     from(table) {
+      if (table === "parties") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          maybeSingle: async () => ({
+            data: null,
+            error: null,
+          }),
+          insert(payload) {
+            insertedParties.push(payload);
+            return {
+              select() {
+                return this;
+              },
+              limit() {
+                return this;
+              },
+              single: async () => ({
+                data: { id: "party-1" },
+                error: null,
+              }),
+            };
+          },
+        };
+      }
+
+      if (table === "party_roles") {
+        return {
+          upsert: async (payload) => {
+            upsertedRoles.push(payload);
+            return { error: null };
+          },
+        };
+      }
+
+      if (table === "party_identifiers") {
+        return {
+          upsert: async (payload) => {
+            upsertedIdentifiers.push(payload);
+            return { error: null };
+          },
+        };
+      }
+
       if (table === "ledger_open_items") {
         return {
           select() {
@@ -299,6 +358,7 @@ test("open items persist the fiscal FX resolved for foreign currency documents",
     receiverName: null,
     receiverTaxId: null,
     journalEntryId: "je-usd-1",
+    workUnitId: "work-1",
   });
 
   assert.equal(insertedOpenItems.length, 1);
@@ -308,6 +368,12 @@ test("open items persist the fiscal FX resolved for foreign currency documents",
   assert.equal(insertedOpenItems[0].fx_rate_date, "2026-03-16");
   assert.equal(insertedOpenItems[0].fx_rate_source, "bcu");
   assert.equal(insertedOpenItems[0].functional_amount, 22050);
+  assert.equal(insertedOpenItems[0].counterparty_id, "vendor-1");
+  assert.equal(insertedOpenItems[0].party_id, "party-1");
+  assert.equal(insertedOpenItems[0].work_unit_id, "work-1");
+  assert.equal(insertedParties[0].legacy_vendor_id, "vendor-1");
+  assert.equal(upsertedRoles[0].role_type, "vendor");
+  assert.equal(upsertedIdentifiers[0].identifier_value_normalized, "219999999999");
 });
 
 test("syncApprovedDocumentOpenItems blocks foreign currency documents without a trusted FX snapshot", async () => {

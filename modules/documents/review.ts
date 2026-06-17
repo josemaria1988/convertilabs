@@ -130,6 +130,10 @@ type DocumentRow = {
   mime_type: string | null;
   file_hash: string | null;
   document_date: string | null;
+  party_id: string | null;
+  vendor_party_id: string | null;
+  customer_party_id: string | null;
+  work_unit_id: string | null;
   created_at: string;
   metadata: JsonRecord | null;
   current_draft_id: string | null;
@@ -263,6 +267,7 @@ type DocumentListRow = {
   status: string;
   posting_status: DocumentPostingStatus | null;
   cost_center_id: string | null;
+  work_unit_id: string | null;
   storage_bucket: string;
   storage_path: string;
   original_filename: string;
@@ -293,6 +298,7 @@ export type DocumentWorkspaceListItem = {
   createdAt: string;
   documentDate: string | null;
   costCenterId: string | null;
+  workUnitId: string | null;
   counterpartyName: string | null;
   documentNumber: string | null;
   documentSeries: string | null;
@@ -802,6 +808,10 @@ const DOCUMENT_SELECT_STEP5 = [
   "mime_type",
   "file_hash",
   "document_date",
+  "party_id",
+  "vendor_party_id",
+  "customer_party_id",
+  "work_unit_id",
   "created_at",
   "metadata",
   "current_draft_id",
@@ -902,6 +912,10 @@ async function loadDocumentRow(
       typeof data.posting_status === "string"
         ? data.posting_status as DocumentPostingStatus
         : null,
+    party_id: typeof data.party_id === "string" ? data.party_id : null,
+    vendor_party_id: typeof data.vendor_party_id === "string" ? data.vendor_party_id : null,
+    customer_party_id: typeof data.customer_party_id === "string" ? data.customer_party_id : null,
+    work_unit_id: typeof data.work_unit_id === "string" ? data.work_unit_id : null,
   } satisfies DocumentRow;
 }
 
@@ -2448,6 +2462,7 @@ function mapDocumentWorkspaceRows(data: Array<Record<string, unknown>> | null | 
     posting_status:
       typeof row.posting_status === "string" ? row.posting_status as DocumentPostingStatus : null,
     cost_center_id: typeof row.cost_center_id === "string" ? row.cost_center_id : null,
+    work_unit_id: typeof row.work_unit_id === "string" ? row.work_unit_id : null,
     storage_bucket: String(row.storage_bucket ?? ""),
     storage_path: String(row.storage_path ?? ""),
     original_filename: String(row.original_filename ?? ""),
@@ -2753,6 +2768,10 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       mime_type: row.mime_type,
       file_hash: null,
       document_date: row.document_date,
+      party_id: null,
+      vendor_party_id: null,
+      customer_party_id: null,
+      work_unit_id: row.work_unit_id,
       created_at: row.created_at,
       metadata: row.metadata,
       current_draft_id: row.current_draft_id,
@@ -2803,6 +2822,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       createdAt: row.created_at,
       documentDate: row.document_date,
       costCenterId: row.cost_center_id,
+      workUnitId: row.work_unit_id,
       counterpartyName,
       documentNumber: facts?.document_number ?? null,
       documentSeries: facts?.series ?? null,
@@ -2893,7 +2913,7 @@ async function loadPaginatedWorkspaceDocumentRows(input: {
   let primaryQuery = input.supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, posting_status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      "id, direction, document_type, status, posting_status, cost_center_id, work_unit_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
     )
     .eq("organization_id", input.organizationId);
 
@@ -2943,7 +2963,7 @@ async function loadAllWorkspaceDocumentRows(input: {
   let primaryQuery = input.supabase
     .from("documents")
     .select(
-      "id, direction, document_type, status, posting_status, cost_center_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
+      "id, direction, document_type, status, posting_status, cost_center_id, work_unit_id, storage_bucket, storage_path, original_filename, mime_type, created_at, document_date, current_draft_id, current_processing_run_id, last_processed_at, metadata",
     )
     .eq("organization_id", input.organizationId);
 
@@ -4149,6 +4169,7 @@ async function postDocumentReviewInternal(input: {
     receiverName: facts.receiver_name,
     receiverTaxId: facts.receiver_tax_id,
     journalEntryId: accountingArtifacts.journalEntryId,
+    workUnitId: document.work_unit_id,
   });
   await insertAIDecisionLogs(supabase, [
     buildAccountingDecisionLog({

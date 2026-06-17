@@ -57,6 +57,10 @@ const documentStep5Patterns = [
   /vat_proration_coefficient/i,
   /business_link_status/i,
   /dgi_reconciliation_status/i,
+  /party_id/i,
+  /vendor_party_id/i,
+  /customer_party_id/i,
+  /work_unit_id/i,
 ];
 
 const journalEntryStep5Patterns = [

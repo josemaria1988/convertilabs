@@ -27,7 +27,7 @@ type OrganizationDocumentsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Bandeja documental",
+  title: "Documentos",
 };
 
 export default async function OrganizationDocumentsPage({
@@ -100,9 +100,9 @@ export default async function OrganizationDocumentsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Bandeja Documental"
-      toolbarLabel="Bandeja Documental"
-      description="Superficie operativa principal: revisa cada comprobante, valida el criterio de IA y entra a la sugerencia completa desde la misma bandeja."
+      title="Documentos"
+      toolbarLabel="Documentos"
+      description="Ingreso, revision y trazabilidad de comprobantes conectados a trabajos, dinero, contabilidad e IVA."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "documents")}
     >
       <div className="space-y-3">

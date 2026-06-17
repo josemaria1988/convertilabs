@@ -7,7 +7,7 @@ Estado actual:
 - business profile versionado con actividad principal, secundarias y traits
 - feature flags de presets por actividad, preset IA y help hints
 - settings por organizacion tabulados en `Empresa`, `Perfil fiscal`, `Plan contable`, `Integraciones` y `Avanzado`
-- navegacion privada por organizacion en `private-nav.ts` con `Inicio`, `Documentos`, `Revision`, `Impuestos`, `Cierre`, `Configuracion` y `Avanzado`
+- navegacion privada por organizacion en `private-nav.ts` con `Inicio`, `Trabajos`, `Documentos`, `Dinero`, `Agenda` y `Mas`
 
 Archivos clave:
 - `modules/organizations/onboarding-schema.ts`

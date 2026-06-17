@@ -217,8 +217,8 @@ create table if not exists public.parties (
   display_name text,
   tax_id text,
   tax_id_normalized text,
-  legacy_vendor_id uuid references public.vendors(id) on delete set null,
-  legacy_customer_id uuid references public.customers(id) on delete set null,
+  legacy_vendor_id uuid,
+  legacy_customer_id uuid,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -472,3 +472,39 @@ create unique index if not exists idx_customers_org_tax_id_normalized
 
 create index if not exists idx_customers_org_name_normalized
   on public.customers (organization_id, name_normalized);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'parties_legacy_vendor_id_fkey'
+      and conrelid = 'public.parties'::regclass
+  ) then
+    alter table public.parties
+      add constraint parties_legacy_vendor_id_fkey
+      foreign key (legacy_vendor_id)
+      references public.vendors(id)
+      on delete set null
+      not valid;
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'parties_legacy_customer_id_fkey'
+      and conrelid = 'public.parties'::regclass
+  ) then
+    alter table public.parties
+      add constraint parties_legacy_customer_id_fkey
+      foreign key (legacy_customer_id)
+      references public.customers(id)
+      on delete set null
+      not valid;
+  end if;
+end
+$$;

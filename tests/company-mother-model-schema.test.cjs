@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { test, assert } = require("./testkit.cjs");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -23,6 +24,7 @@ const motherModelTables = [
 test("PR-01 canonical SQL defines Convertilabs 2.0 mother model enums and tables", () => {
   const enumsSql = readProjectFile("db/schema/01_enums.sql");
   const schemaSql = readProjectFile("db/schema/10_company_mother_model.sql");
+  const legacyBridgeSql = readProjectFile("db/schema/11_legacy_bridges.sql");
   const canonicalScript = readProjectFile("scripts/supabase/canonical-schema.mjs");
 
   for (const enumName of [
@@ -58,6 +60,10 @@ test("PR-01 canonical SQL defines Convertilabs 2.0 mother model enums and tables
   assert.match(schemaSql, /source_entity_type public\.entity_type not null/i);
   assert.match(schemaSql, /relation_type public\.entity_relation_type not null/i);
   assert.match(canonicalScript, /db\/schema\/10_company_mother_model\.sql/);
+  assert.match(canonicalScript, /db\/schema\/11_legacy_bridges\.sql/);
+  assert.match(legacyBridgeSql, /legacy_cost_center_bridge/i);
+  assert.match(legacyBridgeSql, /legacy_vendor_bridge/i);
+  assert.match(legacyBridgeSql, /legacy_customer_bridge/i);
 });
 
 test("PR-01 adds direct high-traffic foreign keys without deleting legacy bridges", () => {
@@ -72,6 +78,32 @@ test("PR-01 adds direct high-traffic foreign keys without deleting legacy bridge
   assert.match(schemaSql, /alter table public\.ledger_open_items[\s\S]*work_unit_id uuid references public\.work_units\(id\)/i);
   assert.match(schemaSql, /legacy_cost_center_id uuid references public\.organization_cost_centers\(id\)/i);
   assert.match(documentsSql, /cost_center_id uuid references public\.organization_cost_centers\(id\)/i);
+});
+
+test("canonical schema parser handles multiline unique constraints as constraints", async () => {
+  const canonicalModuleUrl = pathToFileURL(
+    path.join(projectRoot, "scripts/supabase/canonical-schema.mjs"),
+  ).href;
+  const { extractExpectedSchemaSpec } = await import(canonicalModuleUrl);
+  const spec = await extractExpectedSchemaSpec();
+
+  assert.ok(
+    spec.columnsByTable.entity_links.includes("relation_type"),
+    "entity_links should include real columns",
+  );
+  assert.ok(
+    !spec.columnsByTable.entity_links.includes("unique"),
+    "entity_links multiline unique constraint should not be parsed as a column",
+  );
+  assert.ok(
+    spec.uniqueConstraints.some(
+      (constraint) =>
+        constraint.tableName === "entity_links" &&
+        constraint.columns.join(",") ===
+          "organization_id,source_entity_type,source_entity_id,target_entity_type,target_entity_id,relation_type",
+    ),
+    "entity_links multiline unique constraint should be tracked as a unique constraint",
+  );
 });
 
 test("PR-01 RLS and migration cover mother model tables", () => {
@@ -114,6 +146,49 @@ test("PR-01 reset runbook documents a clean rebuild path", () => {
   assert.match(resetSql, /create schema public/i);
   assert.match(resetSql, /create extension if not exists pgcrypto/i);
   assert.match(resetReadme, /db\/schema\/10_company_mother_model\.sql/i);
+  assert.match(resetReadme, /db\/schema\/11_legacy_bridges\.sql/i);
   assert.match(resetReadme, /db\/rls\/supabase_rls_policies\.sql/i);
   assert.match(resetReadme, /20260617_pr01_company_mother_model\.sql/i);
+});
+
+test("PR-02 legacy bridge migration materializes work units, parties and canonical links", () => {
+  const migrationSql = readProjectFile("supabase/migrations/20260617_pr02_legacy_bridges.sql");
+  const schemaSql = readProjectFile("db/schema/11_legacy_bridges.sql");
+
+  for (const sql of [migrationSql, schemaSql]) {
+    assert.match(sql, /idx_work_units_org_legacy_cost_center_unique/i);
+    assert.match(sql, /insert into public\.work_units/i);
+    assert.match(sql, /from public\.organization_cost_centers/i);
+    assert.match(sql, /update public\.documents as d[\s\S]*set work_unit_id = wu\.id/i);
+    assert.match(sql, /insert into public\.entity_links/i);
+    assert.match(sql, /insert into public\.parties/i);
+    assert.match(sql, /from public\.vendors as v/i);
+    assert.match(sql, /from public\.customers as c/i);
+    assert.match(sql, /insert into public\.party_roles/i);
+    assert.match(sql, /insert into public\.party_identifiers/i);
+    assert.match(sql, /update public\.ledger_open_items as loi[\s\S]*set party_id = p\.id/i);
+    assert.match(sql, /update public\.ledger_open_items as loi[\s\S]*set work_unit_id = d\.work_unit_id/i);
+  }
+});
+
+test("03 master data can create parties before legacy vendor and customer tables", () => {
+  const masterDataSql = readProjectFile("db/schema/03_master_data.sql");
+  const partiesCreateMatch = masterDataSql.match(
+    /create table if not exists public\.parties \([\s\S]*?\n\);/i,
+  );
+
+  assert.ok(partiesCreateMatch, "parties create table statement should exist");
+  assert.doesNotMatch(partiesCreateMatch[0], /references public\.vendors\(id\)/i);
+  assert.doesNotMatch(partiesCreateMatch[0], /references public\.customers\(id\)/i);
+
+  assert.ok(
+    masterDataSql.indexOf('create table if not exists public.vendors') <
+      masterDataSql.indexOf("parties_legacy_vendor_id_fkey"),
+    "legacy vendor FK should be added after vendors exists",
+  );
+  assert.ok(
+    masterDataSql.indexOf('create table if not exists public.customers') <
+      masterDataSql.indexOf("parties_legacy_customer_id_fkey"),
+    "legacy customer FK should be added after customers exists",
+  );
 });
