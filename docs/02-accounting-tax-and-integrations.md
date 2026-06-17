@@ -1,24 +1,40 @@
-# 02 - Accounting, tax and integrations
+# 02 - Accounting, Tax And Integrations
 
-## Para que existe este documento
+## Para Que Existe Este Documento
 
-Este documento resume el kernel contable, el motor fiscal y los carriles de integracion externa sobre los que se apoya hoy Convertilabs.
+Este documento define como contabilidad, IVA, cierre e integraciones sobreviven a la refundacion y se conectan al modelo operativo de empresa.
 
-Leelo si vas a tocar:
+Leerlo si vas a tocar:
 
-- clasificacion o rule engine;
-- chart of accounts y presets;
-- reglas administrables y aprendizaje;
-- posting multi-linea;
-- close y periodos;
-- VAT, DGI, FX o import operations;
-- importaciones, auditoria, bridge y exports.
+- kernel contable;
+- templates, roles y reglas;
+- IVA Uruguay;
+- cierre;
+- open items, pagos, cobros o settlements;
+- Zeta e integraciones externas;
+- imports/exports.
 
-## 1. Modelo contable oficial
+## 1. Regla Principal
 
-Convertilabs no modela la contabilidad como una sola cuenta por documento.
+Contabilidad, IVA y cierre no son islas. Son consecuencias estructuradas de hechos operativos de empresa.
 
-El modelo correcto es:
+Flujo objetivo:
+
+```text
+business_event
+-> party
+-> work_unit
+-> document/evidence
+-> money
+-> accounting
+-> tax
+-> task/blocker
+-> Inicio
+```
+
+## 2. Modelo Contable Conservado
+
+Se conserva el modelo multilinea:
 
 ```text
 documento
@@ -26,342 +42,133 @@ documento
 -> familia operativa
 -> plantilla contable
 -> cuentas por rol
--> preview multi-linea
+-> preview multilinea
 -> posting
+-> open item / settlement cuando aplica
 ```
 
-Implicancia:
+Una factura no se reduce a elegir una cuenta. El template, la contrapartida, el IVA, el party y el work unit importan.
 
-- el template y el settlement importan;
-- el IVA es una linea separada;
-- el documento puede abrir saldos;
-- el posting final no se reduce a elegir una cuenta.
+## 3. Conexion Con El Modelo Madre
 
-## 2. Regla de precedencia contable
+Las nuevas integraciones contables deben apuntar a:
 
-La precedencia operativa vigente es:
+- `party_id` como contraparte canonica;
+- `work_unit_id` como trabajo, proyecto, operacion o centro de costo canonico;
+- `business_event_id` cuando haya hecho operativo;
+- `evidence_ref_id` o source refs para prueba;
+- `entity_links` para relaciones no criticas o transversales.
 
-1. `manual_override`
-2. `document_override`
-3. `vendor_concept_operation_category`
-4. `vendor_concept`
-5. `concept_global`
-6. `vendor_default`
-7. `assistant`
-8. `manual_review`
+Mientras se migra, `vendors`, `customers` y `organization_cost_centers` pueden seguir funcionando como puente legacy, pero el codigo nuevo debe preferir `parties` y `work_units`.
 
-Regla madre:
+## 4. Open Items, Pagos Y Cobros
 
-- el usuario puede sobreescribir;
-- las reglas administradas mandan sobre IA;
-- el asistente no bypassa el motor deterministico;
-- `manual_review` es el fallback conservador.
+`ledger_open_items` es la base tecnica existente para deudores y acreedores.
 
-## 3. Superficies activas de reglas
+El dominio `money` debe elevarlo a experiencia operativa:
 
-Rutas activas:
+- cuentas a cobrar;
+- cuentas a pagar;
+- vencimientos;
+- pagos;
+- cobros;
+- settlements;
+- banco y caja en etapas posteriores;
+- resumen por party y work unit.
 
-- `/app/o/[slug]/rules`
-- `/app/o/[slug]/rules/new`
-- `/app/o/[slug]/rules/[ruleId]`
-- `/app/o/[slug]/rules/[ruleId]/version`
+## 5. IVA Uruguay
 
-La administracion de reglas ya soporta:
+IVA Uruguay sigue siendo la vertical fiscal inicial.
 
-- listado y filtros;
-- lifecycle;
-- versionado;
-- timeline;
-- simulaciones;
-- auditoria;
-- soporte asistido con IA controlada.
+Se conserva:
 
-## 4. Aprendizaje y memoria
+- calculo deterministico;
+- preview operativo separado de corrida oficial;
+- bloqueo cuando faltan datos criticos;
+- trazabilidad por periodo;
+- exportaciones fiscales cuando correspondan.
 
-El sistema debe convertir decisiones humanas en reglas reutilizables.
+Se agrega:
 
-Alcances activos de aprendizaje:
+- visibilidad en Inicio;
+- obligaciones y tareas asociadas;
+- relacion con work units cuando una operacion lo requiera;
+- bloqueos accionables para cierre y continuidad.
 
-- `none`
-- `document_override`
-- `vendor_concept_operation_category`
-- `vendor_concept`
-- `concept_global`
-- `vendor_default`
+## 6. Cierre
 
-Regla operativa:
+El cierre conserva su enfoque validator-first.
 
-- el aprendizaje no reemplaza el posting;
-- primero se resuelve el documento;
-- luego se decide si esa resolucion merece memoria reusable.
+Debe conectarse con:
 
-## 4.1 Identidad de factura y politica de duplicados
+- documentos pendientes;
+- open items;
+- IVA;
+- tareas;
+- obligaciones;
+- bloqueos visibles en Inicio;
+- evidencia de decisiones.
 
-La identidad documental no depende del nombre del archivo.
+Un cierre no debe ocultar por que algo no puede avanzar.
 
-Politica oficial:
+## 7. Reglas Y Aprendizaje
 
-- usar RUT del emisor cuando exista; si no, usar nombre normalizado como fallback conservador;
-- normalizar serie + numero de factura;
-- comparar monto total redondeado y moneda;
-- tratar como duplicado exacto una coincidencia de proveedor o emisor + numero + total + moneda;
-- tratar como duplicado exacto tambien un mismo archivo ya visto por hash;
-- mantener los duplicados difusos como sospecha bloqueante revisable, no como autoaceptacion.
+Se conserva la idea de convertir decisiones humanas en memoria reusable.
 
-Efecto esperado:
+La memoria ya no es solo contable. Puede abarcar:
 
-- duplicado exacto = rechazo duro del documento antes de review normal;
-- duplicado sospechoso = bloqueo visible y resolucion humana;
-- un duplicado no debe pasar a posting como si fuera un caso valido.
+- clasificacion de proveedores;
+- asociacion habitual a trabajos;
+- formas de pago;
+- pasos administrativos;
+- documentos requeridos por contador;
+- criterios de bloqueo;
+- preparacion de tramites.
 
-## 5. Templates, settlement y posting multi-linea
+Las reglas criticas requieren aprobacion humana y trazabilidad.
 
-El motor contable vigente es settlement-aware y multi-linea.
+## 8. Zeta E Integraciones
 
-Elementos canonicos:
+Zeta es fuente o destino externo, no modelo interno.
 
-- `operationKind`
-- `paymentTerms`
-- `settlementMethod`
-- `settlementEvidenceSource`
-- `postingTemplateCode`
-- `accountRoleCode`
-
-El sistema resuelve:
-
-- template contable;
-- cuenta principal;
-- cuenta fiscal;
-- contrapartida;
-- open item cuando aplica;
-- links de settlement posterior.
-
-Regla UX derivada:
-
-- el reviewer debe presentar esta resolucion como `plantilla contable -> asiento tipo -> cuentas por rol -> preview`;
-- la cuenta principal puede aparecer como evidencia util, pero no como la narrativa principal del paso contable ni del resumen final;
-- la vista previa multi-linea sigue siendo la fuente de verdad del Debe, Haber e IVA.
-
-Tablas y artefactos clave:
-
-- `posting_proposals`
-- `journal_entries`
-- `journal_entry_lines`
-- `ledger_open_items`
-- `ledger_settlement_links`
-
-## 5.1 Zeta: role map y plantillas como siguiente pieza contable
-
-Cuando el plan de cuentas Zeta ya esta espejado en `chart_of_accounts`, el siguiente paso no es exportar a Zeta. El siguiente paso es resolver documentos con plantillas y roles:
+Mapeo objetivo:
 
 ```text
-familia operativa
--> plantilla contable base
--> roles contables
--> cuentas Zeta imputables
--> preview multi-linea
+Zeta Contacto -> party
+Zeta RUT -> party_identifier
+Zeta CentroCostos -> work_unit o mapping externo
+Zeta CFE -> document + source ref
+Zeta asiento -> journal_entry externo o export
+Zeta Bandeja Entrada Asientos -> destino de export
 ```
 
-Fuente ejecutable del PR:
+Regla:
 
-- `docs/pr-next-zeta-posting-templates-role-map.md`
+> Zeta se adapta a Convertilabs; Convertilabs no se subordina a Zeta.
 
-Reglas especificas:
+## 9. Integracion Auditable
 
-- el reviewer debe priorizar plantilla y familia operativa antes que cuenta suelta;
-- los roles internos se mapean por organizacion contra cuentas imputables del plan Zeta;
-- si falta un role critico, el documento queda asistido o bloqueado;
-- la IA solo puede sugerir dentro de templates y cuentas permitidas;
-- el caso "pagado por socio / a reintegrar" es una plantilla generica, no una excepcion por proveedor;
-- no se exporta a Bandeja hasta que exista preview multi-linea balanceado y bridge-ready.
+Todo import/export debe preservar:
 
-Roles principales del mapa minimo:
+- raw record;
+- sync run;
+- payload hash;
+- source refs;
+- mapping a entidad local;
+- errores visibles;
+- usuario o proceso que confirmo;
+- estado de drift si el origen cambia.
 
-- proveedores;
-- clientes / deudores por ventas;
-- ventas plaza;
-- ventas exportacion;
-- IVA compras basica;
-- IVA ventas basica;
-- caja pesos;
-- banco pesos;
-- cuenta a reintegrar a socio;
-- gasto operativo default;
-- activo fijo;
-- mercaderias / stock.
+No materializar datos externos ambiguos como verdad final sin staging, regla segura o revision.
 
-## 6. Chart of accounts y presets
+## 10. Tests Esperados
 
-La estrategia oficial del chart es:
+Cuando esta capa se toque, agregar o mantener pruebas para:
 
-1. base minima;
-2. overlays por actividad;
-3. overlays por traits;
-4. cuentas definidas por el usuario;
-5. cuentas temporales o provisionales cuando falta certeza.
-
-Rutas y superficies activas:
-
-- `/app/o/[slug]/settings?tab=chart`
-- `/app/o/[slug]/imports?focus=chart_of_accounts_import`
-- `/app/o/[slug]/settings/chart-of-accounts/export`
-
-Catalogo actual:
-
-- base `uy-base-sa-general.v1`;
-- overlays por actividad `ciiu-*`;
-- overlays por traits como `importer`, `exporter`, `mixed-vat`, `multi-currency`, `recurring-services`, `tenders-public-sector`.
-
-### Recommendation engine y modo hibrido
-
-El onboarding y settings soportan:
-
-- recomendacion por reglas;
-- alternativas;
-- `hybrid_ai_recommended`;
-- persistencia en `organization_preset_ai_runs`.
-
-Endpoint activo:
-
-- `/api/preset-ai-recommendation`
-
-Carril cerrado en MVP V1:
-
-- `/api/preset-ai-recommendation/cost-center-draft` responde `410`.
-
-## 7. Mapa contable y lecturas contables
-
-Superficies activas:
-
-- `/app/o/[slug]/chart-map`
-- `/app/o/[slug]/trial-balance`
-- `/app/o/[slug]/journal-entries`
-- `/app/o/[slug]/open-items`
-
-El mapa contable sirve para:
-
-- entender estructura del chart;
-- entender impacto por documento;
-- navegar relaciones entre regla, template y cuentas;
-- inspeccionar read models sin abrir la UI documental.
-
-## 8. Motor fiscal IVA
-
-Uruguay IVA es la vertical fiscal activa.
-
-Reglas oficiales:
-
-- separar preview operativo de corrida oficial;
-- no vender conciliacion DGI como filing automatico;
-- usar calculo deterministico;
-- bloquear o degradar cuando falte dato fiscal critico.
-
-Superficies activas:
-
-- `/app/o/[slug]/tax`
-- `/app/o/[slug]/tax/reconciliation`
-
-Tablas y artefactos clave:
-
-- `vat_runs`
-- `dgi_reconciliation_runs`
-- `dgi_reconciliation_buckets`
-- `vat_form_exports`
-
-## 9. Import operations, DUA y FX
-
-Soporte activo hoy:
-
-- import operations;
-- documentos asociados;
-- tributos de importacion;
-- location risk;
-- FX policy;
-- snapshots monetarios y razonabilidad.
-
-Reglas duras:
-
-- no asumir `fxRate = 1` salvo misma moneda;
-- no cruzar settlements entre monedas distintas;
-- si falta snapshot confiable, degradar a asistido o bloqueado.
-
-## 10. Cierre y control de periodos
-
-El cockpit de cierre vive en:
-
-- `/app/o/[slug]/close`
-
-Estados fiscales o contables activos:
-
-- `open`
-- `ready_to_close`
-- `soft_closed`
-- `tax_locked`
-- `hard_closed`
-- `audit_frozen`
-
-Regla de guardrail:
-
-Un documento no debe poder mutar un periodo `soft_closed`, `tax_locked`, `hard_closed` o `audit_frozen` sin proceso formal.
-
-## 11. Imports, auditoria y bridge externo
-
-### `/imports`
-
-Carril de soporte para:
-
-- importacion de chart;
-- historicos IVA;
-- import operations;
-- lotes auxiliares de soporte.
-
-### `/audit`
-
-Carril auditado para planillas mensuales de compras y ventas:
-
-- staging;
-- preflight;
-- aceptacion o rechazo;
-- materializacion a documentos.
-
-Regla de coherencia:
-
-- el carril por planilla debe aplicar la misma politica de duplicados exactos por identidad documental;
-- no puede ser mas permisivo que el upload binario normal.
-
-### `/exports`
-
-Carril de salida para:
-
-- export contable por periodo;
-- export fiscal de IVA;
-- bridge hacia layouts externos.
-
-Tambien existe soporte para conexiones CFE por email y layouts como Zeta.
-
-## 12. Limites actuales y roadmap
-
-### Fuerte hoy
-
-- chart admin;
-- rules admin;
-- settlement-aware posting;
-- VAT Uruguay base;
-- DGI reconciliation base;
-- close cockpit;
-- imports auditados y bridge.
-
-### Parcial
-
-- FX end-to-end mas profundo;
-- adapters ERP especificos;
-- hard close real con snapshots mas profundos;
-- explainability perfectamente uniforme.
-
-### Preparado
-
-- cost centers;
-- jobs;
-- rentabilidad;
-- mas impuestos;
-- multi-country.
+- asiento multilinea balanceado;
+- party/work_unit preservados;
+- open item generado correctamente;
+- settlement con moneda segura;
+- IVA sin perdida de elegibilidad;
+- cierre con bloqueo visible;
+- integracion externa sin fuga entre organizaciones.

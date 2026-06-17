@@ -191,3 +191,131 @@ create type public.dgi_reconciliation_difference_status as enum (
   'tax_treatment_mismatch',
   'pending_manual_adjustment'
 );
+
+create type public.party_role_type as enum (
+  'customer',
+  'vendor',
+  'bank',
+  'institution',
+  'accountant',
+  'employee',
+  'partner',
+  'transport',
+  'internal',
+  'other'
+);
+
+create type public.party_identifier_type as enum (
+  'rut',
+  'tax_id',
+  'email',
+  'phone',
+  'zeta_contact_code',
+  'zeta_customer_code',
+  'zeta_supplier_code',
+  'external_code',
+  'other'
+);
+
+create type public.work_unit_kind as enum (
+  'job',
+  'project',
+  'operation',
+  'department',
+  'internal_cost_center',
+  'service',
+  'maintenance',
+  'administration',
+  'cost_center',
+  'area'
+);
+
+create type public.work_unit_status as enum (
+  'planned',
+  'active',
+  'paused',
+  'blocked',
+  'completed',
+  'cancelled',
+  'archived'
+);
+
+create type public.business_event_type as enum (
+  'work_unit_created',
+  'work_unit_started',
+  'work_unit_completed',
+  'purchase_document_received',
+  'sales_document_issued',
+  'document_received',
+  'document_issued',
+  'payment_made',
+  'collection_received',
+  'tax_obligation_due',
+  'process_run_started',
+  'process_run_blocked',
+  'client_contacted',
+  'supplier_contacted',
+  'document_posted',
+  'vat_run_generated',
+  'administrative_decision_recorded',
+  'other'
+);
+
+create type public.entity_type as enum (
+  'organization',
+  'profile',
+  'party',
+  'contact',
+  'work_unit',
+  'document',
+  'business_event',
+  'task',
+  'process',
+  'process_run',
+  'open_item',
+  'payment',
+  'collection',
+  'journal_entry',
+  'tax_period',
+  'vat_run',
+  'integration_raw_record',
+  'source_event',
+  'evidence_ref',
+  'assistant_run',
+  'assistant_message',
+  'audit_log',
+  'other'
+);
+
+create type public.entity_relation_type as enum (
+  'belongs_to',
+  'involves',
+  'issued_by',
+  'received_from',
+  'assigned_to',
+  'blocks',
+  'generated',
+  'settles',
+  'evidences',
+  'discusses',
+  'affects',
+  'derived_from',
+  'supersedes',
+  'related_to'
+);
+
+create type public.evidence_ref_type as enum (
+  'document',
+  'storage_object',
+  'integration_raw_record',
+  'source_event',
+  'audit_log',
+  'ai_decision_log',
+  'assistant_run',
+  'assistant_message',
+  'note',
+  'url',
+  'external_reference',
+  'journal_entry',
+  'other'
+);

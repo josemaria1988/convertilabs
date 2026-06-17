@@ -3299,3 +3299,581 @@ create policy "normative_update_runs_select_authenticated"
 on public.normative_update_runs
 for select
 using (auth.role() = 'authenticated');
+
+alter table public.parties enable row level security;
+alter table public.party_roles enable row level security;
+alter table public.party_identifiers enable row level security;
+alter table public.contacts enable row level security;
+alter table public.party_contacts enable row level security;
+alter table public.work_units enable row level security;
+alter table public.business_events enable row level security;
+alter table public.entity_links enable row level security;
+alter table public.evidence_refs enable row level security;
+
+drop policy if exists "parties_select_member" on public.parties;
+create policy "parties_select_member"
+on public.parties
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "parties_insert_directory_roles" on public.parties;
+create policy "parties_insert_directory_roles"
+on public.parties
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "parties_update_directory_roles" on public.parties;
+create policy "parties_update_directory_roles"
+on public.parties
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "parties_delete_admin_roles" on public.parties;
+create policy "parties_delete_admin_roles"
+on public.parties
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_roles_select_member" on public.party_roles;
+create policy "party_roles_select_member"
+on public.party_roles
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "party_roles_insert_directory_roles" on public.party_roles;
+create policy "party_roles_insert_directory_roles"
+on public.party_roles
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_roles_update_directory_roles" on public.party_roles;
+create policy "party_roles_update_directory_roles"
+on public.party_roles
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_roles_delete_admin_roles" on public.party_roles;
+create policy "party_roles_delete_admin_roles"
+on public.party_roles
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_identifiers_select_member" on public.party_identifiers;
+create policy "party_identifiers_select_member"
+on public.party_identifiers
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "party_identifiers_insert_directory_roles" on public.party_identifiers;
+create policy "party_identifiers_insert_directory_roles"
+on public.party_identifiers
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_identifiers_update_directory_roles" on public.party_identifiers;
+create policy "party_identifiers_update_directory_roles"
+on public.party_identifiers
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_identifiers_delete_admin_roles" on public.party_identifiers;
+create policy "party_identifiers_delete_admin_roles"
+on public.party_identifiers
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "contacts_select_member" on public.contacts;
+create policy "contacts_select_member"
+on public.contacts
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "contacts_insert_directory_roles" on public.contacts;
+create policy "contacts_insert_directory_roles"
+on public.contacts
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "contacts_update_directory_roles" on public.contacts;
+create policy "contacts_update_directory_roles"
+on public.contacts
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_contacts_select_member" on public.party_contacts;
+create policy "party_contacts_select_member"
+on public.party_contacts
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "party_contacts_insert_directory_roles" on public.party_contacts;
+create policy "party_contacts_insert_directory_roles"
+on public.party_contacts
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "party_contacts_update_directory_roles" on public.party_contacts;
+create policy "party_contacts_update_directory_roles"
+on public.party_contacts
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "work_units_select_member" on public.work_units;
+create policy "work_units_select_member"
+on public.work_units
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "work_units_insert_work_roles" on public.work_units;
+create policy "work_units_insert_work_roles"
+on public.work_units
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "work_units_update_work_roles" on public.work_units;
+create policy "work_units_update_work_roles"
+on public.work_units
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "work_units_delete_admin_roles" on public.work_units;
+create policy "work_units_delete_admin_roles"
+on public.work_units
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "business_events_select_member" on public.business_events;
+create policy "business_events_select_member"
+on public.business_events
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "business_events_insert_event_roles" on public.business_events;
+create policy "business_events_insert_event_roles"
+on public.business_events
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "business_events_update_event_roles" on public.business_events;
+create policy "business_events_update_event_roles"
+on public.business_events
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "entity_links_select_member" on public.entity_links;
+create policy "entity_links_select_member"
+on public.entity_links
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "entity_links_insert_event_roles" on public.entity_links;
+create policy "entity_links_insert_event_roles"
+on public.entity_links
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "entity_links_update_event_roles" on public.entity_links;
+create policy "entity_links_update_event_roles"
+on public.entity_links
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "entity_links_delete_admin_roles" on public.entity_links;
+create policy "entity_links_delete_admin_roles"
+on public.entity_links
+for delete
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "evidence_refs_select_member" on public.evidence_refs;
+create policy "evidence_refs_select_member"
+on public.evidence_refs
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "evidence_refs_insert_event_roles" on public.evidence_refs;
+create policy "evidence_refs_insert_event_roles"
+on public.evidence_refs
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "evidence_refs_update_event_roles" on public.evidence_refs;
+create policy "evidence_refs_update_event_roles"
+on public.evidence_refs
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);

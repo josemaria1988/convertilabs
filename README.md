@@ -1,97 +1,119 @@
 # Convertilabs
 
-Convertilabs es una plataforma contable y fiscal document-driven para Uruguay, centrada en intake documental, decision contable explicable e IVA revisable.
+Convertilabs 2.0 es el sistema operativo integral de gestion y continuidad de la empresa: un super ERP personalizado para conectar trabajos, clientes, proveedores, documentos, dinero, contabilidad, IVA, tareas, procesos, evidencia e historial en un solo modelo operativo.
 
-## Estado operativo real
+La refundacion esta documentada en:
 
-- onboarding multi-tenant con business profile versionado, actividades CIIU, traits y recomendacion de presets por reglas o IA;
-- `Inicio` como centro de trabajo real con tareas del dia y CTAs unicos hacia documentos, revision, impuestos y cierre;
-- workspace `Documentos` reducido al ingreso documental: upload privado, estado visible del tramo reciente y CTA fuerte hacia `Revision`;
-- workspace `Revision` como cola principal por buckets accionables y reviewer con ruta guiada canonica derivada desde workflow y decision snapshot, incluyendo fast lane auto-resuelto y cierre terminal consistente;
-- `Importacion masiva` en `/audit` para planillas mensuales con preview estructurado, aceptar/rechazar parcial y trazabilidad por corrida;
-- admin de `Reglas contables` con listado, lifecycle, versionado forward-only, simulaciones, conflictos y chat consultivo;
-- workspaces contables read-only con balance, diario, open items y mapa contable explicable;
-- workspace fiscal con una misma ruta `/tax` separada entre `resolver pendientes` y `ver resultado IVA`, reutilizando el mismo workbench y las mismas acciones;
-- `Cierre` como flujo validator-first con bloqueos agrupados por documentos, impuestos, contabilidad y open items;
-- `Configuracion` separada en `Empresa`, `Perfil fiscal`, `Perfil de negocio`, `Plan contable`, `Integraciones` y `Avanzado`.
+- [docs/documento-refundacional-convertilabs.md](docs/documento-refundacional-convertilabs.md)
+- [docs/plan-maestro-version1.md](docs/plan-maestro-version1.md)
+- [docs/00-refundacion-convertilabs-2.md](docs/00-refundacion-convertilabs-2.md)
 
-## Superficies activas
+## Estado Operativo Actual
 
-### Publicas
+El repo conserva piezas valiosas de la etapa anterior:
 
-- `/(marketing)`
-- `/login`
-- `/signup`
-- `/logout`
-- `/auth/confirm`
-- `/onboarding`
+- auth multi-tenant con Supabase;
+- organizaciones, perfiles y memberships;
+- storage privado para documentos;
+- intake documental, procesamiento y reviewer;
+- IA estructurada;
+- Inngest;
+- kernel contable multilinea;
+- reglas contables;
+- IVA Uruguay;
+- cierre;
+- open items;
+- imports/exports;
+- Zeta como integracion externa;
+- audit logs y trazabilidad.
 
-### Privadas del top nav por organizacion
+La nueva direccion eleva esas piezas hacia un sistema integral basado en:
 
-- `/app/o/[slug]/dashboard`
-- `/app/o/[slug]/documents`
-- `/app/o/[slug]/review`
-- `/app/o/[slug]/tax`
-- `/app/o/[slug]/close`
-- `/app/o/[slug]/settings`
-- `/app/o/[slug]/advanced`
+```text
+party
+work_unit
+document
+business_event
+money
+accounting
+tax
+task
+process
+interaction
+evidence
+```
 
-### Privadas expertas o de soporte por organizacion
+## Objetivo Del MVP Refundacional
 
-- `/app/o/[slug]/documents/[documentId]`
-- `/app/o/[slug]/audit`
-- `/app/o/[slug]/trial-balance`
-- `/app/o/[slug]/chart-map`
-- `/app/o/[slug]/rules`
-- `/app/o/[slug]/documents/pending-assignment`
-- `/app/o/[slug]/documents/[documentId]/original`
-- `/app/o/[slug]/journal-entries`
-- `/app/o/[slug]/open-items`
-- `/app/o/[slug]/imports`
-- `/app/o/[slug]/exports`
-- `/app/o/[slug]/tax/reconciliation`
+El primer corte operativo debe demostrar el caso `Trabajo Nueva Palmira`:
 
-Las rutas cortas `/dashboard`, `/documents`, `/review`, `/advanced`, `/close`, `/rules`, `/tax`, `/settings`, `/trial-balance`, `/journal-entries` y `/open-items` redirigen a la organizacion primaria del usuario. `pending-assignment` sigue vivo como cola secundaria de lotes y asignacion, no como entrypoint principal.
+1. crear cliente como party;
+2. crear trabajo como work unit;
+3. asociar documentos de gasto y venta;
+4. ver ventas, costos y margen basico;
+5. ver deudores, acreedores, cobros y pagos;
+6. ver tareas y vencimientos;
+7. ver impacto contable e IVA cuando aplique;
+8. ver todo resumido en Inicio.
 
-## Stack operativo
+## Stack
 
 - Next.js 15 App Router
 - React 19
 - TypeScript
 - Supabase Auth, Postgres y Storage
-- OpenAI Responses API para salidas estructuradas
-- Inngest para orquestacion durable
-- Tailwind CSS 4 y ESLint 9
+- OpenAI Responses API
+- Inngest
+- Tailwind CSS 4
+- ESLint 9
 
-## Estructura principal
+## Estructura Principal
 
 ```text
 app/
-  (marketing)/
-  app/o/[slug]/
-  api/
 components/
 db/
   schema/
   rls/
 docs/
+lib/
 modules/
 supabase/
   migrations/
 tests/
 scripts/
-  backfills/
-  supabase/
 ```
 
-## Desarrollo local
+## Documentacion Principal
 
-El proyecto requiere un `.env` basado en `.env.example` con estas piezas minimas:
+- [Agent Rules 2.0](docs/agent_rules.md)
+- [Core product and organization](docs/00-core-product-and-organization.md)
+- [Workflows, UX and surfaces](docs/01-workflows-ux-and-surfaces.md)
+- [Accounting, tax and integrations](docs/02-accounting-tax-and-integrations.md)
+- [Platform, quality and roadmap](docs/03-platform-quality-and-roadmap.md)
+- [Auditoria KEEP / REWRITE / DELETE](docs/auditoria-repo-convertilabs-2-keep-rewrite-delete.md)
+
+## Referencias Tecnicas Subordinadas
+
+Estas referencias siguen siendo utiles, pero no mandan sobre Convertilabs 2.0:
+
+- [Documentacion unificada historica](docs/convertilabs-documentacion-unificada.md)
+- [Backlog Zeta revisado](docs/backlog-convertilabs-zetasoftware-revisado.md)
+- [Contrato endpoints Zeta](docs/zetasoftware-endpoints-contract.md)
+- [Notas Bandeja Zeta](docs/zetasoftware-bandeja-contract-notes.md)
+- [Mobile PWA/TWA](docs/mobile-pwa-twa.md)
+- [App mobile Google Play](docs/app-mobile-googleplay.md)
+
+## Desarrollo Local
+
+El proyecto requiere un `.env` basado en `.env.example`.
+
+Variables principales:
 
 - app y cliente web: `APP_URL`, `NEXT_PUBLIC_APP_URL`;
 - Supabase web/server: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`;
 - Postgres: `DATABASE_URL`, `DIRECT_URL`;
-- OpenAI: `OPENAI_API_KEY` y, si hace falta, overrides `OPENAI_*_MODEL`;
+- OpenAI: `OPENAI_API_KEY` y overrides `OPENAI_*_MODEL` si hacen falta;
 - Inngest: `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_BASE_URL`;
 - flags fiscales: `VAT_UY_*`.
 
@@ -103,7 +125,7 @@ npm run dev
 npm run inngest:dev
 ```
 
-## Scripts utiles
+## Scripts Utiles
 
 ```bash
 npm run lint
@@ -119,40 +141,21 @@ npm run db:smoke:document-upload
 npm run documents:repair:stale-processing
 ```
 
-## Documentacion viva
+## Regla De Trabajo
 
-- [docs/README.md](docs/README.md)
-- [docs/beta_privada_alcance_y_operacion.md](docs/beta_privada_alcance_y_operacion.md)
-- [docs/00-foundations/01-mapa-del-repo-y-rutas.md](docs/00-foundations/01-mapa-del-repo-y-rutas.md)
-- [docs/00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-28.md](docs/00-foundations/02-estado-actual-kernel-contable-y-fiscal-2026-03-28.md)
-- [docs/04-documents/01-document-intake-and-processing.md](docs/04-documents/01-document-intake-and-processing.md)
-- [docs/04-documents/02-document-review-classification-and-posting.md](docs/04-documents/02-document-review-classification-and-posting.md)
-- [docs/03-accounting/accounting-rules-admin-and-learning.md](docs/03-accounting/accounting-rules-admin-and-learning.md)
-- [docs/04-documents/03-document-settlement-and-multi-line-posting.md](docs/04-documents/03-document-settlement-and-multi-line-posting.md)
-- [docs/07-platform/database-api-background-jobs-and-observability.md](docs/07-platform/database-api-background-jobs-and-observability.md)
+La refundacion se ejecuta por cortes:
 
-## Specs activas de implementacion
+1. documentacion refundacional;
+2. modelo madre;
+3. Inicio y navegacion;
+4. trabajos;
+5. Nueva Palmira end-to-end;
+6. dinero;
+7. agenda, procesos y continuidad;
+8. directorio e historial;
+9. integracion contable/fiscal;
+10. Zeta 2.0;
+11. IA operativa;
+12. hardening y piloto interno.
 
-- [docs/convertilabs_mvp_launch_hardening_sdd_codex_prompt.md](docs/convertilabs_mvp_launch_hardening_sdd_codex_prompt.md)
-- [docs/specs-driven-development-admin-reglas-y-aprendizaje.md](docs/specs-driven-development-admin-reglas-y-aprendizaje.md)
-- [docs/specs-driven-development-asistente-contable.md](docs/specs-driven-development-asistente-contable.md)
-- [docs/spec_ui_refactor_explainability_convertilabs.md](docs/spec_ui_refactor_explainability_convertilabs.md)
-
-## Alcance operativo hoy
-
-- Uruguay only;
-- foco operativo en documentos, reglas, decision contable, IVA y bridge externo;
-- conciliacion DGI base manual asistida, no filing automatico;
-- sin payroll/BPS, conciliacion bancaria end-to-end ni multi-country operativo.
-
-## Beta privada y perimetro operativo
-
-- `Modo automatico` hoy aplica al perimetro conservador `UY + SA|SRL|SAS + IRAE_GENERAL + IVA GENERAL + flujo local estandar`.
-- `Modo asistido` cubre importaciones y perfiles fuera de ese perimetro: se permite extraccion, review y preview/provisional, pero no cierre automatico final.
-- `Bloqueado` aplica cuando faltan datos minimos, no hay FX confiable en moneda extranjera o aparece settlement cross-currency.
-
-## Operaciones y checks
-
-- `GET /api/health` es liveness/config barato.
-- `GET /api/ready` y `GET /api/health?mode=ready` hacen readiness real contra DB/Supabase sin ping costoso a OpenAI o Inngest.
-- `npm run pilot:summary -- <archivo.json>` ejecuta el gate del piloto y devuelve exit code no-cero si la apertura debe seguir bloqueada.
+No construir modulos aislados. Toda feature nueva debe conectarse al modelo madre o justificar por que existe.

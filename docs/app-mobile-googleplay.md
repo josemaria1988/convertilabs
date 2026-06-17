@@ -1,3 +1,5 @@
+> **Estado Convertilabs 2.0:** este documento pertenece a la etapa anterior y queda subordinado al documento refundacional, al plan maestro 2.0 y a los docs oficiales actuales. Usarlo solo como referencia historica o tecnica.
+
 Vas a trabajar en el repo Convertilabs.
 
 Antes de tocar código:

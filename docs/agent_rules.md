@@ -1,370 +1,230 @@
-# Agent Rules - Convertilabs
+# Agent Rules - Convertilabs 2.0
 
 ## 0. Proposito
 
-Este archivo convierte a Codex en un ingeniero autonomo con criterio dentro de Convertilabs.
+Este archivo es la guia operativa para Codex dentro de Convertilabs 2.0.
 
-No describe el producto en abstracto. Define como debe pensar, decidir, implementar, verificar y mantener el foco del proyecto sin convertirlo en un ERP generico ni en una UI contable sobrecargada.
+Convertilabs ya no se define como un producto centrado solo en documentos, contabilidad e IVA. Desde la refundacion, Convertilabs es el sistema operativo integral de gestion y continuidad de la empresa: un super ERP personalizado, conectado, gradual y trazable.
 
-## 1. Tesis del producto
+## 1. Fuentes De Verdad
 
-Convertilabs no es un ERP, no es un sistema contable generalista y no es una interfaz manual de bookkeeping.
+Orden oficial de lectura antes de cambios importantes:
 
-Convertilabs es:
+1. `docs/documento-refundacional-convertilabs.md`
+2. `docs/plan-maestro-version1.md`
+3. `docs/agent_rules.md`
+4. `docs/00-core-product-and-organization.md`
+5. `docs/01-workflows-ux-and-surfaces.md`
+6. `docs/02-accounting-tax-and-integrations.md`
+7. `docs/03-platform-quality-and-roadmap.md`
 
-> un motor de automatizacion contable y fiscal que aprende de decisiones humanas y aumenta su cobertura con reglas auditables.
+Los documentos historicos o de integraciones quedan subordinados a esta verdad 2.0. Si un documento viejo contradice la refundacion, gana la refundacion.
 
-La secuencia correcta del producto es:
+## 2. Tesis Del Producto
 
-1. recibir documentos o datasets operativos;
-2. extraer hechos estructurados;
-3. revisar lo factual;
-4. resolver tratamiento contable;
-5. resolver tratamiento fiscal;
-6. postear con trazabilidad;
-7. aprender de la intervencion humana;
-8. automatizar mejor la proxima vez.
+Convertilabs 2.0 es el super ERP personalizado y sistema operativo integral de la empresa.
 
-Toda decision de ingenieria debe reforzar esa secuencia.
+Toda decision de producto o ingenieria debe reforzar al menos uno de estos objetivos:
 
-## 2. Prioridades del sistema en orden estricto
+1. capturar hechos reales de la empresa;
+2. conectar esos hechos con personas, trabajos, documentos, dinero, impuestos, tareas y evidencia;
+3. reducir dependencia de memoria humana no documentada;
+4. mostrar estado operativo claro;
+5. preservar trazabilidad y evidencia;
+6. ayudar a decidir que hacer ahora;
+7. convertir decisiones repetibles en memoria reusable.
 
-Siempre optimizar en este orden:
+Convertilabs no debe copiar un ERP generico, pesado y desconectado. Si debe construir un modelo integral donde la empresa quede conectada y entendible.
 
-1. reducir decisiones humanas repetitivas;
-2. aumentar la cobertura automatica sin perder seguridad;
-3. mantener auditabilidad y determinismo;
-4. simplificar UX y carga cognitiva;
-5. evitar configuracion innecesaria;
-6. preservar compatibilidad y trazabilidad historica.
+## 3. Principios No Negociables
 
-Si una mejora embellece la UI pero no mejora automatizacion, seguridad operativa o claridad real, no es prioritaria.
+- Modelo madre conectado antes que modulos isla.
+- Pantallas enfocadas antes que superficies gigantes.
+- Datos reales antes que dashboards decorativos.
+- Trazabilidad antes que magia.
+- IA asistente, no autoridad.
+- Estados canonicos antes que texto libre gobernando logica.
+- Estructura para ordenar la realidad, no para copiar el caos.
+- No conservar codigo, schema, navegacion o documentacion anterior por nostalgia si bloquea la vision nueva.
 
-## 3. Fuente de verdad y orden de lectura
+## 4. Entidades Madre
 
-Antes de tocar codigo:
+El modelo nuevo debe converger hacia estas entidades:
 
-1. leer esta guia;
-2. leer los 4 docs anexos oficiales;
-3. recien despues abrir el codigo especifico que vas a tocar.
+- `organizations`, `organization_members`, `profiles`;
+- `parties`, `party_roles`, `contacts`, `party_contacts`, `party_identifiers`;
+- `work_units`;
+- `documents`;
+- `business_events`;
+- `entity_links`;
+- `evidence_refs`;
+- `ledger_open_items`, pagos, cobros y settlements como base de dinero;
+- `tasks`, `processes`, `obligations` y `capture_notes`;
+- `interactions` e historial de comunicaciones;
+- contabilidad, IVA, cierre e integraciones como consecuencias conectadas.
 
-Pack documental oficial:
+Codigo nuevo no debe depender directamente de `vendors`, `customers` u `organization_cost_centers` como fuente primaria cuando exista entidad canonica nueva. Esas piezas pueden sobrevivir como puente legacy hasta migracion controlada.
 
-1. `docs/agent_rules.md`
-2. `docs/00-core-product-and-organization.md`
-3. `docs/01-workflows-ux-and-surfaces.md`
-4. `docs/02-accounting-tax-and-integrations.md`
-5. `docs/03-platform-quality-and-roadmap.md`
+## 5. Prioridades De Trabajo
 
-Orden de verdad:
+Optimizar en este orden:
 
-1. `agent_rules.md` y los 4 anexos son la verdad oficial del producto;
-2. el codigo es el estado de implementacion actual;
-3. `db/schema` y `supabase/migrations` mandan cuando el cambio toca persistencia;
-4. tests, smokes y logs son la evidencia para validar que la implementacion acompana la verdad oficial.
+1. visibilidad real del estado de la empresa;
+2. conexion entre hechos, personas, trabajos, documentos, dinero, impuestos y tareas;
+3. continuidad administrativa y transferencia de conocimiento;
+4. trazabilidad funcional, contable y fiscal;
+5. reduccion de carga mental;
+6. automatizacion futura segura;
+7. simplicidad de UX.
 
-Si docs y codigo divergen:
+Si una iniciativa no mejora la vision integral de empresa conectada, no entra.
 
-- no rebajes la documentacion para justificar deuda accidental;
-- verifica si la diferencia es una compatibilidad temporal, una deuda conocida o un bug;
-- si es una divergencia real, deja explicitado el gap y alinea el codigo;
-- no dejes dos verdades activas compitiendo.
+## 6. Arquitectura Esperada
 
-## 4. Modo de trabajo esperado
+- `app/`: rutas, page shells, server actions y composicion.
+- `components/`: UI y presentacion.
+- `modules/`: logica de dominio.
+- `db/schema/`: referencia canonica consolidada.
+- `supabase/migrations/`: historial aplicable real.
+- `db/rls/`: politicas de seguridad.
+- `tests/`: evidencia de comportamiento.
 
-### 4.1 Modo plan por defecto
+No esconder logica de negocio en componentes. Si una pantalla necesita narrar estado operativo, crear un presenter o servicio en `modules/`.
 
-Entra en modo planificacion para cualquier tarea no trivial:
+## 7. Persistencia Y RLS
 
-- 3 o mas pasos;
-- decisiones de arquitectura;
-- cambios que toquen varios modulos;
-- cambios de schema, workflow, UX o fiscalidad;
-- bugs sin causa obvia.
+Si una tarea toca persistencia:
 
-Antes de editar:
+1. actualizar schema canonico;
+2. crear migracion;
+3. agregar o revisar RLS;
+4. crear servicios de dominio;
+5. agregar tests de tenancy;
+6. verificar paridad cuando corresponda.
 
-1. escribe un plan breve;
-2. define que rutas, modulos y tablas vas a tocar;
-3. identifica riesgos;
-4. define como vas a verificar.
+Ninguna tabla nueva multi-tenant puede quedar sin `organization_id`, indices minimos y politica de acceso por membresia.
 
-Si durante la implementacion algo se desvia, frena y replantea. No sigas improvisando sobre una premisa rota.
+## 8. UX Y Superficies
 
-### 4.2 Estrategia de investigacion
+La navegacion objetivo inicial es:
 
-Si el entorno soporta subtareas o subagentes, usalos para:
+```text
+Inicio
+Trabajos
+Documentos
+Dinero
+Agenda
+Mas
+```
 
-- investigacion;
-- lectura comparativa de codigo;
-- analisis de tests y logs;
-- separacion frontend, backend y schema.
+`Mas` agrupa Contactos, Contabilidad, IVA, Cierre, Procesos, Continuidad, Integraciones, Auditoria y Ajustes.
 
-Reglas:
+Reglas UX:
 
-- un solo objetivo por subtarea;
-- mantener limpio el contexto principal;
-- consolidar solo conclusiones utiles;
-- no dividir artificialmente problemas simples.
+- una pantalla debe tener una intencion principal;
+- no usar tablas gigantes como experiencia mobile principal;
+- mostrar bloqueos con motivos visibles;
+- mostrar relaciones relevantes en contexto;
+- usar empty states honestos;
+- Inicio debe responder que esta pasando y que tengo que hacer ahora.
 
-### 4.3 Ciclo de mejora
+La navegacion real del producto se cambiara por etapas. No introducir cambios visuales grandes antes de que el modelo madre lo soporte.
 
-Despues de cada correccion del usuario o de cada error claro:
+## 9. Documentos, Contabilidad E IVA
 
-1. identifica la causa raiz;
-2. registra la leccion si el workflow del entorno lo soporta;
-3. convierte esa leccion en una regla practica;
-4. reaplicala al resto del proyecto si corresponde.
+El motor documental, el kernel contable multilinea, las reglas, IVA Uruguay, cierre, open items, import/export y Zeta se conservan como piezas valiosas.
 
-Nunca repitas dos veces el mismo error por pereza de analisis.
+Pero ya no son islas ni centro unico del producto.
 
-### 4.4 Verificacion antes de terminar
+Regla:
 
-Nunca cierres una tarea solo porque el codigo compila.
+```text
+hecho operativo
+-> party
+-> work_unit
+-> document
+-> money
+-> accounting
+-> tax
+-> task
+-> evidence
+-> Inicio
+```
 
-Antes de cerrar:
-
-- ejecuta tests relevantes;
-- ejecuta `lint` y `typecheck` cuando el cambio lo amerite;
-- revisa logs y errores;
-- compara comportamiento antes y despues cuando haya riesgo de regresion;
-- valida los casos borde mas obvios.
-
-Preguntate siempre:
-
-> Un ingeniero senior aprobaria esto sin sentir que esta improvisado?
-
-## 5. Que Convertilabs es y que no es
-
-### Si es
-
-- motor documental;
-- motor de decision contable;
-- motor fiscal IVA para Uruguay;
-- puente hacia ERP, estudio o planilla existente;
-- memoria digital de reglas contables de cada organizacion.
-
-### No es
-
-- ERP full;
-- plataforma generica de bookkeeping;
-- sistema manual de asientos libres como flujo central;
-- suite de dashboards decorativos;
-- repositorio infinito de configuraciones sin retorno operativo.
-
-Si una iniciativa no mejora al menos uno de estos tres motores, no entra en el foco del producto:
-
-1. documental;
-2. decision contable;
-3. fiscal IVA.
-
-## 6. Perimetro operativo actual
-
-Convertilabs esta orientado a beta privada controlada en Uruguay.
-
-### Modo automatico conservador
-
-Solo debe considerarse automatico un caso que cae dentro del perimetro seguro:
-
-- organizacion Uruguay;
-- perfil fiscal automatizable;
-- flujo local estandar;
-- sin duplicado no resuelto;
-- sin warning critico de importacion;
-- sin faltantes de FX;
-- sin settlement cross-currency;
-- con datos documentales confiables.
-
-### Modo asistido
-
-Si el caso esta fuera del perimetro automatico pero sigue siendo operable:
-
-- se puede extraer;
-- se puede revisar;
-- se puede sugerir;
-- se puede hacer preview;
-- se puede dejar trazabilidad;
-- no se debe auto-finalizar como si estuviera plenamente soportado.
-
-### Modo bloqueado
-
-Si falta un dato critico o el caso es inseguro:
-
-- no inventar;
-- no adivinar;
-- no auto-postear;
-- no ocultar el bloqueo;
-- explicar que falta y que debe hacer el usuario.
-
-## 7. Reglas duras de dominio
-
-### 7.1 Separacion de motores
-
-Nunca mezclar en una sola caja opaca:
-
-- intake documental;
-- revision factual;
-- decision contable;
-- tratamiento fiscal;
-- aprendizaje;
-- posting;
-- tax runs;
-- exportacion;
-- cierre.
-
-Cada capa tiene proposito distinto.
-
-### 7.2 IA acotada
-
-La IA puede:
-
-- extraer datos;
-- sugerir clasificacion;
-- resumir;
-- justificar;
-- sugerir una opcion dentro de un set permitido.
-
-La IA no puede:
-
-- inventar cuentas;
-- inventar reglas duras;
-- saltarse el rule engine;
-- tomar decisiones irreversibles;
-- reemplazar calculos fiscales deterministicos;
-- reescribir historia sin reapertura explicita.
-
-### 7.3 Regla de seguridad contable y fiscal
-
-Si falta un dato critico:
-
-- degradar a revision manual;
-- usar cuenta provisoria si el modelo lo permite;
-- bloquear confirmacion final si corresponde.
-
-Nunca inventar comportamiento contable o fiscal para que la UX se sienta magica.
-
-### 7.4 Templates antes que cuentas sueltas
-
-La logica correcta es:
+Una factura no va simplemente a una cuenta. La logica sigue siendo:
 
 ```text
 documento
 -> hechos
 -> familia operativa
 -> plantilla contable
--> resolucion de cuentas por rol
--> preview multi-linea
--> posting
+-> cuentas por rol
+-> preview multilinea
+-> asiento
+-> open item / settlement cuando aplica
 ```
 
-No disenes el producto como elegir una cuenta y listo cuando el caso real requiere plantilla, contrapartida, IVA y settlement.
+## 10. IA
 
-### 7.5 Historia hacia adelante
+La IA puede:
 
-Cambios en:
+- extraer datos;
+- sugerir clasificacion;
+- proponer party o work unit probable;
+- resumir historial;
+- detectar bloqueos;
+- proponer tareas;
+- convertir notas crudas en procesos;
+- explicar impacto contable, fiscal u operativo;
+- sugerir reglas reutilizables.
 
-- plan de cuentas;
-- business profile;
-- reglas;
-- FX policy;
-- tax profile;
+La IA no puede:
 
-operan hacia adelante. No reescriben historia. Un documento ya confirmado solo cambia con reapertura formal.
+- inventar datos;
+- confirmar operaciones criticas sin revision;
+- crear reglas duras sin aprobacion;
+- postear contabilidad irreversible sin controles;
+- cerrar periodos;
+- saltarse RLS;
+- fingir certeza cuando faltan datos.
 
-## 8. Reglas UX y UI
+Toda sugerencia accionable debe poder aceptarse, rechazarse y auditarse.
 
-La UX oficial detallada vive en `01-workflows-ux-and-surfaces.md`, pero estos guardrails son obligatorios:
+## 11. Testing Y Cierre
 
-- mobile first con ancho mental base `375px`;
-- bottom nav fija de maximo 5 items en mobile;
-- una decision por pantalla;
-- un solo CTA principal por pantalla;
-- fast lane cuando la confianza es alta y no hay blockers;
-- no exponer internals como narrativa principal;
-- usar copy honesta y conservadora;
-- ocultar complejidad tecnica detras de expanders o vistas avanzadas.
+No cerrar una tarea sin evidencia proporcional.
 
-## 9. Reglas de arquitectura y codigo
+- Docs-only: validar busquedas y links relevantes.
+- UI: smoke manual y estados principales.
+- Dominio/backend: tests del modulo tocado.
+- Schema/API: migracion, RLS, contrato y smoke.
+- Contabilidad/IVA/dinero: caso positivo y caso bloqueado.
+- Workflow integral: happy path mas bloqueo visible.
 
-### 9.1 Separacion de responsabilidades
+Comandos habituales segun alcance:
 
-- `app/` = rutas, page shells, server actions y composicion;
-- `components/` = UI y presentacion;
-- `modules/` = logica de dominio;
-- `db/schema/` = referencia canonica consolidada;
-- `supabase/migrations/` = historial aplicable real;
-- `tests/` = evidencia de comportamiento.
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run db:verify:parity
+```
 
-No esconder logica de negocio en componentes.
+Si no se corren comandos relevantes, explicarlo.
 
-### 9.2 Cambios de schema
+## 12. Antipatrones
 
-Si tocas persistencia:
+No crear:
 
-1. actualiza schema canonico;
-2. agrega migracion;
-3. revisa RLS si aplica;
-4. mantiene paridad;
-5. no rompas compatibilidad sin necesidad explicita.
+- modulos aislados que no conecten con entidades madre;
+- dashboards con datos inventados;
+- estados libres que gobiernen logica;
+- duplicados de clientes/proveedores/trabajos;
+- reglas IA sin aprobacion;
+- configuradores sin retorno operativo;
+- rutas o copy que devuelvan el producto a la tesis vieja;
+- nuevas abstracciones por si acaso.
 
-### 9.3 Integridad monetaria y fiscal
+## 13. Regla Final
 
-En flujos de multimoneda, open items, settlement o VAT:
-
-- no asumas `fxRate = 1` salvo misma moneda;
-- no cruces settlements automaticos entre monedas distintas;
-- preserva snapshot monetario confiable;
-- prefiere bloqueo o modo asistido antes que compensar mal.
-
-### 9.4 Observabilidad minima obligatoria
-
-Todo cambio relevante en IA, posting, reglas, imports o cierre debe conservar trazabilidad suficiente en tablas, logs o artefactos del dominio.
-
-### 9.5 No dejes verdad productiva dispersa
-
-La fuente operativa debe vivir en modulos, contratos y estados canonicos. La UI debe consumir eso, no recrearlo pantalla por pantalla.
-
-## 10. Reglas de testing y cierre
-
-No cierres una tarea sin alguna forma proporcional de evidencia.
-
-Minimo esperado segun el tipo de cambio:
-
-- UI menor: smoke manual claro y verificacion de estados y CTAs;
-- dominio o backend: tests del modulo tocado;
-- schema o API: verificacion de contrato mas smoke o tests;
-- workflow: happy path mas al menos un caso bloqueado;
-- fiscal o contable: caso positivo mas caso conservador o bloqueado.
-
-Siempre que tenga sentido:
-
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-
-Si no corriste algo relevante, explicalo.
-
-## 11. Antipatrones prohibidos
-
-Codex no debe crear:
-
-- dashboards bonitos con datos inventados;
-- configuradores gigantes sin valor de automatizacion;
-- flujos manuales que compitan con el aprendizaje;
-- logica contable o fiscal embebida en componentes;
-- UI que ensene internals en vez de pedir la decision necesaria;
-- nuevas entidades porque podrian servir sin integracion real al workflow;
-- una falsa sensacion de automatizacion donde el producto deberia marcar asistido o bloqueado.
-
-## 12. Regla final de decision
-
-Cuando haya varias opciones razonables, elige la que mejor cumpla esto:
-
-1. reduce pasos;
-2. reduce pensamiento del usuario;
-3. conserva auditabilidad;
-4. mantiene el sistema conservador;
-5. aumenta automatizacion futura;
-6. introduce la menor complejidad posible.
-
-Si una solucion es mas magica pero menos confiable, no es la correcta para Convertilabs.
+Cuando haya varias opciones razonables, elegir la que mas ayude a ver y operar la empresa real con trazabilidad, continuidad y menor carga mental.

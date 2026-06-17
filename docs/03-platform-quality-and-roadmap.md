@@ -1,35 +1,33 @@
-# 03 - Platform, quality and roadmap
+# 03 - Platform, Quality And Roadmap
 
-## Para que existe este documento
+## Para Que Existe Este Documento
 
-Este es el resumen rapido de la infraestructura real del repo, las APIs, el modelo de observabilidad, la estrategia de verificacion y los gaps mas importantes del MVP.
+Este documento resume la plataforma real del repo, las reglas de calidad y el roadmap tecnico para ejecutar Convertilabs 2.0.
 
-Leelo si vas a tocar:
+Leerlo si vas a tocar:
 
 - schema;
 - migraciones;
 - RLS;
 - APIs;
 - background jobs;
-- health y readiness;
+- OpenAI/Inngest;
 - tests;
-- rollout;
-- hardening del piloto.
+- roadmap;
+- hardening.
 
-## 1. Stack y estructura del repo
-
-### Stack operativo
+## 1. Stack Actual
 
 - Next.js 15 App Router
 - React 19
 - TypeScript
-- Supabase Auth + Postgres + Storage
+- Supabase Auth, Postgres y Storage
 - OpenAI Responses API
 - Inngest
 - Tailwind CSS 4
 - ESLint 9
 
-### Estructura principal
+## 2. Estructura Del Repo
 
 ```text
 app/
@@ -43,437 +41,199 @@ tests/
 scripts/
 ```
 
-### Dominios visibles en el repo
+Regla:
 
-- auth
-- organizations
-- documents
-- accounting
-- tax
-- close
-- assistant
-- audit
-- imports
-- exports
-- spreadsheets
-- ui / presentation
+- `app/` compone rutas y server actions;
+- `components/` presenta UI;
+- `modules/` contiene dominio;
+- `db/schema/` es referencia canonica;
+- `supabase/migrations/` es historial aplicable;
+- `db/rls/` gobierna seguridad;
+- `tests/` prueba comportamiento.
 
-## 2. Capas de schema y persistencia
+## 3. Dominios Actuales
+
+Fuertes hoy:
+
+- auth;
+- organizations;
+- documents;
+- accounting;
+- tax;
+- close;
+- assistant;
+- audit;
+- imports;
+- exports;
+- integrations;
+- spreadsheets;
+- presentation.
+
+Nuevos o a elevar:
+
+- directory;
+- work;
+- events;
+- money;
+- operations;
+- communications;
+- continuity;
+- intelligence.
+
+## 4. Persistencia
 
 El esquema vive en dos niveles:
 
 1. `db/schema/00..09_*` como referencia canonica consolidada;
 2. `supabase/migrations/` como historial aplicable real.
 
-Regla practica:
-
-Si tocas persistencia, no alcanza con editar un archivo aislado. Debes revisar:
-
-- schema canonico;
-- migracion;
-- RLS;
-- compatibilidad;
-- tests o smoke.
-
-## 3. Grupos de tablas que importan
-
-### Identidad y tenancy
-
-- `profiles`
-- `organizations`
-- `organization_members`
-
-### Perfil y snapshots
-
-- `organization_profile_versions`
-- `organization_rule_snapshots`
-- `organization_business_profile_versions`
-- `organization_business_profile_activities`
-- `organization_business_profile_traits`
-- `organization_preset_applications`
-- `organization_preset_ai_runs`
-
-### Documentos y workflow
-
-- `documents`
-- `organization_cost_centers`
-- `document_processing_runs`
-- `document_drafts`
-- `document_draft_steps`
-- `document_confirmations`
-- `document_revisions`
-- `document_accounting_contexts`
-- `document_line_items`
-- `document_assignment_runs`
-- `document_invoice_identities`
-
-Notas operativas relevantes:
+Si se toca persistencia:
 
-- `documents.file_hash` participa en el guard de duplicado exacto para archivos binarios;
-- `documents.cost_center_id` deja asociar un documento a un proyecto o centro de costo minimo y hoy ya queda visible/editable tambien desde desktop;
-- `organization_cost_centers` concentra la taxonomia operativa minima reutilizada por mobile y administrada desde desktop, siempre gobernada por membership + RLS;
-- `document_invoice_identities` conserva la identidad documental normalizada y el estado de duplicado;
-- una corrida puede terminar en `skipped` cuando el documento se rechaza por duplicado exacto;
-- el motivo funcional debe quedar trazado en metadata y surfaces derivadas.
+- actualizar schema canonico;
+- crear migracion;
+- revisar RLS;
+- agregar indices;
+- agregar tests;
+- verificar paridad cuando corresponda.
 
-### Kernel contable
+## 5. RLS Y Tenancy
 
-- `fiscal_periods`
-- `fiscal_period_transition_logs`
-- `close_check_runs`
-- `close_check_results`
-- `source_events`
-- `posting_proposals`
-- `chart_of_accounts`
-- `accounting_rules`
-- `accounting_rule_events`
-- `accounting_rule_simulations`
-- `journal_entries`
-- `journal_entry_lines`
-- `ledger_open_items`
-- `ledger_settlement_links`
+Toda entidad nueva multi-tenant debe tener:
 
-### Read models
+- `organization_id`;
+- FK a `organizations`;
+- indices por organizacion;
+- RLS de select por miembro activo;
+- RLS de insert/update/delete por roles adecuados;
+- tests o smokes de aislamiento.
 
-- `v_trial_balance`
-- `v_journal_entries_read`
-- `v_open_items_outstanding`
-- `v_balance_sheet`
-- `v_income_statement`
+Nunca resolver permisos sensibles moviendo logica al cliente.
 
-### Fiscal
+## 6. OpenAI E Inngest
 
-- `vat_runs`
-- `dgi_reconciliation_runs`
-- `dgi_reconciliation_buckets`
-- `vat_form_exports`
-- `organization_import_operations`
-- `organization_import_operation_documents`
-- `organization_import_operation_taxes`
+Se conservan:
 
-### Integracion y observabilidad
+- `lib/llm/openai-responses.ts`;
+- `modules/ai`;
+- `modules/assistant`;
+- Inngest para procesos durables.
 
-- `exports`
-- `organization_spreadsheet_import_runs`
-- `organization_cfe_email_connections`
-- `system_actors`
-- `assistant_runs`
-- `assistant_threads`
-- `assistant_messages`
-- `assistant_run_evidence_refs`
-- `assistant_suggestions`
-- `audit_log`
-- `ai_decision_logs`
+La IA nueva debe funcionar como sugerencia revisable. No debe modificar entidades criticas sin aceptacion humana o regla segura.
 
-## 4. RLS y modelo de ejecucion
+## 7. Roadmap Tecnico
 
-Regla de arquitectura actual:
+### PR-00 - Documentacion refundacional
 
-- la UI no usa llaves privilegiadas;
-- el cliente SSR autenticado hace lo que puede con permisos normales;
-- servicios server-only pueden usar service role cuando la operacion lo requiere;
-- RLS sigue siendo parte de la seguridad del producto, no un detalle secundario.
+Docs, README, reglas, indice documental y auditoria KEEP/REWRITE/DELETE.
 
-Implicancia:
+### PR-01 - Schema madre
 
-No resolver atajos de permisos moviendo logica delicada al cliente.
+`directory`, `work`, `events`, RLS y tests:
 
-## 5. APIs internas relevantes
+- `party_roles`;
+- `contacts`;
+- `party_contacts`;
+- `party_identifiers`;
+- `work_units`;
+- `business_events`;
+- `entity_links`;
+- `evidence_refs`.
 
-### Salud y readiness
+### PR-02 - Adaptadores legacy
 
-- `GET /api/health`
-- `GET /api/ready`
-- `GET /api/health?mode=ready`
+Puentes:
 
-Semantica:
+- `documents.work_unit_id`;
+- cost center -> work unit;
+- vendors/customers -> parties;
+- sin romper reviewer actual.
 
-- `health` = liveness/config barato;
-- `ready` = readiness real contra dependencias minimas.
+### PR-03 - Navegacion e Inicio 2.0
 
-### Auth
+Inicio real, nav nueva, empty states honestos y read model inicial.
 
-- `/api/v1/auth/signup`
-- `/api/v1/auth/login`
+### PR-04 - Trabajos MVP
 
-### Documentos
+Listado, creacion, detalle, party cliente, documentos y resumen base.
 
-- `/api/v1/documents/[documentId]/processing-status`
+### PR-05 - Nueva Palmira E2E
 
-### Superficie mobile y distribucion
+Cliente + trabajo + gasto + venta + margen + documentos + Inicio.
 
-- `app/manifest.ts` expone el web manifest del carril field;
-- `public/sw.js` aplica caching conservador solo sobre shell estatico y offline page;
-- `/.well-known/assetlinks.json` se sirve desde App Router para la TWA Android;
-- `/android-twa` contiene la configuracion Bubblewrap reproducible y scripts de build.
+### PR-06 - Money MVP
 
-### Presets IA
+Deudores, acreedores, vencimientos, cobros, pagos y settlements basicos.
 
-- `/api/preset-ai-recommendation`
-- `/api/preset-ai-recommendation/cost-center-draft` cerrado en MVP V1 con `410`
+### PR-07 - Tasks y Agenda MVP
 
-### Orquestacion
+Tareas y vencimientos vinculados a entidades reales.
 
-- `/api/inngest`
+### PR-08 - Procesos y Continuidad MVP
 
-## 6. OpenAI layer y jobs
+Procesos versionados, obligaciones, capture notes y modo continuidad.
 
-### Wrapper central
+### PR-09 - Directorio e Historial MVP
 
-- `lib/llm/openai-responses.ts`
+Perfil de party, contactos e interacciones vinculadas.
 
-### Lo que hace hoy
+### PR-10 - Integracion contable/fiscal
 
-- sync structured responses;
-- background structured responses;
-- batch jobs;
-- file uploads;
-- usage accounting;
-- costo estimado.
+Party/work unit en posting, open items, IVA, cierre e Inicio.
 
-### Config relevante
+### PR-11 - Integraciones Zeta 2.0
 
-- `OPENAI_PRIMARY_MODEL`
-- `OPENAI_MINI_MODEL`
-- `OPENAI_DOCUMENT_MODEL`
-- `OPENAI_RULES_MODEL`
-- `OPENAI_ACCOUNTING_MODEL`
+Raw records, entity links, CentroCostos -> work unit y export con centro operativo.
 
-### Jobs
+### PR-12 - IA operativa
 
-- Inngest para procesos durables;
-- server actions para onboarding, settings, posting, reglas, imports, exports, VAT, assistant y audit.
+Sugerencias revisables, procesos desde notas, bloqueos y resumen de Inicio.
 
-## 7. Observabilidad funcional minima
-
-La trazabilidad actual no es solo tecnica. Tambien es funcional.
-
-Debe existir evidencia suficiente en:
-
-- decisiones IA;
-- runs documentales;
-- reglas y simulaciones;
-- close checks;
-- transiciones de periodo;
-- corridas de importacion y auditoria;
-- cambios sensibles de settings y conexiones.
-
-Tablas a no olvidar:
-
-- `audit_log`
-- `ai_decision_logs`
-- `assistant_*`
-- `accounting_rule_*`
-- `document_assignment_runs`
-- `organization_spreadsheet_import_runs`
-- `close_check_*`
-- `fiscal_period_transition_logs`
-
-Para duplicados exactos, la evidencia minima esperada incluye:
-
-- documento relacionado cuando exista;
-- motivo (`file_hash_match`, identidad de negocio o combinacion de ambos);
-- estado derivado visible en UI como rechazo o bloqueo, no como pendiente silencioso.
-
-## 8. Testing y comandos de calidad
-
-### Comandos base
-
-- `npm run dev`
-- `npm run inngest:dev`
-- `npm run build`
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-
-### DB / smoke
-
-- `npm run db:generate:migration`
-- `npm run db:verify:parity`
-- `npm run db:smoke:profile-sync`
-- `npm run db:smoke:organization-onboarding`
-- `npm run db:smoke:private-dashboard`
-- `npm run db:smoke:document-upload`
-
-### Piloto
-
-- `npm run pilot:summary -- docs/samples/rontil-pilot-demo-ready.json`
-- `npm run pilot:summary -- docs/samples/rontil-pilot-demo-blocked.json`
-
-### Regla de evidencia
-
-Una feature solo deberia documentarse como implementada si hay al menos:
-
-1. codigo de dominio;
-2. persistencia o contrato real;
-3. UI visible o prueba que la vuelva operativa.
-
-## 9. Watchlist actual del MVP
-
-### A. Integridad monetaria
-
-Riesgo:
-
-- divergencia entre journal y open items;
-- settlement entre monedas equivocadas;
-- FX inventado.
-
-Direccion correcta:
-
-- misma moneda o snapshot confiable;
-- si no, asistido o bloqueado.
-
-### B. Estados canonicos del documento
-
-Riesgo:
-
-- que la UI vuelva a colgarse de estados legacy o flags sueltos.
-
-Direccion correcta:
-
-- estado canonico derivado;
-- copy consistente;
-- buckets accionables.
-
-Aplicacion concreta:
-
-- `duplicate` no debe verse como `processing` ni como `pendiente`;
-- un rechazo por duplicado exacto debe quedar claramente fuera del flujo normal de review.
-- la ruta guiada del reviewer debe consumir `workflow-state` y `document-decision-snapshot` a traves de un presenter canonico;
-- no derivar estados de review desde flags de UI como `showManualFlow`, `mobileStep` o affordances locales.
-
-### C. Dashboard y metricas
-
-Riesgo:
-
-- inventar charts o labels sinteticos.
-
-Direccion correcta:
-
-- empty state honesto;
-- nada de relleno visual sin historia real.
-
-### D. Alcance de automatizacion
-
-Riesgo:
-
-- vender como automatico lo que todavia es asistido o bloqueado.
-
-Direccion correcta:
-
-- perimetro explicito;
-- degradacion conservadora;
-- no sobre-prometer.
-
-### E. Imports ambiguos
-
-Riesgo:
-
-- materializar o finalizar casos ambiguos como si fueran seguros.
-
-Direccion correcta:
-
-- preview;
-- warnings;
-- aceptacion explicita;
-- posible bloqueo.
-
-### F. Naming de DGI
-
-Riesgo:
-
-- hacer parecer la conciliacion base como filing o matching exhaustivo.
-
-Direccion correcta:
-
-- llamarla por lo que es.
-
-### G. Health vs readiness
-
-Riesgo:
-
-- creer que el sistema esta sano porque hay un endpoint barato.
-
-Direccion correcta:
-
-- separar liveness de readiness.
-
-## 10. Roadmap condensado
-
-### Zeta contable inmediato
-
-El siguiente PR operativo para Zeta esta documentado en `docs/pr-next-zeta-posting-templates-role-map.md`.
-
-Objetivo:
-
-```text
-documento
--> hechos
--> familia operativa
--> plantilla contable
--> role map
--> cuenta Zeta imputable
--> preview multi-linea
+### PR-13 - Hardening piloto interno
+
+Calidad tecnica, limpieza legacy, piloto Nueva Palmira y hallazgos reales.
+
+## 8. Definition Of Done
+
+Una etapa no termina hasta cumplir proporcionalmente:
+
+1. documentacion actualizada si cambia la verdad oficial;
+2. schema canonico actualizado si toca persistencia;
+3. migracion creada si toca DB;
+4. RLS revisada para tablas nuevas;
+5. servicios de dominio en `modules/`;
+6. UI consume modulos o presenters;
+7. tests o smokes proporcionales;
+8. sin datos inventados en Inicio;
+9. sin bypass de IA sobre reglas criticas;
+10. sin cruces entre organizaciones;
+11. comandos ejecutados o no ejecutados documentados.
+
+## 9. Comandos De Calidad
+
+Segun alcance:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run db:verify:parity
+npm run db:smoke:profile-sync
+npm run db:smoke:organization-onboarding
+npm run db:smoke:private-dashboard
+npm run db:smoke:document-upload
 ```
 
-Orden recomendado despues del espejo de Plan de Cuentas, Conceptos y Tipos de Asiento:
+Docs-only no requiere test suite, pero si busquedas de validacion documental.
 
-1. Plantillas base por familia operativa + Role Map Zeta.
-2. Tasas de IVA Zeta deterministicas, si faltan.
-3. Rule runner Zeta-aware.
-4. Preview multi-linea consolidado.
-5. Export a Bandeja.
-6. Reconciliacion.
-7. Aprendizaje contable reusable.
+## 10. Riesgos Principales
 
-No adelantar exportacion a Zeta mientras falten roles criticos, preview balanceado o evidencia de cuentas imputables.
+- Crear modulos aislados.
+- Duplicar parties con vendors/customers.
+- Abusar de entity links.
+- Romper el kernel contable.
+- Crear dashboards decorativos.
+- Dar demasiado poder a la IA.
+- Mantener legacy por miedo.
+- Intentar implementar todo a la vez.
 
-### Ya fuerte
-
-- onboarding y presets;
-- documentos, review y posting;
-- VAT y cierre base;
-- audit, import y export;
-- reglas contables administrables.
-
-### Parcial
-
-- FX end-to-end;
-- explainability uniforme;
-- adapters ERP especificos;
-- bulk ops mas maduras;
-- close snapshots y hard close real.
-
-### Preparado
-
-- cost centers, jobs y rentabilidad;
-- mas impuestos;
-- mas integraciones externas;
-- multi-country.
-
-## 11. Regla de cambios seguros
-
-Cuando hagas un cambio importante:
-
-1. identifica el dominio principal;
-2. identifica si toca UI, dominio, schema o workflow;
-3. busca el estado canonico ya existente antes de inventar otro;
-4. manten la solucion conservadora;
-5. actualiza docs si cambio la verdad oficial o si cambio el estado de implementacion.
-
-Si la UI necesita narrar un workflow complejo:
-
-- extrae esa narrativa a `modules/presentation`;
-- deja al componente consumir un presenter estable;
-- no recompongas la verdad productiva mezclando flags visuales con estado de dominio.
-
-## 12. Checklist mental rapido
-
-Si estas tocando plataforma u ops, verifica que tu cambio:
-
-- no rompa RLS ni tenancy;
-- no deje APIs mintiendo sobre readiness;
-- no meta logica de negocio en UI;
-- preserve auditabilidad;
-- tenga verificacion proporcionada;
-- mantenga el producto listo para beta privada seria, no para demo vacia.
+La mitigacion principal es ejecutar por PRs chicos y probar siempre con el caso Nueva Palmira.

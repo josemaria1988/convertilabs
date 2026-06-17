@@ -1,157 +1,100 @@
-# 00 - Core product and organization
+# 00 - Core Product And Organization
 
-## Para que existe este documento
+## Para Que Existe Este Documento
 
-Este documento resume la tesis del producto, el alcance operativo oficial, la organizacion multi-tenant y el mapa de superficies sobre el que corre Convertilabs.
+Este documento resume la tesis oficial de Convertilabs 2.0, el alcance operativo inicial, la organizacion multi-tenant y el mapa de dominios madre.
 
-Leelo si vas a tocar:
+Leerlo antes de tocar:
 
 - alcance de producto;
-- onboarding;
-- auth y memberships;
-- settings;
-- business profile y presets;
-- copy de alto nivel;
+- auth, onboarding y memberships;
+- organizaciones y permisos;
 - nomenclatura de superficies;
-- decisiones que cambian el perimetro de la beta privada.
+- decisiones que cambien el perimetro de Convertilabs 2.0.
 
-## 1. Tesis del producto
+## 1. Tesis Del Producto
 
-Convertilabs no es un ERP, no es un sistema contable generalista y no es una UI manual de bookkeeping.
+Convertilabs 2.0 es el sistema operativo integral de gestion y continuidad de la empresa.
 
-Convertilabs es:
+Tambien puede describirse como:
 
-> un motor de automatizacion contable y fiscal que aprende de decisiones humanas y aumenta su cobertura con reglas auditables.
+> un super ERP personalizado que captura hechos reales de la empresa y los conecta con personas, trabajos, documentos, dinero, contabilidad, impuestos, tareas, procesos, evidencia e historial.
 
-La secuencia correcta del producto es:
+La frase rectora es:
 
-1. recibir documentos o datasets operativos;
-2. extraer hechos estructurados;
-3. revisar lo factual;
-4. resolver tratamiento contable;
-5. resolver tratamiento fiscal;
-6. postear con trazabilidad;
-7. aprender de la intervencion humana;
-8. automatizar mejor la proxima vez.
+> Toda la empresa, conectada y entendible.
 
-## 2. Alcance operativo oficial
+Convertilabs no busca copiar un ERP generico. Busca ordenar la empresa real con un modelo profundo y pantallas enfocadas.
 
-La beta privada actual esta pensada para Uruguay y para un modo conservador de automatizacion.
+## 2. Destino Inicial
 
-### Entra en el perimetro activo
+El destino inicial es la empresa propia.
 
-- intake documental binario;
-- importacion asistida o auditada de planillas;
-- revision factual;
-- asignacion contable guiada;
-- preview de impacto contable y fiscal;
-- posting provisional y final;
-- liquidacion IVA base y corrida fiscal;
-- cierre mensual con guardrails;
-- export bridge hacia sistemas externos;
-- aprendizaje con reglas auditables;
-- presets contables y perfil de negocio versionado.
+Primero debe servir para:
 
-### Queda fuera del perimetro core
+- ver donde esta parada la empresa;
+- saber que falta hacer;
+- asociar documentos a trabajos y personas;
+- saber que se debe y que me deben;
+- ver vencimientos, tareas y bloqueos;
+- capturar procesos que dependen de memoria humana;
+- preparar continuidad administrativa;
+- sostener contabilidad, IVA y cierre con evidencia.
 
-- ERP full;
-- bookkeeping manual libre como flujo principal;
-- filing automatico completo a organismos;
-- motor fiscal multi-pais;
-- rentabilidad, jobs, centros de costo o margen como producto activo;
-- dashboards decorativos o analitica sintetica sin historia real.
+Abrir el producto como SaaS externo queda fuera de prioridad hasta que el piloto interno funcione.
 
-## 3. Motores oficiales del sistema
+## 3. Activos Que Se Conservan
 
-### 3.1 Motor documental
+Se conservan como base util:
 
-Responsable de intake, storage, extraccion, draft y workflow humano del documento.
+- nombre Convertilabs;
+- dominio y hosting existentes;
+- Next.js, React y TypeScript;
+- Supabase Auth, Postgres y Storage;
+- RLS por organizacion;
+- OpenAI para salidas estructuradas;
+- Inngest para procesos durables;
+- documentos, storage privado y extraccion;
+- kernel contable multilinea;
+- reglas contables y aprendizaje;
+- IVA Uruguay;
+- cierre;
+- open items y settlements;
+- imports/exports;
+- Zeta como integracion externa;
+- audit logs y trazabilidad.
 
-Flujo:
+Nada de esto es sagrado. Se conserva lo que sirva a la vision nueva.
 
-```text
-upload
--> storage
--> IA extraction
--> document draft
--> reviewer
-```
+## 4. Entidades Madre
 
-### 3.2 Motor de decision contable
+El modelo objetivo se organiza alrededor de:
 
-Responsable de transformar hechos en tratamiento contable, preview multi-linea, aprendizaje y posting.
+- `organizations`, `organization_members`, `profiles`;
+- `parties`, `party_roles`, `contacts`, `party_contacts`, `party_identifiers`;
+- `work_units`;
+- `documents`;
+- `business_events`;
+- `entity_links`;
+- `evidence_refs`;
+- dinero: open items, pagos, cobros, bancos, caja y settlements;
+- operaciones: tasks, processes, obligations y capture notes;
+- communications: interactions e historial;
+- accounting, tax, close e integrations como dominios especializados.
 
-Flujo:
+## 5. Auth, Tenancy Y Organizacion
 
-```text
-factual review
--> accounting context
--> rule engine
--> template + accounts by role
--> journal entry preview
--> posting
-```
+La plataforma sigue siendo multi-tenant por organizacion.
 
-### 3.3 Motor fiscal
-
-Responsable de evaluar elegibilidad IVA, correr periodos, conciliar y exportar.
-
-Flujo:
-
-```text
-posted documents
--> VAT preview
--> VAT run
--> DGI reconciliation
--> export
-```
-
-## 4. Modos operativos oficiales
-
-El sistema debe comportarse siempre en uno de estos tres modos:
-
-### Automatico
-
-El caso cae dentro del perimetro seguro, no tiene blockers y puede confirmarse con degradacion minima.
-
-### Asistido
-
-El caso es operable, pero requiere confirmacion humana o alguna decision contable o fiscal visible.
-
-### Bloqueado
-
-Falta un dato critico o el caso es inseguro. El sistema no debe inventar datos ni confirmar por si solo.
-
-## 5. Auth, tenancy y organizacion
-
-La plataforma es multi-tenant por organizacion.
-
-Tablas base:
+Tablas base actuales:
 
 - `profiles`
 - `organizations`
 - `organization_members`
 
-La organizacion se resuelve por slug y por membresia activa.
+La organizacion se resuelve por slug y membresia activa.
 
-### Rutas publicas core
-
-- `/login`
-- `/signup`
-- `/logout`
-- `/auth/confirm`
-- `/onboarding`
-- `/app`
-
-### Regla de entrada
-
-- si el usuario no esta autenticado, entra por auth;
-- si no tiene organizacion activa, va a onboarding;
-- si ya esta operativo, resuelve organizacion primaria y aterriza en la app privada.
-
-## 6. Roles observados hoy
-
-El enum `member_role` y el uso real del producto incluyen:
+Roles actuales a conservar inicialmente:
 
 - `owner`
 - `admin`
@@ -162,155 +105,101 @@ El enum `member_role` y el uso real del producto incluyen:
 - `developer`
 - `viewer`
 
-Lectura operativa:
+La logica por organizacion sigue siendo util aunque el primer uso sea interno: permite acceso a contador, familiares, operadores y soporte sin perder auditoria.
 
-- `owner` y `admin` concentran administracion y cambios sensibles;
-- `admin_processing`, `accountant` y `reviewer` operan el flujo diario;
-- `operator` entra en carriles acotados;
-- `viewer` queda restringido a lectura;
-- `developer` habilita soporte tecnico interno.
+## 6. Dominios Oficiales
 
-## 7. Onboarding, business profile y bootstrap
+Dominios actuales fuertes:
 
-El onboarding captura:
-
-- datos base de la organizacion;
-- forma juridica y RUT;
-- perfil fiscal base;
-- perfil de negocio;
-- seleccion o recomendacion de preset;
-- modo inicial del plan contable.
-
-Snapshots y tablas clave:
-
-- `organization_profile_versions`
-- `organization_business_profile_versions`
-- `organization_business_profile_activities`
-- `organization_business_profile_traits`
-- `organization_preset_applications`
-- `organization_preset_ai_runs`
-- `organization_rule_snapshots`
-
-### Modos de arranque vigentes
-
-- `recommended`
-- `alternative`
-- `external_import`
-- `minimal_temp_only`
-- `hybrid_ai_recommended`
-
-### Politica de historia
-
-Los cambios de perfil, preset, reglas o fiscalidad operan hacia adelante. No reescriben historia cerrada.
-
-## 8. Settings oficiales
-
-La ruta canonica de settings es:
-
-- `/app/o/[slug]/settings`
-
-Tabs oficiales:
-
-- `company`
-- `fiscal`
-- `business`
-- `chart`
+- `auth`
+- `organizations`
+- `documents`
+- `accounting`
+- `tax`
+- `close`
+- `assistant`
+- `audit`
+- `imports`
+- `exports`
 - `integrations`
-- `advanced`
+- `spreadsheets`
+- `presentation`
 
-Sentido de cada tab:
+Dominios a crear o elevar durante Convertilabs 2.0:
 
-- `company`: identidad, datos base y capacidades;
-- `fiscal`: versionado del perfil fiscal;
-- `business`: perfil de negocio, actividades y presets;
-- `chart`: plan de cuentas, importacion y cuentas provisionales;
-- `integrations`: conexiones y bridge;
-- `advanced`: accesos expertos, reglas, mapa contable e importaciones de soporte.
+- `directory`
+- `work`
+- `events`
+- `money`
+- `operations`
+- `communications`
+- `continuity`
+- `intelligence`
 
-## 9. Superficies y nombres oficiales
+## 7. Estado Actual Frente A La Refundacion
 
-Lenguaje de producto recomendado:
+### KEEP
 
-- `Bandeja Documental`
-- `Contabilidad`
-- `Impuestos (IVA)`
-- `Review documental` como accion contextual dentro de la bandeja, no como entrada primaria del menu;
-- `Ajustes`
-- `Auditoria`
-- `Mapa contable`
-- `Reglas contables`
-- `Importaciones`
-- `Exportaciones`
+- auth y tenancy;
+- Supabase y RLS base;
+- documentos e intake;
+- motor contable multilinea;
+- IVA Uruguay;
+- cierre;
+- open items;
+- imports/exports;
+- Zeta;
+- IA estructurada;
+- auditabilidad.
 
-## 10. Rutas privadas activas
+### REWRITE
 
-### Canonicas core
+- tesis de producto;
+- navegacion;
+- Inicio/dashboard;
+- clientes/proveedores hacia `parties`;
+- proyectos/centros de costo hacia `work_units`;
+- dinero como dominio visible;
+- procesos, tareas y continuidad;
+- historial de contactos;
+- documentacion oficial.
 
+### DELETE O LEGACY
+
+- restricciones de producto que impidan el sistema integral;
+- rutas o copy que pongan documentos/IVA como centro unico;
+- features sin conexion al modelo madre;
+- links rotos o docs obsoletos como fuente activa.
+
+## 8. Rutas Actuales Y Rutas Objetivo
+
+Rutas privadas existentes que siguen vivas mientras se migra:
+
+- `/app/o/[slug]/dashboard`
 - `/app/o/[slug]/documents`
-- `/app/o/[slug]/dashboard` redirige a `/app/o/[slug]/documents`
-- `/app/o/[slug]/review` queda como superficie secundaria o legacy
+- `/app/o/[slug]/review`
 - `/app/o/[slug]/tax`
+- `/app/o/[slug]/close`
 - `/app/o/[slug]/settings`
-
-### Superficies privadas activas
-
-- `/app/o/[slug]/documents/[documentId]`
-- `/app/o/[slug]/documents/pending-assignment`
+- `/app/o/[slug]/advanced`
 - `/app/o/[slug]/audit`
 - `/app/o/[slug]/imports`
 - `/app/o/[slug]/exports`
-- `/app/o/[slug]/close`
-- `/app/o/[slug]/tax/reconciliation`
+- `/app/o/[slug]/open-items`
+- `/app/o/[slug]/journal-entries`
+- `/app/o/[slug]/trial-balance`
 - `/app/o/[slug]/chart-map`
 - `/app/o/[slug]/rules`
-- `/app/o/[slug]/rules/new`
-- `/app/o/[slug]/rules/[ruleId]`
-- `/app/o/[slug]/rules/[ruleId]/version`
-- `/app/o/[slug]/trial-balance`
-- `/app/o/[slug]/journal-entries`
-- `/app/o/[slug]/open-items`
-- `/app/o/[slug]/advanced`
 
-### Rutas cortas de compatibilidad
+Rutas objetivo a implementar por etapas:
 
-El repo soporta rutas cortas que resuelven la organizacion primaria y redirigen a la ruta privada por slug. Entre ellas:
+- `/app/o/[slug]/dashboard` como Inicio real;
+- `/app/o/[slug]/work`;
+- `/app/o/[slug]/money`;
+- `/app/o/[slug]/agenda`;
+- `/app/o/[slug]/directory`;
+- `/app/o/[slug]/continuity`.
 
-- `/dashboard`
-- `/documents`
-- `/review`
-- `/tax`
-- `/settings`
-- `/rules`
-- `/advanced`
-- `/close`
-- `/trial-balance`
-- `/journal-entries`
-- `/open-items`
+## 9. Criterio De Exito
 
-## 11. Estado del producto frente al rector
-
-### Implementado y operativo
-
-- auth, tenancy y onboarding base;
-- perfil fiscal versionado;
-- business profile y presets;
-- bandeja documental y reviewer;
-- reglas contables administrables;
-- tax period workbench;
-- cierre y read models contables;
-- imports, audit y exports.
-
-### Parcial o en consolidacion
-
-- mobile-first homogeneo en todas las superficies expertas;
-- explainability uniforme en todas las vistas;
-- FX end-to-end mas maduro;
-- hard close y snapshots mas profundos;
-- bridge externo con adapters especificos.
-
-### Preparado, no productizado
-
-- cost centers, jobs y rentabilidad;
-- mas impuestos;
-- multi-country;
-- filing automatico a organismos.
+El core esta alineado cuando Convertilabs permite crear una organizacion, crear parties, crear un trabajo, asociar documentos, ver ventas/gastos/margen, ver deudores/acreedores, ver tareas/vencimientos y entender todo desde Inicio.
