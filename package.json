@@ -31,7 +31,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
-    "inngest": "3.40.3",
+    "inngest": "3.54.0",
     "next": "15.5.15",
     "react": "19.1.0",
     "react-dom": "19.1.0",
