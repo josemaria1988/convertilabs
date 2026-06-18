@@ -59,8 +59,8 @@ export function buildOrganizationPrivateNavItems(
     },
     {
       href: `/app/o/${organizationSlug}/money`,
-      label: "Dinero",
-      description: "Deudores, acreedores, vencimientos y saldos vivos",
+      label: "Tesoreria",
+      description: "Caja, bancos, vales, cobros, pagos y saldos vivos",
       icon: "money",
       current: currentSection === "money",
     },

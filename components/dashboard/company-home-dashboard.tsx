@@ -22,9 +22,13 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
-  return new Intl.DateTimeFormat("es-UY", {
-    dateStyle: "medium",
-  }).format(new Date(value));
+  const [year, month, day] = value.slice(0, 10).split("-");
+
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return `${day}/${month}/${year}`;
 }
 
 function formatAmount(value: number) {
@@ -158,7 +162,7 @@ export function CompanyHomeDashboard({
               Inicio
             </h1>
             <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-              Estado operativo de la empresa: trabajos, documentos, dinero y proximos pasos sin indicadores de relleno.
+              Estado operativo de la empresa: trabajos, documentos, tesoreria y proximos pasos sin indicadores de relleno.
             </p>
           </div>
           <LoadingLink
@@ -256,6 +260,10 @@ export function CompanyHomeDashboard({
               <span>{data.availability.money ? data.summary.openMoneyItems : "--"}</span>
             </div>
             <div className="ui-subtle-row">
+              <span>Alertas tesoreria</span>
+              <span>{data.availability.treasury ? data.summary.treasuryCriticalAlertCount : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
               <span>Tareas abiertas</span>
               <span>{data.availability.operations ? data.summary.openTasks : "--"}</span>
             </div>
@@ -348,9 +356,9 @@ export function CompanyHomeDashboard({
         <section className="ui-panel">
           <div className="ui-panel-header">
             <div>
-              <h2 className="text-[16px] font-semibold text-white">Dinero</h2>
+              <h2 className="text-[16px] font-semibold text-white">Tesoreria</h2>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-                Saldos vivos ordenados por vencimiento.
+                Caja libre, bancos y saldos vivos ordenados por vencimiento.
               </p>
             </div>
             <LoadingLink

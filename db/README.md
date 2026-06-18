@@ -22,12 +22,18 @@
 8. `db/schema/07_integrations_and_audit.sql`
 9. `db/schema/08_document_ai_pipeline.sql`
 10. `db/schema/09_accounting_read_models.sql`
-11. `db/rls/supabase_rls_policies.sql`
+11. `db/schema/10_company_mother_model.sql`
+12. `db/schema/11_legacy_bridges.sql`
+13. `db/schema/12_operations_communications.sql`
+14. `db/schema/13_operational_intelligence.sql`
+15. `db/schema/14_treasury.sql`
+16. `db/rls/supabase_rls_policies.sql`
 
 Nota operativa:
 
 - `db/schema/09_accounting_read_models.sql` es canonico para las vistas contables read-only;
-- el generador `npm run db:generate:migration` arma la migracion consolidada desde `00..09 + RLS`.
+- `db/schema/14_treasury.sql` contiene caja bancaria manual, vales y proyeccion de tesoreria;
+- el generador `npm run db:generate:migration` arma la migracion consolidada desde `db/schema/* + RLS`.
 
 ## Regla de mantenimiento
 

@@ -55,6 +55,14 @@ export type CompanyHomeOperationsSignal = {
   closeWarnings: number;
 };
 
+export type CompanyHomeTreasurySignal = {
+  isAvailable: boolean;
+  currencyCode: string | null;
+  conservativeAvailableCash: number;
+  alertCount: number;
+  criticalAlertCount: number;
+};
+
 export type CompanyHomePresenterInput = {
   organizationSlug: string;
   documents: CompanyHomeDocumentSignal[];
@@ -74,6 +82,7 @@ export type CompanyHomePresenterInput = {
     recent: CompanyHomeMoneySignal[];
   };
   operations?: CompanyHomeOperationsSignal;
+  treasury?: CompanyHomeTreasurySignal;
 };
 
 export type CompanyHomeMetricCard = {
@@ -103,6 +112,9 @@ export type CompanyHomeDashboard = {
     openMoneyItems: number;
     overdueMoneyItems: number;
     outstandingAmount: number;
+    treasuryAvailableCash: number | null;
+    treasuryAlertCount: number;
+    treasuryCriticalAlertCount: number;
     directoryParties: number;
     openTasks: number;
     blockedTasks: number;
@@ -123,6 +135,7 @@ export type CompanyHomeDashboard = {
     work: boolean;
     directory: boolean;
     money: boolean;
+    treasury: boolean;
     operations: boolean;
   };
 };
@@ -133,7 +146,7 @@ function formatCount(value: number) {
   }).format(value);
 }
 
-function formatMoneyAmount(value: number) {
+function formatMoneyAmount(value: number, currencyCode = "UYU") {
   if (Math.abs(value) < 0.005) {
     return "$ 0";
   }
@@ -141,7 +154,7 @@ function formatMoneyAmount(value: number) {
   return new Intl.NumberFormat("es-UY", {
     maximumFractionDigits: 0,
     style: "currency",
-    currency: "UYU",
+    currency: currencyCode,
   }).format(value);
 }
 
@@ -162,6 +175,14 @@ export function buildCompanyHomeDashboard(
     (sum, item) => sum + item.outstandingAmount,
     0,
   );
+  const treasury = input.treasury ?? {
+    isAvailable: false,
+    currencyCode: null,
+    conservativeAvailableCash: 0,
+    alertCount: 0,
+    criticalAlertCount: 0,
+  };
+  const hasTreasurySignal = treasury.isAvailable && Boolean(treasury.currencyCode);
   const operations = input.operations ?? {
     isAvailable: false,
     totalTasks: 0,
@@ -201,14 +222,30 @@ export function buildCompanyHomeDashboard(
     },
     {
       key: "money",
-      label: "Dinero pendiente",
-      value: input.money.isAvailable ? formatMoneyAmount(outstandingAmount) : "--",
-      hint: input.money.isAvailable
+      label: hasTreasurySignal ? "Caja libre conservadora" : "Tesoreria pendiente",
+      value: hasTreasurySignal
+        ? formatMoneyAmount(treasury.conservativeAvailableCash, treasury.currencyCode ?? "UYU")
+        : input.money.isAvailable
+          ? formatMoneyAmount(outstandingAmount)
+          : "--",
+      hint: hasTreasurySignal
+        ? "Saldo bancario menos vales, pagos inevitables y colchon operativo."
+        : input.money.isAvailable
         ? "Suma visible de deudores y acreedores con saldo vivo."
         : "La vista de open items no esta disponible.",
       href: `/app/o/${slug}/money`,
-      cta: "Abrir dinero",
-      tone: overdueMoneyItems.length > 0 ? "warning" : outstandingAmount > 0 ? "info" : "neutral",
+      cta: "Abrir tesoreria",
+      tone: hasTreasurySignal
+        ? treasury.criticalAlertCount > 0 || treasury.conservativeAvailableCash < 0
+          ? "danger"
+          : treasury.alertCount > 0
+            ? "warning"
+            : "success"
+        : overdueMoneyItems.length > 0
+          ? "warning"
+          : outstandingAmount > 0
+            ? "info"
+            : "neutral",
     },
     {
       key: "agenda",
@@ -245,6 +282,18 @@ export function buildCompanyHomeDashboard(
   ];
 
   const actions: CompanyHomeAction[] = [
+    hasTreasurySignal && treasury.alertCount > 0
+      ? {
+        key: "treasury_alerts",
+        title: `Revisar ${formatCount(treasury.alertCount)} alerta(s) de tesoreria`,
+        description: treasury.criticalAlertCount > 0
+          ? "Hay caja libre o vencimientos en estado critico para revisar antes de mover fondos."
+          : "Hay renovaciones, vencimientos o cobros que conviene confirmar.",
+        href: `/app/o/${slug}/money`,
+        cta: "Abrir tesoreria",
+        tone: treasury.criticalAlertCount > 0 ? "danger" : "warning",
+      }
+      : null,
     blockedDocuments.length > 0
       ? {
         key: "blocked_documents",
@@ -355,6 +404,9 @@ export function buildCompanyHomeDashboard(
       openMoneyItems: input.money.totalCount,
       overdueMoneyItems: overdueMoneyItems.length,
       outstandingAmount,
+      treasuryAvailableCash: hasTreasurySignal ? treasury.conservativeAvailableCash : null,
+      treasuryAlertCount: hasTreasurySignal ? treasury.alertCount : 0,
+      treasuryCriticalAlertCount: hasTreasurySignal ? treasury.criticalAlertCount : 0,
       directoryParties: input.directory.totalCount,
       openTasks: operations.totalTasks,
       blockedTasks: operations.blockedTasks,
@@ -375,6 +427,7 @@ export function buildCompanyHomeDashboard(
       work: input.work.isAvailable,
       directory: input.directory.isAvailable,
       money: input.money.isAvailable,
+      treasury: hasTreasurySignal,
       operations: operations.isAvailable,
     },
   };

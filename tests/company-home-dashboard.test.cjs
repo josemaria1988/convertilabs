@@ -105,3 +105,50 @@ test("company home dashboard keeps empty states honest", () => {
   assert.equal(dashboard.availability.money, false);
   assert.equal(dashboard.summary.actionableDocuments, 0);
 });
+
+test("company home dashboard uses treasury signal when available", () => {
+  const dashboard = buildCompanyHomeDashboard({
+    organizationSlug: "rontil",
+    documents: [],
+    work: {
+      isAvailable: true,
+      totalCount: 1,
+      recent: [],
+    },
+    directory: {
+      isAvailable: true,
+      totalCount: 0,
+      recent: [],
+    },
+    money: {
+      isAvailable: true,
+      totalCount: 1,
+      recent: [
+        {
+          id: "item-1",
+          counterpartyName: "Cliente SA",
+          documentRole: "sale",
+          dueDate: "2026-06-20",
+          daysOverdue: 0,
+          outstandingAmount: 1000,
+          status: "open",
+          sourceDocumentId: null,
+        },
+      ],
+    },
+    treasury: {
+      isAvailable: true,
+      currencyCode: "USD",
+      conservativeAvailableCash: -120,
+      alertCount: 2,
+      criticalAlertCount: 1,
+    },
+  });
+  const moneyMetric = dashboard.metrics.find((metric) => metric.key === "money");
+
+  assert.equal(moneyMetric.label, "Caja libre conservadora");
+  assert.equal(moneyMetric.tone, "danger");
+  assert.equal(dashboard.availability.treasury, true);
+  assert.equal(dashboard.summary.treasuryCriticalAlertCount, 1);
+  assert.equal(dashboard.actions[0].key, "treasury_alerts");
+});

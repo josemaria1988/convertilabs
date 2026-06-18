@@ -11,6 +11,7 @@
 7. [Accounting, tax and integrations](02-accounting-tax-and-integrations.md)
 8. [Platform, quality and roadmap](03-platform-quality-and-roadmap.md)
 9. [Auditoria KEEP / REWRITE / DELETE](auditoria-repo-convertilabs-2-keep-rewrite-delete.md)
+10. [PR-14 Tesoreria / Banco MVP](pr-14-tesoreria-banco-mvp.md)
 
 ## Tesis Oficial
 

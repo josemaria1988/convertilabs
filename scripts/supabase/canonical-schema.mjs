@@ -19,6 +19,9 @@ export const canonicalFileOrder = [
   "db/schema/09_accounting_read_models.sql",
   "db/schema/10_company_mother_model.sql",
   "db/schema/11_legacy_bridges.sql",
+  "db/schema/12_operations_communications.sql",
+  "db/schema/13_operational_intelligence.sql",
+  "db/schema/14_treasury.sql",
   "db/rls/supabase_rls_policies.sql",
 ];
 

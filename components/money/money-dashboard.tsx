@@ -23,9 +23,13 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
-  return new Intl.DateTimeFormat("es-UY", {
-    dateStyle: "medium",
-  }).format(new Date(value));
+  const [year, month, day] = value.slice(0, 10).split("-");
+
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return `${day}/${month}/${year}`;
 }
 
 function directionLabel(value: MoneyItem["direction"]) {
@@ -159,7 +163,7 @@ export function MoneyDashboard({
         <div className="ui-panel-header">
           <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-              Dinero
+              Deudores/Acreedores
             </h1>
             <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
               La vista de open items todavia no esta disponible en esta base.
@@ -177,7 +181,7 @@ export function MoneyDashboard({
         <div className="ui-panel-header">
           <div>
             <h1 className="text-[24px] font-semibold tracking-[-0.03em] text-white">
-              Dinero
+              Deudores/Acreedores
             </h1>
             <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
               Deudores, acreedores, vencimientos y saldos vivos conectados a parties, documentos y trabajos.

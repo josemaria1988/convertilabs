@@ -425,7 +425,7 @@ export function PartyProfilePage({
 
         <section className="ui-panel">
           <div className="ui-panel-header">
-            <h2 className="text-[16px] font-semibold text-white">Dinero</h2>
+            <h2 className="text-[16px] font-semibold text-white">Tesoreria</h2>
             <span className="ui-filter">{data.moneyItems.length}</span>
           </div>
           <div className="mt-4 space-y-2">

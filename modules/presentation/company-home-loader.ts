@@ -10,9 +10,11 @@ import {
   type CompanyHomeMoneySignal,
   type CompanyHomeOperationsSignal,
   type CompanyHomePartySignal,
+  type CompanyHomeTreasurySignal,
   type CompanyHomeWorkUnitSignal,
 } from "@/modules/presentation/company-home";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
+import { loadTreasuryDashboard, treasuryMinorToDisplay } from "@/modules/treasury";
 
 type WorkUnitHomeRow = {
   id: string;
@@ -288,6 +290,61 @@ async function loadMoneySignals(
   };
 }
 
+async function loadTreasurySignals(
+  supabase: SupabaseClient,
+  input: {
+    organizationId: string;
+    organizationSlug: string;
+  },
+): Promise<CompanyHomeTreasurySignal> {
+  const empty = {
+    isAvailable: false,
+    currencyCode: null,
+    conservativeAvailableCash: 0,
+    alertCount: 0,
+    criticalAlertCount: 0,
+  };
+
+  try {
+    const treasury = await loadTreasuryDashboard(supabase, input);
+
+    if (!treasury.isAvailable || treasury.currencies.length === 0) {
+      return empty;
+    }
+
+    const severity = {
+      CRITICAL: 4,
+      RED: 3,
+      YELLOW: 2,
+      GREEN: 1,
+    };
+    const primaryCurrency = [...treasury.currencies].sort((left, right) =>
+      severity[right.status] - severity[left.status]
+      || left.currencyCode.localeCompare(right.currencyCode))[0];
+
+    return {
+      isAvailable: true,
+      currencyCode: primaryCurrency.currencyCode,
+      conservativeAvailableCash: treasuryMinorToDisplay(primaryCurrency.conservativeAvailableCashMinor),
+      alertCount: treasury.alerts.length,
+      criticalAlertCount: treasury.alerts.filter((alert) =>
+        alert.riskLevel === "critical" || alert.riskLevel === "high").length,
+    };
+  } catch (error) {
+    const supabaseError = error as { code?: string; message?: string; details?: string; hint?: string };
+
+    if (
+      isMissingSupabaseRelationError(supabaseError, "treasury_bank_accounts")
+      || isMissingSupabaseRelationError(supabaseError, "treasury_vales")
+      || isMissingSupabaseRelationError(supabaseError, "treasury_manual_receivables")
+    ) {
+      return empty;
+    }
+
+    throw error;
+  }
+}
+
 async function loadOperationsSignals(
   supabase: SupabaseClient,
   organizationId: string,
@@ -435,7 +492,7 @@ export async function loadCompanyHomeDashboard(
     organizationSlug: string;
   },
 ): Promise<CompanyHomeDashboard> {
-  const [documents, work, directory, money, operations] = await Promise.all([
+  const [documents, work, directory, money, treasury, operations] = await Promise.all([
     listAllOrganizationWorkspaceDocuments({
       organizationId: input.organizationId,
       organizationSlug: input.organizationSlug,
@@ -445,6 +502,7 @@ export async function loadCompanyHomeDashboard(
     loadWorkUnitSignals(supabase, input.organizationId),
     loadPartySignals(supabase, input.organizationId),
     loadMoneySignals(supabase, input.organizationId),
+    loadTreasurySignals(supabase, input),
     loadOperationsSignals(supabase, input.organizationId),
   ]);
 
@@ -458,6 +516,7 @@ export async function loadCompanyHomeDashboard(
     work,
     directory,
     money,
+    treasury,
     operations,
   });
 }

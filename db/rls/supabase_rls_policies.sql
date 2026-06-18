@@ -3877,3 +3877,375 @@ with check (
     ]
   )
 );
+
+alter table public.treasury_bank_accounts enable row level security;
+alter table public.treasury_bank_balance_snapshots enable row level security;
+alter table public.treasury_vales enable row level security;
+alter table public.treasury_vale_terms enable row level security;
+alter table public.treasury_vale_events enable row level security;
+alter table public.treasury_manual_receivables enable row level security;
+alter table public.treasury_reserve_rules enable row level security;
+
+drop policy if exists "treasury_bank_accounts_select_member" on public.treasury_bank_accounts;
+create policy "treasury_bank_accounts_select_member"
+on public.treasury_bank_accounts
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_bank_accounts_insert_treasury_roles" on public.treasury_bank_accounts;
+create policy "treasury_bank_accounts_insert_treasury_roles"
+on public.treasury_bank_accounts
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_bank_accounts_update_treasury_roles" on public.treasury_bank_accounts;
+create policy "treasury_bank_accounts_update_treasury_roles"
+on public.treasury_bank_accounts
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_bank_balance_snapshots_select_member" on public.treasury_bank_balance_snapshots;
+create policy "treasury_bank_balance_snapshots_select_member"
+on public.treasury_bank_balance_snapshots
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_bank_balance_snapshots_insert_treasury_roles" on public.treasury_bank_balance_snapshots;
+create policy "treasury_bank_balance_snapshots_insert_treasury_roles"
+on public.treasury_bank_balance_snapshots
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_bank_balance_snapshots_update_treasury_roles" on public.treasury_bank_balance_snapshots;
+create policy "treasury_bank_balance_snapshots_update_treasury_roles"
+on public.treasury_bank_balance_snapshots
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vales_select_member" on public.treasury_vales;
+create policy "treasury_vales_select_member"
+on public.treasury_vales
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_vales_insert_treasury_roles" on public.treasury_vales;
+create policy "treasury_vales_insert_treasury_roles"
+on public.treasury_vales
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vales_update_treasury_roles" on public.treasury_vales;
+create policy "treasury_vales_update_treasury_roles"
+on public.treasury_vales
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vale_terms_select_member" on public.treasury_vale_terms;
+create policy "treasury_vale_terms_select_member"
+on public.treasury_vale_terms
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_vale_terms_insert_treasury_roles" on public.treasury_vale_terms;
+create policy "treasury_vale_terms_insert_treasury_roles"
+on public.treasury_vale_terms
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vale_terms_update_treasury_roles" on public.treasury_vale_terms;
+create policy "treasury_vale_terms_update_treasury_roles"
+on public.treasury_vale_terms
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vale_events_select_member" on public.treasury_vale_events;
+create policy "treasury_vale_events_select_member"
+on public.treasury_vale_events
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_vale_events_insert_treasury_roles" on public.treasury_vale_events;
+create policy "treasury_vale_events_insert_treasury_roles"
+on public.treasury_vale_events
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_vale_events_update_treasury_roles" on public.treasury_vale_events;
+create policy "treasury_vale_events_update_treasury_roles"
+on public.treasury_vale_events
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_manual_receivables_select_member" on public.treasury_manual_receivables;
+create policy "treasury_manual_receivables_select_member"
+on public.treasury_manual_receivables
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_manual_receivables_insert_treasury_roles" on public.treasury_manual_receivables;
+create policy "treasury_manual_receivables_insert_treasury_roles"
+on public.treasury_manual_receivables
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_manual_receivables_update_treasury_roles" on public.treasury_manual_receivables;
+create policy "treasury_manual_receivables_update_treasury_roles"
+on public.treasury_manual_receivables
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_reserve_rules_select_member" on public.treasury_reserve_rules;
+create policy "treasury_reserve_rules_select_member"
+on public.treasury_reserve_rules
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "treasury_reserve_rules_insert_treasury_roles" on public.treasury_reserve_rules;
+create policy "treasury_reserve_rules_insert_treasury_roles"
+on public.treasury_reserve_rules
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "treasury_reserve_rules_update_treasury_roles" on public.treasury_reserve_rules;
+create policy "treasury_reserve_rules_update_treasury_roles"
+on public.treasury_reserve_rules
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);

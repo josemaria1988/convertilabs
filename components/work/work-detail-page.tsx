@@ -145,7 +145,7 @@ export function WorkDetailPage({
             pendingLabel="Abriendo..."
             className="ui-button ui-button--secondary"
           >
-            Dinero
+            Tesoreria
           </LoadingLink>
         </div>
 

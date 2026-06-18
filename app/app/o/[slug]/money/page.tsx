@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
-import { MoneyDashboard } from "@/components/money/money-dashboard";
+import { TreasuryWorkspace } from "@/components/treasury/treasury-workspace";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { loadMoneyDashboard } from "@/modules/money";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import { loadTreasuryDashboard } from "@/modules/treasury";
 
 type OrganizationMoneyPageProps = {
   params: Promise<{
@@ -15,15 +16,28 @@ type OrganizationMoneyPageProps = {
     party?: string;
     work?: string;
     due?: string;
+    tab?: string;
+    withdrawalCurrency?: string;
+    withdrawalAmount?: string;
   }>;
 };
 
 export const metadata: Metadata = {
-  title: "Dinero",
+  title: "Tesoreria",
 };
 
 function parseDueFilter(value: string | null | undefined) {
   return value === "overdue" || value === "week" ? value : null;
+}
+
+function parseTreasuryTab(value: string | null | undefined) {
+  return value === "banks"
+    || value === "vales"
+    || value === "receivables"
+    || value === "open-items"
+    || value === "subledger"
+    ? value
+    : "summary";
 }
 
 export default async function OrganizationMoneyPage({
@@ -33,14 +47,21 @@ export default async function OrganizationMoneyPage({
   const { slug } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const data = await loadMoneyDashboard(getSupabaseServiceRoleClient(), {
+  const supabase = getSupabaseServiceRoleClient();
+  const [moneyData, treasuryData] = await Promise.all([
+    loadMoneyDashboard(supabase, {
     organizationId: organization.id,
     organizationSlug: organization.slug,
     searchTerm: resolvedSearchParams.q ?? null,
     partyId: resolvedSearchParams.party ?? null,
     workUnitId: resolvedSearchParams.work ?? null,
     dueFilter: parseDueFilter(resolvedSearchParams.due),
-  });
+    }),
+    loadTreasuryDashboard(supabase, {
+      organizationId: organization.id,
+      organizationSlug: organization.slug,
+    }),
+  ]);
 
   return (
     <PrivateDashboardShell
@@ -48,12 +69,19 @@ export default async function OrganizationMoneyPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Dinero"
-      toolbarLabel="Dinero"
-      description="Deudores, acreedores, vencimientos y saldos vivos conectados a la operacion."
+      title="Tesoreria"
+      toolbarLabel="Tesoreria"
+      description="Caja bancaria manual, vales, vencimientos, cobros y deudores/acreedores."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "money")}
     >
-      <MoneyDashboard slug={organization.slug} data={data} />
+      <TreasuryWorkspace
+        slug={organization.slug}
+        data={treasuryData}
+        moneyData={moneyData}
+        activeTab={parseTreasuryTab(resolvedSearchParams.tab)}
+        withdrawalCurrency={resolvedSearchParams.withdrawalCurrency ?? null}
+        withdrawalAmount={resolvedSearchParams.withdrawalAmount ?? null}
+      />
     </PrivateDashboardShell>
   );
 }

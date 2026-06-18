@@ -36,7 +36,7 @@ type OrganizationOpenItemsPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Dinero",
+  title: "Subledger",
 };
 
 function buildPageHref(
@@ -110,9 +110,9 @@ export default async function OrganizationOpenItemsPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Dinero"
-      toolbarLabel="Dinero"
-      description="Deudores, acreedores, vencimientos y saldos vivos sin depender del estado del documento."
+      title="Subledger"
+      toolbarLabel="Subledger"
+      description="Open items tecnicos para deudores, acreedores, vencimientos y settlements."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "money")}
     >
       <div className="space-y-4">

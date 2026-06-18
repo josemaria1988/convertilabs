@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+const fs = require("node:fs");
+const path = require("node:path");
 const { test, assert } = require("./testkit.cjs");
 
 const {
@@ -34,7 +36,7 @@ test("private navigation exposes the Convertilabs 2.0 operating menu", () => {
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
+    ["Inicio", "Trabajos", "Documentos", "Tesoreria", "Agenda", "Mas"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
@@ -55,6 +57,23 @@ test("public and workspace navigation mirror the operational primary sections", 
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
+    ["Inicio", "Trabajos", "Documentos", "Tesoreria", "Agenda", "Mas"],
   );
+});
+
+test("treasury aliases redirect to the canonical money route", () => {
+  const projectRoot = path.resolve(__dirname, "..");
+  const files = [
+    path.join(projectRoot, "app", "treasury", "page.tsx"),
+    path.join(projectRoot, "app", "tesoreria", "page.tsx"),
+    path.join(projectRoot, "app", "app", "o", "[slug]", "treasury", "page.tsx"),
+    path.join(projectRoot, "app", "app", "o", "[slug]", "tesoreria", "page.tsx"),
+  ];
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+
+    assert.match(source, /redirect\(/);
+    assert.match(source, /\/money/);
+  }
 });
