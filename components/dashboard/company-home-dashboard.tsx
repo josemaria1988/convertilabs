@@ -256,6 +256,14 @@ export function CompanyHomeDashboard({
               <span>{data.availability.directory ? data.summary.directoryParties : "--"}</span>
             </div>
             <div className="ui-subtle-row">
+              <span>Solicitudes abiertas</span>
+              <span>{data.availability.intake ? data.summary.openWorkIntakeItems : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
+              <span>Solicitudes a revisar</span>
+              <span>{data.availability.intake ? data.summary.workIntakeNeedsReview : "--"}</span>
+            </div>
+            <div className="ui-subtle-row">
               <span>Open items visibles</span>
               <span>{data.availability.money ? data.summary.openMoneyItems : "--"}</span>
             </div>
@@ -283,7 +291,50 @@ export function CompanyHomeDashboard({
         </section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-4">
+        <section className="ui-panel">
+          <div className="ui-panel-header">
+            <div>
+              <h2 className="text-[16px] font-semibold text-white">Solicitudes</h2>
+              <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+                Cotizaciones o pedidos pendientes antes de ser trabajo.
+              </p>
+            </div>
+            <LoadingLink
+              href={`/app/o/${organizationSlug}/work#work-intake`}
+              pendingLabel="Abriendo..."
+              className="ui-button ui-button--secondary"
+            >
+              Abrir
+            </LoadingLink>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {!data.availability.intake ? (
+              <div className="text-sm text-[color:var(--color-muted)]">work_intake_items no esta disponible.</div>
+            ) : data.intakeItems.length === 0 ? (
+              <div className="text-sm text-[color:var(--color-muted)]">No hay solicitudes abiertas.</div>
+            ) : (
+              data.intakeItems.map((item) => (
+                <LoadingLink
+                  key={item.id}
+                  href={`/app/o/${organizationSlug}/work#work-intake`}
+                  pendingLabel="Abriendo..."
+                  className="ui-subtle-row"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-white">{item.title}</p>
+                    <p className="mt-1 text-[12px] text-[color:var(--color-muted)]">
+                      {item.sourceType.replace(/_/g, " ")} / {formatDate(item.dueDate ?? item.createdAt)}
+                    </p>
+                  </div>
+                  <span>{item.status.replace(/_/g, " ")}</span>
+                </LoadingLink>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="ui-panel">
           <div className="ui-panel-header">
             <div>
@@ -356,7 +407,7 @@ export function CompanyHomeDashboard({
         <section className="ui-panel">
           <div className="ui-panel-header">
             <div>
-              <h2 className="text-[16px] font-semibold text-white">Tesoreria</h2>
+              <h2 className="text-[16px] font-semibold text-white">Dinero</h2>
               <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
                 Caja libre, bancos y saldos vivos ordenados por vencimiento.
               </p>

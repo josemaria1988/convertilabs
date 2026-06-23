@@ -23,7 +23,7 @@ type OrganizationMoneyPageProps = {
 };
 
 export const metadata: Metadata = {
-  title: "Tesoreria",
+  title: "Dinero",
 };
 
 function parseDueFilter(value: string | null | undefined) {
@@ -69,9 +69,9 @@ export default async function OrganizationMoneyPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Tesoreria"
-      toolbarLabel="Tesoreria"
-      description="Caja bancaria manual, vales, vencimientos, cobros y deudores/acreedores."
+      title="Dinero"
+      toolbarLabel="Dinero"
+      description="Deudores, acreedores, cobros, pagos, vencimientos y tesoreria."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "money")}
     >
       <TreasuryWorkspace

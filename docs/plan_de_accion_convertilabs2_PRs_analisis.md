@@ -1225,18 +1225,17 @@ Si algo no se pudo correr, explicarlo.
 Cada vez que se ejecute un PR, marcarlo en esta lista como realizado:
 
 - PR 1 — Baseline Convertilabs 2.0 y reglas de arquitectura. - OK
-- PR 2 — Lenguaje, navegación y frontera Dinero/Tesorería.
-- PR 3 — Modelo canónico y bridges legacy.
-- PR 4 — Fixture/playbook Nueva Palmira.
-- PR 5 — Zeta read-only validation.
-- PR 6 — Mapping Zeta a party/work_unit/document con resolución humana.
-- PR 7 — Intake manual de cotizaciones/oportunidades.
-- PR 8 — Intake web/API tokenizado.
-- PR 9 — Intake email con revisión humana.
-- PR 10 — Dinero canónico mínimo.
-- PR 11 — Margen documental estimado por trabajo.
-- PR 12 — Vista de Trabajo Nueva Palmira.
-- PR 13 — Inicio ejecutivo Convertilabs 2.0.
-- PR 14 — Procesos administrativos mínimos.
+- PR 2 — Lenguaje, navegación y frontera Dinero/Tesorería. - OK
+- PR 3 — Modelo canónico y bridges legacy. - OK
+- PR 4 — Fixture/playbook Nueva Palmira. - OK
+- PR 5 — Zeta read-only validation. - OK
+- PR 6 — Mapping Zeta a party/work_unit/document con resolución humana. - OK
+- PR 7 — Intake manual de cotizaciones/oportunidades. - OK
+- PR 8 — Intake web/API tokenizado. - OK
+- PR 9 — Intake email con revisión humana. - OK
+- PR 10 — Dinero canónico mínimo. - OK
+- PR 11 — Margen documental estimado por trabajo. - OK
+- PR 12 — Vista de Trabajo Nueva Palmira. - OK
+- PR 13 — Inicio ejecutivo Convertilabs 2.0. - OK
+- PR 14 — Procesos administrativos mínimos. - OK
 - PR futuro — Escritura controlada a Zeta.
-

@@ -8,7 +8,16 @@ import {
   canMutateWorkUnit,
   listOrganizationWorkUnits,
 } from "@/modules/work";
-import { createOrganizationWorkUnitAction } from "./actions";
+import { listWorkIntakeItems } from "@/modules/work-intake";
+import {
+  convertWorkIntakeToWorkUnitAction,
+  createOrganizationWorkUnitAction,
+  createWorkIntakeFollowUpTaskAction,
+  createWorkIntakeItemAction,
+  linkWorkIntakeToPartyAction,
+  linkWorkIntakeToWorkUnitAction,
+  updateWorkIntakeStatusAction,
+} from "./actions";
 
 type OrganizationWorkPageProps = {
   params: Promise<{
@@ -25,10 +34,17 @@ export default async function OrganizationWorkPage({
 }: OrganizationWorkPageProps) {
   const { slug } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
-  const work = await listOrganizationWorkUnits(
-    getSupabaseServiceRoleClient(),
-    organization.id,
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const [work, workIntake] = await Promise.all([
+    listOrganizationWorkUnits(
+      supabase,
+      organization.id,
+    ),
+    listWorkIntakeItems(supabase, {
+      organizationId: organization.id,
+      limit: 30,
+    }),
+  ]);
 
   return (
     <PrivateDashboardShell
@@ -47,7 +63,14 @@ export default async function OrganizationWorkPage({
         isAvailable={work.isAvailable}
         items={work.items}
         customerOptions={work.customerOptions}
+        workIntake={workIntake}
         createAction={createOrganizationWorkUnitAction}
+        createIntakeAction={createWorkIntakeItemAction}
+        linkIntakePartyAction={linkWorkIntakeToPartyAction}
+        linkIntakeWorkAction={linkWorkIntakeToWorkUnitAction}
+        convertIntakeAction={convertWorkIntakeToWorkUnitAction}
+        createIntakeTaskAction={createWorkIntakeFollowUpTaskAction}
+        updateIntakeStatusAction={updateWorkIntakeStatusAction}
       />
     </PrivateDashboardShell>
   );

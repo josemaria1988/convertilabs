@@ -7,6 +7,7 @@ import {
   buildCompanyHomeDashboard,
   type CompanyHomeDashboard,
   type CompanyHomeDocumentSignal,
+  type CompanyHomeIntakeSignal,
   type CompanyHomeMoneySignal,
   type CompanyHomeOperationsSignal,
   type CompanyHomePartySignal,
@@ -41,6 +42,18 @@ type PartyHomeRow = {
   status: string | null;
   source: string | null;
   updated_at: string | null;
+  created_at: string | null;
+};
+
+type WorkIntakeHomeRow = {
+  id: string;
+  title: string | null;
+  status: string | null;
+  source_type: string | null;
+  party_id: string | null;
+  work_unit_id: string | null;
+  due_date: string | null;
+  next_action: string | null;
   created_at: string | null;
 };
 
@@ -114,6 +127,20 @@ function mapPartyRow(row: PartyHomeRow): CompanyHomePartySignal {
     status: row.status,
     source: row.source,
     updatedAt: row.updated_at ?? row.created_at,
+  };
+}
+
+function mapWorkIntakeRow(row: WorkIntakeHomeRow): CompanyHomeIntakeSignal {
+  return {
+    id: row.id,
+    title: row.title ?? "Solicitud sin titulo",
+    status: row.status ?? "captured",
+    sourceType: row.source_type ?? "manual",
+    partyId: row.party_id,
+    workUnitId: row.work_unit_id,
+    dueDate: row.due_date,
+    nextAction: row.next_action,
+    createdAt: row.created_at,
   };
 }
 
@@ -250,6 +277,43 @@ async function loadPartySignals(
     isAvailable: true,
     totalCount: count ?? data?.length ?? 0,
     recent: ((data as PartyHomeRow[] | null) ?? []).map(mapPartyRow),
+  };
+}
+
+async function loadWorkIntakeSignals(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<{
+  isAvailable: boolean;
+  totalCount: number;
+  recent: CompanyHomeIntakeSignal[];
+}> {
+  const { data, error } = await supabase
+    .from("work_intake_items")
+    .select("id, title, status, source_type, party_id, work_unit_id, due_date, next_action, created_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(80);
+
+  if (error) {
+    if (isMissingSupabaseRelationError(error, "work_intake_items")) {
+      return {
+        isAvailable: false,
+        totalCount: 0,
+        recent: [],
+      };
+    }
+
+    throw new Error(error.message);
+  }
+
+  const rows = ((data as WorkIntakeHomeRow[] | null) ?? [])
+    .filter((row) => !["converted_to_work", "won", "lost", "archived"].includes(row.status ?? ""));
+
+  return {
+    isAvailable: true,
+    totalCount: rows.length,
+    recent: rows.map(mapWorkIntakeRow),
   };
 }
 
@@ -492,7 +556,7 @@ export async function loadCompanyHomeDashboard(
     organizationSlug: string;
   },
 ): Promise<CompanyHomeDashboard> {
-  const [documents, work, directory, money, treasury, operations] = await Promise.all([
+  const [documents, work, directory, intake, money, treasury, operations] = await Promise.all([
     listAllOrganizationWorkspaceDocuments({
       organizationId: input.organizationId,
       organizationSlug: input.organizationSlug,
@@ -501,6 +565,7 @@ export async function loadCompanyHomeDashboard(
     }),
     loadWorkUnitSignals(supabase, input.organizationId),
     loadPartySignals(supabase, input.organizationId),
+    loadWorkIntakeSignals(supabase, input.organizationId),
     loadMoneySignals(supabase, input.organizationId),
     loadTreasurySignals(supabase, input),
     loadOperationsSignals(supabase, input.organizationId),
@@ -515,6 +580,7 @@ export async function loadCompanyHomeDashboard(
       })),
     work,
     directory,
+    intake,
     money,
     treasury,
     operations,

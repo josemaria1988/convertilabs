@@ -29,6 +29,18 @@ export type CompanyHomePartySignal = {
   updatedAt: string | null;
 };
 
+export type CompanyHomeIntakeSignal = {
+  id: string;
+  title: string;
+  status: string;
+  sourceType: string;
+  partyId: string | null;
+  workUnitId: string | null;
+  dueDate: string | null;
+  createdAt: string | null;
+  nextAction: string | null;
+};
+
 export type CompanyHomeMoneySignal = {
   id: string;
   counterpartyName: string | null;
@@ -76,6 +88,11 @@ export type CompanyHomePresenterInput = {
     totalCount: number;
     recent: CompanyHomePartySignal[];
   };
+  intake?: {
+    isAvailable: boolean;
+    totalCount: number;
+    recent: CompanyHomeIntakeSignal[];
+  };
   money: {
     isAvailable: boolean;
     totalCount: number;
@@ -116,6 +133,9 @@ export type CompanyHomeDashboard = {
     treasuryAlertCount: number;
     treasuryCriticalAlertCount: number;
     directoryParties: number;
+    openWorkIntakeItems: number;
+    workIntakeNeedsReview: number;
+    workIntakeWithoutParty: number;
     openTasks: number;
     blockedTasks: number;
     continuityRisks: number;
@@ -128,6 +148,7 @@ export type CompanyHomeDashboard = {
   metrics: CompanyHomeMetricCard[];
   actions: CompanyHomeAction[];
   documents: CompanyHomeDocumentSignal[];
+  intakeItems: CompanyHomeIntakeSignal[];
   workUnits: CompanyHomeWorkUnitSignal[];
   parties: CompanyHomePartySignal[];
   moneyItems: CompanyHomeMoneySignal[];
@@ -135,6 +156,7 @@ export type CompanyHomeDashboard = {
     work: boolean;
     directory: boolean;
     money: boolean;
+    intake: boolean;
     treasury: boolean;
     operations: boolean;
   };
@@ -162,6 +184,10 @@ function isActiveWorkUnit(workUnit: CompanyHomeWorkUnitSignal) {
   return !["archived", "cancelled", "completed"].includes(workUnit.status);
 }
 
+function isOpenIntake(item: CompanyHomeIntakeSignal) {
+  return !["converted_to_work", "won", "lost", "archived"].includes(item.status);
+}
+
 export function buildCompanyHomeDashboard(
   input: CompanyHomePresenterInput,
 ): CompanyHomeDashboard {
@@ -170,6 +196,15 @@ export function buildCompanyHomeDashboard(
   const processingDocuments = input.documents.filter((document) => document.bucket === "processing");
   const actionableDocuments = input.documents.filter((document) => document.bucket !== "done");
   const activeWorkUnits = input.work.recent.filter(isActiveWorkUnit);
+  const intake = input.intake ?? {
+    isAvailable: false,
+    totalCount: 0,
+    recent: [],
+  };
+  const openIntakeItems = intake.recent.filter(isOpenIntake);
+  const intakeNeedsReview = openIntakeItems.filter((item) =>
+    ["captured", "needs_review"].includes(item.status));
+  const intakeWithoutParty = openIntakeItems.filter((item) => !item.partyId);
   const overdueMoneyItems = input.money.recent.filter((item) => item.daysOverdue > 0);
   const outstandingAmount = input.money.recent.reduce(
     (sum, item) => sum + item.outstandingAmount,
@@ -201,6 +236,23 @@ export function buildCompanyHomeDashboard(
 
   const metrics: CompanyHomeMetricCard[] = [
     {
+      key: "intake",
+      label: "Solicitudes",
+      value: intake.isAvailable ? formatCount(openIntakeItems.length) : "--",
+      hint: intake.isAvailable
+        ? "Pedidos, cotizaciones y oportunidades pendientes de clasificar."
+        : "La tabla work_intake_items no esta disponible.",
+      href: `/app/o/${slug}/work#work-intake`,
+      cta: "Abrir solicitudes",
+      tone: intakeNeedsReview.length > 0
+        ? "info"
+        : intakeWithoutParty.length > 0
+          ? "warning"
+          : openIntakeItems.length > 0
+            ? "success"
+            : "neutral",
+    },
+    {
       key: "work",
       label: "Trabajos activos",
       value: input.work.isAvailable ? formatCount(input.work.totalCount) : "--",
@@ -222,7 +274,7 @@ export function buildCompanyHomeDashboard(
     },
     {
       key: "money",
-      label: hasTreasurySignal ? "Caja libre conservadora" : "Tesoreria pendiente",
+      label: hasTreasurySignal ? "Caja libre conservadora" : "Dinero pendiente",
       value: hasTreasurySignal
         ? formatMoneyAmount(treasury.conservativeAvailableCash, treasury.currencyCode ?? "UYU")
         : input.money.isAvailable
@@ -234,7 +286,7 @@ export function buildCompanyHomeDashboard(
         ? "Suma visible de deudores y acreedores con saldo vivo."
         : "La vista de open items no esta disponible.",
       href: `/app/o/${slug}/money`,
-      cta: "Abrir tesoreria",
+      cta: "Abrir dinero",
       tone: hasTreasurySignal
         ? treasury.criticalAlertCount > 0 || treasury.conservativeAvailableCash < 0
           ? "danger"
@@ -282,6 +334,26 @@ export function buildCompanyHomeDashboard(
   ];
 
   const actions: CompanyHomeAction[] = [
+    intakeNeedsReview.length > 0
+      ? {
+        key: "work_intake_review",
+        title: `Revisar ${formatCount(intakeNeedsReview.length)} solicitud(es)`,
+        description: "Hay pedidos o cotizaciones esperando cliente, trabajo o proxima accion.",
+        href: `/app/o/${slug}/work#work-intake`,
+        cta: "Abrir solicitudes",
+        tone: "info",
+      }
+      : null,
+    intakeWithoutParty.length > 0
+      ? {
+        key: "work_intake_without_party",
+        title: `Asociar cliente en ${formatCount(intakeWithoutParty.length)} solicitud(es)`,
+        description: "Hay entrada comercial sin party canonico. No conviene crear documentos ni ventas todavia.",
+        href: `/app/o/${slug}/work#work-intake`,
+        cta: "Resolver cliente",
+        tone: "warning",
+      }
+      : null,
     hasTreasurySignal && treasury.alertCount > 0
       ? {
         key: "treasury_alerts",
@@ -290,7 +362,7 @@ export function buildCompanyHomeDashboard(
           ? "Hay caja libre o vencimientos en estado critico para revisar antes de mover fondos."
           : "Hay renovaciones, vencimientos o cobros que conviene confirmar.",
         href: `/app/o/${slug}/money`,
-        cta: "Abrir tesoreria",
+        cta: "Abrir dinero",
         tone: treasury.criticalAlertCount > 0 ? "danger" : "warning",
       }
       : null,
@@ -408,6 +480,9 @@ export function buildCompanyHomeDashboard(
       treasuryAlertCount: hasTreasurySignal ? treasury.alertCount : 0,
       treasuryCriticalAlertCount: hasTreasurySignal ? treasury.criticalAlertCount : 0,
       directoryParties: input.directory.totalCount,
+      openWorkIntakeItems: openIntakeItems.length,
+      workIntakeNeedsReview: intakeNeedsReview.length,
+      workIntakeWithoutParty: intakeWithoutParty.length,
       openTasks: operations.totalTasks,
       blockedTasks: operations.blockedTasks,
       continuityRisks: operations.continuityRiskCount,
@@ -420,6 +495,7 @@ export function buildCompanyHomeDashboard(
     metrics,
     actions,
     documents: input.documents.slice(0, 8),
+    intakeItems: intake.recent.slice(0, 6),
     workUnits: input.work.recent.slice(0, 6),
     parties: input.directory.recent.slice(0, 6),
     moneyItems: input.money.recent.slice(0, 6),
@@ -427,6 +503,7 @@ export function buildCompanyHomeDashboard(
       work: input.work.isAvailable,
       directory: input.directory.isAvailable,
       money: input.money.isAvailable,
+      intake: intake.isAvailable,
       treasury: hasTreasurySignal,
       operations: operations.isAvailable,
     },

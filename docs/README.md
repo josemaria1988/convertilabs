@@ -10,6 +10,8 @@ Si un archivo historico anterior contradice la base 2.0, gana la base 2.0.
 2. [Analisis arquitectonico](analisis-arquitectura-convertilabs-2.0.md)
 3. [Plan de accion por PRs](plan_de_accion_convertilabs2_PRs_analisis.md)
 4. [Agent rules](agent_rules.md)
+5. [Lenguaje, navegacion y dominios](convertilabs-2.0-navigation-and-domains.md)
+6. [Modelo canonico y bridges legacy](convertilabs-2.0-canonical-model-and-bridges.md)
 
 ## Tesis oficial
 
@@ -37,7 +39,10 @@ Estas referencias no son la tesis del producto, pero siguen siendo utiles para i
 
 - [Contrato endpoints Zeta](zetasoftware-endpoints-contract.md)
 - [Notas Bandeja Zeta](zetasoftware-bandeja-contract-notes.md)
+- [Validacion Zeta read-only](integrations/zeta-readonly-validation-plan.md)
+- [Work intake web/email](integrations/work-intake-web-email.md)
 - [Role map y plantillas contables Zeta](pr-next-zeta-posting-templates-role-map.md)
+- [Playbook Nueva Palmira](playbooks/nueva-palmira-acceptance-test.md)
 - [PR-13 hardening piloto interno](pr-13-hardening-piloto-interno.md)
 - [Piloto interno Rontil - hallazgos](piloto-interno-rontil-hallazgos.md)
 - `docs/Api ZetaSoftware collection.json` como fuente externa cruda para contratos Zeta.

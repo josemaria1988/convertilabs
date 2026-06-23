@@ -15,7 +15,7 @@ El mayor cambio no es tecnologico. Es de centro de gravedad:
 
 El codigo acompaña parte de esa vision, pero quedan contradicciones:
 
-- la documentacion nueva habla de `Dinero`; la UI principal hoy dice `Tesoreria`;
+- la documentacion nueva habla de `Dinero`; la UI principal decia `Tesoreria` y queda resuelto en PR 2: `Dinero` es dominio principal, `Tesoreria` subdominio/alias;
 - hay dominios canonicos nuevos, pero los legados `vendors`, `customers`, `organization_cost_centers` y `documents.cost_center_id` siguen vivos;
 - Zeta esta bastante avanzado como integracion estructurada, pero falta validar contra entorno real y cerrar el mapeo operativo Zeta -> trabajo;
 - existe configuracion de email de CFE, pero no vi un pipeline comercial de cotizaciones desde web/email;
@@ -24,8 +24,9 @@ El codigo acompaña parte de esa vision, pero quedan contradicciones:
 
 Verificacion ejecutada:
 
-- `npm test`: 434 tests pasados, 0 fallos.
-- No ejecute `npm run typecheck` porque el script corre `next typegen` y puede crear artefactos `.next`, fuera del alcance "no crear archivos salvo el reporte".
+- `npm test`: 441 tests pasados, 0 fallos.
+- `npm run typecheck`: OK.
+- `npm run lint`: 0 errores, 2 warnings existentes en Treasury.
 - No valide credenciales reales de Zeta, Supabase remoto, Inngest real, email real ni banco real.
 
 ## 2. Estado actual del producto según documentación vieja

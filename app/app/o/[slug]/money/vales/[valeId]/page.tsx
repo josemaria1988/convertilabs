@@ -44,8 +44,8 @@ export default async function TreasuryValeDetailPage({
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Tesoreria"
-      toolbarLabel="Tesoreria"
+      title="Dinero"
+      toolbarLabel="Dinero"
       description="Detalle operativo de vale bancario, terminos y eventos."
       navItems={buildOrganizationPrivateNavItems(organization.slug, "money")}
     >

@@ -10,6 +10,7 @@ import {
   listWorkUnitDocumentOptions,
   loadWorkUnitDetail,
 } from "@/modules/work";
+import { listWorkIntakeItems } from "@/modules/work-intake";
 import { assignDocumentToCurrentWorkUnitAction } from "../actions";
 
 type OrganizationWorkDetailPageProps = {
@@ -29,7 +30,7 @@ export default async function OrganizationWorkDetailPage({
   const { slug, workUnitId } = await params;
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   const supabase = getSupabaseServiceRoleClient();
-  const [workUnit, documentOptions] = await Promise.all([
+  const [workUnit, documentOptions, workIntake] = await Promise.all([
     loadWorkUnitDetail(supabase, {
       organizationId: organization.id,
       workUnitId,
@@ -37,6 +38,12 @@ export default async function OrganizationWorkDetailPage({
     listWorkUnitDocumentOptions(supabase, {
       organizationId: organization.id,
       workUnitId,
+    }),
+    listWorkIntakeItems(supabase, {
+      organizationId: organization.id,
+      workUnitId,
+      includeClosed: true,
+      limit: 20,
     }),
   ]);
 
@@ -60,6 +67,7 @@ export default async function OrganizationWorkDetailPage({
         workUnit={workUnit}
         canManage={canMutateWorkUnit(organization.role)}
         documentOptions={documentOptions}
+        workIntakeItems={workIntake.items}
         assignDocumentAction={assignDocumentToCurrentWorkUnitAction}
       />
     </PrivateDashboardShell>

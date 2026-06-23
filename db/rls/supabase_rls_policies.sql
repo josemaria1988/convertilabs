@@ -4249,3 +4249,59 @@ with check (
     ]
   )
 );
+alter table public.work_intake_items enable row level security;
+
+drop policy if exists "work_intake_items_select_member" on public.work_intake_items;
+create policy "work_intake_items_select_member"
+on public.work_intake_items
+for select
+using (public.is_active_member(organization_id));
+
+drop policy if exists "work_intake_items_insert_operations_roles" on public.work_intake_items;
+create policy "work_intake_items_insert_operations_roles"
+on public.work_intake_items
+for insert
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);
+
+drop policy if exists "work_intake_items_update_operations_roles" on public.work_intake_items;
+create policy "work_intake_items_update_operations_roles"
+on public.work_intake_items
+for update
+using (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+)
+with check (
+  public.has_org_role(
+    organization_id,
+    array[
+      'owner'::public.member_role,
+      'admin'::public.member_role,
+      'admin_processing'::public.member_role,
+      'accountant'::public.member_role,
+      'reviewer'::public.member_role,
+      'operator'::public.member_role
+    ]
+  )
+);

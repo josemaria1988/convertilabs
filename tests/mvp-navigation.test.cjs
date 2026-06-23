@@ -36,7 +36,7 @@ test("private navigation exposes the Convertilabs 2.0 operating menu", () => {
 
   assert.deepEqual(
     navItems.map((item) => item.label),
-    ["Inicio", "Trabajos", "Documentos", "Tesoreria", "Agenda", "Mas"],
+    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
   );
   assert.deepEqual(
     navItems.map((item) => item.href),
@@ -57,7 +57,7 @@ test("public and workspace navigation mirror the operational primary sections", 
   assert.deepEqual(marketingNav.map((item) => item.label), ["Contacto"]);
   assert.deepEqual(
     workspaceNav.map((item) => item.label),
-    ["Inicio", "Trabajos", "Documentos", "Tesoreria", "Agenda", "Mas"],
+    ["Inicio", "Trabajos", "Documentos", "Dinero", "Agenda", "Mas"],
   );
 });
 

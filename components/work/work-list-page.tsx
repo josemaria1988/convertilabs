@@ -1,6 +1,8 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { WorkIntakePanel } from "@/components/work-intake/work-intake-panel";
 import { CustomerPartySearchField } from "@/components/work/customer-party-search-field";
+import type { WorkIntakeItem } from "@/modules/work-intake";
 import type {
   WorkUnitCustomerOption,
   WorkUnitListItem,
@@ -12,7 +14,17 @@ type WorkListPageProps = {
   isAvailable: boolean;
   items: WorkUnitListItem[];
   customerOptions: WorkUnitCustomerOption[];
+  workIntake: {
+    isAvailable: boolean;
+    items: WorkIntakeItem[];
+  };
   createAction: (formData: FormData) => void | Promise<void>;
+  createIntakeAction: (formData: FormData) => void | Promise<void>;
+  linkIntakePartyAction: (formData: FormData) => void | Promise<void>;
+  linkIntakeWorkAction: (formData: FormData) => void | Promise<void>;
+  convertIntakeAction: (formData: FormData) => void | Promise<void>;
+  createIntakeTaskAction: (formData: FormData) => void | Promise<void>;
+  updateIntakeStatusAction: (formData: FormData) => void | Promise<void>;
 };
 
 function formatMoney(value: number | null, currencyCode = "UYU") {
@@ -93,7 +105,14 @@ export function WorkListPage({
   isAvailable,
   items,
   customerOptions,
+  workIntake,
   createAction,
+  createIntakeAction,
+  linkIntakePartyAction,
+  linkIntakeWorkAction,
+  convertIntakeAction,
+  createIntakeTaskAction,
+  updateIntakeStatusAction,
 }: WorkListPageProps) {
   const activeItems = items.filter((item) =>
     !["archived", "cancelled", "completed"].includes(item.status));
@@ -139,6 +158,21 @@ export function WorkListPage({
           </article>
         </div>
       </section>
+
+      <WorkIntakePanel
+        slug={slug}
+        canManage={canManage}
+        isAvailable={workIntake.isAvailable}
+        items={workIntake.items}
+        customerOptions={customerOptions}
+        workOptions={items}
+        createAction={createIntakeAction}
+        linkPartyAction={linkIntakePartyAction}
+        linkWorkAction={linkIntakeWorkAction}
+        convertAction={convertIntakeAction}
+        createTaskAction={createIntakeTaskAction}
+        updateStatusAction={updateIntakeStatusAction}
+      />
 
       <section className="ui-panel">
         <div className="ui-panel-header">

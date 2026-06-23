@@ -32,7 +32,8 @@ La documentacion de producto y arquitectura vive en:
 13. `db/schema/12_operations_communications.sql`
 14. `db/schema/13_operational_intelligence.sql`
 15. `db/schema/14_treasury.sql`
-16. `db/rls/supabase_rls_policies.sql`
+16. `db/schema/15_work_intake.sql`
+17. `db/rls/supabase_rls_policies.sql`
 
 ## Modelo Convertilabs 2.0
 
@@ -48,6 +49,7 @@ El schema actual ya contiene piezas del modelo madre:
 - tasks, processes, obligations, capture notes e interactions;
 - operational_suggestions;
 - treasury/bancos/vales.
+- work_intake_items para solicitudes, cotizaciones y oportunidades previas a trabajo.
 
 Las tablas legacy como `vendors`, `customers`, `organization_cost_centers` y `documents.cost_center_id` pueden seguir existiendo como bridges. No deben ser fuente primaria para features nuevas cuando exista `party` o `work_unit`.
 

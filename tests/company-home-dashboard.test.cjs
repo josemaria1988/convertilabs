@@ -106,6 +106,65 @@ test("company home dashboard keeps empty states honest", () => {
   assert.equal(dashboard.summary.actionableDocuments, 0);
 });
 
+test("company home dashboard surfaces pending work intake", () => {
+  const dashboard = buildCompanyHomeDashboard({
+    organizationSlug: "rontil",
+    documents: [],
+    work: {
+      isAvailable: true,
+      totalCount: 1,
+      recent: [],
+    },
+    directory: {
+      isAvailable: true,
+      totalCount: 0,
+      recent: [],
+    },
+    intake: {
+      isAvailable: true,
+      totalCount: 2,
+      recent: [
+        {
+          id: "intake-1",
+          title: "Nueva Palmira",
+          status: "needs_review",
+          sourceType: "web_form",
+          partyId: null,
+          workUnitId: null,
+          dueDate: "2026-06-24",
+          createdAt: "2026-06-23T10:00:00Z",
+          nextAction: "Revisar",
+        },
+        {
+          id: "intake-2",
+          title: "Solicitud ya convertida",
+          status: "converted_to_work",
+          sourceType: "email",
+          partyId: "party-1",
+          workUnitId: "work-1",
+          dueDate: null,
+          createdAt: "2026-06-23T09:00:00Z",
+          nextAction: null,
+        },
+      ],
+    },
+    money: {
+      isAvailable: true,
+      totalCount: 0,
+      recent: [],
+    },
+  });
+
+  assert.equal(dashboard.summary.openWorkIntakeItems, 1);
+  assert.equal(dashboard.summary.workIntakeNeedsReview, 1);
+  assert.equal(dashboard.summary.workIntakeWithoutParty, 1);
+  assert.equal(dashboard.metrics.find((metric) => metric.key === "intake").tone, "info");
+  assert.deepEqual(
+    dashboard.actions.map((action) => action.key),
+    ["work_intake_review", "work_intake_without_party", "load_document"],
+  );
+});
+
 test("company home dashboard uses treasury signal when available", () => {
   const dashboard = buildCompanyHomeDashboard({
     organizationSlug: "rontil",

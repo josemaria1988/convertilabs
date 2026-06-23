@@ -1,5 +1,6 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
+import type { WorkIntakeItem } from "@/modules/work-intake";
 import type {
   WorkUnitDetail,
   WorkUnitDocumentOption,
@@ -10,6 +11,7 @@ type WorkDetailPageProps = {
   workUnit: WorkUnitDetail;
   canManage: boolean;
   documentOptions: WorkUnitDocumentOption[];
+  workIntakeItems: WorkIntakeItem[];
   assignDocumentAction: (formData: FormData) => void | Promise<void>;
 };
 
@@ -74,6 +76,7 @@ export function WorkDetailPage({
   workUnit,
   canManage,
   documentOptions,
+  workIntakeItems,
   assignDocumentAction,
 }: WorkDetailPageProps) {
   const unlinkedDocumentOptions = documentOptions.filter((document) =>
@@ -135,6 +138,44 @@ export function WorkDetailPage({
       <section className="ui-panel">
         <div className="ui-panel-header">
           <div>
+            <h2 className="text-[16px] font-semibold text-white">Origen comercial</h2>
+            <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
+              Solicitudes, cotizaciones o pedidos que derivaron en este trabajo.
+            </p>
+          </div>
+          <LoadingLink
+            href={`/app/o/${slug}/work#work-intake`}
+            pendingLabel="Abriendo..."
+            className="ui-button ui-button--secondary"
+          >
+            Ver solicitudes
+          </LoadingLink>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {workIntakeItems.length === 0 ? (
+            <div className="rounded-[6px] border border-dashed border-[color:var(--color-border)] bg-white/60 px-4 py-6 text-sm text-[color:var(--color-muted)]">
+              No hay solicitud o cotizacion vinculada a este trabajo.
+            </div>
+          ) : (
+            workIntakeItems.map((item) => (
+              <div key={item.id} className="ui-subtle-row">
+                <div className="min-w-0">
+                  <p className="truncate text-white">{item.title}</p>
+                  <p className="mt-1 text-[12px] text-[color:var(--color-muted)]">
+                    {item.sourceType.replace(/_/g, " ")} / {formatDate(item.requestedDate)}
+                  </p>
+                </div>
+                <span>{item.status.replace(/_/g, " ")}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="ui-panel">
+        <div className="ui-panel-header">
+          <div>
             <h2 className="text-[16px] font-semibold text-white">Impacto contable y fiscal</h2>
             <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
               Asientos, open items e IVA derivados de documentos vinculados al trabajo.
@@ -145,7 +186,7 @@ export function WorkDetailPage({
             pendingLabel="Abriendo..."
             className="ui-button ui-button--secondary"
           >
-            Tesoreria
+            Dinero
           </LoadingLink>
         </div>
 
