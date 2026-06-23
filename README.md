@@ -1,60 +1,46 @@
 # Convertilabs
 
-Convertilabs 2.0 es el sistema operativo integral de gestion y continuidad de la empresa: un super ERP personalizado para conectar trabajos, clientes, proveedores, documentos, dinero, contabilidad, IVA, tareas, procesos, evidencia e historial en un solo modelo operativo.
+Convertilabs 2.0 es el sistema operativo integral de gestion de Rontil.
 
-La refundacion esta documentada en:
+No reemplaza ZetaSoftware, la web ni el email. Los conecta y ordena en un modelo propio para operar trabajos, contactos, documentos, ventas, compras, dinero, contabilidad, IVA, tareas, procesos, evidencia y tablero ejecutivo.
 
-- [docs/documento-refundacional-convertilabs.md](docs/documento-refundacional-convertilabs.md)
-- [docs/plan-maestro-version1.md](docs/plan-maestro-version1.md)
-- [docs/00-refundacion-convertilabs-2.md](docs/00-refundacion-convertilabs-2.md)
+## Documentacion principal
 
-## Estado Operativo Actual
+La documentacion viva esta concentrada en:
 
-El repo conserva piezas valiosas de la etapa anterior:
+- [docs/README.md](docs/README.md)
+- [Baseline de arquitectura](docs/convertilabs-2.0-baseline-arquitectura.md)
+- [Analisis arquitectonico](docs/analisis-arquitectura-convertilabs-2.0.md)
+- [Plan de accion por PRs](docs/plan_de_accion_convertilabs2_PRs_analisis.md)
+- [Agent rules](docs/agent_rules.md)
 
-- auth multi-tenant con Supabase;
-- organizaciones, perfiles y memberships;
-- storage privado para documentos;
-- intake documental, procesamiento y reviewer;
-- IA estructurada;
-- Inngest;
-- kernel contable multilinea;
-- reglas contables;
-- IVA Uruguay;
-- cierre;
-- open items;
-- imports/exports;
-- Zeta como integracion externa;
-- audit logs y trazabilidad.
+La documentacion legacy fue retirada o subordinada. Si aparece una contradiccion entre historia vieja y estos documentos, gana Convertilabs 2.0.
 
-La nueva direccion eleva esas piezas hacia un sistema integral basado en:
+## Modelo mental
 
 ```text
-party
-work_unit
-document
-business_event
-money
-accounting
-tax
-task
-process
-interaction
-evidence
+hecho operativo
+-> party/contacto
+-> work_unit/trabajo
+-> document/evidencia
+-> dinero
+-> contabilidad
+-> IVA/cumplimiento
+-> tareas/procesos
+-> Inicio
 ```
 
-## Objetivo Del MVP Refundacional
+El primer corte operativo a validar es Nueva Palmira:
 
-El primer corte operativo debe demostrar el caso `Trabajo Nueva Palmira`:
-
-1. crear cliente como party;
-2. crear trabajo como work unit;
-3. asociar documentos de gasto y venta;
-4. ver ventas, costos y margen basico;
-5. ver deudores, acreedores, cobros y pagos;
-6. ver tareas y vencimientos;
-7. ver impacto contable e IVA cuando aplique;
-8. ver todo resumido en Inicio.
+```text
+cotizacion o solicitud
+-> cliente
+-> trabajo
+-> documentos de venta/gasto
+-> margen
+-> pendientes
+-> tablero
+```
 
 ## Stack
 
@@ -67,7 +53,7 @@ El primer corte operativo debe demostrar el caso `Trabajo Nueva Palmira`:
 - Tailwind CSS 4
 - ESLint 9
 
-## Estructura Principal
+## Estructura principal
 
 ```text
 app/
@@ -84,27 +70,7 @@ tests/
 scripts/
 ```
 
-## Documentacion Principal
-
-- [Agent Rules 2.0](docs/agent_rules.md)
-- [Core product and organization](docs/00-core-product-and-organization.md)
-- [Workflows, UX and surfaces](docs/01-workflows-ux-and-surfaces.md)
-- [Accounting, tax and integrations](docs/02-accounting-tax-and-integrations.md)
-- [Platform, quality and roadmap](docs/03-platform-quality-and-roadmap.md)
-- [Auditoria KEEP / REWRITE / DELETE](docs/auditoria-repo-convertilabs-2-keep-rewrite-delete.md)
-
-## Referencias Tecnicas Subordinadas
-
-Estas referencias siguen siendo utiles, pero no mandan sobre Convertilabs 2.0:
-
-- [Documentacion unificada historica](docs/convertilabs-documentacion-unificada.md)
-- [Backlog Zeta revisado](docs/backlog-convertilabs-zetasoftware-revisado.md)
-- [Contrato endpoints Zeta](docs/zetasoftware-endpoints-contract.md)
-- [Notas Bandeja Zeta](docs/zetasoftware-bandeja-contract-notes.md)
-- [Mobile PWA/TWA](docs/mobile-pwa-twa.md)
-- [App mobile Google Play](docs/app-mobile-googleplay.md)
-
-## Desarrollo Local
+## Desarrollo local
 
 El proyecto requiere un `.env` basado en `.env.example`.
 
@@ -125,7 +91,7 @@ npm run dev
 npm run inngest:dev
 ```
 
-## Scripts Utiles
+## Scripts utiles
 
 ```bash
 npm run lint
@@ -141,21 +107,14 @@ npm run db:smoke:document-upload
 npm run documents:repair:stale-processing
 ```
 
-## Regla De Trabajo
+## Hito documental
 
-La refundacion se ejecuta por cortes:
+Fecha: 2026-06-23.
 
-1. documentacion refundacional;
-2. modelo madre;
-3. Inicio y navegacion;
-4. trabajos;
-5. Nueva Palmira end-to-end;
-6. dinero;
-7. agenda, procesos y continuidad;
-8. directorio e historial;
-9. integracion contable/fiscal;
-10. Zeta 2.0;
-11. IA operativa;
-12. hardening y piloto interno.
+Commit sugerido:
 
-No construir modulos aislados. Toda feature nueva debe conectarse al modelo madre o justificar por que existe.
+```text
+docs: consolidar base documental Convertilabs 2.0
+```
+
+Este hito marca el punto en que la documentacion del repo queda reducida a la base Convertilabs 2.0 y referencias tecnicas vigentes.

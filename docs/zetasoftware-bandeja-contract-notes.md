@@ -1,4 +1,4 @@
-> **Estado Convertilabs 2.0:** este documento pertenece a la etapa anterior y queda subordinado al documento refundacional, al plan maestro 2.0 y a los docs oficiales actuales. Usarlo solo como referencia historica o tecnica.
+> **Estado Convertilabs 2.0:** referencia tecnica vigente para Bandeja de Entrada de Asientos Zeta. Queda subordinada a `docs/convertilabs-2.0-baseline-arquitectura.md`, `docs/analisis-arquitectura-convertilabs-2.0.md`, `docs/plan_de_accion_convertilabs2_PRs_analisis.md` y `docs/agent_rules.md`.
 
 # Bandeja de Entrada de Asientos Zetasoftware
 

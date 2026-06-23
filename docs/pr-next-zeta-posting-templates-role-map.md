@@ -1,10 +1,10 @@
-> **Estado Convertilabs 2.0:** este documento pertenece a la etapa anterior y queda subordinado al documento refundacional, al plan maestro 2.0 y a los docs oficiales actuales. Usarlo solo como referencia historica o tecnica.
+> **Estado Convertilabs 2.0:** referencia tecnica vigente para role map y plantillas contables Zeta. Queda subordinada a `docs/convertilabs-2.0-baseline-arquitectura.md`, `docs/analisis-arquitectura-convertilabs-2.0.md`, `docs/plan_de_accion_convertilabs2_PRs_analisis.md` y `docs/agent_rules.md`.
 
 # PR siguiente - Plantillas base por familia operativa y Role Map Zeta
 
-Fecha de planificacion: 2026-04-20
-Estado: documentado, pendiente de implementacion.
-Tipo: PR acotado de kernel contable y UX de reviewer.
+Fecha de planificacion original: 2026-04-20
+Estado: referencia tecnica conservada; revisar codigo actual antes de usar como plan vigente.
+Tipo: kernel contable, UX de reviewer y role map Zeta.
 
 ## 1. Contexto
 
@@ -62,7 +62,7 @@ Importante: el caso pagado por socio no usa Banco Rontil ni Caja Rontil, porque 
 
 ## 3. Principios obligatorios
 
-- No convertir Convertilabs en un ERP ni en una UI manual de asientos.
+- No convertir Convertilabs en un ERP generico ni en una UI manual de asientos.
 - No pedir cuentas sueltas como flujo principal cuando corresponde plantilla y roles.
 - No inventar cuentas.
 - No usar cuentas no imputables.
@@ -75,13 +75,12 @@ Importante: el caso pagado por socio no usa Banco Rontil ni Caja Rontil, porque 
 
 ## 4. Archivos a leer antes de implementar
 
-Antes de editar codigo en este PR:
+Antes de editar codigo relacionado con esta referencia:
 
 1. `docs/agent_rules.md`
-2. `docs/00-core-product-and-organization.md`
-3. `docs/01-workflows-ux-and-surfaces.md`
-4. `docs/02-accounting-tax-and-integrations.md`
-5. `docs/03-platform-quality-and-roadmap.md`
+2. `docs/convertilabs-2.0-baseline-arquitectura.md`
+3. `docs/analisis-arquitectura-convertilabs-2.0.md`
+4. `docs/plan_de_accion_convertilabs2_PRs_analisis.md`
 
 Luego inspeccionar:
 
