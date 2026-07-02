@@ -200,12 +200,10 @@ function UnavailableState({ slug, moneyData }: { slug: string; moneyData: MoneyD
 }
 
 function SummaryTab({
-  slug,
   data,
   withdrawalCurrency,
   withdrawalAmount,
 }: {
-  slug: string;
   data: TreasuryDashboardData;
   withdrawalCurrency?: string | null;
   withdrawalAmount?: string | null;
@@ -679,7 +677,6 @@ export function TreasuryWorkspace({
 
       {activeTab === "summary" ? (
         <SummaryTab
-          slug={slug}
           data={data}
           withdrawalCurrency={withdrawalCurrency}
           withdrawalAmount={withdrawalAmount}

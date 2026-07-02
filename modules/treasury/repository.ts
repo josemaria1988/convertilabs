@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isMissingSupabaseRelationError } from "@/lib/supabase/schema-compat";
+import {
+  isMissingSupabaseColumnError,
+  isMissingSupabaseRelationError,
+} from "@/lib/supabase/schema-compat";
 import {
   addDaysIso,
   buildCashProjection,
@@ -290,16 +293,23 @@ function emptyOpenItems() {
   };
 }
 
-function isMissingTreasuryTable(error: unknown) {
+function isMissingTreasurySchema(error: unknown) {
   const supabaseError = error as { message?: string; code?: string };
 
   return isMissingSupabaseRelationError(supabaseError, "treasury_bank_accounts")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_bank_accounts")
     || isMissingSupabaseRelationError(supabaseError, "treasury_bank_balance_snapshots")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_bank_balance_snapshots")
     || isMissingSupabaseRelationError(supabaseError, "treasury_vales")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_vales")
     || isMissingSupabaseRelationError(supabaseError, "treasury_vale_terms")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_vale_terms")
     || isMissingSupabaseRelationError(supabaseError, "treasury_vale_events")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_vale_events")
     || isMissingSupabaseRelationError(supabaseError, "treasury_manual_receivables")
-    || isMissingSupabaseRelationError(supabaseError, "treasury_reserve_rules");
+    || isMissingSupabaseColumnError(supabaseError, "treasury_manual_receivables")
+    || isMissingSupabaseRelationError(supabaseError, "treasury_reserve_rules")
+    || isMissingSupabaseColumnError(supabaseError, "treasury_reserve_rules");
 }
 
 function mapBankAccount(row: BankAccountRow): TreasuryBankAccount {
@@ -702,7 +712,7 @@ export async function loadTreasuryDashboard(
     .order("name", { ascending: true });
 
   if (bankAccountsResult.error) {
-    if (isMissingTreasuryTable(bankAccountsResult.error)) {
+    if (isMissingTreasurySchema(bankAccountsResult.error)) {
       return emptyDashboard(today, openItems.summary);
     }
 
@@ -752,7 +762,7 @@ export async function loadTreasuryDashboard(
 
   for (const result of [snapshotsResult, valesResult, termsResult, eventsResult, receivablesResult, reserveRulesResult]) {
     if (result.error) {
-      if (isMissingTreasuryTable(result.error)) {
+      if (isMissingTreasurySchema(result.error)) {
         return emptyDashboard(today, openItems.summary);
       }
 

@@ -183,6 +183,60 @@ test("Money MVP filters by work unit and unavailable read model degrades safely"
   assert.equal(missing.items.length, 0);
 });
 
+test("Money MVP falls back when production read model lacks work unit columns", async () => {
+  const { loadMoneyDashboard } = require("@/modules/money");
+  let callCount = 0;
+  const { calls, supabase } = createSupabaseStub((query) => {
+    callCount += 1;
+
+    if (callCount === 1) {
+      return {
+        data: null,
+        error: {
+          code: "PGRST204",
+          message: "Could not find the 'work_unit_id' column of 'v_open_items_outstanding' in the schema cache",
+        },
+      };
+    }
+
+    return {
+      data: [{
+        open_item_id: "open-legacy",
+        party_id: "party-customer",
+        counterparty_type: "customer",
+        counterparty_id: "customer-1",
+        counterparty_name: "Cliente Legacy",
+        counterparty_tax_id_normalized: "210000000019",
+        source_document_id: "doc-sale",
+        document_role: "sale",
+        document_type: "sale_invoice",
+        issue_date: "2026-06-10",
+        due_date: "2026-06-20",
+        days_overdue: 0,
+        currency_code: "UYU",
+        outstanding_amount: 1200,
+        status: "open",
+        settlement_count: 0,
+      }],
+      error: null,
+    };
+  });
+
+  const data = await loadMoneyDashboard(supabase, {
+    organizationId: "org-1",
+    organizationSlug: "rontil",
+    today: "2026-06-17",
+  });
+
+  assert.equal(data.isAvailable, true);
+  assert.equal(data.items.length, 1);
+  assert.equal(data.items[0].workUnitId, undefined);
+  assert.equal(data.summary.receivableAmount, 1200);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].selectClause.includes("work_unit_id"));
+  assert.ok(!calls[1].selectClause.includes("work_unit_id"));
+});
+
 test("PR-06 money read model exposes work unit context in schema and migration", () => {
   const projectRoot = path.resolve(__dirname, "..");
   const schemaSql = fs.readFileSync(
