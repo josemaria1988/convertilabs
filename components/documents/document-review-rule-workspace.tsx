@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/button-styles";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { LoadingLink } from "@/components/ui/loading-link";
+import type { DocumentRoleCandidate } from "@/modules/ai/document-intake-contract";
 import type {
   AccountRoleCode,
   ApprovalLearningInput,
@@ -21,13 +22,16 @@ import type { DocumentReviewPageData } from "@/modules/documents/review";
 import type { ZetaPurchaseInvoiceExportResult } from "@/modules/integrations/zeta/export/types";
 import {
   formatAccountRoleCodeLabel,
+  formatDocumentRoleLabel,
   formatPostingTemplateCodeLabel,
   formatRuleScopeLabel,
 } from "@/modules/presentation/labels";
 
 type SaveDraftReviewAction = (input: {
-  stepCode: "accounting_context";
+  stepCode: "identity" | "accounting_context";
   payload: {
+    documentRole?: DocumentRoleCandidate;
+    documentType?: string;
     accountingContext?: {
       userFreeText?: string | null;
       businessPurposeNote?: string | null;
@@ -109,11 +113,17 @@ type Props = {
 
 type ReviewManualRoleOverrides = Partial<Record<AccountRoleCode, string>>;
 type LearningScope = ApprovalLearningInput["scope"];
-type PendingAction = "draft" | "confirm_accounts" | "save_rule" | "zeta_validate" | "zeta_export" | null;
+type PendingAction = "identity" | "draft" | "confirm_accounts" | "save_rule" | "zeta_validate" | "zeta_export" | null;
 type PendingInlineAction = "create_account" | null;
 type FeedbackTone = "neutral" | "success" | "danger";
 type RuleToggleKey = "issuer" | "receiver" | "concept";
 type RuleToggleState = Record<RuleToggleKey, boolean>;
+
+const documentRoleOptions: Array<{ value: DocumentRoleCandidate; label: string }> = [
+  { value: "purchase", label: "Compra" },
+  { value: "sale", label: "Venta" },
+  { value: "other", label: "Otro" },
+];
 
 function normalizeAccountType(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
@@ -435,6 +445,10 @@ export function DocumentReviewRuleWorkspace({
     code: "",
     name: "",
   });
+  const [identity, setIdentity] = useState({
+    documentRole: pageData.draft.documentRole,
+    documentType: pageData.draft.documentType,
+  });
   const [showCreateAccountForm, setShowCreateAccountForm] = useState(false);
   const initialScope =
     pageData.learningSuggestions.recommendedScope !== "none"
@@ -473,6 +487,10 @@ export function DocumentReviewRuleWorkspace({
     setNewReviewAccount({
       code: "",
       name: "",
+    });
+    setIdentity({
+      documentRole: pageData.draft.documentRole,
+      documentType: pageData.draft.documentType,
     });
     setShowCreateAccountForm(false);
     setAccountSearch("");
@@ -774,6 +792,43 @@ export function DocumentReviewRuleWorkspace({
       ok: result.ok,
       message,
     };
+  }
+
+  function handleSaveIdentity() {
+    setPendingAction("identity");
+    startTransition(async () => {
+      try {
+        const result = await saveDraftReviewAction({
+          stepCode: "identity",
+          payload: {
+            documentRole: identity.documentRole,
+            documentType: identity.documentType,
+          },
+        });
+        const message = result.ok
+          ? "Identidad del documento actualizada y draft recalculado."
+          : buildBlockingMessage(result.blockers);
+
+        setFeedback({
+          tone: result.ok ? "success" : "danger",
+          text: message,
+        });
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch (error) {
+        setFeedback({
+          tone: "danger",
+          text:
+            error instanceof Error
+              ? error.message
+              : "No pudimos actualizar la identidad del documento.",
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    });
   }
 
   function handleSaveDraft() {
@@ -1095,6 +1150,66 @@ export function DocumentReviewRuleWorkspace({
                   <strong className="break-words" title={sourceTaxBreakdownText}>{sourceTaxBreakdownText}</strong>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="review-rule-card" data-testid="document-identity-card">
+            <div className="review-rule-card__header review-rule-card__header--stack">
+              <div>
+                <h2>Identidad del documento</h2>
+                <p>{formatDocumentRoleLabel(pageData.draft.documentRole)} / {pageData.draft.documentType}</p>
+              </div>
+            </div>
+
+            <div className="review-rule-linked-fields">
+              <label className="review-rule-linked-field">
+                <span>Rol documental</span>
+                <select
+                  value={identity.documentRole}
+                  onChange={(event) => {
+                    setIdentity((current) => ({
+                      ...current,
+                      documentRole: event.target.value as DocumentRoleCandidate,
+                    }));
+                  }}
+                  disabled={isPending}
+                  className="review-rule-input"
+                >
+                  {documentRoleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="review-rule-linked-field">
+                <span>Tipo documental</span>
+                <input
+                  type="text"
+                  value={identity.documentType}
+                  onChange={(event) => {
+                    setIdentity((current) => ({
+                      ...current,
+                      documentType: event.target.value,
+                    }));
+                  }}
+                  disabled={isPending}
+                  className="review-rule-input"
+                />
+              </label>
+            </div>
+
+            <div className="review-rule-actions review-rule-actions--compact">
+              <button
+                type="button"
+                onClick={handleSaveIdentity}
+                disabled={isPending}
+                className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
+              >
+                {pendingAction === "identity" && isPending ? <InlineSpinner /> : null}
+                Guardar identidad
+              </button>
             </div>
           </section>
 

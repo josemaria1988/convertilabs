@@ -25,6 +25,16 @@ test("document review exposes the asiento modal with materialized versus preview
   assert.match(modalSource, /Preview del kernel/);
 });
 
+test("document review exposes editable document identity", () => {
+  const source = readProjectFile("components", "documents", "document-review-rule-workspace.tsx");
+
+  assert.match(source, /Identidad del documento/);
+  assert.match(source, /Rol documental/);
+  assert.match(source, /Guardar identidad/);
+  assert.match(source, /stepCode: "identity"/);
+  assert.match(source, /documentRoleOptions/);
+});
+
 test("vat preview card uses enriched document drilldown and journal links", () => {
   const source = readProjectFile("components", "tax", "vat-run-preview-card.tsx");
 
