@@ -5,19 +5,29 @@ import { useRouter } from "next/navigation";
 import { computeFileSha256, uploadFileToSignedUrl } from "@/lib/browser/document-upload-client";
 import { normalizeMobileCaptureFile } from "@/lib/browser/mobile-image-normalizer";
 import {
+  buildDescriptiveDocumentFilename,
   documentsStorageBucket,
   formatUploadSize,
   maxDocumentUploadBytes,
   validateDocumentUploadCandidate,
 } from "@/modules/documents/upload";
-import type { OrganizationCostCenterSummary } from "@/modules/cost-centers/service";
 
 type UploadStatus = "idle" | "preparing" | "uploading" | "processing" | "success" | "error";
 
+type FieldUploadWorkUnitOption = {
+  id: string;
+  name: string;
+  code: string | null;
+  kind: string;
+  status: string;
+  customerName: string | null;
+  documentCount: number;
+};
+
 type FieldUploadSheetProps = {
   slug: string;
-  costCenters: OrganizationCostCenterSummary[];
-  initialCostCenterId?: string | null;
+  workUnits: FieldUploadWorkUnitOption[];
+  initialWorkUnitId?: string | null;
   prepareUploadAction: (input: {
     originalFilename: string;
     mimeType: string;
@@ -52,9 +62,9 @@ type FieldUploadSheetProps = {
     failedCount: number;
     message: string;
   }>;
-  assignCostCenterAction: (input: {
+  assignWorkUnitAction: (input: {
     documentId: string;
-    costCenterId: string | null;
+    workUnitId: string | null;
   }) => Promise<{
     ok: boolean;
     message: string;
@@ -62,23 +72,27 @@ type FieldUploadSheetProps = {
 };
 
 export function FieldUploadSheet({
-  costCenters,
-  initialCostCenterId = null,
+  workUnits,
+  initialWorkUnitId = null,
   prepareUploadAction,
   finalizeUploadAction,
   failUploadAction,
   enqueueExtractionsAction,
-  assignCostCenterAction,
+  assignWorkUnitAction,
 }: FieldUploadSheetProps) {
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [selectedCostCenterId, setSelectedCostCenterId] = useState(initialCostCenterId ?? "");
+  const [selectedWorkUnitId, setSelectedWorkUnitId] = useState(initialWorkUnitId ?? "");
+  const [descriptiveName, setDescriptiveName] = useState("");
   const [isRefreshing, startTransition] = useTransition();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const activeCostCenters = useMemo(() => costCenters.filter((item) => item.isActive), [costCenters]);
+  const openWorkUnits = useMemo(() => workUnits, [workUnits]);
+  const selectedWorkUnit = useMemo(() =>
+    openWorkUnits.find((item) => item.id === selectedWorkUnitId) ?? null,
+  [openWorkUnits, selectedWorkUnitId]);
 
   async function handleFiles(files: File[]) {
     if (files.length === 0) {
@@ -97,18 +111,26 @@ export function FieldUploadSheet({
     }));
     const acceptedFiles: File[] = [];
     const rejectedMessages: string[] = [];
+    const uploadFilenames = new Map<File, string>();
 
-    for (const file of normalizedFiles) {
+    for (const [index, file] of normalizedFiles.entries()) {
+      const uploadFilename = buildDescriptiveDocumentFilename({
+        descriptiveName,
+        originalFilename: file.name,
+        mimeType: file.type,
+        sequenceNumber: normalizedFiles.length > 1 ? index + 1 : null,
+      });
       const validation = validateDocumentUploadCandidate({
-        name: file.name,
+        name: uploadFilename,
         type: file.type,
         size: file.size,
       });
 
       if (validation.success) {
         acceptedFiles.push(file);
+        uploadFilenames.set(file, uploadFilename);
       } else {
-        rejectedMessages.push(`${file.name}: ${validation.message}`);
+        rejectedMessages.push(`${uploadFilename}: ${validation.message}`);
       }
     }
 
@@ -123,8 +145,9 @@ export function FieldUploadSheet({
     const uploadErrors: string[] = [];
 
     for (const [index, file] of acceptedFiles.entries()) {
+      const uploadFilename = uploadFilenames.get(file) ?? file.name;
       setStatus("uploading");
-      setMessage(`Subiendo ${index + 1}/${acceptedFiles.length}: ${file.name}`);
+      setMessage(`Subiendo ${index + 1}/${acceptedFiles.length}: ${uploadFilename}`);
 
       let fileHash: string | null = null;
 
@@ -135,7 +158,7 @@ export function FieldUploadSheet({
       }
 
       const preparedUpload = await prepareUploadAction({
-        originalFilename: file.name,
+        originalFilename: uploadFilename,
         mimeType: file.type,
         fileSize: file.size,
         fileHash,
@@ -170,10 +193,10 @@ export function FieldUploadSheet({
         continue;
       }
 
-      if (selectedCostCenterId) {
-        const assignmentResult = await assignCostCenterAction({
+      if (selectedWorkUnitId) {
+        const assignmentResult = await assignWorkUnitAction({
           documentId: finalizedUpload.documentId,
-          costCenterId: selectedCostCenterId,
+          workUnitId: selectedWorkUnitId,
         });
 
         if (!assignmentResult.ok) {
@@ -227,22 +250,35 @@ export function FieldUploadSheet({
 
       <div className="mt-4 space-y-4">
         <label className="grid gap-2">
-          <span className="text-sm font-medium text-white">Proyecto activo</span>
+          <span className="text-sm font-medium text-white">Trabajo abierto</span>
           <select
             className="field-input"
-            value={selectedCostCenterId}
+            value={selectedWorkUnitId}
             onChange={(event) => {
-              setSelectedCostCenterId(event.target.value);
+              setSelectedWorkUnitId(event.target.value);
             }}
             disabled={isBusy}
           >
-            <option value="">Sin proyecto</option>
-            {activeCostCenters.map((costCenter) => (
-              <option key={costCenter.id} value={costCenter.id}>
-                {costCenter.name}
+            <option value="">Sin trabajo asignado</option>
+            {openWorkUnits.map((workUnit) => (
+              <option key={workUnit.id} value={workUnit.id}>
+                {[workUnit.name, workUnit.code ? `(${workUnit.code})` : null, workUnit.customerName].filter(Boolean).join(" ")}
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="grid gap-2">
+          <span className="text-sm font-medium text-white">Nombre descriptivo</span>
+          <input
+            className="field-input"
+            value={descriptiveName}
+            onChange={(event) => {
+              setDescriptiveName(event.target.value);
+            }}
+            placeholder="hospedaje servicio ADPCaraguata-001"
+            disabled={isBusy}
+          />
         </label>
 
         <div className="rounded-[22px] border border-dashed border-[color:var(--color-border)] bg-[rgba(18,29,60,0.52)] p-5">
@@ -270,7 +306,7 @@ export function FieldUploadSheet({
             Formatos: PDF, JPG, PNG
           </div>
           <div className="field-inline-stat">
-            Proyecto: {selectedCostCenterId ? activeCostCenters.find((item) => item.id === selectedCostCenterId)?.name ?? "Seleccionado" : "Opcional"}
+            Trabajo: {selectedWorkUnit ? selectedWorkUnit.name : "Opcional"}
           </div>
         </div>
 

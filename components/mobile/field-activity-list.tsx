@@ -56,8 +56,8 @@ export function FieldActivityList({
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2 text-sm text-[color:var(--color-muted)]">
-                {card.projectLabel ? (
-                  <span className="field-inline-chip">{card.projectLabel}</span>
+                {card.contextLabel ? (
+                  <span className="field-inline-chip">{card.contextLabel}</span>
                 ) : null}
                 {card.detailLabel ? (
                   <span className="field-inline-chip">{card.detailLabel}</span>

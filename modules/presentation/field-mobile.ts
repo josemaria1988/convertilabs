@@ -19,7 +19,7 @@ export type FieldMobileActivityCard = {
   statusLabel: string;
   statusTone: "info" | "success" | "warning" | "danger";
   createdAtLabel: string;
-  projectLabel: string | null;
+  contextLabel: string | null;
   detailLabel: string | null;
   blockingReason: string | null;
 };
@@ -115,6 +115,7 @@ export function buildFieldMobileActivityCards(input: {
   items: DocumentWorkspaceListItem[];
   organizationSlug: string;
   costCenterNameById?: Map<string, string>;
+  workUnitNameById?: Map<string, string>;
   limit?: number;
 }) {
   const limitedItems =
@@ -144,12 +145,29 @@ export function buildFieldMobileActivityCards(input: {
       statusLabel: formatDocumentOperationalStatusLabel(item.canonicalState),
       statusTone: resolveStatusTone(item),
       createdAtLabel: formatDateLabel(item.createdAt),
-      projectLabel:
-        item.costCenterId
-          ? input.costCenterNameById?.get(item.costCenterId) ?? "Proyecto asociado"
-          : null,
+      contextLabel: resolveDocumentContextLabel({
+        item,
+        costCenterNameById: input.costCenterNameById,
+        workUnitNameById: input.workUnitNameById,
+      }),
       detailLabel,
       blockingReason: item.blockingReason,
     } satisfies FieldMobileActivityCard;
   });
+}
+
+export function resolveDocumentContextLabel(input: {
+  item: Pick<DocumentWorkspaceListItem, "costCenterId" | "workUnitId">;
+  costCenterNameById?: Map<string, string>;
+  workUnitNameById?: Map<string, string>;
+}) {
+  if (input.item.workUnitId) {
+    return `Trabajo: ${input.workUnitNameById?.get(input.item.workUnitId) ?? "asociado"}`;
+  }
+
+  if (input.item.costCenterId) {
+    return `Proyecto: ${input.costCenterNameById?.get(input.item.costCenterId) ?? "asociado"}`;
+  }
+
+  return null;
 }

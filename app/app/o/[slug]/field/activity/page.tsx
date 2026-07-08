@@ -40,6 +40,7 @@ export default async function OrganizationFieldActivityPage({
     items: workspace.filteredDocuments,
     organizationSlug: organization.slug,
     costCenterNameById: workspace.costCenterNameById,
+    workUnitNameById: workspace.workUnitNameById,
   });
   const selectedProject = workspace.activeCostCenterId
     ? workspace.costCenters.find((item) => item.id === workspace.activeCostCenterId) ?? null

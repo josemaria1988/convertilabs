@@ -34,9 +34,10 @@ export default async function OrganizationFieldHomePage({
     items: workspace.documents,
     organizationSlug: organization.slug,
     costCenterNameById: workspace.costCenterNameById,
+    workUnitNameById: workspace.workUnitNameById,
     limit: 6,
   });
-  const activeProjectsCount = workspace.costCenters.filter((item) => item.isActive).length;
+  const openWorkUnitsCount = workspace.workUnits.length;
 
   return (
     <div className="space-y-4">
@@ -46,7 +47,7 @@ export default async function OrganizationFieldHomePage({
             <p className="field-panel__eyebrow">Carril operativo</p>
             <h1 className="field-panel__title">Campo para captura y seguimiento documental</h1>
             <p className="field-panel__description">
-              Esta superficie se enfoca en subir comprobantes, ver su estado y agruparlos por proyecto sin abrir la capa experta de IVA, cierre o auditoria.
+              Esta superficie se enfoca en subir comprobantes, ver su estado y vincularlos a trabajos sin abrir la capa experta de IVA, cierre o auditoria.
             </p>
           </div>
           <div className="flex w-full flex-wrap gap-3 sm:w-auto">
@@ -69,7 +70,7 @@ export default async function OrganizationFieldHomePage({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="field-inline-stat">
-            Proyecto(s) activos: {activeProjectsCount}
+            Trabajos abiertos: {openWorkUnitsCount}
           </div>
           <div className="field-inline-stat">
             Documentos recientes: {workspace.documents.length}
@@ -101,7 +102,7 @@ export default async function OrganizationFieldHomePage({
           <article className="field-activity-card">
             <p className="field-activity-card__title">Aqui en mobile</p>
             <p className="field-activity-card__subtitle">
-              Captura, procesamiento, clasificacion basica, proyectos minimos, actividad reciente y onboarding del equipo de campo.
+              Captura, procesamiento, clasificacion basica, vinculo a trabajos, actividad reciente y onboarding del equipo de campo.
             </p>
           </article>
           <article className="field-activity-card">

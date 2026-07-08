@@ -32,6 +32,58 @@ export type DocumentUploadValidationResult =
       message: string;
     };
 
+const extensionByMimeType: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+};
+
+function compactFilenameText(value: string | null | undefined) {
+  const normalized = (value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getAcceptedUploadExtension(fileName: string, mimeType: string) {
+  const lowerName = fileName.toLowerCase();
+  const extension = [".pdf", ".jpeg", ".jpg", ".png"]
+    .find((candidate) => lowerName.endsWith(candidate));
+
+  return extension ?? extensionByMimeType[mimeType.toLowerCase()] ?? "";
+}
+
+function stripUploadExtension(fileName: string) {
+  return fileName.replace(/\.(pdf|jpe?g|png)$/i, "");
+}
+
+export function sanitizeDocumentFilenameBase(value: string) {
+  return compactFilenameText(
+    value
+      .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, " ")
+      .replace(/\.+$/g, "")
+      .slice(0, 120),
+  ) ?? "documento";
+}
+
+export function buildDescriptiveDocumentFilename(input: {
+  descriptiveName?: string | null;
+  originalFilename: string;
+  mimeType: string;
+  sequenceNumber?: number | null;
+}) {
+  const extension = getAcceptedUploadExtension(input.originalFilename, input.mimeType);
+  const fallbackBase = stripUploadExtension(input.originalFilename) || "documento";
+  const base = sanitizeDocumentFilenameBase(compactFilenameText(input.descriptiveName) ?? fallbackBase);
+  const sequenceSuffix =
+    typeof input.sequenceNumber === "number" && input.sequenceNumber > 0
+      ? `-${input.sequenceNumber}`
+      : "";
+
+  return `${stripUploadExtension(base)}${sequenceSuffix}${extension}`;
+}
+
 export function validateDocumentUploadCandidate(
   candidate: DocumentUploadCandidate,
 ): DocumentUploadValidationResult {

@@ -4,7 +4,7 @@ import { FieldUploadSheet } from "@/components/mobile/field-upload-sheet";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildFieldMobileActivityCards } from "@/modules/presentation/field-mobile";
 import {
-  assignFieldDocumentToProjectAction,
+  assignFieldDocumentToWorkUnitAction,
   enqueueFieldDocumentExtractionsAction,
   failFieldDocumentUploadAction,
   finalizeFieldDocumentUploadAction,
@@ -18,6 +18,7 @@ type OrganizationFieldUploadPageProps = {
   }>;
   searchParams?: Promise<{
     costCenterId?: string | string[];
+    workUnitId?: string | string[];
   }>;
 };
 
@@ -42,22 +43,32 @@ export default async function OrganizationFieldUploadPage({
     items: workspace.filteredDocuments,
     organizationSlug: organization.slug,
     costCenterNameById: workspace.costCenterNameById,
+    workUnitNameById: workspace.workUnitNameById,
     limit: 5,
   });
   const selectedProject = workspace.activeCostCenterId
     ? workspace.costCenters.find((item) => item.id === workspace.activeCostCenterId) ?? null
     : null;
+  const requestedWorkUnitId = readOptionalSearchParam(resolvedSearchParams.workUnitId);
+  const initialWorkUnitId = [
+    requestedWorkUnitId,
+    selectedProject?.workUnitId ?? null,
+  ].find((workUnitId) =>
+    Boolean(workUnitId && workspace.workUnits.some((item) => item.id === workUnitId))) ?? null;
+  const selectedWorkUnit = initialWorkUnitId
+    ? workspace.workUnits.find((item) => item.id === initialWorkUnitId) ?? null
+    : null;
 
   return (
     <div className="space-y-4">
-      {selectedProject ? (
+      {selectedWorkUnit ? (
         <section className="field-panel">
           <div className="field-panel__header">
             <div>
-              <p className="field-panel__eyebrow">Proyecto activo</p>
-              <h1 className="field-panel__title">{selectedProject.name}</h1>
+              <p className="field-panel__eyebrow">Trabajo preseleccionado</p>
+              <h1 className="field-panel__title">{selectedWorkUnit.name}</h1>
               <p className="field-panel__description">
-                La carga nueva quedara asociada a este proyecto salvo que cambies la seleccion antes de subir.
+                La carga nueva quedara asociada a este trabajo salvo que cambies la seleccion antes de subir.
               </p>
             </div>
           </div>
@@ -66,25 +77,25 @@ export default async function OrganizationFieldUploadPage({
 
       <FieldUploadSheet
         slug={organization.slug}
-        costCenters={workspace.costCenters}
-        initialCostCenterId={workspace.activeCostCenterId}
+        workUnits={workspace.workUnits}
+        initialWorkUnitId={initialWorkUnitId}
         prepareUploadAction={prepareFieldDocumentUploadAction.bind(null, organization.slug)}
         finalizeUploadAction={finalizeFieldDocumentUploadAction.bind(null, organization.slug)}
         failUploadAction={failFieldDocumentUploadAction.bind(null, organization.slug)}
         enqueueExtractionsAction={enqueueFieldDocumentExtractionsAction.bind(null, organization.slug)}
-        assignCostCenterAction={assignFieldDocumentToProjectAction.bind(null, organization.slug)}
+        assignWorkUnitAction={assignFieldDocumentToWorkUnitAction.bind(null, organization.slug)}
       />
 
       <FieldActivityList
         title="Ultimos movimientos"
         description={
-          selectedProject
-            ? "Actividad reciente del proyecto seleccionado para verificar la carga y el procesamiento."
+          selectedWorkUnit
+            ? "Actividad reciente del contexto seleccionado para verificar la carga y el procesamiento."
             : "Ultimos documentos para validar que la carga entro al workflow real."
         }
         emptyMessage={
-          selectedProject
-            ? "Todavia no hay actividad para este proyecto."
+          selectedWorkUnit
+            ? "Todavia no hay actividad para este contexto."
             : "Todavia no hay documentos recientes para mostrar."
         }
         cards={recentCards}
