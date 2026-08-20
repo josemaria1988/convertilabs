@@ -186,7 +186,7 @@ test("Money MVP filters by work unit and unavailable read model degrades safely"
 test("Money MVP falls back when production read model lacks work unit columns", async () => {
   const { loadMoneyDashboard } = require("@/modules/money");
   let callCount = 0;
-  const { calls, supabase } = createSupabaseStub((query) => {
+  const { calls, supabase } = createSupabaseStub(() => {
     callCount += 1;
 
     if (callCount === 1) {

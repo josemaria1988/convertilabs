@@ -35,9 +35,22 @@ function firstNumber(...values: unknown[]) {
 }
 
 function parseDateParts(value: string) {
-  const parsed = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  const normalized = value.trim();
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    ?? normalized.match(/^(\d{4})(\d{2})(\d{2})$/);
 
-  if (Number.isNaN(parsed.getTime())) {
+  if (!match) {
+    return null;
+  }
+
+  const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getUTCFullYear() !== Number(match[1])
+    || parsed.getUTCMonth() + 1 !== Number(match[2])
+    || parsed.getUTCDate() !== Number(match[3])
+  ) {
     return null;
   }
 
@@ -99,32 +112,43 @@ export async function preflightZetaPurchaseInvoiceDuplicate(input: {
   expectedTotal?: number | null;
 }) {
   const dateParts = parseDateParts(input.movimiento.Fecha);
-  const result = await queryZetaEndpoint<ZetaFacturaProveedorCompraQueryRow>(
-    input.client,
-    "facturaProveedorQueryCompras",
-    {
-      page: 1,
-      filters: {
-        Mes: dateParts?.month ?? 0,
-        Anio: dateParts?.year ?? 0,
-        FechaDesde: dateParts?.startDate ?? "",
-        FechaHasta: dateParts?.endDate ?? "",
-        ProveedorCodigo: input.movimiento.CodigoProveedor,
-        ComprobanteCodigo: input.movimiento.CodigoComprobante,
-        MonedaCodigo: input.movimiento.CodigoMoneda,
-        LocalCodigo: input.movimiento.CodigoLocal ?? 0,
-      },
-    },
-  );
-  const duplicate = findDuplicateZetaPurchaseInvoice({
-    rows: result.rows,
-    movimiento: input.movimiento,
-    expectedTotal: input.expectedTotal,
-  });
-
-  return {
-    ...duplicate,
-    raw: result.raw,
+  const filters = {
+    Mes: dateParts?.month ?? 0,
+    Anio: dateParts?.year ?? 0,
+    FechaDesde: dateParts?.startDate ?? "",
+    FechaHasta: dateParts?.endDate ?? "",
+    ProveedorCodigo: input.movimiento.CodigoProveedor,
+    ComprobanteCodigo: input.movimiento.CodigoComprobante,
+    MonedaCodigo: input.movimiento.CodigoMoneda,
+    LocalCodigo: input.movimiento.CodigoLocal ?? 0,
   };
+  const rawPages: unknown[] = [];
+
+  // QueryCompras is paginated even with narrow filters. Stop as soon as the
+  // exact fiscal identity is found, but never assume page 1 is complete.
+  for (let page = 1; page <= 100; page += 1) {
+    const result = await queryZetaEndpoint<ZetaFacturaProveedorCompraQueryRow>(
+      input.client,
+      "facturaProveedorQueryCompras",
+      { page, filters },
+    );
+    rawPages.push(result.raw);
+    const duplicate = findDuplicateZetaPurchaseInvoice({
+      rows: result.rows,
+      movimiento: input.movimiento,
+      expectedTotal: input.expectedTotal,
+    });
+
+    if (duplicate.found || result.isLastPage || result.rows.length === 0) {
+      return {
+        ...duplicate,
+        raw: rawPages.length === 1 ? rawPages[0] : rawPages,
+      };
+    }
+  }
+
+  throw new Error(
+    "Zetasoftware devolvio mas de 100 paginas al comprobar duplicados; se detuvo el envio por seguridad.",
+  );
 }
 

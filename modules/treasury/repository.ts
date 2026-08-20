@@ -6,7 +6,6 @@ import {
   isMissingSupabaseRelationError,
 } from "@/lib/supabase/schema-compat";
 import {
-  addDaysIso,
   buildCashProjection,
   calculateCashPosition,
   calculateValeTermCashImpact,

@@ -143,8 +143,13 @@ test("Zeta connection save encrypts credentials and records audit without exposi
       assert.doesNotMatch(JSON.stringify(query.payload.config_json), /secret-zeta|RONTIL|dev-secret/);
 
       savedConnection = zetaConnectionRow({
+        mode: query.payload.mode,
+        status: query.payload.status,
+        test_mode: query.payload.test_mode,
         encrypted_credentials: query.payload.encrypted_credentials,
         credentials_fingerprint: query.payload.credentials_fingerprint,
+        last_connection_test_at: query.payload.last_connection_test_at,
+        last_connection_test_ok: query.payload.last_connection_test_ok,
         config_json: query.payload.config_json,
       });
 
@@ -183,11 +188,73 @@ test("Zeta connection save encrypts credentials and records audit without exposi
       isActive: true,
     });
 
-    assert.equal(connection.status, "connected");
+    assert.equal(connection.status, "disconnected");
     assert.equal(connection.mockEnabled, true);
     assert.equal(connection.credentialSource, "db_encrypted");
     assert.equal(queries.filter((query) => query.table === "audit_log").length, 1);
   });
+});
+
+test("Zeta connection save preserves mappings but resets implicit write mode and health", async () => {
+  const { saveZetaConnection } = require("@/modules/integrations/zeta/services/connection-service");
+  let savedConnection = zetaConnectionRow({
+    mode: "read_write",
+    test_mode: false,
+    config_json: {
+      credential_source: "db_encrypted",
+      mock_enabled: false,
+      purchase_expense_export: {
+        concepts: { default: "TELEF" },
+      },
+      keep_me: true,
+    },
+  });
+  const supabase = createSupabaseStub((query) => {
+    if (query.table === "organization_integration_connections" && query.mode === "maybeSingle") {
+      return { data: savedConnection, error: null };
+    }
+
+    if (query.table === "organization_integration_connections" && query.mutation === "upsert") {
+      assert.equal(query.payload.mode, "read_only");
+      assert.equal(query.payload.status, "disconnected");
+      assert.equal(query.payload.last_connection_test_at, null);
+      assert.equal(query.payload.last_connection_test_ok, null);
+      assert.equal(query.payload.config_json.keep_me, true);
+      assert.equal(query.payload.config_json.purchase_expense_export.concepts.default, "TELEF");
+      assert.equal(query.payload.encrypted_credentials, undefined);
+      savedConnection = {
+        ...savedConnection,
+        mode: query.payload.mode,
+        status: query.payload.status,
+        test_mode: query.payload.test_mode,
+        last_connection_test_at: query.payload.last_connection_test_at,
+        last_connection_test_ok: query.payload.last_connection_test_ok,
+        config_json: query.payload.config_json,
+      };
+      return { data: savedConnection, error: null };
+    }
+
+    if (query.table === "audit_log") {
+      assert.equal(query.payload.metadata.write_enabled, false);
+      return { data: null, error: null };
+    }
+
+    throw new Error(`Unexpected query ${query.table}/${query.mode}/${query.mutation ?? "read"}`);
+  });
+
+  const result = await saveZetaConnection(supabase, {
+    organizationId: "org-1",
+    actorUserId: "user-1",
+    companyCode: "",
+    companySecret: "",
+    usuarioCodigo: "",
+    rolCodigo: "",
+    mockEnabled: false,
+    isActive: true,
+  });
+
+  assert.equal(result.writeEnabled, false);
+  assert.equal(result.mode, "read_only");
 });
 
 test("Zeta mock health check marks the connection as connected", async () => {

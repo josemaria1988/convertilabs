@@ -27,9 +27,9 @@ export interface ZetaFacturaProveedorMovimiento {
   CodigoCentroCosto?: string;
   CodigoReferencia?: string | number;
   Notas?: string;
-  CodigoLocal?: number;
-  CodigoUsuario?: number;
-  CodigoCaja?: number;
+  CodigoLocal: number;
+  CodigoUsuario: number;
+  CodigoCaja: number;
   Lineas: ZetaFacturaProveedorLinea[];
   FormasPago?: ZetaFacturaProveedorFormaPago[];
 }
@@ -47,6 +47,7 @@ export interface ZetaFacturaProveedorLinea {
   Descuento2?: number;
   Descuento3?: number;
   CodigoIVA: number;
+  CodigoLocalLinea?: number;
   Notas?: string;
 }
 

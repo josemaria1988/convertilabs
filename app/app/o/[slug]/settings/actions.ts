@@ -46,6 +46,7 @@ import {
   saveZetaConnection,
   testZetaConnection,
 } from "@/modules/integrations/zeta/services/connection-service";
+import { saveZetaPurchaseExpenseConfiguration } from "@/modules/integrations/zeta/export/configuration-service";
 import {
   enqueueZetaMonthlyDocumentSyncRun,
   enqueueZetaSyncRun,
@@ -341,6 +342,53 @@ export async function testOrganizationZetaConnectionAction(formData: FormData) {
 
   revalidatePath(`/app/o/${organization.slug}/settings`);
   revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+}
+
+export async function upsertOrganizationZetaPurchaseExpenseConfigurationAction(
+  formData: FormData,
+) {
+  const slug = String(formData.get("slug") ?? "");
+  const { authState, organization } = await requireOrganizationDashboardPage(slug);
+
+  assertOrganizationIntegrationRole(organization.role);
+
+  await saveZetaPurchaseExpenseConfiguration(getSupabaseServiceRoleClient(), {
+    organizationId: organization.id,
+    actorUserId: authState.user?.id ?? null,
+    writeEnabled: formData.get("writeEnabled") === "on",
+    purchaseExpenseCreditDocumentCode: String(
+      formData.get("purchaseExpenseCreditDocumentCode") ?? "",
+    ),
+    purchaseExpenseCashDocumentCode: String(
+      formData.get("purchaseExpenseCashDocumentCode") ?? "",
+    ),
+    supplierCreditNoteExpenseDocumentCode: String(
+      formData.get("supplierCreditNoteExpenseDocumentCode") ?? "",
+    ),
+    defaultConceptCode: String(formData.get("defaultConceptCode") ?? ""),
+    creditPaymentTermCode: String(formData.get("creditPaymentTermCode") ?? ""),
+    cashPaymentTermCode: String(formData.get("cashPaymentTermCode") ?? ""),
+    uyuCurrencyCode: String(formData.get("uyuCurrencyCode") ?? ""),
+    localCode: String(formData.get("localCode") ?? ""),
+    userCode: String(formData.get("userCode") ?? ""),
+    cashboxCode: String(formData.get("cashboxCode") ?? ""),
+    cashPaymentMethodCode: String(formData.get("cashPaymentMethodCode") ?? ""),
+    bankTransferPaymentMethodCode: String(
+      formData.get("bankTransferPaymentMethodCode") ?? "",
+    ),
+    cardPaymentMethodCode: String(formData.get("cardPaymentMethodCode") ?? ""),
+    checkPaymentMethodCode: String(formData.get("checkPaymentMethodCode") ?? ""),
+    paidByPartnerPaymentTermCode: String(
+      formData.get("paidByPartnerPaymentTermCode") ?? "",
+    ),
+    paidByPartnerPaymentMethodCode: String(
+      formData.get("paidByPartnerPaymentMethodCode") ?? "",
+    ),
+  });
+
+  revalidatePath(`/app/o/${organization.slug}/settings`);
+  revalidatePath(`/app/o/${organization.slug}/settings?tab=integrations`);
+  revalidatePath(`/app/o/${organization.slug}/documents`);
 }
 
 export async function runOrganizationZetaSyncAction(formData: FormData) {

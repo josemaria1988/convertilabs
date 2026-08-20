@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+const fs = require("node:fs");
+const path = require("node:path");
 const { test, assert } = require("./testkit.cjs");
+
+function readProjectFile(...segments) {
+  return fs.readFileSync(path.join(__dirname, "..", ...segments), "utf8");
+}
 
 function baseCatalogs(overrides = {}) {
   return {
@@ -11,6 +17,9 @@ function baseCatalogs(overrides = {}) {
     paymentTerms: [{ Codigo: "SOC", Nombre: "Pago socio", Activo: "S" }],
     paymentMethods: [{ Codigo: 7, Nombre: "A reintegrar socio", Activo: "S", RequiereCaja: "N" }],
     currencies: [{ Codigo: 1, CodigoISO: "UYU" }],
+    businessLocations: [{ Codigo: 1, Nombre: "Casa central", Activo: "S" }],
+    users: [{ Codigo: 42, Nombre: "Usuario API", UsuarioEmail: "api@example.com" }],
+    cashboxes: [{ Codigo: 1, Nombre: "Caja principal", LocalCodigo: 1, LocalActivo: "S" }],
     config: {
       documentTypes: {
         purchase_expense_cash: 12,
@@ -26,6 +35,11 @@ function baseCatalogs(overrides = {}) {
       },
       currencies: {
         UYU: 1,
+      },
+      defaults: {
+        localCode: 1,
+        userCode: 42,
+        cashboxCode: 1,
       },
     },
     ...overrides,
@@ -56,7 +70,7 @@ function paidByPartnerDocument() {
   };
 }
 
-test("paid_by_partner usa FormasPago y no envia caja ni banco de Rontil", () => {
+test("paid_by_partner usa FormasPago y envia CodigoCaja obligatorio solo en cabecera", () => {
   const {
     resolveZetaPurchaseExpenseInvoiceFromInputs,
   } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
@@ -67,7 +81,7 @@ test("paid_by_partner usa FormasPago y no envia caja ni banco de Rontil", () => 
 
   assert.equal(result.blockers.length, 0);
   const movimiento = result.payload.Data.Movimiento[0];
-  assert.equal(movimiento.CodigoCaja, undefined);
+  assert.equal(movimiento.CodigoCaja, 1);
   assert.equal(movimiento.FormasPago.length, 1);
   assert.equal(movimiento.FormasPago[0].CodigoFormaPago, 7);
   assert.equal(movimiento.FormasPago[0].MontoMonedaPago, 1220);
@@ -105,5 +119,14 @@ test("paid_by_partner bloquea si la forma de pago Zeta exige caja", () => {
   });
 
   assert.ok(result.blockers.some((entry) => entry.code === "zeta_paid_by_partner_requires_cashbox"));
+});
+
+test("la revision documental conserva paid_by_partner como forma de pago valida", () => {
+  const source = readProjectFile("modules", "documents", "review.ts");
+
+  assert.match(
+    source,
+    /input\.accountingContext\.settlementMethod === "paid_by_partner"/,
+  );
 });
 

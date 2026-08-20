@@ -68,6 +68,7 @@ export type ZetaConnectionSettings = {
   status: ZetaConnectionStatus;
   statusLabel: string;
   mode: string;
+  writeEnabled: boolean;
   mockEnabled: boolean;
   credentialSource: ZetaCredentialSource;
   envProfile: string | null;
@@ -185,6 +186,7 @@ function mapZetaConnectionRow(row: ZetaConnectionRow | null): ZetaConnectionSett
       status: "disconnected",
       statusLabel: formatZetaConnectionStatusLabel("disconnected"),
       mode: "read_only",
+      writeEnabled: false,
       mockEnabled: !hasEnvCredentials,
       credentialSource: "server_env",
       envProfile: null,
@@ -214,6 +216,7 @@ function mapZetaConnectionRow(row: ZetaConnectionRow | null): ZetaConnectionSett
     status,
     statusLabel: formatZetaConnectionStatusLabel(status),
     mode: row.mode || "read_only",
+    writeEnabled: row.mode === "read_write",
     mockEnabled: Boolean(config.mock_enabled ?? row.test_mode),
     credentialSource,
     envProfile: normalizeEnvProfileValue(config.env_profile),
@@ -377,10 +380,12 @@ export async function saveZetaConnection(
     baseUrl?: string | null;
     mockEnabled: boolean;
     isActive: boolean;
+    writeEnabled?: boolean;
     encryptionKey?: string | null;
   },
 ) {
-  const current = await loadZetaConnectionSettings(supabase, input.organizationId);
+  const currentRow = await fetchZetaConnectionRow(supabase, input.organizationId);
+  const current = mapZetaConnectionRow(currentRow);
   const normalized = normalizeZetaConnectionInput({
     ...input,
     allowExistingStoredCredentials: current.credentialSource === "db_encrypted" && current.hasStoredSecret,
@@ -393,7 +398,17 @@ export async function saveZetaConnection(
       RolCodigo: normalized.rolCodigo ?? "",
     }
     : null;
-  const status = normalized.isActive ? "connected" : "paused";
+  // Saving connection details invalidates the previous health check. The settings
+  // form deliberately does not carry writeEnabled, so a credential/mock change can
+  // never preserve or silently revive read_write. Writes must be enabled again from
+  // the operational mapping form after a fresh successful real health check.
+  const status = normalized.isActive ? "disconnected" : "paused";
+  const mode = input.writeEnabled === true
+    && normalized.isActive
+    && !normalized.mockEnabled
+    ? "read_write"
+    : "read_only";
+  const currentConfig = asRecord(currentRow?.config_json);
   const beforeJson = current.isConfigured
     ? {
       status: current.status,
@@ -401,16 +416,18 @@ export async function saveZetaConnection(
       credential_source: current.credentialSource,
       env_profile: current.envProfile,
       base_url: current.baseUrl,
+      mode: current.mode,
       credentials_fingerprint: current.credentialsFingerprint,
     }
     : null;
   const saved = await upsertOrganizationIntegrationConnection(supabase, {
     organizationId: input.organizationId,
     provider: zetaProviderCode,
-    mode: "read_only",
+    mode,
     status,
     testMode: normalized.mockEnabled,
     config: {
+      ...currentConfig,
       provider_label: "Zetasoftware",
       credential_source: normalized.credentialSource,
       env_profile: normalized.envProfile,
@@ -422,6 +439,8 @@ export async function saveZetaConnection(
     },
     encryptedCredentials: orgCredentials ? encryptCredentials(orgCredentials) : undefined,
     credentialsFingerprint: orgCredentials ? fingerprintCredentials(orgCredentials) : undefined,
+    lastConnectionTestAt: null,
+    lastConnectionTestOk: null,
     lastError: null,
     actorUserId: input.actorUserId,
   });
@@ -439,6 +458,7 @@ export async function saveZetaConnection(
       credential_source: normalized.credentialSource,
       env_profile: normalized.envProfile,
       base_url: normalized.baseUrl,
+      mode,
       credentials_saved: Boolean(orgCredentials),
       credentials_preview: orgCredentials
         ? `Credenciales configuradas (${fingerprintCredentials(orgCredentials).slice(0, 8)})`
@@ -447,6 +467,7 @@ export async function saveZetaConnection(
     metadata: {
       provider: zetaProviderCode,
       contract_status: "confirmed_pr_01",
+      write_enabled: mode === "read_write",
     },
   });
 

@@ -279,7 +279,9 @@ export async function loadMoneyDashboard(
   };
 
   let supportsWorkUnitColumns = true;
-  let { data, error } = await buildQuery(MONEY_OPEN_ITEMS_SELECT, true);
+  const initialResult = await buildQuery(MONEY_OPEN_ITEMS_SELECT, true);
+  let { data } = initialResult;
+  const { error } = initialResult;
 
   if (error) {
     if (!isMissingMoneyWorkUnitColumn(error)) {

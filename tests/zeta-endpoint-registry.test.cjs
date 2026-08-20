@@ -85,6 +85,8 @@ test("Zeta endpoint registry includes the PR-01 required domains", () => {
   assert.equal(zetaEndpointRegistry.paymentTermsQuery.endpointName, "RESTCondicionesPagoV1Query");
   assert.equal(zetaEndpointRegistry.paymentMethodsQuery.endpointName, "RESTFormasPagoV1Query");
   assert.equal(zetaEndpointRegistry.cashboxesQuery.endpointName, "RESTCajasV1Query");
+  assert.equal(zetaEndpointRegistry.cashboxesQuery.requestShape.Data.Filters.LocalCodigo, 0);
+  assert.equal("Activo" in zetaEndpointRegistry.cashboxesQuery.requestShape.Data.Filters, false);
   assert.equal(zetaEndpointRegistry.facturaProveedorAgregar.endpointName, "RESTFacturaProveedorV1Agregar");
   assert.equal(zetaEndpointRegistry.facturaProveedorQueryCompras.inputWrapper, "QueryComprasIn");
   assert.equal(zetaEndpointRegistry.facturaProveedorCompras.endpointName, "RESTFacturaProveedorV1Compras");

@@ -101,6 +101,8 @@ export type ZetaPurchaseExpenseDocumentInput = {
   totalAmount?: number | null;
   sourceReference?: string | null;
   cfeTypeCode?: string | number | null;
+  zetaConceptCodeOverride?: string | null;
+  zetaPaymentTermCodeOverride?: string | null;
   workUnitId?: string | null;
   workUnitCode?: string | null;
   workUnitName?: string | null;

@@ -40,6 +40,7 @@ Estas referencias no son la tesis del producto, pero siguen siendo utiles para i
 - [Contrato endpoints Zeta](zetasoftware-endpoints-contract.md)
 - [Notas Bandeja Zeta](zetasoftware-bandeja-contract-notes.md)
 - [Validacion Zeta read-only](integrations/zeta-readonly-validation-plan.md)
+- [Primera factura de gasto: foto a Zeta](playbooks/primera-factura-gasto-zeta.md)
 - [Work intake web/email](integrations/work-intake-web-email.md)
 - [Role map y plantillas contables Zeta](pr-next-zeta-posting-templates-role-map.md)
 - [Playbook Nueva Palmira](playbooks/nueva-palmira-acceptance-test.md)

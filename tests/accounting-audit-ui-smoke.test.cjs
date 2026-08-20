@@ -35,6 +35,30 @@ test("document review exposes editable document identity", () => {
   assert.match(source, /documentRoleOptions/);
 });
 
+test("mobile invoice flow redirects to focused Zeta confirmation", () => {
+  const uploadSource = readProjectFile("components", "mobile", "field-upload-sheet.tsx");
+  const reviewSource = readProjectFile("components", "documents", "document-review-rule-workspace.tsx");
+  const pageSource = readProjectFile(
+    "app", "app", "o", "[slug]", "documents", "[documentId]", "page.tsx",
+  );
+
+  assert.match(uploadSource, /\?focus=zeta/);
+  assert.match(uploadSource, /Sacar foto de factura/);
+  assert.match(reviewSource, /Concepto Zeta/);
+  assert.match(reviewSource, /zetaPurchaseExpenseConceptCode/);
+  assert.match(reviewSource, /zetaPurchaseExpensePaymentTermCode/);
+  assert.match(reviewSource, /Condicion exacta en Zeta/);
+  assert.match(reviewSource, /compatibleZetaPaymentTermOptions/);
+  assert.match(reviewSource, /paymentTerms === current\.paymentTerms/);
+  assert.match(reviewSource, /confirmStep: true/);
+  assert.match(pageSource, /focusZeta\s*\?/);
+  assert.match(pageSource, /loadZetaPurchaseExpenseConceptOptions/);
+  assert.match(
+    pageSource,
+    /pageData\.draft\.documentRole === "purchase" \|\| focusZeta/,
+  );
+});
+
 test("vat preview card uses enriched document drilldown and journal links", () => {
   const source = readProjectFile("components", "tax", "vat-run-preview-card.tsx");
 

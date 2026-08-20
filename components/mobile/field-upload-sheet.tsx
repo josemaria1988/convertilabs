@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { computeFileSha256, uploadFileToSignedUrl } from "@/lib/browser/document-upload-client";
 import { normalizeMobileCaptureFile } from "@/lib/browser/mobile-image-normalizer";
@@ -72,6 +72,7 @@ type FieldUploadSheetProps = {
 };
 
 export function FieldUploadSheet({
+  slug,
   workUnits,
   initialWorkUnitId = null,
   prepareUploadAction,
@@ -83,10 +84,8 @@ export function FieldUploadSheet({
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState("");
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedWorkUnitId, setSelectedWorkUnitId] = useState(initialWorkUnitId ?? "");
   const [descriptiveName, setDescriptiveName] = useState("");
-  const [isRefreshing, startTransition] = useTransition();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const openWorkUnits = useMemo(() => workUnits, [workUnits]);
@@ -112,10 +111,11 @@ export function FieldUploadSheet({
     const acceptedFiles: File[] = [];
     const rejectedMessages: string[] = [];
     const uploadFilenames = new Map<File, string>();
+    const automaticName = `factura-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 
     for (const [index, file] of normalizedFiles.entries()) {
       const uploadFilename = buildDescriptiveDocumentFilename({
-        descriptiveName,
+        descriptiveName: descriptiveName || automaticName,
         originalFilename: file.name,
         mimeType: file.type,
         sequenceNumber: normalizedFiles.length > 1 ? index + 1 : null,
@@ -220,7 +220,9 @@ export function FieldUploadSheet({
       documentIds: uploadedDocumentIds,
     });
 
-    setStatus(extractionResult.failedCount > 0 || uploadErrors.length > 0 ? "error" : "success");
+    const completedWithoutErrors = extractionResult.failedCount === 0 && uploadErrors.length === 0;
+
+    setStatus(completedWithoutErrors ? "success" : "error");
     setMessage([
       `${uploadedDocumentIds.length}/${acceptedFiles.length} archivo(s) quedaron cargado(s) en ${documentsStorageBucket}.`,
       extractionResult.message,
@@ -229,86 +231,107 @@ export function FieldUploadSheet({
       uploadErrors.length > 0 ? uploadErrors[0] : null,
     ].filter(Boolean).join(" "));
 
-    startTransition(() => {
-      router.refresh();
-    });
+    if (completedWithoutErrors && uploadedDocumentIds.length === 1) {
+      router.push(`/app/o/${slug}/documents/${uploadedDocumentIds[0]}?focus=zeta`);
+      return;
+    }
+
+    router.refresh();
   }
 
-  const isBusy = status === "preparing" || status === "uploading" || status === "processing" || isRefreshing;
+  const isBusy = status === "preparing" || status === "uploading" || status === "processing";
 
   return (
     <section className="field-panel">
       <div className="field-panel__header">
         <div>
-          <p className="field-panel__eyebrow">Captura</p>
-          <h1 className="field-panel__title">Subir documento</h1>
+          <p className="field-panel__eyebrow">Factura a Zeta</p>
+          <h1 className="field-panel__title">Sacar foto y procesar</h1>
           <p className="field-panel__description">
-            Abre la camara o selecciona un archivo. La app usa el mismo bucket privado y la misma extraccion que la web.
+            Saca una foto legible. La app la guarda en privado, extrae los datos y te lleva directo a la confirmacion antes de enviarla a Zeta.
           </p>
         </div>
       </div>
 
       <div className="mt-4 space-y-4">
-        <label className="grid gap-2">
-          <span className="text-sm font-medium text-white">Trabajo abierto</span>
-          <select
-            className="field-input"
-            value={selectedWorkUnitId}
-            onChange={(event) => {
-              setSelectedWorkUnitId(event.target.value);
-            }}
-            disabled={isBusy}
-          >
-            <option value="">Sin trabajo asignado</option>
-            {openWorkUnits.map((workUnit) => (
-              <option key={workUnit.id} value={workUnit.id}>
-                {[workUnit.name, workUnit.code ? `(${workUnit.code})` : null, workUnit.customerName].filter(Boolean).join(" ")}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="grid gap-2">
-          <span className="text-sm font-medium text-white">Nombre descriptivo</span>
-          <input
-            className="field-input"
-            value={descriptiveName}
-            onChange={(event) => {
-              setDescriptiveName(event.target.value);
-            }}
-            placeholder="hospedaje servicio ADPCaraguata-001"
-            disabled={isBusy}
-          />
-        </label>
-
         <div className="rounded-[22px] border border-dashed border-[color:var(--color-border)] bg-[rgba(18,29,60,0.52)] p-5">
-          <p className="text-sm font-semibold text-white">Accion principal</p>
+          <p className="text-sm font-semibold text-white">Una foto, una factura</p>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">
-            Saca una foto del comprobante o carga PDF, JPG o PNG dentro del perimetro actual. Las fotos grandes se compactan en el navegador antes de subir.
+            Inclui en la imagen el proveedor, RUT, serie, numero, fecha y totales. Las fotos grandes se compactan automaticamente.
           </p>
           <button
             type="button"
             className="ui-button ui-button--primary mt-4 min-h-[46px] w-full"
             disabled={isBusy}
             onClick={() => {
-              setSheetOpen(true);
+              cameraInputRef.current?.click();
             }}
           >
-            {isBusy ? "Procesando..." : "Subir documento"}
+            {isBusy ? "Procesando..." : "Sacar foto de factura"}
+          </button>
+          <button
+            type="button"
+            className="ui-button ui-button--ghost mt-3 min-h-[42px] w-full"
+            disabled={isBusy}
+            onClick={() => {
+              fileInputRef.current?.click();
+            }}
+          >
+            Elegir PDF o imagen
           </button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <details className="rounded-[18px] border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.42)] px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-white">
+            Opciones avanzadas (opcionales)
+          </summary>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-white">Trabajo abierto</span>
+              <select
+                className="field-input"
+                value={selectedWorkUnitId}
+                onChange={(event) => {
+                  setSelectedWorkUnitId(event.target.value);
+                }}
+                disabled={isBusy}
+              >
+                <option value="">Sin trabajo asignado</option>
+                {openWorkUnits.map((workUnit) => (
+                  <option key={workUnit.id} value={workUnit.id}>
+                    {[workUnit.name, workUnit.code ? `(${workUnit.code})` : null, workUnit.customerName].filter(Boolean).join(" ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-white">Nombre descriptivo</span>
+              <input
+                className="field-input"
+                value={descriptiveName}
+                onChange={(event) => {
+                  setDescriptiveName(event.target.value);
+                }}
+                placeholder="Se genera automaticamente"
+                disabled={isBusy}
+              />
+            </label>
+          </div>
+        </details>
+
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="field-inline-stat">
             Limite por archivo: {formatUploadSize(maxDocumentUploadBytes)}
           </div>
           <div className="field-inline-stat">
             Formatos: PDF, JPG, PNG
           </div>
-          <div className="field-inline-stat">
-            Trabajo: {selectedWorkUnit ? selectedWorkUnit.name : "Opcional"}
-          </div>
         </div>
+
+        {selectedWorkUnit ? (
+          <div className="field-inline-stat">Trabajo opcional: {selectedWorkUnit.name}</div>
+        ) : null}
 
         {message ? (
           <div className={`rounded-[18px] border px-4 py-3 text-sm leading-7 ${
@@ -348,60 +371,6 @@ export function FieldUploadSheet({
         }}
       />
 
-      {sheetOpen ? (
-        <div className="field-sheet-overlay" role="dialog" aria-modal="true">
-          <div className="field-sheet">
-            <div className="field-sheet__handle" />
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="field-panel__eyebrow">Elegir origen</p>
-                <h2 className="field-panel__title">Como quieres cargar este documento?</h2>
-                <p className="field-panel__description">
-                  Puedes abrir la camara trasera o cargar archivos desde el dispositivo.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="ui-button ui-button--ghost min-h-[38px] px-3"
-                onClick={() => {
-                  setSheetOpen(false);
-                }}
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-3">
-              <button
-                type="button"
-                className="field-sheet__option"
-                onClick={() => {
-                  setSheetOpen(false);
-                  cameraInputRef.current?.click();
-                }}
-              >
-                <span className="field-sheet__option-title">Sacar foto</span>
-                <span className="field-sheet__option-body">
-                  Prioriza la camara trasera cuando el navegador Android lo soporte.
-                </span>
-              </button>
-              <button
-                type="button"
-                className="field-sheet__option"
-                onClick={() => {
-                  setSheetOpen(false);
-                  fileInputRef.current?.click();
-                }}
-              >
-                <span className="field-sheet__option-title">Cargar archivo</span>
-                <span className="field-sheet__option-body">
-                  PDFs e imagenes compatibles con el mismo flujo privado de la web.
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

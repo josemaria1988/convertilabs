@@ -21,6 +21,10 @@ import {
   loadZetaPurchaseExpenseExportReadiness,
   type ZetaPurchaseExpenseExportReadiness,
 } from "@/modules/integrations/zeta/export/readiness";
+import {
+  loadZetaPurchaseExpenseConfiguration,
+  type ZetaPurchaseExpenseConfiguration,
+} from "@/modules/integrations/zeta/export/configuration-service";
 import { materializeOrganizationRuleSnapshot } from "@/modules/organizations/rule-snapshots";
 
 type ProfileVersionRow = {
@@ -83,6 +87,7 @@ export type OrganizationSettingsData = {
   zetaSyncRuns: ZetaSyncRunListItem[];
   zetaAccountRoleMap: AccountRoleMapSettings;
   zetaPurchaseExpenseReadiness: ZetaPurchaseExpenseExportReadiness;
+  zetaPurchaseExpenseConfiguration: ZetaPurchaseExpenseConfiguration;
 };
 
 function asRecord(value: unknown) {
@@ -169,6 +174,7 @@ export async function loadOrganizationSettingsData(
     zetaSyncRuns,
     zetaAccountRoleMap,
     zetaPurchaseExpenseReadiness,
+    zetaPurchaseExpenseConfiguration,
   ] = await Promise.all([
     loadOrganizationRow(supabase, organizationId),
     supabase
@@ -195,6 +201,7 @@ export async function loadOrganizationSettingsData(
     loadZetaSyncRunHistory(supabase, organizationId),
     loadAccountRoleMapSettings(supabase, { organizationId }),
     loadZetaPurchaseExpenseExportReadiness(supabase, organizationId),
+    loadZetaPurchaseExpenseConfiguration(supabase, organizationId),
   ]);
 
   if (profileResult.error) {
@@ -226,6 +233,7 @@ export async function loadOrganizationSettingsData(
     zetaSyncRuns,
     zetaAccountRoleMap,
     zetaPurchaseExpenseReadiness,
+    zetaPurchaseExpenseConfiguration,
   } satisfies OrganizationSettingsData;
 }
 

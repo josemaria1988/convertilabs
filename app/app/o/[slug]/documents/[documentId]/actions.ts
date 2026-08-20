@@ -37,6 +37,7 @@ function buildPaths(slug: string, documentId: string) {
 export async function saveDocumentDraftReviewAction(input: {
   slug: string;
   documentId: string;
+  confirmStep?: boolean;
   stepCode:
     | "identity"
     | "fields"
@@ -55,10 +56,24 @@ export async function saveDocumentDraftReviewAction(input: {
     };
   }
 
+  if (
+    input.confirmStep
+    && !["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(
+      organization.role,
+    )
+  ) {
+    return {
+      ok: false,
+      status: "blocked",
+      blockers: ["Tu rol no puede confirmar la identidad fiscal de esta factura."],
+    };
+  }
+
   const result = await saveDraftReview({
     organizationId: organization.id,
     documentId: input.documentId,
     actorId: authState.user?.id ?? null,
+    confirmStep: input.confirmStep === true,
     stepCode: input.stepCode,
     payload: input.payload,
   });
@@ -353,7 +368,6 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
   slug: string;
   documentId: string;
   dryRun?: boolean;
-  forceResend?: boolean;
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
@@ -371,7 +385,7 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
     documentId: input.documentId,
     actorProfileId: authState.user?.id ?? "system",
     dryRun: input.dryRun ?? false,
-    forceResend: input.forceResend ?? false,
+    forceResend: false,
   });
   const paths = buildPaths(input.slug, input.documentId);
 
@@ -379,17 +393,24 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
   revalidatePath(paths.review);
 
   return {
-    ok: result.status !== "zeta_error" && result.status !== "timeout_unknown",
+    ok: [
+      "dry_run_ready",
+      "success_pending_reconciliation",
+      "found_in_zeta",
+      "already_exists_in_zeta",
+    ].includes(result.status),
     message:
       result.status === "dry_run_ready"
         ? "Compra lista para enviar a Zeta."
         : result.status === "success_pending_reconciliation"
           ? "Compra enviada a Zeta. Queda pendiente reconciliacion."
-          : result.status === "already_exists_in_zeta"
-            ? "Zeta ya tiene una coincidencia fuerte para esta compra."
-            : result.status === "timeout_unknown"
-              ? "Zeta no respondio a tiempo. No se reintenta automaticamente."
-              : result.blockers[0]?.message ?? "Exportacion Zeta validada.",
+          : result.status === "found_in_zeta"
+            ? "Compra enviada y verificada en Zeta."
+            : result.status === "already_exists_in_zeta"
+              ? "Zeta ya tiene una coincidencia fuerte para esta compra."
+              : result.status === "timeout_unknown"
+                ? "Zeta no respondio a tiempo. No se reintenta automaticamente."
+                : result.blockers[0]?.message ?? "La compra no pudo enviarse a Zeta.",
     result,
   };
 }

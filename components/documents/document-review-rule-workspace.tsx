@@ -12,7 +12,10 @@ import {
 } from "@/components/ui/button-styles";
 import { InlineSpinner } from "@/components/ui/inline-spinner";
 import { LoadingLink } from "@/components/ui/loading-link";
-import type { DocumentRoleCandidate } from "@/modules/ai/document-intake-contract";
+import type {
+  DocumentIntakeFactMap,
+  DocumentRoleCandidate,
+} from "@/modules/ai/document-intake-contract";
 import type {
   AccountRoleCode,
   ApprovalLearningInput,
@@ -20,6 +23,11 @@ import type {
 } from "@/modules/accounting";
 import type { DocumentReviewPageData } from "@/modules/documents/review";
 import type { ZetaPurchaseInvoiceExportResult } from "@/modules/integrations/zeta/export/types";
+import type { ZetaOperationalCatalogOption } from "@/modules/integrations/zeta/export/configuration-service";
+import {
+  classifyZetaPaymentTerm,
+  isZetaPaymentTermCompatible,
+} from "@/modules/integrations/zeta/export/payment-term-compatibility";
 import {
   formatAccountRoleCodeLabel,
   formatDocumentRoleLabel,
@@ -28,16 +36,21 @@ import {
 } from "@/modules/presentation/labels";
 
 type SaveDraftReviewAction = (input: {
-  stepCode: "identity" | "accounting_context";
+  confirmStep?: boolean;
+  stepCode: "identity" | "fields" | "accounting_context";
   payload: {
     documentRole?: DocumentRoleCandidate;
     documentType?: string;
+    operationCategory?: string | null;
+    facts?: Partial<Record<keyof DocumentIntakeFactMap, string | number | null>>;
     accountingContext?: {
       userFreeText?: string | null;
       businessPurposeNote?: string | null;
       manualOverrideAccountId?: string | null;
       manualRoleOverrides?: ManualAccountRoleOverrides | null;
       learnedConceptName?: string | null;
+      zetaPurchaseExpenseConceptCode?: string | null;
+      zetaPurchaseExpensePaymentTermCode?: string | null;
       operationKind?: string | null;
       paymentTerms?: "cash" | "credit" | "unknown" | null;
       settlementMethod?:
@@ -83,7 +96,6 @@ type SaveLearningRuleAction = (input: {
 
 type ExportPurchaseExpenseToZetaAction = (input: {
   dryRun?: boolean;
-  forceResend?: boolean;
 }) => Promise<{
   ok: boolean;
   message: string;
@@ -104,6 +116,11 @@ type Props = {
   slug: string;
   organizationName: string;
   pageData: DocumentReviewPageData;
+  focusZeta?: boolean;
+  zetaConceptOptions?: ZetaOperationalCatalogOption[];
+  selectedZetaConceptCode?: string | null;
+  zetaPaymentTermOptions?: ZetaOperationalCatalogOption[];
+  selectedZetaPaymentTermCode?: string | null;
   saveDraftReviewAction: SaveDraftReviewAction;
   confirmManualAssignmentAction: ConfirmManualAssignmentAction;
   createReviewAccountAction: CreateReviewAccountAction;
@@ -113,11 +130,78 @@ type Props = {
 
 type ReviewManualRoleOverrides = Partial<Record<AccountRoleCode, string>>;
 type LearningScope = ApprovalLearningInput["scope"];
-type PendingAction = "identity" | "draft" | "confirm_accounts" | "save_rule" | "zeta_validate" | "zeta_export" | null;
+type PendingAction = "identity" | "fields" | "draft" | "confirm_accounts" | "save_rule" | "zeta_validate" | "zeta_export" | null;
 type PendingInlineAction = "create_account" | null;
 type FeedbackTone = "neutral" | "success" | "danger";
 type RuleToggleKey = "issuer" | "receiver" | "concept";
 type RuleToggleState = Record<RuleToggleKey, boolean>;
+
+type ZetaQuickInvoiceDraft = {
+  issuerName: string;
+  issuerTaxId: string;
+  series: string;
+  documentNumber: string;
+  documentDate: string;
+  currencyCode: string;
+  subtotal: string;
+  taxAmount: string;
+  totalAmount: string;
+  zetaConceptCode: string;
+  zetaPaymentTermCode: string;
+  operationCategory: string;
+  paymentTerms: "cash" | "credit" | "unknown";
+  settlementMethod: "cash" | "bank_transfer" | "card" | "check" | "paid_by_partner" | "unknown";
+};
+
+function editableValue(value: string | number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function buildZetaQuickInvoiceDraft(
+  pageData: DocumentReviewPageData,
+  selectedZetaConceptCode: string | null,
+  selectedZetaPaymentTermCode: string | null,
+): ZetaQuickInvoiceDraft {
+  const paymentTerms = pageData.derived.accountingContext.paymentTerms
+    ?? pageData.derived.settlementContext.paymentTerms
+    ?? "unknown";
+  const settlementMethod = pageData.derived.accountingContext.settlementMethod
+    ?? pageData.derived.settlementContext.settlementMethod
+    ?? "unknown";
+
+  return {
+    issuerName: pageData.draft.facts.issuer_name ?? "",
+    issuerTaxId: pageData.draft.facts.issuer_tax_id ?? "",
+    series: pageData.draft.facts.series ?? "",
+    documentNumber: pageData.draft.facts.document_number ?? "",
+    documentDate: pageData.draft.facts.document_date ?? pageData.document.documentDate ?? "",
+    currencyCode: pageData.draft.facts.currency_code ?? "UYU",
+    subtotal: editableValue(pageData.draft.facts.subtotal),
+    taxAmount: editableValue(pageData.draft.facts.tax_amount),
+    totalAmount: editableValue(pageData.draft.facts.total_amount),
+    zetaConceptCode: selectedZetaConceptCode ?? "",
+    zetaPaymentTermCode: selectedZetaPaymentTermCode ?? "",
+    operationCategory: pageData.draft.operationCategory ?? "",
+    paymentTerms,
+    settlementMethod: settlementMethod === "mixed" ? "unknown" : settlementMethod,
+  };
+}
+
+function isPaymentTermOptionCompatible(
+  option: ZetaOperationalCatalogOption,
+  draft: Pick<ZetaQuickInvoiceDraft, "paymentTerms" | "settlementMethod">,
+) {
+  const kind = option.paymentTermKind ?? classifyZetaPaymentTerm({
+    code: option.code,
+    label: option.label,
+  });
+
+  return isZetaPaymentTermCompatible({
+    kind,
+    paymentTerms: draft.paymentTerms,
+    settlementMethod: draft.settlementMethod,
+  });
+}
 
 const documentRoleOptions: Array<{ value: DocumentRoleCandidate; label: string }> = [
   { value: "purchase", label: "Compra" },
@@ -369,7 +453,7 @@ function formatZetaExportStatus(value: ZetaPurchaseInvoiceExportResult["status"]
     case "not_ready":
       return "No listo";
     case "success_pending_reconciliation":
-      return "Enviado";
+      return "Enviado, verificando";
     case "found_in_zeta":
       return "Encontrado en Zeta";
     case "already_exists_in_zeta":
@@ -388,9 +472,9 @@ function formatZetaExportStatus(value: ZetaPurchaseInvoiceExportResult["status"]
 }
 
 function zetaStatusTone(value: ZetaPurchaseInvoiceExportResult["status"]) {
-  return value === "dry_run_ready" || value === "success_pending_reconciliation" || value === "found_in_zeta"
+  return value === "dry_run_ready" || value === "found_in_zeta" || value === "already_exists_in_zeta"
     ? "success"
-    : value === "not_ready" || value === "blocked" || value === "timeout_unknown" || value === "zeta_error"
+    : value === "not_ready" || value === "blocked" || value === "success_pending_reconciliation" || value === "timeout_unknown" || value === "zeta_error"
       ? "warning"
       : "neutral";
 }
@@ -422,6 +506,11 @@ export function DocumentReviewRuleWorkspace({
   slug,
   organizationName,
   pageData,
+  focusZeta = false,
+  zetaConceptOptions = [],
+  selectedZetaConceptCode = null,
+  zetaPaymentTermOptions = [],
+  selectedZetaPaymentTermCode = null,
   saveDraftReviewAction,
   confirmManualAssignmentAction,
   createReviewAccountAction,
@@ -429,6 +518,23 @@ export function DocumentReviewRuleWorkspace({
   exportPurchaseExpenseToZetaAction,
 }: Props) {
   const router = useRouter();
+
+  useEffect(() => {
+    if (!focusZeta) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById("zeta-invoice-confirmation")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [focusZeta]);
   const [isPending, startTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [pendingInlineAction, setPendingInlineAction] = useState<PendingInlineAction>(null);
@@ -449,6 +555,12 @@ export function DocumentReviewRuleWorkspace({
     documentRole: pageData.draft.documentRole,
     documentType: pageData.draft.documentType,
   });
+  const [zetaQuickDraft, setZetaQuickDraft] = useState<ZetaQuickInvoiceDraft>(() =>
+    buildZetaQuickInvoiceDraft(
+      pageData,
+      selectedZetaConceptCode,
+      selectedZetaPaymentTermCode,
+    ));
   const [showCreateAccountForm, setShowCreateAccountForm] = useState(false);
   const initialScope =
     pageData.learningSuggestions.recommendedScope !== "none"
@@ -492,6 +604,11 @@ export function DocumentReviewRuleWorkspace({
       documentRole: pageData.draft.documentRole,
       documentType: pageData.draft.documentType,
     });
+    setZetaQuickDraft(buildZetaQuickInvoiceDraft(
+      pageData,
+      selectedZetaConceptCode,
+      selectedZetaPaymentTermCode,
+    ));
     setShowCreateAccountForm(false);
     setAccountSearch("");
     setFeedback({
@@ -500,7 +617,17 @@ export function DocumentReviewRuleWorkspace({
     });
     setPendingAction(null);
     setPendingInlineAction(null);
-  }, [pageData]);
+  }, [pageData, selectedZetaConceptCode, selectedZetaPaymentTermCode]);
+
+  const zetaQuickHasUnsavedChanges =
+    JSON.stringify(zetaQuickDraft)
+      !== JSON.stringify(buildZetaQuickInvoiceDraft(
+        pageData,
+        selectedZetaConceptCode,
+        selectedZetaPaymentTermCode,
+      ))
+    || identity.documentRole !== pageData.draft.documentRole
+    || identity.documentType !== pageData.draft.documentType;
 
   const invoiceCode = getInvoiceCode(pageData);
   const counterpartyName =
@@ -563,6 +690,18 @@ export function DocumentReviewRuleWorkspace({
     || pageData.derived.conceptResolution.primaryConceptLabels[0]
     || "Concepto detectado";
   const zetaExport = pageData.zetaPurchaseExpenseExport;
+  const compatibleZetaPaymentTermOptions = useMemo(() =>
+    zetaPaymentTermOptions.filter((option) => isPaymentTermOptionCompatible(
+      option,
+      {
+        paymentTerms: zetaQuickDraft.paymentTerms,
+        settlementMethod: zetaQuickDraft.settlementMethod,
+      },
+    )), [
+      zetaPaymentTermOptions,
+      zetaQuickDraft.paymentTerms,
+      zetaQuickDraft.settlementMethod,
+    ]);
   const roleRows = useMemo(() =>
     pageData.accountRoleAssignments.map((assignment, index) => {
       const overrideAccountId = manualRoleOverrides[assignment.roleCode]?.trim() || "";
@@ -693,6 +832,10 @@ export function DocumentReviewRuleWorkspace({
       pageData.derived.accountingContext.paymentTerms
       ?? pageData.derived.settlementContext.paymentTerms
       ?? null;
+    const settlementMethod =
+      pageData.derived.accountingContext.settlementMethod
+      ?? pageData.derived.settlementContext.settlementMethod
+      ?? null;
 
     return {
       accountingContext: {
@@ -713,11 +856,9 @@ export function DocumentReviewRuleWorkspace({
           ?? null,
         paymentTerms,
         settlementMethod:
-          paymentTerms === "credit"
+          paymentTerms === "credit" && settlementMethod !== "paid_by_partner"
             ? "unknown"
-            : pageData.derived.accountingContext.settlementMethod
-              ?? pageData.derived.settlementContext.settlementMethod
-              ?? null,
+            : settlementMethod,
         settlementEvidenceSource:
           pageData.derived.accountingContext.settlementEvidenceSource
           ?? pageData.derived.settlementContext.settlementEvidenceSource
@@ -737,6 +878,16 @@ export function DocumentReviewRuleWorkspace({
         nextAccountId && nextAccountId !== (suggestedAccountId ?? "")
           ? nextAccountId
           : "",
+    }));
+  }
+
+  function setZetaQuickField<Key extends keyof ZetaQuickInvoiceDraft>(
+    key: Key,
+    value: ZetaQuickInvoiceDraft[Key],
+  ) {
+    setZetaQuickDraft((current) => ({
+      ...current,
+      [key]: value,
     }));
   }
 
@@ -824,6 +975,120 @@ export function DocumentReviewRuleWorkspace({
             error instanceof Error
               ? error.message
               : "No pudimos actualizar la identidad del documento.",
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }
+
+  function handleSaveZetaInvoiceFacts() {
+    if (identity.documentRole !== "purchase") {
+      setFeedback({
+        tone: "danger",
+        text: "Cambia el rol documental a Compra para continuar con Zeta.",
+      });
+      return;
+    }
+
+    if (!zetaQuickDraft.zetaConceptCode) {
+      setFeedback({
+        tone: "danger",
+        text: "Selecciona el concepto real de Zeta para esta factura.",
+      });
+      return;
+    }
+
+    if (zetaQuickDraft.paymentTerms === "unknown") {
+      setFeedback({
+        tone: "danger",
+        text: "Confirma si la factura es contado o credito.",
+      });
+      return;
+    }
+
+    if (!zetaQuickDraft.zetaPaymentTermCode) {
+      setFeedback({
+        tone: "danger",
+        text: "Selecciona la condicion de pago real de Zeta para esta factura.",
+      });
+      return;
+    }
+
+    const selectedPaymentTerm = zetaPaymentTermOptions.find((option) =>
+      option.code === zetaQuickDraft.zetaPaymentTermCode);
+
+    if (
+      !selectedPaymentTerm
+      || !isPaymentTermOptionCompatible(selectedPaymentTerm, zetaQuickDraft)
+    ) {
+      setFeedback({
+        tone: "danger",
+        text: "La condicion exacta de Zeta no coincide con contado/credito. Seleccionala nuevamente.",
+      });
+      return;
+    }
+
+    setPendingAction("fields");
+    startTransition(async () => {
+      try {
+        const existingAccountingContext = buildAccountingContextPayload().accountingContext;
+        const result = await saveDraftReviewAction({
+          confirmStep: true,
+          stepCode: "fields",
+          payload: {
+            documentRole: identity.documentRole,
+            documentType: identity.documentType,
+            operationCategory: zetaQuickDraft.operationCategory || null,
+            facts: {
+              issuer_name: zetaQuickDraft.issuerName || null,
+              issuer_tax_id: zetaQuickDraft.issuerTaxId || null,
+              series: zetaQuickDraft.series || null,
+              document_number: zetaQuickDraft.documentNumber || null,
+              document_date: zetaQuickDraft.documentDate || null,
+              currency_code: zetaQuickDraft.currencyCode.toUpperCase() || null,
+              subtotal: zetaQuickDraft.subtotal || null,
+              tax_amount: zetaQuickDraft.taxAmount || null,
+              total_amount: zetaQuickDraft.totalAmount || null,
+            },
+            accountingContext: {
+              ...existingAccountingContext,
+              zetaPurchaseExpenseConceptCode: zetaQuickDraft.zetaConceptCode,
+              zetaPurchaseExpensePaymentTermCode: zetaQuickDraft.zetaPaymentTermCode,
+              paymentTerms: zetaQuickDraft.paymentTerms,
+              settlementMethod:
+                zetaQuickDraft.paymentTerms === "credit"
+                && zetaQuickDraft.settlementMethod !== "paid_by_partner"
+                  ? "unknown"
+                  : zetaQuickDraft.settlementMethod,
+              settlementEvidenceSource: "user_input",
+            },
+          },
+        });
+        const message = result.ok
+          ? "Datos de la factura confirmados. Ya podes validar el payload de Zeta."
+          : buildBlockingMessage(result.blockers);
+
+        setFeedback({
+          tone: result.ok ? "success" : "danger",
+          text: message,
+        });
+
+        if (result.ok) {
+          router.refresh();
+          window.setTimeout(() => {
+            document.getElementById("zeta-purchase-export")?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }, 300);
+        }
+      } catch (error) {
+        setFeedback({
+          tone: "danger",
+          text: error instanceof Error
+            ? error.message
+            : "No pudimos confirmar los datos de la factura.",
         });
       } finally {
         setPendingAction(null);
@@ -937,6 +1202,14 @@ export function DocumentReviewRuleWorkspace({
   }
 
   function handleZetaExport(dryRun: boolean) {
+    if (zetaQuickHasUnsavedChanges) {
+      setFeedback({
+        tone: "danger",
+        text: "Hay cambios sin confirmar. Pulsa Confirmar datos y continuar antes de validar o enviar.",
+      });
+      return;
+    }
+
     setPendingAction(dryRun ? "zeta_validate" : "zeta_export");
     startTransition(async () => {
       try {
@@ -1153,66 +1426,354 @@ export function DocumentReviewRuleWorkspace({
             </div>
           </section>
 
-          <section className="review-rule-card" data-testid="document-identity-card">
-            <div className="review-rule-card__header review-rule-card__header--stack">
-              <div>
-                <h2>Identidad del documento</h2>
-                <p>{formatDocumentRoleLabel(pageData.draft.documentRole)} / {pageData.draft.documentType}</p>
+          {focusZeta ? (
+            <section
+              id="zeta-invoice-confirmation"
+              className="review-rule-card scroll-mt-6"
+              data-testid="zeta-invoice-confirmation"
+            >
+              <div className="review-rule-card__header review-rule-card__header--stack">
+                <div>
+                  <h2>1. Confirmar datos de la factura</h2>
+                  <p>Corregi cualquier dato leido de la foto antes de validar contra Zeta.</p>
+                </div>
               </div>
-            </div>
 
-            <div className="review-rule-linked-fields">
-              <label className="review-rule-linked-field">
-                <span>Rol documental</span>
-                <select
-                  value={identity.documentRole}
-                  onChange={(event) => {
-                    setIdentity((current) => ({
-                      ...current,
-                      documentRole: event.target.value as DocumentRoleCandidate,
-                    }));
-                  }}
-                  disabled={isPending}
-                  className="review-rule-input"
-                >
-                  {documentRoleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+              <div className="review-rule-linked-fields">
+                <label className="review-rule-linked-field">
+                  <span>Proveedor</span>
+                  <input
+                    type="text"
+                    value={zetaQuickDraft.issuerName}
+                    onChange={(event) => setZetaQuickField("issuerName", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>RUT proveedor</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={zetaQuickDraft.issuerTaxId}
+                    onChange={(event) => setZetaQuickField("issuerTaxId", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Serie</span>
+                  <input
+                    type="text"
+                    value={zetaQuickDraft.series}
+                    onChange={(event) => setZetaQuickField("series", event.target.value.toUpperCase())}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Numero</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={zetaQuickDraft.documentNumber}
+                    onChange={(event) => setZetaQuickField("documentNumber", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Fecha de emision</span>
+                  <input
+                    type="date"
+                    value={zetaQuickDraft.documentDate}
+                    onChange={(event) => setZetaQuickField("documentDate", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Moneda</span>
+                  <select
+                    value={zetaQuickDraft.currencyCode}
+                    onChange={(event) => setZetaQuickField("currencyCode", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    <option value="UYU">UYU - Pesos</option>
+                    <option value="USD">USD - Dolares</option>
+                    <option value="EUR">EUR - Euros</option>
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Concepto Zeta</span>
+                  <select
+                    value={zetaQuickDraft.zetaConceptCode}
+                    onChange={(event) => setZetaQuickField("zetaConceptCode", event.target.value)}
+                    disabled={isPending || zetaConceptOptions.length === 0}
+                    className="review-rule-input"
+                  >
+                    <option value="">
+                      {zetaConceptOptions.length > 0
+                        ? "Seleccionar concepto real de Zeta"
+                        : "Sincroniza maestros Zeta"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {zetaConceptOptions.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Subtotal neto</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={zetaQuickDraft.subtotal}
+                    onChange={(event) => setZetaQuickField("subtotal", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>IVA</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={zetaQuickDraft.taxAmount}
+                    onChange={(event) => setZetaQuickField("taxAmount", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Total</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={zetaQuickDraft.totalAmount}
+                    onChange={(event) => setZetaQuickField("totalAmount", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Tipo de compra</span>
+                  <select
+                    value={zetaQuickDraft.operationCategory}
+                    onChange={(event) => setZetaQuickField("operationCategory", event.target.value)}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    <option value="">Seleccionar</option>
+                    {pageData.operationCategoryOptions.map((option) => (
+                      <option key={option.code} value={option.code}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Condicion de pago</span>
+                  <select
+                    value={zetaQuickDraft.paymentTerms}
+                    onChange={(event) => {
+                      const paymentTerms = event.target.value as ZetaQuickInvoiceDraft["paymentTerms"];
 
-              <label className="review-rule-linked-field">
-                <span>Tipo documental</span>
-                <input
-                  type="text"
-                  value={identity.documentType}
-                  onChange={(event) => {
-                    setIdentity((current) => ({
-                      ...current,
-                      documentType: event.target.value,
-                    }));
-                  }}
+                      setZetaQuickDraft((current) => ({
+                        ...current,
+                        paymentTerms,
+                        zetaPaymentTermCode:
+                          paymentTerms === current.paymentTerms
+                            ? current.zetaPaymentTermCode
+                            : "",
+                        settlementMethod:
+                          paymentTerms === "credit"
+                          && current.settlementMethod !== "paid_by_partner"
+                            ? "unknown"
+                            : current.settlementMethod,
+                      }));
+                    }}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    <option value="unknown">Seleccionar</option>
+                    <option value="credit">Credito</option>
+                    <option value="cash">Contado</option>
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Condicion exacta en Zeta</span>
+                  <select
+                    value={zetaQuickDraft.zetaPaymentTermCode}
+                    onChange={(event) => setZetaQuickField(
+                      "zetaPaymentTermCode",
+                      event.target.value,
+                    )}
+                    disabled={isPending || compatibleZetaPaymentTermOptions.length === 0}
+                    className="review-rule-input"
+                  >
+                    <option value="">
+                      {compatibleZetaPaymentTermOptions.length > 0
+                        ? "Seleccionar codigo real de Zeta"
+                        : zetaPaymentTermOptions.length > 0
+                          ? "Primero confirma contado o credito"
+                          : "Sincroniza maestros Zeta"}
+                    </option>
+                    {compatibleZetaPaymentTermOptions.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Como se pago</span>
+                  <select
+                    value={zetaQuickDraft.settlementMethod}
+                    onChange={(event) => {
+                      const settlementMethod = event.target.value as ZetaQuickInvoiceDraft["settlementMethod"];
+
+                      setZetaQuickDraft((current) => {
+                        const selectedPaymentTerm = zetaPaymentTermOptions.find((option) =>
+                          option.code === current.zetaPaymentTermCode);
+
+                        return {
+                          ...current,
+                          settlementMethod,
+                          zetaPaymentTermCode:
+                            selectedPaymentTerm
+                            && !isPaymentTermOptionCompatible(selectedPaymentTerm, {
+                              paymentTerms: current.paymentTerms,
+                              settlementMethod,
+                            })
+                              ? ""
+                              : current.zetaPaymentTermCode,
+                        };
+                      });
+                    }}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    <option value="unknown">
+                      {zetaQuickDraft.paymentTerms === "credit" ? "No aplica por ahora" : "Seleccionar"}
+                    </option>
+                    <option value="cash">Efectivo</option>
+                    <option value="bank_transfer">Transferencia bancaria</option>
+                    <option value="card">Tarjeta</option>
+                    <option value="check">Cheque</option>
+                    <option value="paid_by_partner">Pagado por socio / a reintegrar</option>
+                  </select>
+                </label>
+                <label className="review-rule-linked-field">
+                  <span>Rol documental</span>
+                  <select
+                    value={identity.documentRole}
+                    onChange={(event) => {
+                      setIdentity((current) => ({
+                        ...current,
+                        documentRole: event.target.value as DocumentRoleCandidate,
+                      }));
+                    }}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    {documentRoleOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="review-rule-note">
+                <p className="review-rule-note__label">Alcance del piloto</p>
+                <p className="review-rule-note__text">
+                  Solo facturas de gasto de proveedores ya existentes. Compras de mercaderia quedan bloqueadas.
+                </p>
+              </div>
+
+              <div className="review-rule-actions review-rule-actions--compact">
+                <button
+                  type="button"
+                  onClick={handleSaveZetaInvoiceFacts}
                   disabled={isPending}
-                  className="review-rule-input"
-                />
-              </label>
-            </div>
+                  className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
+                >
+                  {pendingAction === "fields" && isPending ? <InlineSpinner /> : null}
+                  Confirmar datos y continuar
+                </button>
+              </div>
+              {zetaQuickHasUnsavedChanges ? (
+                <p className="review-rule-search__hint">
+                  Hay cambios sin confirmar; el envio queda bloqueado hasta guardarlos.
+                </p>
+              ) : null}
+            </section>
+          ) : (
+            <section className="review-rule-card" data-testid="document-identity-card">
+              <div className="review-rule-card__header review-rule-card__header--stack">
+                <div>
+                  <h2>Identidad del documento</h2>
+                  <p>{formatDocumentRoleLabel(pageData.draft.documentRole)} / {pageData.draft.documentType}</p>
+                </div>
+              </div>
 
-            <div className="review-rule-actions review-rule-actions--compact">
-              <button
-                type="button"
-                onClick={handleSaveIdentity}
-                disabled={isPending}
-                className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
-              >
-                {pendingAction === "identity" && isPending ? <InlineSpinner /> : null}
-                Guardar identidad
-              </button>
-            </div>
-          </section>
+              <div className="review-rule-linked-fields">
+                <label className="review-rule-linked-field">
+                  <span>Rol documental</span>
+                  <select
+                    value={identity.documentRole}
+                    onChange={(event) => {
+                      setIdentity((current) => ({
+                        ...current,
+                        documentRole: event.target.value as DocumentRoleCandidate,
+                      }));
+                    }}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  >
+                    {documentRoleOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
+                <label className="review-rule-linked-field">
+                  <span>Tipo documental</span>
+                  <input
+                    type="text"
+                    value={identity.documentType}
+                    onChange={(event) => {
+                      setIdentity((current) => ({
+                        ...current,
+                        documentType: event.target.value,
+                      }));
+                    }}
+                    disabled={isPending}
+                    className="review-rule-input"
+                  />
+                </label>
+              </div>
+
+              <div className="review-rule-actions review-rule-actions--compact">
+                <button
+                  type="button"
+                  onClick={handleSaveIdentity}
+                  disabled={isPending}
+                  className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
+                >
+                  {pendingAction === "identity" && isPending ? <InlineSpinner /> : null}
+                  Guardar identidad
+                </button>
+              </div>
+            </section>
+          )}
+
+          {!focusZeta ? (
           <section className="review-rule-card">
             <div className="review-rule-card__header">
               <h2>Estado de Reglas</h2>
@@ -1238,23 +1799,24 @@ export function DocumentReviewRuleWorkspace({
               <p className="review-rule-note__meta">Confianza visible: {confidenceText}.</p>
             </div>
           </section>
+          ) : null}
         </aside>
 
         <section className="review-rule-main">
-          <div className="review-rule-mainbar">
+          {!focusZeta ? <div className="review-rule-mainbar">
             Analisis de IA y decision contable / regla
-          </div>
+          </div> : null}
 
-          <div className="review-rule-main-title">
+          {!focusZeta ? <div className="review-rule-main-title">
             <p>
               {formatPostingTemplateCodeLabel(pageData.derived.journalSuggestion.templateCode)}
               {" | "}
               Balance {formatMoney(pageData.derived.journalSuggestion.totalDebit, currencyCode)}
             </p>
             <h2>Revisar y Automatizar</h2>
-          </div>
+          </div> : null}
 
-          <div className="review-rule-panels">
+          <div className={focusZeta ? "hidden" : "review-rule-panels"}>
             <section className="review-rule-card">
               <div className="review-rule-card__header review-rule-card__header--stack">
                 <div>
@@ -1634,7 +2196,7 @@ export function DocumentReviewRuleWorkspace({
           </div>
 
           {zetaExport ? (
-            <section className="review-rule-card">
+            <section id="zeta-purchase-export" className="review-rule-card scroll-mt-6">
               <div className="review-rule-card__header review-rule-card__header--stack">
                 <div>
                   <h2>Enviar gasto a Zeta</h2>
@@ -1756,7 +2318,12 @@ export function DocumentReviewRuleWorkspace({
                 <button
                   type="button"
                   onClick={() => handleZetaExport(true)}
-                  disabled={isPending}
+                  disabled={
+                    !selectedZetaConceptCode
+                    || !selectedZetaPaymentTermCode
+                    || zetaQuickHasUnsavedChanges
+                    || isPending
+                  }
                   className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} review-rule-action-button`}
                 >
                   {pendingAction === "zeta_validate" && isPending ? <InlineSpinner /> : null}
@@ -1765,7 +2332,13 @@ export function DocumentReviewRuleWorkspace({
                 <button
                   type="button"
                   onClick={() => handleZetaExport(false)}
-                  disabled={!zetaExport.exportable || isPending}
+                  disabled={
+                    !selectedZetaConceptCode
+                    || !selectedZetaPaymentTermCode
+                    || zetaQuickHasUnsavedChanges
+                    || !zetaExport.exportable
+                    || isPending
+                  }
                   className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}
                 >
                   {pendingAction === "zeta_export" && isPending ? <InlineSpinner /> : null}

@@ -51,6 +51,7 @@ export function ZetaSoftwareConnectionCard({
 
       <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/55 px-4 py-3 text-sm text-[color:var(--color-muted)]">
         Las credenciales del integrador Convertilabs viven solo en variables de entorno del servidor. Aca se guardan cifradas las credenciales de esta organizacion en Zeta; la clave no se muestra ni queda en auditoria.
+        Guardar esta seccion deshabilita los envios y exige volver a probar la conexion antes de habilitarlos otra vez.
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -164,7 +165,7 @@ export function ZetaSoftwareConnectionCard({
         <div>
           <p className="text-base font-semibold">Zetasoftware</p>
           <p className="mt-1 text-sm text-[color:var(--color-muted)]">
-            Conexion de lectura para traer documentos, maestros y trazabilidad desde las APIs REST confirmadas.
+            Conexion para traer datos y, solo con habilitacion explicita, enviar facturas de gasto desde el servidor.
           </p>
         </div>
         <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName(connection.status)}`}>
@@ -176,7 +177,11 @@ export function ZetaSoftwareConnectionCard({
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-3 text-sm">
           <p className="font-semibold">Modo</p>
           <p className="mt-1 text-[color:var(--color-muted)]">
-            {connection.mockEnabled ? "Mock controlado" : "Real read-only"}
+            {connection.mockEnabled
+              ? "Mock controlado"
+              : connection.writeEnabled
+                ? "Real: lectura + gastos"
+                : "Real read-only"}
           </p>
         </div>
         <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-3 text-sm">

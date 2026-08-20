@@ -131,6 +131,7 @@ type MasterQueryDefinition = {
 };
 
 const masterQueries: MasterQueryDefinition[] = [
+  { key: "userRolesQuery", entityType: "user_role", externalKeyFields: ["Codigo", "UsuarioEmail"] },
   { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo"], stream: "zeta.masters.contacts" },
   { key: "customerCommercialDataQuery", entityType: "customer_commercial_data", externalKeyFields: ["Codigo"] },
   { key: "supplierCommercialDataQuery", entityType: "supplier_commercial_data", externalKeyFields: ["Codigo"] },

@@ -582,6 +582,7 @@ export type SaveDraftReviewInput = {
   organizationId: string;
   documentId: string;
   actorId: string | null;
+  confirmStep?: boolean;
   stepCode:
     | "identity"
     | "fields"
@@ -601,6 +602,8 @@ export type SaveDraftReviewInput = {
       manualOverrideConceptId?: string | null;
       manualOverrideOperationCategory?: string | null;
       learnedConceptName?: string | null;
+      zetaPurchaseExpenseConceptCode?: string | null;
+      zetaPurchaseExpensePaymentTermCode?: string | null;
       operationKind?: string | null;
       paymentTerms?: "cash" | "credit" | "unknown" | null;
       settlementMethod?: "cash" | "bank_transfer" | "card" | "check" | "paid_by_partner" | "mixed" | "unknown" | null;
@@ -1915,6 +1918,18 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
             typeof input.accountingContext.learnedConceptName === "string"
               ? input.accountingContext.learnedConceptName.trim() || null
               : input.accountingContext.learnedConceptName ?? null,
+          zetaPurchaseExpenseConceptCode:
+            typeof input.accountingContext.zetaPurchaseExpenseConceptCode === "string"
+              ? input.accountingContext.zetaPurchaseExpenseConceptCode.trim() || null
+              : input.accountingContext.zetaPurchaseExpenseConceptCode === null
+                ? null
+                : undefined,
+          zetaPurchaseExpensePaymentTermCode:
+            typeof input.accountingContext.zetaPurchaseExpensePaymentTermCode === "string"
+              ? input.accountingContext.zetaPurchaseExpensePaymentTermCode.trim() || null
+              : input.accountingContext.zetaPurchaseExpensePaymentTermCode === null
+                ? null
+                : undefined,
           operationKind:
             typeof input.accountingContext.operationKind === "string"
               ? input.accountingContext.operationKind.trim() || null
@@ -1930,6 +1945,7 @@ function normalizeDraftPatch(input: SaveDraftReviewInput["payload"]) {
             || input.accountingContext.settlementMethod === "bank_transfer"
             || input.accountingContext.settlementMethod === "card"
             || input.accountingContext.settlementMethod === "check"
+            || input.accountingContext.settlementMethod === "paid_by_partner"
             || input.accountingContext.settlementMethod === "mixed"
             || input.accountingContext.settlementMethod === "unknown"
               ? input.accountingContext.settlementMethod
@@ -1990,6 +2006,18 @@ function mergeStoredAccountingContext(
             ?? asString(currentStructured.manual_override_operation_category),
           learned_concept_name:
             patch.learnedConceptName ?? asString(currentStructured.learned_concept_name),
+          ...(patch.zetaPurchaseExpenseConceptCode === undefined
+            ? {}
+            : {
+                zeta_purchase_expense_concept_code:
+                  patch.zetaPurchaseExpenseConceptCode,
+              }),
+          ...(patch.zetaPurchaseExpensePaymentTermCode === undefined
+            ? {}
+            : {
+                zeta_purchase_expense_payment_term_code:
+                  patch.zetaPurchaseExpensePaymentTermCode,
+              }),
           operation_kind:
             patch.operationKind ?? asString(currentStructured.operation_kind),
           payment_terms:
@@ -3713,6 +3741,25 @@ export async function saveDraftReview(input: SaveDraftReviewInput) {
   await persistDraftArtifacts(supabase, document, nextDraft, input.actorId, derived, {
     profileVersion,
   });
+
+  if (input.confirmStep && (input.stepCode === "identity" || input.stepCode === "fields")) {
+    const confirmedAt = new Date().toISOString();
+    const { error: stepConfirmationError } = await supabase
+      .from("document_draft_steps")
+      .update({
+        status: "confirmed",
+        last_saved_at: confirmedAt,
+        last_confirmed_at: confirmedAt,
+        stale_reason: null,
+      })
+      .eq("draft_id", draft.id)
+      .eq("step_code", input.stepCode);
+
+    if (stepConfirmationError) {
+      throw new Error(stepConfirmationError.message);
+    }
+  }
+
   await markDocumentAssignmentRunsStale(supabase, {
     documentId: document.id,
   });

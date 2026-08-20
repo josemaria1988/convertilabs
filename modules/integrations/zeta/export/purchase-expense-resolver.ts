@@ -11,6 +11,10 @@ import type {
   ZetaFacturaProveedorLinea,
   ZetaFacturaProveedorMovimiento,
 } from "@/modules/integrations/zeta/contracts/factura-proveedor";
+import {
+  classifyZetaPaymentTerm,
+  isZetaPaymentTermCompatible,
+} from "@/modules/integrations/zeta/export/payment-term-compatibility";
 import { resolveZetaPurchaseKind } from "@/modules/integrations/zeta/export/resolve-purchase-kind";
 import { resolveZetaSupplier } from "@/modules/integrations/zeta/export/resolve-zeta-supplier";
 import type {
@@ -27,6 +31,8 @@ import type {
 } from "@/modules/integrations/zeta/export/types";
 
 const MONEY_TOLERANCE = 0.05;
+const ZETA_HEADER_NOTES_MAX_LENGTH = 30;
+const ZETA_LINE_CONCEPT_MAX_LENGTH = 50;
 
 type ResolvedSourceLine = Required<Pick<
   ZetaPurchaseExpenseDocumentLineInput,
@@ -75,7 +81,13 @@ function firstNumber(...values: unknown[]) {
 }
 
 function isInactive(row: ZetaCatalogRow) {
-  const active = normalizeTextToken(firstText(row.Activo, row.ConceptoActivo, row.ContactoActivo));
+  const active = normalizeTextToken(firstText(
+    row.Activo,
+    row.ConceptoActivo,
+    row.ContactoActivo,
+    row.LocalActivo,
+    row.CajaActiva,
+  ));
 
   return active === "n" || active === "no" || active === "false" || active === "0" || active === "inactivo";
 }
@@ -104,6 +116,51 @@ function codeNumber(value: unknown) {
   const parsed = firstNumber(value);
 
   return typeof parsed === "number" ? Math.trunc(parsed) : null;
+}
+
+function normalizeZetaMovementDate(value: string | null) {
+  const normalized = value?.trim() ?? "";
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    ?? normalized.match(/^(\d{4})(\d{2})(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() + 1 !== month
+    || parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${match[1]}${match[2]}${match[3]}`;
+}
+
+function compactZetaHeaderNotes(input: {
+  document: ZetaPurchaseExpenseDocumentInput;
+  fiscalFingerprint: string;
+}) {
+  const sourceReference = firstText(input.document.sourceReference);
+
+  if (sourceReference && sourceReference.length <= ZETA_HEADER_NOTES_MAX_LENGTH) {
+    return sourceReference;
+  }
+
+  if (sourceReference && !/^convertilabs\s+document\b/i.test(sourceReference)) {
+    return sourceReference.slice(0, ZETA_HEADER_NOTES_MAX_LENGTH);
+  }
+
+  const compactId = input.document.documentId.replace(/[^a-z0-9]/gi, "").slice(0, 8)
+    || input.fiscalFingerprint.replace(/^sha256:/, "").slice(0, 8);
+
+  return `Convertilabs ${compactId}`.slice(0, ZETA_HEADER_NOTES_MAX_LENGTH);
 }
 
 function compactRecord<T extends Record<string, unknown>>(record: T) {
@@ -281,7 +338,8 @@ function resolvePaymentTerm(input: {
   const key = input.document.settlementMethod === "paid_by_partner"
     ? "paid_by_partner"
     : input.document.paymentTerms ?? "unknown";
-  const code = input.catalogs.config?.paymentTerms?.[key]
+  const code = input.document.zetaPaymentTermCodeOverride
+    ?? input.catalogs.config?.paymentTerms?.[key]
     ?? input.catalogs.config?.defaults?.paymentTermCode;
 
   if (!code) {
@@ -310,6 +368,29 @@ function resolvePaymentTerm(input: {
       `La condicion de pago Zeta ${code} esta inactiva.`,
       "payment_terms",
     );
+  } else {
+    const kind = classifyZetaPaymentTerm({
+      code,
+      label: firstText(row.Nombre, row.Descripcion, row.Abreviacion),
+      configuredCashCode: input.catalogs.config?.paymentTerms?.cash,
+      configuredCreditCode: input.catalogs.config?.paymentTerms?.credit,
+      configuredPaidByPartnerCode: input.catalogs.config?.paymentTerms?.paid_by_partner,
+    });
+
+    if (!isZetaPaymentTermCompatible({
+      kind,
+      paymentTerms: input.document.paymentTerms,
+      settlementMethod: input.document.settlementMethod,
+    })) {
+      addBlocker(
+        input.blockers,
+        "zeta_payment_term_incompatible",
+        kind === "unknown"
+          ? `No se pudo confirmar si la condicion Zeta ${code} corresponde a contado o credito.`
+          : "La condicion exacta de Zeta no coincide con el tipo contado/credito confirmado para esta factura.",
+        "payment_terms",
+      );
+    }
   }
 
   return code;
@@ -329,7 +410,6 @@ function resolvePaymentMethod(input: {
       code: null,
       formasPago: undefined,
       paidByPartnerMessage: null,
-      cashboxCode: undefined,
     };
   }
 
@@ -344,7 +424,6 @@ function resolvePaymentMethod(input: {
       code: null,
       formasPago: undefined,
       paidByPartnerMessage: null,
-      cashboxCode: undefined,
     };
   }
 
@@ -363,7 +442,6 @@ function resolvePaymentMethod(input: {
       code: null,
       formasPago: undefined,
       paidByPartnerMessage: null,
-      cashboxCode: undefined,
     };
   }
 
@@ -397,25 +475,8 @@ function resolvePaymentMethod(input: {
 
     input.warnings.push({
       code: "zeta_paid_by_partner_no_cash_bank",
-      message: "Esta compra no usara Caja ni Banco de Rontil. Se enviara con la forma de pago configurada para reintegro a socio.",
+      message: "La cabecera llevara el CodigoCaja obligatorio de Zeta, pero la forma de pago para reintegro a socio no imputara Caja ni Banco de Rontil.",
     });
-  }
-
-  let cashboxCode: number | undefined;
-
-  if (settlementMethod !== "paid_by_partner" && isYes(row?.RequiereCaja)) {
-    const configured = input.catalogs.config?.defaults?.cashboxCode;
-
-    if (!configured) {
-      addBlocker(
-        input.blockers,
-        "zeta_cashbox_required",
-        "Zeta requiere caja para esta forma de pago y no hay caja default configurada.",
-        "cashbox",
-      );
-    } else {
-      cashboxCode = configured;
-    }
   }
 
   const total = roundCurrency(input.document.totalAmount ?? 0);
@@ -434,15 +495,132 @@ function resolvePaymentMethod(input: {
     code: paymentMethodCode,
     formasPago,
     paidByPartnerMessage: settlementMethod === "paid_by_partner"
-      ? "Esta compra no usara Caja ni Banco de Rontil. Se enviara con la forma de pago configurada para reintegro a socio."
+      ? "La cabecera llevara el CodigoCaja obligatorio de Zeta, sin imputar esa caja en la forma de pago para reintegro a socio."
       : null,
-    cashboxCode,
   };
+}
+
+function resolveDefaultCashbox(input: {
+  catalogs: ZetaPurchaseExpenseCatalogs;
+  blockers: ZetaPurchaseExportBlocker[];
+}) {
+  const configured = input.catalogs.config?.defaults?.cashboxCode;
+
+  if (configured === null || configured === undefined) {
+    addBlocker(
+      input.blockers,
+      "zeta_cashbox_required",
+      "Falta configurar la caja default obligatoria para facturas de proveedor Zeta.",
+      "cashbox",
+    );
+    return null;
+  }
+
+  const row = findByCode(input.catalogs.cashboxes ?? [], configured);
+
+  if (!row) {
+    addBlocker(
+      input.blockers,
+      "zeta_cashbox_not_found",
+      `La caja Zeta ${configured} no esta sincronizada o no existe.`,
+      "cashbox",
+    );
+    return null;
+  }
+
+  if (isInactive(row)) {
+    addBlocker(
+      input.blockers,
+      "zeta_cashbox_inactive",
+      `La caja Zeta ${configured} pertenece a un local inactivo o esta inactiva.`,
+      "cashbox",
+    );
+    return null;
+  }
+
+  const code = codeNumber(rowCode(row));
+
+  if (code === null || code <= 0) {
+    addBlocker(
+      input.blockers,
+      "zeta_cashbox_invalid",
+      `La caja Zeta ${configured} no tiene un codigo numerico valido.`,
+      "cashbox",
+    );
+    return null;
+  }
+
+  const configuredLocal = input.catalogs.config?.defaults?.localCode;
+  const cashboxLocal = codeNumber(row.LocalCodigo);
+
+  if (
+    configuredLocal !== null
+    && configuredLocal !== undefined
+    && cashboxLocal !== null
+    && cashboxLocal !== configuredLocal
+  ) {
+    addBlocker(
+      input.blockers,
+      "zeta_cashbox_local_mismatch",
+      `La caja Zeta ${configured} pertenece al local ${cashboxLocal}, no al local default ${configuredLocal}.`,
+      "cashbox",
+    );
+    return null;
+  }
+
+  return code;
+}
+
+function resolveOperationalCode(input: {
+  configured: unknown;
+  rows: ZetaCatalogRow[];
+  field: "local" | "user";
+  label: string;
+}) {
+  const configured = codeNumber(input.configured);
+
+  if (configured === null || configured <= 0) {
+    return {
+      code: null,
+      blocker: {
+        code: `zeta_${input.field}_required`,
+        message: `Falta configurar ${input.label} obligatorio para facturas de proveedor Zeta.`,
+        field: input.field,
+      } satisfies ZetaPurchaseExportBlocker,
+    };
+  }
+
+  const row = findByCode(input.rows, configured);
+
+  if (!row) {
+    return {
+      code: null,
+      blocker: {
+        code: `zeta_${input.field}_not_found`,
+        message: `${input.label} Zeta ${configured} no esta sincronizado o no existe.`,
+        field: input.field,
+      } satisfies ZetaPurchaseExportBlocker,
+    };
+  }
+
+  if (isInactive(row)) {
+    return {
+      code: null,
+      blocker: {
+        code: `zeta_${input.field}_inactive`,
+        message: `${input.label} Zeta ${configured} esta inactivo.`,
+        field: input.field,
+      } satisfies ZetaPurchaseExportBlocker,
+    };
+  }
+
+  return { code: configured, blocker: null };
 }
 
 function resolveConceptCode(input: {
   line: ZetaPurchaseExpenseDocumentLineInput;
   supplierCode: string | null;
+  overrideCode?: string | null;
   catalogs: ZetaPurchaseExpenseCatalogs;
 }) {
   const detectedCode = firstText(input.line.conceptCode);
@@ -455,6 +633,7 @@ function resolveConceptCode(input: {
     ? input.catalogs.config?.concepts?.bySupplierCode?.[input.supplierCode]
     : null;
   const candidates = [
+    input.overrideCode,
     detectedCode,
     fromDetected,
     fromSupplier,
@@ -506,11 +685,27 @@ function resolveSourceLines(input: {
   blockers: ZetaPurchaseExportBlocker[];
 }) {
   const resolved: ResolvedSourceLine[] = [];
+  const overrideCode = firstText(input.document.zetaConceptCodeOverride);
+
+  if (overrideCode) {
+    const selectedRow = findByCode(input.catalogs.concepts, overrideCode);
+
+    if (!selectedRow || isInactive(selectedRow)) {
+      addBlocker(
+        input.blockers,
+        "zeta_selected_concept_invalid",
+        `El concepto Zeta seleccionado (${overrideCode}) no existe o esta inactivo.`,
+        "concept",
+      );
+      return resolved;
+    }
+  }
 
   for (const [index, line] of buildSourceLines(input.document).entries()) {
     const concept = resolveConceptCode({
       line,
       supplierCode: input.supplierCode,
+      overrideCode,
       catalogs: input.catalogs,
     });
 
@@ -582,6 +777,7 @@ function resolveSourceLines(input: {
 function buildGroupedExpenseLines(input: {
   document: ZetaPurchaseExpenseDocumentInput;
   sourceLines: ResolvedSourceLine[];
+  localCode?: number;
 }) {
   const groups = new Map<string, ResolvedSourceLine>();
 
@@ -608,13 +804,14 @@ function buildGroupedExpenseLines(input: {
   return [...groups.values()].map((line) => ({
     zetaLine: {
       CodigoArticulo: line.conceptCode,
-      Concepto: line.description.slice(0, 80),
+      Concepto: line.description.slice(0, ZETA_LINE_CONCEPT_MAX_LENGTH),
       Cantidad: 1,
       PrecioUnitario: roundCurrency(line.netAmount),
       Descuento1: 0,
       Descuento2: 0,
       Descuento3: 0,
       CodigoIVA: line.ivaCode,
+      CodigoLocalLinea: input.localCode,
       Notas: cfeRef.slice(0, 80),
     } satisfies ZetaFacturaProveedorLinea,
     previewLine: {
@@ -724,6 +921,17 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
     addBlocker(blockers, "zeta_issue_date_missing", "Falta fecha de emision para exportar a Zeta.", "issue_date");
   }
 
+  const zetaIssueDate = normalizeZetaMovementDate(document.issueDate);
+
+  if (document.issueDate && !zetaIssueDate) {
+    addBlocker(
+      blockers,
+      "zeta_issue_date_invalid",
+      "La fecha de emision no es una fecha calendario valida para el formato AAAAMMDD de Zeta.",
+      "issue_date",
+    );
+  }
+
   if (typeof document.totalAmount !== "number") {
     addBlocker(blockers, "zeta_total_missing", "Falta total del documento para exportar a Zeta.", "total");
   }
@@ -811,6 +1019,31 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
   });
   preview.paymentMethodCode = payment.code;
   preview.paidByPartnerMessage = payment.paidByPartnerMessage;
+  const local = resolveOperationalCode({
+    configured: input.catalogs.config?.defaults?.localCode,
+    rows: input.catalogs.businessLocations ?? [],
+    field: "local",
+    label: "el local operativo",
+  });
+  const user = resolveOperationalCode({
+    configured: input.catalogs.config?.defaults?.userCode,
+    rows: input.catalogs.users ?? [],
+    field: "user",
+    label: "el usuario operativo",
+  });
+
+  if (local.blocker) {
+    blockers.push(local.blocker);
+  }
+
+  if (user.blocker) {
+    blockers.push(user.blocker);
+  }
+
+  const cashboxCode = resolveDefaultCashbox({
+    catalogs: input.catalogs,
+    blockers,
+  });
 
   const sourceLines = resolveSourceLines({
     document,
@@ -818,7 +1051,11 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
     supplierCode: supplier.zetaSupplierCode,
     blockers,
   });
-  const grouped = buildGroupedExpenseLines({ document, sourceLines });
+  const grouped = buildGroupedExpenseLines({
+    document,
+    sourceLines,
+    localCode: local.code ?? undefined,
+  });
   preview.lines = grouped.map((line) => line.previewLine);
 
   const groupedNet = roundCurrency(preview.lines.reduce((sum, line) => sum + line.netAmount, 0));
@@ -851,24 +1088,27 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
     blockers.length === 0
     && comprobante.code !== null
     && numero !== null
-    && document.issueDate !== null
+    && zetaIssueDate !== null
     && supplier.zetaSupplierCode !== null
     && currency.code !== null
+    && local.code !== null
+    && user.code !== null
+    && cashboxCode !== null
     && grouped.length > 0;
   const movimiento: ZetaFacturaProveedorMovimiento | null = canBuildPayload
     ? compactRecord({
       CodigoComprobante: comprobante.code as number,
       Serie: document.series ?? undefined,
       Numero: numero as number,
-      Fecha: document.issueDate as string,
+      Fecha: zetaIssueDate as string,
       CodigoMoneda: currency.code as number,
       Cotizacion: currency.iso === "UYU" ? undefined : document.exchangeRate ?? undefined,
       CodigoProveedor: supplier.zetaSupplierCode as string,
       CodigoCondicionPago: conditionCode ?? undefined,
-      Notas: document.sourceReference ?? fingerprint,
-      CodigoLocal: input.catalogs.config?.defaults?.localCode,
-      CodigoUsuario: input.catalogs.config?.defaults?.userCode,
-      CodigoCaja: payment.cashboxCode,
+      Notas: compactZetaHeaderNotes({ document, fiscalFingerprint: fingerprint }),
+      CodigoLocal: local.code as number,
+      CodigoUsuario: user.code as number,
+      CodigoCaja: cashboxCode as number,
       CodigoCentroCosto: preview.centroCostoCode ?? undefined,
       Lineas: grouped.map((line) => line.zetaLine),
       FormasPago: payment.formasPago,

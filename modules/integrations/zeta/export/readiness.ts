@@ -22,6 +22,8 @@ export type ZetaPurchaseExpenseExportReadiness = {
 
 type ConnectionRow = {
   config_json: Record<string, unknown> | null;
+  mode: string;
+  test_mode: boolean;
 };
 
 async function countRawRecords(input: {
@@ -35,6 +37,7 @@ async function countRawRecords(input: {
     .eq("organization_id", input.organizationId)
     .eq("provider", "zetasoftware")
     .eq("entity_type", input.entityType)
+    .eq("test_mode", false)
     .limit(1);
 
   if (error) {
@@ -50,7 +53,7 @@ async function loadConfig(input: {
 }) {
   const { data, error } = await input.supabase
     .from(integrationTables.connections)
-    .select("config_json")
+    .select("config_json, mode, test_mode")
     .eq("organization_id", input.organizationId)
     .eq("provider", "zetasoftware")
     .limit(1)
@@ -63,9 +66,12 @@ async function loadConfig(input: {
   const row = data as ConnectionRow | null;
   const config = row?.config_json ?? {};
 
-  return normalizeZetaPurchaseExpenseConfig(
-    config.purchase_expense_export ?? config.zeta_purchase_expense_export,
-  );
+  return {
+    operational: normalizeZetaPurchaseExpenseConfig(
+      config.purchase_expense_export ?? config.zeta_purchase_expense_export,
+    ),
+    writeEnabled: row?.mode === "read_write" && row.test_mode !== true,
+  };
 }
 
 function readinessItem(input: {
@@ -88,44 +94,55 @@ export async function loadZetaPurchaseExpenseExportReadiness(
   organizationId: string,
 ): Promise<ZetaPurchaseExpenseExportReadiness> {
   const [
-    config,
+    connectionConfig,
     contacts,
     supplierCommercialData,
+    documentTypes,
     concepts,
     vatRates,
     paymentTerms,
     paymentMethods,
     currencies,
     businessLocations,
+    userRoles,
     cashboxes,
   ] = await Promise.all([
     loadConfig({ supabase, organizationId }),
     countRawRecords({ supabase, organizationId, entityType: "contact" }),
     countRawRecords({ supabase, organizationId, entityType: "supplier_commercial_data" }),
+    countRawRecords({ supabase, organizationId, entityType: "document_type" }),
     countRawRecords({ supabase, organizationId, entityType: "concept" }),
     countRawRecords({ supabase, organizationId, entityType: "vat_rate" }),
     countRawRecords({ supabase, organizationId, entityType: "payment_term" }),
     countRawRecords({ supabase, organizationId, entityType: "payment_method" }),
     countRawRecords({ supabase, organizationId, entityType: "currency" }),
     countRawRecords({ supabase, organizationId, entityType: "business_location" }),
+    countRawRecords({ supabase, organizationId, entityType: "user_role" }),
     countRawRecords({ supabase, organizationId, entityType: "cashbox" }),
   ]);
+  const config = connectionConfig.operational;
   const documentMappingsReady = Boolean(
     config.documentTypes?.purchase_expense_credit
     && config.documentTypes?.purchase_expense_cash
     && config.documentTypes?.supplier_credit_note_expense,
   );
-  const paidByPartnerReady = Boolean(
-    config.paidByPartnerPaymentMethodCode
-    ?? config.paymentMethods?.paid_by_partner,
-  );
   const localUserReady = Boolean(config.defaults?.localCode && config.defaults.userCode);
-  const cashboxRelevant = Boolean(config.defaults?.cashboxCode);
+  const paymentTermsReady = Boolean(config.paymentTerms?.credit && config.paymentTerms?.cash);
+  const cashPaymentMethodReady = Boolean(config.paymentMethods?.cash);
+  const uyuCurrencyReady = Boolean(config.currencies?.UYU ?? config.defaults?.currencyCode);
+  const cashboxReady = Boolean(config.defaults?.cashboxCode);
   const items = [
+    readinessItem({
+      code: "write_mode",
+      label: "Escritura real habilitada",
+      ready: connectionConfig.writeEnabled,
+      readyDetail: "La conexion permite el alta controlada de facturas de gasto.",
+      pendingDetail: "La escritura sigue apagada o la conexion esta en modo mock.",
+    }),
     readinessItem({
       code: "expense_document_types",
       label: "Comprobantes de gastos mapeados",
-      ready: documentMappingsReady,
+      ready: documentTypes > 0 && documentMappingsReady,
       readyDetail: "Compra credito, compra contado y nota correctiva de gasto tienen codigo Zeta.",
       pendingDetail: "Falta mapping operativo de comprobantes de gasto.",
     }),
@@ -140,7 +157,7 @@ export async function loadZetaPurchaseExpenseExportReadiness(
       code: "concepts",
       label: "Conceptos sincronizados",
       ready: concepts > 0,
-      readyDetail: "Conceptos Zeta disponibles para CodigoArticulo en gastos.",
+      readyDetail: "Catalogo disponible; cada factura exige confirmar su concepto Zeta.",
       pendingDetail: "Sincroniza conceptos Zeta.",
     }),
     readinessItem({
@@ -153,46 +170,45 @@ export async function loadZetaPurchaseExpenseExportReadiness(
     readinessItem({
       code: "payment_terms",
       label: "Condiciones de pago sincronizadas",
-      ready: paymentTerms > 0,
-      readyDetail: "Condiciones de pago Zeta disponibles.",
-      pendingDetail: "Sincroniza condiciones de pago Zeta.",
+      ready: paymentTerms > 0 && paymentTermsReady,
+      readyDetail: "Condiciones de credito y contado configuradas.",
+      pendingDetail: paymentTerms > 0
+        ? "Selecciona las condiciones de credito y contado."
+        : "Sincroniza condiciones de pago Zeta.",
     }),
     readinessItem({
       code: "payment_methods",
       label: "Formas de pago sincronizadas",
-      ready: paymentMethods > 0,
-      readyDetail: "Formas de pago Zeta disponibles.",
-      pendingDetail: "Sincroniza formas de pago Zeta.",
-    }),
-    readinessItem({
-      code: "partner_payment_method",
-      label: "Forma de pago para reintegro a socio configurada",
-      ready: paidByPartnerReady,
-      readyDetail: "paid_by_partner tiene forma de pago Zeta especifica.",
-      pendingDetail: "Falta mapping de forma de pago para compras pagadas por socio.",
+      ready: paymentMethods > 0 && cashPaymentMethodReady,
+      readyDetail: "Forma de pago contado configurada.",
+      pendingDetail: paymentMethods > 0
+        ? "Selecciona la forma de pago contado."
+        : "Sincroniza formas de pago Zeta.",
     }),
     readinessItem({
       code: "currencies",
       label: "Monedas/cotizaciones listas",
-      ready: currencies > 0,
-      readyDetail: "Monedas Zeta sincronizadas; la cotizacion se valida por documento.",
-      pendingDetail: "Sincroniza monedas Zeta.",
+      ready: currencies > 0 && uyuCurrencyReady,
+      readyDetail: "UYU esta mapeada; la cotizacion se valida por documento.",
+      pendingDetail: currencies > 0
+        ? "Selecciona el codigo Zeta de UYU."
+        : "Sincroniza monedas Zeta.",
     }),
     readinessItem({
       code: "local_user",
       label: "Local/usuario default listo",
-      ready: businessLocations > 0 && localUserReady,
+      ready: businessLocations > 0 && userRoles > 0 && localUserReady,
       readyDetail: "Local y usuario default configurados para el movimiento.",
       pendingDetail: "Falta local/usuario default para envios a Zeta.",
     }),
     readinessItem({
       code: "cashboxes",
-      label: "Cajas listas solo si aplican",
-      ready: !cashboxRelevant || cashboxes > 0,
-      readyDetail: cashboxRelevant
-        ? "Caja default configurada y catalogo de cajas sincronizado."
-        : "No hay caja default forzada para esta fase.",
-      pendingDetail: "Hay caja default configurada pero no hay catalogo de cajas sincronizado.",
+      label: "Caja operativa lista",
+      ready: cashboxes > 0 && cashboxReady,
+      readyDetail: "Caja default configurada y catalogo de cajas sincronizado.",
+      pendingDetail: cashboxes > 0
+        ? "Selecciona la caja operativa requerida por Zeta."
+        : "Sincroniza el catalogo de cajas Zeta.",
     }),
   ];
   const readyCount = items.filter((item) => item.ready).length;

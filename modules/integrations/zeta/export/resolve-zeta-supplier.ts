@@ -44,6 +44,58 @@ function supplierBlocker(name: string | null, rut: string | null): ZetaPurchaseE
   };
 }
 
+function supplierAmbiguousBlocker(input: {
+  name: string | null;
+  rut: string | null;
+  matchedBy: "rut" | "name";
+  candidateCodes: string[];
+}): ZetaPurchaseExportBlocker {
+  const matchLabel = input.matchedBy === "rut"
+    ? `el RUT ${input.rut ?? "informado"}`
+    : `el nombre ${input.name ?? "informado"}`;
+
+  return {
+    code: "supplier_ambiguous",
+    field: "supplier",
+    message: `Hay ${input.candidateCodes.length} proveedores activos en Zeta que coinciden con ${matchLabel} (${input.candidateCodes.join(", ")}). Seleccione el proveedor correcto o corrija sus datos antes de exportar.`,
+  };
+}
+
+function normalizeSupplierCode(value: string) {
+  return value.toLowerCase();
+}
+
+function supplierCandidates(input: {
+  contacts: ZetaCatalogRow[];
+  suppliersByCode: Set<string>;
+  matches: (row: ZetaCatalogRow) => boolean;
+}) {
+  const uniqueByCode = new Map<string, ZetaCatalogRow>();
+
+  for (const row of input.contacts) {
+    if (isInactive(row.ContactoActivo) || isInactive(row.Activo)) {
+      continue;
+    }
+
+    const code = firstText(row.Codigo, row.ProveedorCodigo);
+    const hasSupplierEvidence = code
+      ? input.suppliersByCode.has(normalizeSupplierCode(code)) || !isExplicitNonSupplier(row.EsProveedor)
+      : false;
+
+    if (!code || !hasSupplierEvidence || !input.matches(row)) {
+      continue;
+    }
+
+    const normalizedCode = normalizeSupplierCode(code);
+
+    if (!uniqueByCode.has(normalizedCode)) {
+      uniqueByCode.set(normalizedCode, row);
+    }
+  }
+
+  return Array.from(uniqueByCode.values());
+}
+
 export function resolveZetaSupplier(input: {
   supplierRut: string | null;
   supplierName: string | null;
@@ -54,58 +106,95 @@ export function resolveZetaSupplier(input: {
   const suppliersByCode = new Set(
     (input.supplierCommercialData ?? [])
       .map((row) => firstText(row.Codigo, row.ProveedorCodigo))
-      .filter((value): value is string => Boolean(value)),
+      .filter((value): value is string => Boolean(value))
+      .map(normalizeSupplierCode),
   );
   const byRut = normalizedRut
-    ? input.contacts.find((row) => {
-      if (isInactive(row.ContactoActivo) || isInactive(row.Activo)) {
-        return false;
-      }
+    ? supplierCandidates({
+      contacts: input.contacts,
+      suppliersByCode,
+      matches: (row) => {
+        const candidateRut = normalizeTaxId(firstText(row.RUT, row.Documento, row.DocumentoNumero));
 
-      const candidateRut = normalizeTaxId(firstText(row.RUT, row.Documento, row.DocumentoNumero));
-
-      if (candidateRut !== normalizedRut) {
-        return false;
-      }
-
-      const code = firstText(row.Codigo, row.ProveedorCodigo);
-      const hasSupplierEvidence = suppliersByCode.has(code ?? "")
-        || !isExplicitNonSupplier(row.EsProveedor);
-
-      return Boolean(code && hasSupplierEvidence);
+        return candidateRut === normalizedRut;
+      },
     })
-    : null;
+    : [];
 
-  if (byRut) {
+  if (byRut.length > 1) {
+    return {
+      found: false,
+      zetaSupplierCode: null,
+      zetaSupplierName: null,
+      blockers: [supplierAmbiguousBlocker({
+        name: input.supplierName,
+        rut: input.supplierRut,
+        matchedBy: "rut",
+        candidateCodes: byRut
+          .map((row) => firstText(row.Codigo, row.ProveedorCodigo))
+          .filter((value): value is string => Boolean(value)),
+      })],
+    };
+  }
+
+  if (byRut.length === 1) {
+    const supplier = byRut[0];
+
     return {
       found: true,
-      zetaSupplierCode: firstText(byRut.Codigo, byRut.ProveedorCodigo),
-      zetaSupplierName: firstText(byRut.Nombre, byRut.RazonSocial, input.supplierName),
+      zetaSupplierCode: firstText(supplier.Codigo, supplier.ProveedorCodigo),
+      zetaSupplierName: firstText(supplier.Nombre, supplier.RazonSocial, input.supplierName),
       blockers: [],
+    };
+  }
+
+  // A supplied fiscal identifier is authoritative. Falling back to a matching
+  // name after a RUT miss could silently select a different legal supplier.
+  if (normalizedRut) {
+    return {
+      found: false,
+      zetaSupplierCode: null,
+      zetaSupplierName: null,
+      blockers: [supplierBlocker(input.supplierName, input.supplierRut)],
     };
   }
 
   const normalizedName = input.supplierName?.trim().toLowerCase() ?? null;
   const byName = normalizedName
-    ? input.contacts.find((row) => {
-      if (isInactive(row.ContactoActivo) || isInactive(row.Activo)) {
-        return false;
-      }
+    ? supplierCandidates({
+      contacts: input.contacts,
+      suppliersByCode,
+      matches: (row) => {
+        const candidateName = firstText(row.Nombre, row.RazonSocial)?.toLowerCase() ?? null;
 
-      const code = firstText(row.Codigo, row.ProveedorCodigo);
-      const candidateName = firstText(row.Nombre, row.RazonSocial)?.toLowerCase() ?? null;
-      const hasSupplierEvidence = suppliersByCode.has(code ?? "")
-        || !isExplicitNonSupplier(row.EsProveedor);
-
-      return Boolean(code && hasSupplierEvidence && candidateName === normalizedName);
+        return candidateName === normalizedName;
+      },
     })
-    : null;
+    : [];
 
-  if (byName) {
+  if (byName.length > 1) {
+    return {
+      found: false,
+      zetaSupplierCode: null,
+      zetaSupplierName: null,
+      blockers: [supplierAmbiguousBlocker({
+        name: input.supplierName,
+        rut: input.supplierRut,
+        matchedBy: "name",
+        candidateCodes: byName
+          .map((row) => firstText(row.Codigo, row.ProveedorCodigo))
+          .filter((value): value is string => Boolean(value)),
+      })],
+    };
+  }
+
+  if (byName.length === 1) {
+    const supplier = byName[0];
+
     return {
       found: true,
-      zetaSupplierCode: firstText(byName.Codigo, byName.ProveedorCodigo),
-      zetaSupplierName: firstText(byName.Nombre, byName.RazonSocial, input.supplierName),
+      zetaSupplierCode: firstText(supplier.Codigo, supplier.ProveedorCodigo),
+      zetaSupplierName: firstText(supplier.Nombre, supplier.RazonSocial, input.supplierName),
       blockers: [],
     };
   }

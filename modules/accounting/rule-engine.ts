@@ -376,6 +376,7 @@ export function resolveAccountingContext(input: {
     userFreeText,
     businessPurposeNote,
     structuredContext: {
+      ...asRecord(input.storedContext?.structured_context_json),
       business_purpose_note: businessPurposeNote,
       manual_override_account_id: stored.manualOverrideAccountId,
       manual_role_overrides: manualRoleOverrides,

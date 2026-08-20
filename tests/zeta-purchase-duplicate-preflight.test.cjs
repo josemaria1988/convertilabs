@@ -43,7 +43,7 @@ test("Preflight no marca duplicado si cambia el total", () => {
       CodigoComprobante: 11,
       Serie: "A",
       Numero: 123456,
-      Fecha: "2026-04-20",
+      Fecha: "20260420",
       CodigoMoneda: 1,
       CodigoProveedor: "PR0031",
       Lineas: [],
@@ -108,7 +108,7 @@ test("QueryCompras usa wrapper oficial QueryComprasIn", async () => {
       CodigoComprobante: 11,
       Serie: "A",
       Numero: 123456,
-      Fecha: "2026-04-20",
+      Fecha: "20260420",
       CodigoMoneda: 1,
       CodigoProveedor: "PR0031",
       Lineas: [],
@@ -119,5 +119,76 @@ test("QueryCompras usa wrapper oficial QueryComprasIn", async () => {
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.ProveedorCodigo, "PR0031");
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.Mes, 4);
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.Anio, 2026);
+});
+
+test("Preflight pagina QueryCompras hasta encontrar un duplicado exacto", async () => {
+  const {
+    preflightZetaPurchaseInvoiceDuplicate,
+  } = require("@/modules/integrations/zeta/export/duplicate-preflight");
+  const {
+    createZetaRestClient,
+  } = require("@/modules/integrations/zeta/client/rest-client");
+  const requestedPages = [];
+  const client = createZetaRestClient({
+    baseUrl: "https://api.zeta.example",
+    credentials: {
+      DesarrolladorCodigo: "dev",
+      DesarrolladorClave: "secret",
+      EmpresaCodigo: "emp",
+      EmpresaClave: "secret",
+      UsuarioCodigo: 1,
+      UsuarioClave: "",
+      RolCodigo: 2,
+    },
+    fetchImpl: async (_url, init) => {
+      const page = JSON.parse(init.body).QueryComprasIn.Data.Page;
+      requestedPages.push(page);
+
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          QueryComprasOut: {
+            Succeed: true,
+            Response: page === 2
+              ? [{
+                RegistroId: 42,
+                ProveedorCodigo: "PR0031",
+                ComprobanteCodigo: 11,
+                Serie: "A",
+                Numero: 123456,
+                MonedaCodigo: 1,
+                Total: 1220,
+              }]
+              : [{ RegistroId: 1, ProveedorCodigo: "OTRO" }],
+            IsLastPage: page === 2,
+            Error: null,
+          },
+        }),
+      };
+    },
+  });
+
+  const result = await preflightZetaPurchaseInvoiceDuplicate({
+    client,
+    movimiento: {
+      CodigoComprobante: 11,
+      Serie: "A",
+      Numero: 123456,
+      Fecha: "20260420",
+      CodigoMoneda: 1,
+      CodigoProveedor: "PR0031",
+      CodigoLocal: 1,
+      CodigoUsuario: 1,
+      CodigoCaja: 1,
+      Lineas: [],
+    },
+    expectedTotal: 1220,
+  });
+
+  assert.deepEqual(requestedPages, [1, 2]);
+  assert.equal(result.found, true);
+  assert.equal(result.registroId, 42);
 });
 

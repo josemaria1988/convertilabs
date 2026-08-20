@@ -2,19 +2,26 @@ import type { Metadata } from "next";
 import { DocumentReviewRuleWorkspace } from "@/components/documents/document-review-rule-workspace";
 import { DocumentRecoveryActionButton } from "@/components/documents/document-recovery-action-button";
 import { DocumentOriginalModalTrigger } from "@/components/documents/document-original-modal-trigger";
+import { DocumentProcessingAutoRefresh } from "@/components/documents/document-processing-auto-refresh";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { SectionCard } from "@/components/section-card";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import {
   buttonBaseClassName,
   buttonPrimaryChromeClassName,
 } from "@/components/ui/button-styles";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
+import { loadDocumentAccountingContext } from "@/modules/accounting";
 import {
   loadDocumentOriginalPageData,
   loadDocumentReviewPageData,
   MissingPersistedDraftError,
 } from "@/modules/documents/review";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
+import {
+  loadZetaPurchaseExpenseConceptOptions,
+  loadZetaPurchaseExpenseConfiguration,
+} from "@/modules/integrations/zeta/export/configuration-service";
 import {
   confirmDocumentManualAssignmentAction,
   createDocumentReviewOverrideAccountAction,
@@ -28,16 +35,31 @@ type DocumentReviewPageProps = {
     slug: string;
     documentId: string;
   }>;
+  searchParams?: Promise<{
+    focus?: string | string[];
+  }>;
 };
 
 export const metadata: Metadata = {
   title: "Revision documental y reglas",
 };
 
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 export default async function DocumentReviewPage({
   params,
+  searchParams,
 }: DocumentReviewPageProps) {
   const { slug, documentId } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const focusValue = Array.isArray(resolvedSearchParams.focus)
+    ? resolvedSearchParams.focus[0]
+    : resolvedSearchParams.focus;
+  const focusZeta = focusValue === "zeta";
   const { authState, organization } = await requireOrganizationDashboardPage(slug);
   let pageData: Awaited<ReturnType<typeof loadDocumentReviewPageData>> | null = null;
   let originalPageData: Awaited<ReturnType<typeof loadDocumentOriginalPageData>> | null = null;
@@ -86,14 +108,19 @@ export default async function DocumentReviewPage({
         organizationSlug={organization.slug}
         userEmail={authState.user?.email}
         userRole={organization.role}
-        title="Revision documental y reglas"
-        description="Este documento todavia no tiene draft persistido. Igual podes abrir el original para validar el comprobante real sin salir de la pantalla."
+        title={focusZeta ? "Preparando factura para Zeta" : "Revision documental y reglas"}
+        description={focusZeta
+          ? "La foto ya esta guardada. Esperamos la extraccion antes de mostrar la confirmacion final."
+          : "Este documento todavia no tiene draft persistido. Igual podes abrir el original para validar el comprobante real sin salir de la pantalla."}
         navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
       >
         <SectionCard
           title={originalPageData.document.originalFilename}
           description="Cuando exista el draft persistido se habilitara la revision procesada. Mientras tanto, el original queda disponible en modal y en una ventana aparte."
         >
+          <DocumentProcessingAutoRefresh
+            active={["queued", "extracting", "processing"].includes(originalPageData.document.status)}
+          />
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">
               <p className="font-semibold">Estado</p>
@@ -149,20 +176,58 @@ export default async function DocumentReviewPage({
     throw new Error("No pudimos cargar la revision documental.");
   }
 
+  let zetaConceptOptions: Awaited<ReturnType<typeof loadZetaPurchaseExpenseConceptOptions>> = [];
+  let zetaPaymentTermOptions: Awaited<ReturnType<typeof loadZetaPurchaseExpenseConfiguration>>["catalogs"]["paymentTerms"] = [];
+  let selectedZetaConceptCode: string | null = null;
+  let selectedZetaPaymentTermCode: string | null = null;
+
+  if (pageData.draft.documentRole === "purchase" || focusZeta) {
+    const supabase = getSupabaseServiceRoleClient();
+    const [accountingContext, conceptOptions, zetaConfiguration] = await Promise.all([
+      loadDocumentAccountingContext(supabase, pageData.draft.id),
+      focusZeta
+        ? loadZetaPurchaseExpenseConceptOptions(supabase, organization.id)
+        : Promise.resolve([]),
+      focusZeta
+        ? loadZetaPurchaseExpenseConfiguration(supabase, organization.id)
+        : Promise.resolve(null),
+    ]);
+    const structuredContext = asRecord(accountingContext?.structured_context_json);
+    const rawSelectedCode = structuredContext.zeta_purchase_expense_concept_code;
+    const rawSelectedPaymentTermCode = structuredContext.zeta_purchase_expense_payment_term_code;
+
+    selectedZetaConceptCode = typeof rawSelectedCode === "string" && rawSelectedCode.trim()
+      ? rawSelectedCode.trim()
+      : null;
+    zetaConceptOptions = conceptOptions;
+    selectedZetaPaymentTermCode = typeof rawSelectedPaymentTermCode === "string"
+      && rawSelectedPaymentTermCode.trim()
+      ? rawSelectedPaymentTermCode.trim()
+      : null;
+    zetaPaymentTermOptions = zetaConfiguration?.catalogs.paymentTerms ?? [];
+  }
+
   return (
     <PrivateDashboardShell
       organizationName={organization.name}
       organizationSlug={organization.slug}
       userEmail={authState.user?.email}
       userRole={organization.role}
-      title="Revision documental y reglas"
-      description="Revision compacta para validar la factura, el criterio IA, el asiento y la regla reusable sin ruido extra."
+      title={focusZeta ? "Confirmar factura y enviar a Zeta" : "Revision documental y reglas"}
+      description={focusZeta
+        ? "Revisa los datos fiscales y ejecuta primero la validacion. El envio real queda separado y protegido contra duplicados."
+        : "Revision compacta para validar la factura, el criterio IA, el asiento y la regla reusable sin ruido extra."}
       navItems={buildOrganizationPrivateNavItems(organization.slug, "review")}
     >
       <DocumentReviewRuleWorkspace
         slug={slug}
         organizationName={organization.name}
         pageData={pageData}
+        focusZeta={focusZeta}
+        zetaConceptOptions={zetaConceptOptions}
+        selectedZetaConceptCode={selectedZetaConceptCode}
+        zetaPaymentTermOptions={zetaPaymentTermOptions}
+        selectedZetaPaymentTermCode={selectedZetaPaymentTermCode}
         saveDraftReviewAction={async (input) => {
           "use server";
           return saveDocumentDraftReviewAction({

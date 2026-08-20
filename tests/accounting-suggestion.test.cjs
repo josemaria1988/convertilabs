@@ -374,6 +374,48 @@ test("accounting context only blocks when ambiguity exists and no user resolutio
   assert.equal(provided.shouldBlockConfirmation, false);
 });
 
+test("accounting context preserves the per-document Zeta concept key", () => {
+  const seed = buildBaseContext();
+  const resolved = resolveAccountingContext({
+    documentId: "doc-1",
+    documentRole: "purchase",
+    vendorResolution: seed.vendorResolution,
+    conceptResolution: seed.conceptResolution,
+    activeRules: seed.activeRules,
+    operationCategory: "services",
+    storedContext: {
+      id: "ctx-zeta",
+      organization_id: "org-1",
+      document_id: "doc-1",
+      draft_id: "draft-1",
+      status: "provided",
+      reason_codes: [],
+      user_free_text: null,
+      structured_context_json: {
+        zeta_purchase_expense_concept_code: "5108",
+        zeta_purchase_expense_payment_term_code: "003",
+      },
+      ai_request_payload_json: {},
+      ai_response_json: {},
+      provider_code: null,
+      model_code: null,
+      prompt_hash: null,
+      request_latency_ms: null,
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-20T00:00:00Z",
+    },
+  });
+
+  assert.equal(
+    resolved.structuredContext.zeta_purchase_expense_concept_code,
+    "5108",
+  );
+  assert.equal(
+    resolved.structuredContext.zeta_purchase_expense_payment_term_code,
+    "003",
+  );
+});
+
 test("accounting context is skipped when a trusted vendor default already covers the document", () => {
   const seed = buildBaseContext();
   const resolved = resolveAccountingContext({

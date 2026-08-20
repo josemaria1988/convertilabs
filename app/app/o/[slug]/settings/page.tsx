@@ -3,6 +3,7 @@ import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-
 import { CostCentersSettingsPanel } from "@/components/settings/cost-centers-settings-panel";
 import { BusinessProfileSettings } from "@/components/settings/business-profile-settings";
 import { ZetaSoftwareConnectionCard } from "@/components/settings/integrations/zetasoftware-connection-card";
+import { ZetaSoftwarePurchaseExpenseConfig } from "@/components/settings/integrations/zetasoftware-purchase-expense-config";
 import { ZetaSoftwareRunHistory } from "@/components/settings/integrations/zetasoftware-run-history";
 import { ZetaSoftwareSyncPanel } from "@/components/settings/integrations/zetasoftware-sync-panel";
 import { SettingsCapabilitiesList } from "@/components/settings/settings-capabilities-list";
@@ -53,6 +54,7 @@ import {
   importOrganizationChartSpreadsheetAction,
   runOrganizationZetaSyncAction,
   testOrganizationZetaConnectionAction,
+  upsertOrganizationZetaPurchaseExpenseConfigurationAction,
   upsertOrganizationZetaAccountRoleMappingAction,
   upsertOrganizationCfeEmailConnectionAction,
   upsertOrganizationZetaConnectionAction,
@@ -429,7 +431,7 @@ export default async function OrganizationSettingsPage({
           <div className="space-y-5">
             <ExpandableSectionCard
               title="Zetasoftware"
-              description="Conexion de lectura para datos estructurados, trazabilidad y futuras sincronizaciones."
+              description="Lectura estructurada y salida controlada de facturas de gasto."
               defaultOpen
             >
               <div className="space-y-4">
@@ -439,6 +441,14 @@ export default async function OrganizationSettingsPage({
                   canManage={canManageIntegrations}
                   saveAction={upsertOrganizationZetaConnectionAction}
                   testAction={testOrganizationZetaConnectionAction}
+                />
+                <ZetaSoftwarePurchaseExpenseConfig
+                  slug={organization.slug}
+                  isConfigured={settings.zetaConnection.isConfigured}
+                  mockEnabled={settings.zetaConnection.mockEnabled}
+                  canManage={canManageIntegrations}
+                  configuration={settings.zetaPurchaseExpenseConfiguration}
+                  saveAction={upsertOrganizationZetaPurchaseExpenseConfigurationAction}
                 />
                 <ZetaSoftwareSyncPanel
                   slug={organization.slug}
