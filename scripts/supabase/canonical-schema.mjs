@@ -22,6 +22,8 @@ export const canonicalFileOrder = [
   "db/schema/12_operations_communications.sql",
   "db/schema/13_operational_intelligence.sql",
   "db/schema/14_treasury.sql",
+  "db/schema/15_work_intake.sql",
+  "db/schema/16_local_document_worker.sql",
   "db/rls/supabase_rls_policies.sql",
 ];
 

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { FieldActivityList } from "@/components/mobile/field-activity-list";
 import { FieldUploadSheet } from "@/components/mobile/field-upload-sheet";
+import { resolveDocumentProcessingProvider } from "@/modules/documents/processing-provider";
+import { isPaidAIAllowed } from "@/lib/llm/provider-policy";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { buildFieldMobileActivityCards } from "@/modules/presentation/field-mobile";
 import {
@@ -77,6 +79,8 @@ export default async function OrganizationFieldUploadPage({
 
       <FieldUploadSheet
         slug={organization.slug}
+        defaultProcessingProvider={resolveDocumentProcessingProvider()}
+        allowPaidAPI={isPaidAIAllowed()}
         workUnits={workspace.workUnits}
         initialWorkUnitId={initialWorkUnitId}
         prepareUploadAction={prepareFieldDocumentUploadAction.bind(null, organization.slug)}

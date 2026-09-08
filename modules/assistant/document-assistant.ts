@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenAIModelConfig } from "@/lib/env";
 import { createStructuredOpenAIResponse } from "@/lib/llm/openai-responses";
+import { isPaidAIAllowed, isPaidAIAllowedForDocument } from "@/lib/llm/provider-policy";
 import {
   isMissingSupabaseColumnError,
   isMissingSupabaseRelationError,
@@ -747,7 +748,7 @@ async function maybeEnhanceNarrativeWithOpenAI(
   deterministic: DeterministicDocumentAssistantAnalysis,
   input: DocumentAssistantSnapshotInput,
 ) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.OPENAI_API_KEY || !isPaidAIAllowed()) {
     return deterministic;
   }
 
@@ -1285,7 +1286,10 @@ async function generateDocumentAssistantAnalysis(
   input: DocumentAssistantSnapshotInput,
 ) {
   const deterministic = buildDeterministicAnalysis(input);
-  const enriched = await maybeEnhanceNarrativeWithOpenAI(deterministic, input);
+  const paidAllowed = await isPaidAIAllowedForDocument(supabase, input.organizationId, input.document.id);
+  const enriched = paidAllowed
+    ? await maybeEnhanceNarrativeWithOpenAI(deterministic, input)
+    : deterministic;
   const thread = await upsertThread(supabase, {
     organizationId: input.organizationId,
     targetKind: "document",

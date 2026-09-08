@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { isPaidAIAllowed } from "@/lib/llm/provider-policy";
 import { getOpenAIModelConfig } from "@/lib/env";
 import {
   createStructuredOpenAIResponse,
@@ -439,6 +440,10 @@ export async function resolveAccountingAssistantSuggestion(
 
   if (allowedTargets.length === 0) {
     return toFailedResult("No hay cuentas postables permitidas para ejecutar la segunda IA.");
+  }
+
+  if (!isPaidAIAllowed()) {
+    return toFailedResult("La asistencia por API paga está deshabilitada en modo Codex local. La revisión y las reglas determinísticas siguen disponibles.");
   }
 
   if (!process.env.OPENAI_API_KEY) {

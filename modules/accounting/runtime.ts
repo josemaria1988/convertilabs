@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isPaidAIAllowedForDocument, withPaidAIDisabled } from "@/lib/llm/provider-policy";
 import {
   buildAccountingDraftArtifacts,
 } from "@/modules/accounting/suggestion-engine";
@@ -235,7 +236,8 @@ export async function deriveDocumentAccountingState(input: {
       input.documentRole,
     );
 
-    assistantSuggestion = await resolveAccountingAssistantSuggestion({
+    const paidAllowed = await isPaidAIAllowedForDocument(input.supabase, input.organizationId, input.documentId);
+    const resolveSuggestion = () => resolveAccountingAssistantSuggestion({
       organizationId: input.organizationId,
       documentId: input.documentId,
       draftId: input.draftId,
@@ -267,6 +269,7 @@ export async function deriveDocumentAccountingState(input: {
           : "Sin instantanea normativa activa",
       },
     });
+    assistantSuggestion = paidAllowed ? await resolveSuggestion() : await withPaidAIDisabled(resolveSuggestion);
   }
 
   const derived = buildAccountingDraftArtifacts({

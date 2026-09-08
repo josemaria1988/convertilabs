@@ -15,6 +15,39 @@ export type ZetaEndpointDefinition = {
 };
 
 export const zetaEndpointRegistry = {
+  stockActualQuery: {
+    endpointName: "RESTStockActualV3Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.reports.stock",
+    description: "Read-only stock by article, lot and warehouse; contract from the local Postman collection.",
+    requestShape: { Data: { Page: 1, Filters: {
+      VencimientoDesde: "", VencimientoHasta: "", DepositoCodigo: 0,
+      LocalCodigo: 0, CantidadDesde: 0, CantidadHasta: 0,
+    } } },
+    responseShape: { Response: [{
+      ArticuloCodigo: "", ArticuloNombre: "", ArticuloAbrevia: "", Lote: "",
+      Vencimiento: "", DepositoCodigo: 0, DepositoNombre: "", DepositoAbrevia: "",
+      LocalCodigo: 0, StockActual: 0,
+    }], IsLastPage: true },
+  },
+  articleBasePricesLoad: {
+    endpointName: "RESTPreciosArticulosV2ObtenerPrecioBase",
+    httpMethod: "POST",
+    inputWrapper: "ObtenerPrecioBaseIn",
+    outputWrapper: "ObtenerPrecioBaseOut",
+    kind: "load",
+    stream: "zeta.reports.base_prices",
+    description: "Read-only actual base price values, with explicit article and base price code.",
+    requestShape: { Data: {
+      ArticuloCodigo: "", PrecioBaseCodigo: "", FechaRegistroDesde: "", FechaRegistroHasta: "",
+    } },
+    responseShape: { Response: { Succeed: true, Mensaje: "", ListaPrecios: [{
+      CodigoArticulo: "", CodigoMoneda: 0, CodigoPrecio: "", PrecioSinIVA: 0, PrecioConIVA: 0,
+    }] } },
+  },
   userRolesQuery: {
     endpointName: "RESTUsuariosEmpresaV1Query",
     httpMethod: "POST",

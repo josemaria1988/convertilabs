@@ -1,10 +1,12 @@
 # Convertilabs
 
-Convertilabs 2.0 es el sistema operativo integral de gestion de Rontil.
+Convertilabs es una herramienta interna de administracion de Rontil, operada por sus usuarios y asistida por Codex. No ofrece registro publico ni una landing comercial: el dominio abre directamente el inicio de sesion.
 
 No reemplaza ZetaSoftware, la web ni el email. Los conecta y ordena en un modelo propio para operar trabajos, contactos, documentos, ventas, compras, dinero, contabilidad, IVA, tareas, procesos, evidencia y tablero ejecutivo.
 
 ## Documentacion principal
+
+El piloto **Convertilabs Local** agrega captura por comandos, procesamiento con Codex/ChatGPT y reportes de Zeta desde Windows, conservando Supabase y la revisión existente. Ver [instalación, activación y pruebas](docs/integrations/local-companion.md). Diagnóstico sin escrituras: `npm run local -- doctor`.
 
 La documentacion viva esta concentrada en:
 
@@ -48,8 +50,8 @@ cotizacion o solicitud
 - React 19
 - TypeScript
 - Supabase Auth, Postgres y Storage
-- OpenAI Responses API
-- Inngest
+- Codex CLI con sesion ChatGPT para el procesamiento documental desde Windows
+- OpenAI Responses API / Inngest conservados por compatibilidad, deshabilitados en la configuracion interna
 - Tailwind CSS 4
 - ESLint 9
 

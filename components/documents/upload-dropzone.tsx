@@ -17,6 +17,8 @@ import {
   rememberPendingDocumentSpreadsheetImportRun,
 } from "@/components/documents/document-spreadsheet-import-tracker";
 import { DocumentUploadButton } from "@/components/documents/upload-button";
+import { ProcessingProviderSelect } from "@/components/documents/processing-provider-select";
+import type { DocumentProcessingProvider } from "@/modules/documents/processing-provider";
 import {
   allowedDocumentUploadMimeTypes,
   documentsStorageBucket,
@@ -35,6 +37,8 @@ type UploadStatus =
 
 type DocumentUploadDropzoneProps = {
   slug: string;
+  defaultProcessingProvider?: DocumentProcessingProvider;
+  allowPaidAPI?: boolean;
   panelId?: string;
   showSpreadsheetImport?: boolean;
 };
@@ -218,6 +222,8 @@ export function DocumentUploadDropzone({
   slug,
   panelId = "document-upload-panel",
   showSpreadsheetImport = true,
+  defaultProcessingProvider = "openai",
+  allowPaidAPI = true,
 }: DocumentUploadDropzoneProps) {
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
@@ -230,6 +236,7 @@ export function DocumentUploadDropzone({
   const [spreadsheetLedgerKind, setSpreadsheetLedgerKind] = useState<SpreadsheetLedgerKind>("purchase");
   const [isCancellingSpreadsheet, setIsCancellingSpreadsheet] = useState(false);
   const [autoProcessAfterUpload, setAutoProcessAfterUpload] = useState(true);
+  const [processingProvider, setProcessingProvider] = useState(defaultProcessingProvider);
   const [isRefreshing, startTransition] = useTransition();
 
   useEffect(() => {
@@ -363,6 +370,7 @@ export function DocumentUploadDropzone({
 
       const preparedUpload = await prepareDocumentUploadAction({
         slug,
+        processingProvider,
         originalFilename: file.name,
         mimeType: file.type,
         fileSize: file.size,
@@ -574,6 +582,8 @@ export function DocumentUploadDropzone({
     >
       <div className="space-y-6">
         <section>
+          <ProcessingProviderSelect value={processingProvider} onChange={setProcessingProvider}
+            disabled={status === "uploading" || status === "validating"} allowPaidAPI={allowPaidAPI} />
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
               <p className="text-[16px] font-semibold text-white">Documentos originales</p>

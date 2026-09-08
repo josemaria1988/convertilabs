@@ -8,6 +8,7 @@ import {
   prepareDocumentUploadAction,
 } from "@/app/app/o/[slug]/documents/actions";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import type { DocumentProcessingProvider } from "@/modules/documents/processing-provider";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import {
   assignDocumentToWorkUnit,
@@ -169,6 +170,7 @@ export async function assignFieldDocumentToWorkUnitAction(
 export async function prepareFieldDocumentUploadAction(
   slug: string,
   input: {
+    processingProvider?: DocumentProcessingProvider;
     originalFilename: string;
     mimeType: string;
     fileSize: number;

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { PrivateDashboardShell } from "@/components/dashboard/private-dashboard-shell";
 import { DocumentUploadDropzone } from "@/components/documents/upload-dropzone";
+import { resolveDocumentProcessingProvider } from "@/modules/documents/processing-provider";
+import { isPaidAIAllowed } from "@/lib/llm/provider-policy";
 import { DocumentOperationalTray } from "@/components/documents/document-operational-tray";
 import { LoadingLink } from "@/components/ui/loading-link";
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
@@ -175,7 +177,8 @@ export default async function OrganizationDocumentsPage({
           </div>
 
           <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_320px]">
-            <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false} />
+            <DocumentUploadDropzone slug={organization.slug} showSpreadsheetImport={false}
+              defaultProcessingProvider={resolveDocumentProcessingProvider()} allowPaidAPI={isPaidAIAllowed()} />
             <div className="space-y-3">
               {[
                 "La revision documental ya no entra por un menu aparte.",

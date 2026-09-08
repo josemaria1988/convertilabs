@@ -17,21 +17,6 @@ type LoginPageProps = {
   }>;
 };
 
-const highlights = [
-  {
-    title: "Desktop para revisión, IVA y auditoría",
-    tone: "bg-[#6c93df]",
-  },
-  {
-    title: "App móvil para capturar gastos en la calle",
-    tone: "bg-[#8cc8de]",
-  },
-  {
-    title: "Acceso por invitación y prueba sin costo",
-    tone: "bg-[#d9b08a]",
-  },
-];
-
 function readSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -54,68 +39,25 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const notice = getAuthNotice(readSearchParam(params.auth_message) ?? null);
 
   return (
-    <div className="auth-stage">
-      <div className="auth-grid">
-        <section className="panel auth-card min-h-[430px] px-8 py-6 md:px-10 md:py-7">
-          <div className="relative z-10 flex h-full flex-col">
-            <ConvertilabsLogo />
+    <main className="auth-stage justify-center">
+      <section className="panel auth-card w-full max-w-[400px] px-7 py-8 sm:px-9">
+        <div className="relative z-10">
+          <ConvertilabsLogo />
+          <h1 className="mt-8 text-2xl font-semibold tracking-[-0.03em] text-white">
+            Iniciar sesión
+          </h1>
 
-            <div className="mt-12 grid gap-10 lg:grid-cols-[300px_314px] lg:gap-12">
-              <div className="max-w-[300px]">
-                <h1 className="text-[22px] font-semibold tracking-[-0.03em] text-white md:text-[24px]">
-                  Bienvenido de nuevo a Convertilabs.
-                </h1>
-
-                {notice ? (
-                  <div className="mt-5 rounded-[6px] border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] leading-6 text-amber-950">
-                    {notice}
-                  </div>
-                ) : null}
-
-                <p className="mt-5 max-w-[280px] text-[14px] leading-6 text-[color:var(--color-muted)]">
-                  El acceso nuevo se habilita por invitación. Si ya te compartimos
-                  acceso, inicia sesión para entrar a tu workspace.
-                </p>
-
-                <div className="mt-6">
-                  <AuthLoginForm nextPath={nextPath} />
-                </div>
-              </div>
-
-              <div className="w-full max-w-[314px] rounded-[6px] border border-[color:var(--color-border)] bg-[linear-gradient(180deg,rgba(34,42,58,0.9),rgba(29,36,50,0.96))] px-6 py-5">
-                <h2 className="max-w-[220px] text-[22px] font-semibold leading-[1.35] tracking-[-0.03em] text-white md:text-[24px]">
-                  Una sola operación entre escritorio y campo
-                </h2>
-
-                <p className="mt-4 text-[14px] leading-6 text-[color:var(--color-muted)]">
-                  La web concentra el trabajo completo. La app móvil te ayuda a no
-                  volver con boletas ni comprobantes pendientes.
-                </p>
-
-                <div className="mt-6 space-y-3">
-                  {highlights.map((item, index) => (
-                    <div
-                      key={item.title}
-                      className="flex min-h-[56px] items-center gap-3 rounded-[6px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-4"
-                    >
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.tone}`}
-                      >
-                        <span className="text-[13px] font-semibold text-[#162030]">
-                          {index + 1}
-                        </span>
-                      </span>
-                      <span className="text-[14px] font-semibold text-white">
-                        {item.title}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {notice ? (
+            <div role="status" className="mt-5 rounded-[6px] border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] leading-6 text-amber-950">
+              {notice}
             </div>
+          ) : null}
+
+          <div className="mt-6">
+            <AuthLoginForm nextPath={nextPath} />
           </div>
-        </section>
-      </div>
-    </div>
+        </div>
+      </section>
+    </main>
   );
 }

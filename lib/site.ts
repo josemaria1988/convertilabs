@@ -1,8 +1,8 @@
 export const siteConfig = {
   name: "Convertilabs",
-  tagline: "Capa inteligente para sistemas contables legacy en Uruguay",
+  tagline: "Administración de Rontil",
   description:
-    "Convertilabs es una capa de inteligencia y captura operativa que ordena documentos, OCR, clasificación guiada, IVA y trazabilidad antes de alimentar tu sistema contable legacy. Acceso por invitación y prueba sin costo.",
+    "Herramienta interna de administración de Rontil.",
   contactEmail: "josemaria@rontil.com",
   location: "Montevideo, Uruguay",
 };

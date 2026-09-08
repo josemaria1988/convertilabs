@@ -50,27 +50,18 @@ drop policy if exists "operational_suggestions_select_members" on public.operati
 create policy "operational_suggestions_select_members"
   on public.operational_suggestions
   for select
-  using (
-    exists (
-      select 1
-      from public.organization_members as member
-      where member.organization_id = operational_suggestions.organization_id
-        and member.profile_id = auth.uid()
-    )
-  );
+  using (public.is_active_member(organization_id));
 
 drop policy if exists "operational_suggestions_insert_operators" on public.operational_suggestions;
 create policy "operational_suggestions_insert_operators"
   on public.operational_suggestions
   for insert
   with check (
-    exists (
-      select 1
-      from public.organization_members as member
-      where member.organization_id = operational_suggestions.organization_id
-        and member.profile_id = auth.uid()
-        and member.role in ('owner', 'admin', 'admin_processing', 'accountant', 'reviewer', 'operator')
-    )
+    public.has_org_role(organization_id, array[
+      'owner'::public.member_role, 'admin'::public.member_role,
+      'admin_processing'::public.member_role, 'accountant'::public.member_role,
+      'reviewer'::public.member_role, 'operator'::public.member_role
+    ])
   );
 
 drop policy if exists "operational_suggestions_update_operators" on public.operational_suggestions;
@@ -78,20 +69,16 @@ create policy "operational_suggestions_update_operators"
   on public.operational_suggestions
   for update
   using (
-    exists (
-      select 1
-      from public.organization_members as member
-      where member.organization_id = operational_suggestions.organization_id
-        and member.profile_id = auth.uid()
-        and member.role in ('owner', 'admin', 'admin_processing', 'accountant', 'reviewer', 'operator')
-    )
+    public.has_org_role(organization_id, array[
+      'owner'::public.member_role, 'admin'::public.member_role,
+      'admin_processing'::public.member_role, 'accountant'::public.member_role,
+      'reviewer'::public.member_role, 'operator'::public.member_role
+    ])
   )
   with check (
-    exists (
-      select 1
-      from public.organization_members as member
-      where member.organization_id = operational_suggestions.organization_id
-        and member.profile_id = auth.uid()
-        and member.role in ('owner', 'admin', 'admin_processing', 'accountant', 'reviewer', 'operator')
-    )
+    public.has_org_role(organization_id, array[
+      'owner'::public.member_role, 'admin'::public.member_role,
+      'admin_processing'::public.member_role, 'accountant'::public.member_role,
+      'reviewer'::public.member_role, 'operator'::public.member_role
+    ])
   );

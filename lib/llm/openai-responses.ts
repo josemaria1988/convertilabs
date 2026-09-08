@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getOpenAIEnv } from "@/lib/env";
+import { assertPaidAIAllowed } from "@/lib/llm/provider-policy";
 
 type JsonSchemaDefinition = {
   type: "object";
@@ -78,6 +79,7 @@ export type OpenAIFileUploadResult = {
 };
 
 function buildOpenAIHeaders(extraHeaders?: Record<string, string>) {
+  assertPaidAIAllowed();
   const { openAiApiKey } = getOpenAIEnv();
 
   return {
@@ -186,6 +188,7 @@ async function runOpenAIJsonRequest(input: {
   body?: BodyInit;
   contentType?: string;
 }) {
+  assertPaidAIAllowed();
   const {
     openAiHttpMaxRetries,
     openAiHttpRetryDelayMs,
@@ -194,6 +197,7 @@ async function runOpenAIJsonRequest(input: {
   let attempt = 0;
 
   while (attempt < maxAttempts) {
+    assertPaidAIAllowed();
     let response: Response | null = null;
 
     try {

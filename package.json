@@ -6,6 +6,12 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "local": "node scripts/local-companion/cli.cjs",
+    "local:worker": "node scripts/local-companion/cli.cjs worker",
+    "local:doctor": "node scripts/local-companion/cli.cjs doctor",
+    "test:local:codex": "node --test modules/local-companion/codex-provider.test.cjs",
+    "test:local:queue": "node tests/local-worker-postgres-smoke.cjs",
+    "test:internal:operations": "node tests/internal-operations-schema-smoke.cjs",
     "dev": "next dev",
     "inngest:dev": "npx inngest-cli@latest dev -u http://127.0.0.1:3000/api/inngest",
     "build": "next build",

@@ -22,7 +22,7 @@ export async function signupUser(input: SignupInput): Promise<SignupServiceResul
     error: {
       code: "invite_only",
       message:
-        "El acceso nuevo a Convertilabs se habilita solo por invitacion. Escribenos para solicitar una prueba sin costo.",
+        "Convertilabs es una herramienta interna de Rontil. El registro público está cerrado.",
     },
   };
 }

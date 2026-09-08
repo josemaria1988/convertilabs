@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ProcessingProviderSelect } from "@/components/documents/processing-provider-select";
+import type { DocumentProcessingProvider } from "@/modules/documents/processing-provider";
 import { computeFileSha256, uploadFileToSignedUrl } from "@/lib/browser/document-upload-client";
 import { normalizeMobileCaptureFile } from "@/lib/browser/mobile-image-normalizer";
 import {
@@ -26,9 +28,12 @@ type FieldUploadWorkUnitOption = {
 
 type FieldUploadSheetProps = {
   slug: string;
+  defaultProcessingProvider?: DocumentProcessingProvider;
+  allowPaidAPI?: boolean;
   workUnits: FieldUploadWorkUnitOption[];
   initialWorkUnitId?: string | null;
   prepareUploadAction: (input: {
+    processingProvider?: DocumentProcessingProvider;
     originalFilename: string;
     mimeType: string;
     fileSize: number;
@@ -73,6 +78,8 @@ type FieldUploadSheetProps = {
 
 export function FieldUploadSheet({
   slug,
+  defaultProcessingProvider = "openai",
+  allowPaidAPI = true,
   workUnits,
   initialWorkUnitId = null,
   prepareUploadAction,
@@ -83,6 +90,7 @@ export function FieldUploadSheet({
 }: FieldUploadSheetProps) {
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>("idle");
+  const [processingProvider, setProcessingProvider] = useState(defaultProcessingProvider);
   const [message, setMessage] = useState("");
   const [selectedWorkUnitId, setSelectedWorkUnitId] = useState(initialWorkUnitId ?? "");
   const [descriptiveName, setDescriptiveName] = useState("");
@@ -158,6 +166,7 @@ export function FieldUploadSheet({
       }
 
       const preparedUpload = await prepareUploadAction({
+        processingProvider,
         originalFilename: uploadFilename,
         mimeType: file.type,
         fileSize: file.size,
@@ -254,6 +263,8 @@ export function FieldUploadSheet({
       </div>
 
       <div className="mt-4 space-y-4">
+        <ProcessingProviderSelect value={processingProvider} onChange={setProcessingProvider}
+          disabled={isBusy} allowPaidAPI={allowPaidAPI} />
         <div className="rounded-[22px] border border-dashed border-[color:var(--color-border)] bg-[rgba(18,29,60,0.52)] p-5">
           <p className="text-sm font-semibold text-white">Una foto, una factura</p>
           <p className="mt-2 text-sm leading-7 text-[color:var(--color-muted)]">

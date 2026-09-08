@@ -5,6 +5,8 @@ import { getSupabaseServerClient, getSupabaseServiceRoleClient } from "@/lib/sup
 import { requireOrganizationDashboardPage } from "@/modules/auth/server-auth";
 import { runDocumentClassification } from "@/modules/accounting/classification-runner";
 import { enqueueDocumentProcessing } from "@/modules/documents/processing";
+import { resolveDocumentProcessingProvider, type DocumentProcessingProvider } from "@/modules/documents/processing-provider";
+import { isPaidAIAllowed } from "@/lib/llm/provider-policy";
 import {
   type DocumentSpreadsheetLedgerKind,
 } from "@/modules/documents/spreadsheet-batch-import";
@@ -65,6 +67,7 @@ function isAcceptedSpreadsheetFile(fileName: string, mimeType: string) {
 
 type PrepareDocumentUploadInput = {
   slug: string;
+  processingProvider?: DocumentProcessingProvider;
   originalFilename: string;
   mimeType: string;
   fileSize: number;
@@ -388,6 +391,16 @@ export async function retryMissingFxRatesAction(input: {
 export async function prepareDocumentUploadAction(
   input: PrepareDocumentUploadInput,
 ): Promise<PrepareDocumentUploadSuccess | UploadActionError> {
+  let provider: DocumentProcessingProvider;
+  try {
+    provider = resolveDocumentProcessingProvider(input.processingProvider === undefined
+      ? null : { processing_provider: input.processingProvider });
+    if (provider === "openai" && !isPaidAIAllowed()) {
+      return { ok: false, message: "La API paga está deshabilitada en este programa. Seleccioná Codex en mi PC." };
+    }
+  } catch {
+    return { ok: false, message: "Seleccioná un proveedor de procesamiento válido." };
+  }
   const validation = validateDocumentUploadCandidate({
     name: input.originalFilename,
     type: input.mimeType,
@@ -465,12 +478,12 @@ export async function prepareDocumentUploadAction(
     };
   }
 
-  if (input.fileHash?.trim() || input.sourceSurface === "mobile_field") {
+  {
     const updatePayload: {
       file_hash?: string;
       upload_source?: string;
       metadata?: Record<string, unknown>;
-    } = {};
+    } = { metadata: { processing_provider: provider } };
 
     if (input.fileHash?.trim()) {
       updatePayload.file_hash = input.fileHash.trim();
@@ -479,6 +492,7 @@ export async function prepareDocumentUploadAction(
     if (input.sourceSurface === "mobile_field") {
       updatePayload.upload_source = "mobile_field";
       updatePayload.metadata = {
+        processing_provider: provider,
         source_surface: "mobile_field",
       };
     }
