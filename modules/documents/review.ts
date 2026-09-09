@@ -99,6 +99,7 @@ import {
   type DocumentOperationalFlagCode,
 } from "@/modules/documents/workflow-state";
 import { buildDocumentDecisionSnapshot } from "@/modules/documents/document-decision-snapshot";
+import { buildDocumentMonetaryFields } from "@/modules/documents/monetary-document-fields";
 import {
   isDocumentProcessingStaleReason,
   reconcileStaleDocumentProcessingRuns,
@@ -2198,20 +2199,7 @@ async function persistDraftArtifacts(
     status: nextDocumentStatus,
     posting_status: nextPostingStatus,
     current_draft_id: draft.id,
-    original_currency_code:
-      derived.monetarySnapshot?.currencyCode
-      ?? facts.currency_code
-      ?? derived.journalSuggestion.currencyCode,
-    original_subtotal_amount: derived.monetarySnapshot?.netAmountOriginal ?? facts.subtotal ?? null,
-    original_tax_amount: derived.monetarySnapshot?.taxAmountOriginal ?? facts.tax_amount ?? null,
-    original_total_amount: derived.monetarySnapshot?.totalAmountOriginal ?? facts.total_amount ?? null,
-    functional_currency_code: derived.journalSuggestion.functionalCurrencyCode,
-    functional_subtotal_uyu:
-      derived.monetarySnapshot?.netAmountUyu ?? derived.taxTreatment.taxableAmountUyu ?? null,
-    functional_tax_amount_uyu:
-      derived.monetarySnapshot?.taxAmountUyu ?? derived.taxTreatment.taxAmountUyu ?? null,
-    functional_total_amount_uyu:
-      derived.monetarySnapshot?.totalAmountUyu ?? null,
+    ...buildDocumentMonetaryFields({ facts, monetarySnapshot: derived.monetarySnapshot }),
     fx_rate_policy_code: derived.monetarySnapshot?.fx.policyCode ?? "dgi_previous_business_day_interbank",
     fx_rate_bcu_value: derived.journalSuggestion.fxRateBcuValue,
     fx_rate_bcu_date_used: derived.journalSuggestion.fxRateBcuDateUsed,

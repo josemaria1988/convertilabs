@@ -14,6 +14,12 @@ const schema = { type: "object", additionalProperties: false, required: ["total"
 const input = { bytes: png, mimeType: "image/png", originalFilename: '../../factura $(echo robado).png', systemPrompt: "Extraer factura.", userPrompt: "Datos comerciales.", jsonSchema: schema };
 const help = "--ignore-user-config --ignore-rules --strict-config --image --output-schema";
 const completed = JSON.stringify({ type: "turn.completed", usage: { input_tokens: 100, output_tokens: 25 } });
+const startupNotices = [
+  "Under-development features enabled: skip_host_skill_discovery. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in C:\\Users\\example\\.codex\\config.toml.",
+  "Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`.",
+];
+const noticeEvent = (message) => ({ type: "item.completed", item: { type: "error", message } });
+const eventStream = (...events) => events.map((event) => typeof event === "string" ? event : JSON.stringify(event)).join("\n");
 
 async function fixture(runExtraction, options = {}) {
   const base = path.resolve(".local-companion", "provider-tests");
@@ -52,6 +58,9 @@ test("extraction uses a clean environment, fixed document names and validates th
     assert.equal(request.args.includes('forced_login_method="chatgpt"'), true);
     assert.equal(request.args.includes('approval_policy="never"'), true);
     assert.equal(request.args.includes('shell_environment_policy.inherit="none"'), true);
+    assert.equal(request.args.includes("suppress_unstable_features_warning=true"), true);
+    assert.equal(request.args[request.args.indexOf("code_mode_host") - 1], "--disable");
+    assert.equal(request.args[request.args.indexOf("view_image") - 1], "--disable");
     assert.equal(request.args.includes("shell_tool"), true);
     assert.equal(request.args.includes("--dangerously-bypass-approvals-and-sandbox"), false);
     assert.equal(await fs.readFile(path.join(request.cwd, ".convertilabs-job"), "utf8"), "");
@@ -66,6 +75,66 @@ test("extraction uses a clean environment, fixed document names and validates th
     assert.equal(output.diagnostics.apiKeyUsed, false);
     assert.deepEqual(await fs.readdir(f.directory), []);
   } finally { await f.cleanup(); }
+});
+
+test("known CLI startup notices preserve a validated invoice and expose only safe diagnostic codes", async () => {
+  const f = await fixture(async (request) => {
+    await fs.writeFile(path.join(request.cwd, "result.json"), '{"total":122}');
+    return { stdout: eventStream(
+      { type: "thread.started" },
+      ...startupNotices.map(noticeEvent),
+      { type: "turn.started" },
+      { type: "item.completed", item: { type: "agent_message", text: '{"total":122}' } },
+      completed,
+    ), stderr: "", exitCode: 0 };
+  });
+  try {
+    const result = await f.provider.extract(input);
+    assert.deepEqual(result.output, { total: 122 });
+    assert.deepEqual(result.diagnostics.startupWarningCodes, ["host_skill_discovery_unstable", "code_mode_host_disabled"]);
+    assert.equal(JSON.stringify(result.diagnostics).includes("example"), false);
+    assert.deepEqual(await fs.readdir(f.directory), []);
+  } finally { await f.cleanup(); }
+});
+
+test("unknown errors and notices after turn start block otherwise valid extraction", async () => {
+  const eventSequences = [
+    [noticeEvent("Could not load the attached image.")],
+    [noticeEvent(startupNotices[0].replace("skip_host_skill_discovery.", "skip_host_skill_discovery, shell_tool."))],
+    [{ type: "turn.started" }, noticeEvent(startupNotices[1])],
+    [completed, noticeEvent(startupNotices[1])],
+    [{ type: "item.started", item: { type: "error", message: startupNotices[1] } }],
+    [{ type: "item.completed", item: { type: "error" } }],
+  ];
+  for (const events of eventSequences) {
+    const f = await fixture(async (request) => {
+      await fs.writeFile(path.join(request.cwd, "result.json"), '{"total":122}');
+      return { stdout: eventStream(...events, completed), stderr: "", exitCode: 0 };
+    });
+    try {
+      await assert.rejects(() => f.provider.extract(input), { code: "codex_failed", retryable: false });
+    } finally { await f.cleanup(); }
+  }
+});
+
+test("startup notices do not relax tool or terminal error checks", async () => {
+  const cases = [
+    [{ type: "item.started", item: { type: "mcp_tool_call" } }, "unexpected_tool_use"],
+    [{ type: "item.completed", item: { type: "command_execution" } }, "unexpected_tool_use"],
+    [{ type: "item.completed", item: { type: "view_image" } }, "unexpected_tool_use"],
+    [{ type: "item.completed", item: { type: "future_external_tool" } }, "unexpected_tool_use"],
+    [{ type: "turn.failed", error: { message: "Processing failed." } }, "codex_failed"],
+    [{ type: "error", message: "Processing failed." }, "codex_failed"],
+  ];
+  for (const [event, code] of cases) {
+    const f = await fixture(async (request) => {
+      await fs.writeFile(path.join(request.cwd, "result.json"), '{"total":122}');
+      return { stdout: eventStream(...startupNotices.map(noticeEvent), event, completed), stderr: "", exitCode: 0 };
+    });
+    try {
+      await assert.rejects(() => f.provider.extract(input), { code });
+    } finally { await f.cleanup(); }
+  }
 });
 
 test("malformed or contract-invalid JSON never becomes a successful extraction", async () => {

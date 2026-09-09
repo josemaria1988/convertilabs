@@ -133,6 +133,7 @@ export function buildCodexArguments(config: CodexProviderConfig, directory: stri
     "-c", 'history.persistence="none"', "-c", "memories.use_memories=false",
     "-c", "memories.generate_memories=false",
     "-c", "hide_agent_reasoning=true", "-c", "show_raw_agent_reasoning=false",
+    "-c", "suppress_unstable_features_warning=true",
     // Known in CLI 0.153.4; avoids injecting the user's host skill catalog.
     "--enable", "skip_host_skill_discovery",
   ];
@@ -161,9 +162,12 @@ function classifyFailure(result: ProcessResult): CodexProviderError {
 
 function parseEvents(stdout: string) {
   let completed = false;
+  let turnStarted = false;
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
   let failed = false;
+  const failureEvents: string[] = [];
+  const startupWarningCodes = new Set<string>();
   for (const line of stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
     let event: Record<string, unknown>;
@@ -172,9 +176,27 @@ function parseEvents(stdout: string) {
       if (!event || typeof event !== "object" || Array.isArray(event) || typeof event.type !== "string") throw new Error("invalid event");
     }
     catch { throw new CodexProviderError("invalid_output", "Codex devolvió una respuesta incompleta. Podés volver a procesar el documento.", true); }
-    if (event.type === "error" || event.type === "turn.failed") failed = true;
+    if (event.type === "error" || event.type === "turn.failed") {
+      failed = true;
+      failureEvents.push(line);
+    }
+    if (event.type === "turn.started") turnStarted = true;
     const item = event.item as Record<string, unknown> | undefined;
-    if (item && !["agent_message", "reasoning", "plan"].includes(String(item.type))) {
+    if (item?.type === "error") {
+      // CLI 0.153.4 emits these configuration notices as error items before the turn.
+      // Match only the known messages; other errors must never become successful invoices.
+      const message = typeof item.message === "string" ? item.message : "";
+      const warningCode = /^Under-development features enabled: skip_host_skill_discovery\. Under-development features are incomplete and may behave unpredictably\. To suppress this warning, set `suppress_unstable_features_warning = true` in [^\r\n]{1,1024}[\\/]config\.toml\.$/.test(message)
+        ? "host_skill_discovery_unstable"
+        : message === "Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`."
+          ? "code_mode_host_disabled"
+          : null;
+      if (!turnStarted && !completed && event.type === "item.completed" && warningCode) {
+        startupWarningCodes.add(warningCode);
+      } else {
+        throw new CodexProviderError("codex_failed", "Codex informó un error durante la lectura local. Revisá el diagnóstico antes de volver a procesar.");
+      }
+    } else if (item && !["agent_message", "reasoning", "plan"].includes(String(item.type))) {
       throw new CodexProviderError("unexpected_tool_use", "La lectura intentó usar herramientas fuera del modo permitido y fue descartada.");
     }
     if (event.type === "turn.completed") {
@@ -184,7 +206,7 @@ function parseEvents(stdout: string) {
       if (Number.isSafeInteger(usage?.output_tokens) && Number(usage?.output_tokens) >= 0) outputTokens = usage!.output_tokens as number;
     }
   }
-  return { completed, failed, inputTokens, outputTokens };
+  return { completed, failed, inputTokens, outputTokens, failureText: failureEvents.join("\n"), startupWarningCodes: [...startupWarningCodes] };
 }
 
 function verifyDocument(input: CodexDocumentInput, config: CodexProviderConfig) {
@@ -292,7 +314,7 @@ export function createCodexProvider(dependencies: Dependencies = {}) {
         maxOutputBytes: config.maxOutputBytes, signal: input.signal });
       if (result.exitCode !== 0) throw classifyFailure(result);
       const events = parseEvents(result.stdout);
-      if (events.failed) throw classifyFailure(result);
+      if (events.failed) throw classifyFailure({ ...result, stdout: events.failureText });
       if (!events.completed) throw new CodexProviderError("incomplete_output", "Codex no confirmó la finalización de la lectura. Podés volver a procesar el documento.", true);
       const outputFile = path.join(directory, "result.json");
       const outputStat = await fs.lstat(outputFile).catch(() => null);
@@ -309,7 +331,7 @@ export function createCodexProvider(dependencies: Dependencies = {}) {
           totalTokens: events.inputTokens !== null && events.outputTokens !== null ? events.inputTokens + events.outputTokens : null },
         diagnostics: { provider: "codex_local", authMethod: "chatgpt", cliVersion: version,
           pages: images.length, mimeType: input.mimeType, sandbox: "read-only", ephemeral: true,
-          userConfigLoaded: false, apiKeyUsed: false },
+          userConfigLoaded: false, apiKeyUsed: false, startupWarningCodes: events.startupWarningCodes },
       };
     } finally {
       // Only a freshly generated job directory directly below our runtime root.
