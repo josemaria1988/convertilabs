@@ -1,20 +1,10 @@
 import "server-only";
-
-import {
-  loadZetaRuntimeConfig,
-  type ZetaCredentialOverrides,
-  type ZetaRuntimeConfig,
-  ZetaConfigurationError,
-} from "@/modules/integrations/zeta/client/auth";
-import { normalizeZetaException } from "@/modules/integrations/zeta/client/errors";
-import {
-  createZetaRestClient,
-  queryZetaEndpoint,
-  type ZetaRestClientOptions,
-} from "@/modules/integrations/zeta/client/rest-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ZetaCredentialOverrides, ZetaRuntimeConfig } from "@/modules/integrations/zeta/client/auth";
+import type { ZetaRestClientOptions } from "@/modules/integrations/zeta/client/rest-client";
+import { loadZetaCacheStatus } from "@/modules/integrations/zeta/cache/report-cache";
 
 export type ZetaHealthMode = "mock" | "real";
-
 export type ZetaHealthCheckResult = {
   ok: boolean;
   status: "connected" | "paused" | "error" | "disconnected";
@@ -24,173 +14,37 @@ export type ZetaHealthCheckResult = {
   metadata: Record<string, unknown>;
 };
 
-export function resolveZetaHealthMode(input: {
-  mockEnabled: boolean;
-  requestedMode?: string | null;
-}) {
-  if (
-    input.mockEnabled
-    || input.requestedMode === "mock"
-    || process.env.ZETA_INTEGRATION_MOCK === "1"
-  ) {
-    return "mock" satisfies ZetaHealthMode;
-  }
-
-  return "real" satisfies ZetaHealthMode;
-}
-
-function formatConfigurationErrorMessage(error: ZetaConfigurationError, usesStoredCredentials: boolean) {
-  if (error.code === "zeta_base_url_missing") {
-    return "Falta ZETASOFTWARE_BASE_URL o la base URL de Zetasoftware en la conexion.";
-  }
-
-  if (error.code === "zeta_integrator_credentials_missing") {
-    return "Faltan ZETASOFTWARE_DESARROLLADOR_CODIGO o ZETASOFTWARE_DESARROLLADOR_CLAVE en las variables de entorno del servidor.";
-  }
-
-  if (error.code === "zeta_credentials_invalid") {
-    return "UsuarioCodigo y RolCodigo deben ser numericos segun el contrato REST de Zetasoftware.";
-  }
-
-  return usesStoredCredentials
-    ? "Faltan campos en las credenciales cifradas de Zetasoftware."
-    : "Faltan credenciales Zetasoftware en variables de entorno del servidor.";
+export function resolveZetaHealthMode(input: { mockEnabled: boolean; requestedMode?: string | null }) {
+  return input.mockEnabled || input.requestedMode === "mock" || process.env.ZETA_INTEGRATION_MOCK === "1"
+    ? "mock" satisfies ZetaHealthMode : "real" satisfies ZetaHealthMode;
 }
 
 export async function runZetaHealthCheck(input: {
-  isConfigured: boolean;
-  isPaused: boolean;
-  mockEnabled: boolean;
-  requestedMode?: string | null;
-  baseUrl?: string | null;
-  envProfile?: string | null;
-  credentialOverrides?: ZetaCredentialOverrides;
-  runtime?: ZetaRuntimeConfig;
-  fetchImpl?: ZetaRestClientOptions["fetchImpl"];
-}) {
+  isConfigured: boolean; isPaused: boolean; mockEnabled: boolean; requestedMode?: string | null;
+  baseUrl?: string | null; envProfile?: string | null; credentialOverrides?: ZetaCredentialOverrides;
+  runtime?: ZetaRuntimeConfig; fetchImpl?: ZetaRestClientOptions["fetchImpl"];
+  supabase?: SupabaseClient; organizationId?: string;
+}): Promise<ZetaHealthCheckResult> {
   const checkedAt = new Date().toISOString();
+  if (!input.isConfigured) return { ok: false, status: "disconnected", code: "zeta_connection_missing",
+    message: "Guarda una conexion Zetasoftware antes de consultar su estado.", checkedAt, metadata: { health_mode: "not_configured" } };
+  if (input.isPaused) return { ok: false, status: "paused", code: "zeta_connection_paused",
+    message: "La conexion Zetasoftware esta pausada.", checkedAt, metadata: { health_mode: "paused" } };
+  if (resolveZetaHealthMode(input) === "mock") return { ok: true, status: "connected", code: "zeta_mock_health_ok",
+    message: "Conexion Zetasoftware validada en modo mock.", checkedAt, metadata: { health_mode: "mock", contract_status: "confirmed_pr_01" } };
 
-  if (!input.isConfigured) {
-    return {
-      ok: false,
-      status: "disconnected",
-      code: "zeta_connection_missing",
-      message: "Guarda una conexion Zetasoftware antes de probarla.",
-      checkedAt,
-      metadata: {
-        health_mode: "not_configured",
-      },
-    } satisfies ZetaHealthCheckResult;
-  }
-
-  if (input.isPaused) {
-    return {
-      ok: false,
-      status: "paused",
-      code: "zeta_connection_paused",
-      message: "La conexion Zetasoftware esta pausada.",
-      checkedAt,
-      metadata: {
-        health_mode: "paused",
-      },
-    } satisfies ZetaHealthCheckResult;
-  }
-
-  const healthMode = resolveZetaHealthMode(input);
-
-  if (healthMode === "mock") {
-    return {
-      ok: true,
-      status: "connected",
-      code: "zeta_mock_health_ok",
-      message: "Conexion Zetasoftware validada en modo mock.",
-      checkedAt,
-      metadata: {
-        health_mode: "mock",
-        contract_status: "confirmed_pr_01",
-      },
-    } satisfies ZetaHealthCheckResult;
-  }
-
+  const schedule = "La sincronizacion con Zeta esta prevista diariamente a las 18:00 (America/Montevideo), con Convertilabs Local encendido.";
+  const metadata = { health_mode: "supabase_cache", api_requests: 0, live_connection_tested: false };
+  if (!input.supabase || !input.organizationId) return { ok: false, status: "disconnected", code: "zeta_daily_sync_required",
+    message: `Consulta el estado de la copia de Supabase desde Integraciones. ${schedule}`, checkedAt, metadata };
   try {
-    const runtime = input.runtime ?? loadZetaRuntimeConfig({
-      envProfile: input.envProfile,
-      overrides: {
-        ...(input.credentialOverrides ?? {}),
-        baseUrl: input.baseUrl ?? input.credentialOverrides?.baseUrl,
-      },
-    });
-    const client = createZetaRestClient({
-      baseUrl: runtime.baseUrl,
-      credentials: runtime.credentials,
-      fetchImpl: input.fetchImpl,
-    });
-    const probe = await queryZetaEndpoint<{
-      Codigo?: number;
-      Nombre?: string;
-      UsuarioNombre?: string;
-      UsuarioEmail?: string;
-    }>(
-      client,
-      "userRolesQuery",
-      {
-        page: 1,
-        filters: {
-          CodigoDesde: runtime.credentials.RolCodigo,
-          CodigoHasta: runtime.credentials.RolCodigo,
-        },
-      },
-    );
-
-    return {
-      ok: true,
-      status: "connected",
-      code: "zeta_real_health_ok",
-      message: "Conexion Zetasoftware validada con RESTUsuariosEmpresaV1Query.",
-      checkedAt,
-      metadata: {
-        health_mode: "real",
-        contract_status: "confirmed_pr_01",
-        endpoint: "RESTUsuariosEmpresaV1Query",
-        rows_seen: probe.rows.length,
-        is_last_page: probe.isLastPage,
-        has_usuario_clave: runtime.metadata.hasUsuarioClave,
-        credential_source: runtime.metadata.credentialSource,
-      },
-    } satisfies ZetaHealthCheckResult;
-  } catch (error) {
-    if (error instanceof ZetaConfigurationError) {
-      const usesStoredCredentials = Boolean(input.credentialOverrides);
-
-      return {
-        ok: false,
-        status: "error",
-        code: error.code,
-        message: formatConfigurationErrorMessage(error, usesStoredCredentials),
-        checkedAt,
-        metadata: {
-          health_mode: "real",
-          contract_status: "confirmed_pr_01",
-          credential_source: usesStoredCredentials ? "db_encrypted" : "server_env",
-          missing: error.missing,
-        },
-      } satisfies ZetaHealthCheckResult;
-    }
-
-    const normalized = normalizeZetaException(error);
-
-    return {
-      ok: false,
-      status: "error",
-      code: normalized.code,
-      message: normalized.message,
-      checkedAt,
-      metadata: {
-        health_mode: "real",
-        contract_status: "confirmed_pr_01",
-        endpoint: normalized.endpointName ?? "RESTUsuariosEmpresaV1Query",
-        http_status: normalized.status ?? null,
-      },
-    } satisfies ZetaHealthCheckResult;
+    const cacheStatus = await loadZetaCacheStatus({ supabase: input.supabase, organizationId: input.organizationId });
+    return { ok: Boolean(cacheStatus.lastCompleteRunId), status: cacheStatus.lastCompleteRunId ? "connected" : "disconnected",
+      code: cacheStatus.lastCompleteRunId ? "zeta_cache_available" : "zeta_cache_pending",
+      message: `${cacheStatus.lastCompleteRunId ? "Copia de Supabase disponible." : "Todavia no hay una copia diaria completa en Supabase."} ${schedule} Esta consulta no prueba credenciales ni llama a Zeta.`,
+      checkedAt, metadata: { ...metadata, cache_status: cacheStatus } };
+  } catch {
+    return { ok: false, status: "error", code: "zeta_cache_unavailable",
+      message: `No se pudo leer el estado de la copia de Supabase. ${schedule} No se consulta Zeta como reemplazo.`, checkedAt, metadata };
   }
 }

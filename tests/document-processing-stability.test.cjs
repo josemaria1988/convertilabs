@@ -280,6 +280,49 @@ test("workspace documents expose retry action when extraction was reconciled as 
   }
 });
 
+test("local queued documents wait without frequent refresh while active and legacy jobs keep live status", async () => {
+  const supabaseServerModule = require("@/lib/supabase/server");
+  const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;
+  const previousProvider = process.env.CONVERTILABS_PROCESSING_PROVIDER;
+  process.env.CONVERTILABS_PROCESSING_PROVIDER = "codex_local";
+
+  try {
+    for (const scenario of [
+      { status: "queued", provider: "codex_local", waiting: true, inFlight: false },
+      { status: "extracting", provider: "codex_local", waiting: false, inFlight: true },
+      { status: "processing", provider: "codex_local", waiting: false, inFlight: true },
+      { status: "queued", provider: "openai", waiting: false, inFlight: true },
+      { status: "queued", provider: undefined, waiting: false, inFlight: true },
+    ]) {
+      const supabase = createMutableSupabaseStub(buildWorkspaceSeed({ document: {
+        status: scenario.status,
+        current_processing_run_id: null,
+        metadata: scenario.provider ? { processing_provider: scenario.provider } : {},
+      } }));
+      supabaseServerModule.getSupabaseServiceRoleClient = () => supabase;
+      const reviewModule = loadFresh("@/modules/documents/review");
+      const documents = await reviewModule.listOrganizationWorkspaceDocuments({
+        organizationId: "org-1", organizationSlug: "demo",
+      });
+      assert.equal(documents[0].hasExtractionInFlight, scenario.inFlight);
+      assert.equal(documents[0].isWaitingForLocalWorker, scenario.waiting);
+      assert.equal(documents[0].canProcessExtraction, false);
+      if (scenario.waiting) assert.equal(documents[0].extractionStatusLabel, "En espera de la PC");
+
+      const original = await reviewModule.loadDocumentOriginalPageData({
+        organizationId: "org-1", organizationSlug: "demo", documentId: "doc-1", userRole: "owner",
+      });
+      assert.equal(original.document.isWaitingForLocalWorker, scenario.waiting);
+      assert.equal(original.recoveryActionLabel, null);
+      assert.equal(supabase._tables.documents[0].status, scenario.status);
+    }
+  } finally {
+    supabaseServerModule.getSupabaseServiceRoleClient = originalGetClient;
+    if (previousProvider === undefined) delete process.env.CONVERTILABS_PROCESSING_PROVIDER;
+    else process.env.CONVERTILABS_PROCESSING_PROVIDER = previousProvider;
+  }
+});
+
 test("workspace documents keep opening review as primary action when a draft exists", async () => {
   const supabaseServerModule = require("@/lib/supabase/server");
   const originalGetClient = supabaseServerModule.getSupabaseServiceRoleClient;

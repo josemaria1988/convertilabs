@@ -14,6 +14,8 @@ import {
   type SettlementMethod,
 } from "@/modules/accounting";
 import { buildZetaConnection } from "@/modules/integrations/zeta/client/auth";
+import { createHumanExportZetaRequestPolicy } from "@/modules/integrations/zeta/client/read-policy";
+import { reconcilePurchaseInvoiceAgainstCache } from "@/modules/integrations/zeta/export/purchase-cache-reconciliation";
 import {
   normalizeZetaException,
   ZetaIntegrationError,
@@ -52,6 +54,7 @@ type JsonRecord = Record<string, unknown>;
 type DocumentRow = {
   id: string;
   organization_id: string;
+  created_at: string;
   document_date: string | null;
   current_draft_id: string | null;
   work_unit_id: string | null;
@@ -264,6 +267,8 @@ async function buildClient(input: {
   });
 
   return createZetaRestClient({
+    organizationId: input.organizationId,
+    requestPolicy: createHumanExportZetaRequestPolicy(input.organizationId),
     baseUrl: runtime.baseUrl,
     credentials: runtime.credentials,
     fetchImpl: input.deps?.fetchImpl,
@@ -364,7 +369,7 @@ async function loadDocumentRow(input: {
 }) {
   const { data, error } = await input.supabase
     .from("documents")
-    .select("id, organization_id, document_date, current_draft_id, work_unit_id, metadata")
+    .select("id, organization_id, created_at, document_date, current_draft_id, work_unit_id, metadata")
     .eq("organization_id", input.organizationId)
     .eq("id", input.documentId)
     .limit(1)
@@ -517,6 +522,7 @@ async function buildDocumentInput(input: {
   return {
     organizationId: input.organizationId,
     documentId: input.documentId,
+    createdAt: document.created_at,
     documentRole: draft.document_role,
     documentType: draft.document_type,
     postingTemplateCode: asString(journalSuggestion.templateCode),
@@ -1087,6 +1093,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
   documentId: string;
   actorProfileId: string;
   dryRun?: boolean;
+  humanConfirmed?: boolean;
   forceResend?: boolean;
 }, deps: ExportDependencies = {}): Promise<ZetaPurchaseInvoiceExportResult> {
   const supabase = deps.supabase ?? getSupabaseServiceRoleClient();
@@ -1098,16 +1105,54 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
   });
   const previousStatus = asString(asRecord(previous?.metadata_json).status);
 
-  if (previous && previousStatus === "success_pending_reconciliation") {
+  if (previous && (previousStatus === "success_pending_reconciliation" || previousStatus === "sent")) {
+    if (params.dryRun || params.humanConfirmed !== true) {
+      let stored = buildPreviousExportResult({
+        previous, documentId: params.documentId,
+        status: "success_pending_reconciliation", dryRun: params.dryRun === true,
+      });
+      const movimiento = stored.payload?.Data.Movimiento[0];
+      if (movimiento) {
+        const document = await loadDocumentRow({ supabase, organizationId: params.organizationId, documentId: params.documentId });
+        const cacheReconciliation = await reconcilePurchaseInvoiceAgainstCache({
+          supabase, organizationId: params.organizationId, documentCreatedAt: document.created_at,
+          movimiento, expectedTotal: parseStoredTotal(previous, stored.preview), now: deps.now?.() ?? new Date(),
+        });
+        stored = { ...stored, preview: { ...stored.preview, cacheReconciliation } };
+        if (cacheReconciliation.status === "already_in_erp") {
+          return {
+            ...stored, status: "found_in_zeta",
+            blockers: stored.blockers.filter((entry) => entry.code !== "zeta_purchase_reconciliation_pending_no_resend"),
+            duplicate: { found: true, registroId: cacheReconciliation.matches[0]?.registroId ?? null, raw: null },
+          };
+        }
+      }
+      return {
+        ...stored,
+        blockers: [...stored.blockers.filter((entry) => entry.code !== "zeta_purchase_reconciliation_pending_no_resend"), blocker(
+          "zeta_purchase_reconciliation_pending_no_resend",
+          "Esta factura ya fue aceptada para envio. La validacion no consulta Zeta ni permite reenviarla; queda pendiente de reconciliacion.",
+        )],
+      };
+    }
     return reconcilePreviousPendingExport({
       supabase,
       organizationId: params.organizationId,
       documentId: params.documentId,
       actorProfileId: params.actorProfileId,
-      dryRun: params.dryRun === true,
+      dryRun: false,
       previous,
       deps,
     });
+  }
+
+  if (previous && previousStatus === "timeout_unknown") {
+    const stored = buildPreviousExportResult({ previous, documentId: params.documentId,
+      status: "timeout_unknown", dryRun: params.dryRun === true });
+    return { ...stored, blockers: [...stored.blockers, blocker(
+      "zeta_timeout_requires_reconciliation",
+      "El ultimo envio no tiene un resultado confirmado. La ausencia en la copia mensual no autoriza reenviarlo; requiere reconciliacion.",
+    )] };
   }
 
   if (previous && (previousStatus === "found_in_zeta" || previousStatus === "already_exists_in_zeta")) {
@@ -1144,10 +1189,29 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       connection,
     }),
   ]);
-  const resolution = resolveZetaPurchaseExpenseInvoicePayload({
+  let resolution = resolveZetaPurchaseExpenseInvoicePayload({
     document,
     catalogs,
   });
+
+  const candidate = resolution.payload?.Data.Movimiento[0];
+  if (candidate) {
+    const cacheReconciliation = await reconcilePurchaseInvoiceAgainstCache({
+      supabase, organizationId: params.organizationId,
+      documentCreatedAt: document.createdAt ?? "",
+      movimiento: candidate, expectedTotal: document.totalAmount ?? null,
+      now: deps.now?.() ?? new Date(),
+    });
+    resolution = { ...resolution, preview: { ...resolution.preview, cacheReconciliation } };
+    if (!cacheReconciliation.eligibleForHumanExport) {
+      resolution = {
+        ...resolution, exportable: false, mode: "blocked",
+        status: cacheReconciliation.status === "waiting_for_sync" ? "waiting_for_sync"
+          : cacheReconciliation.status === "already_in_erp" ? "already_exists_in_zeta" : "blocked",
+        blockers: [...resolution.blockers, blocker(`zeta_purchase_cache_${cacheReconciliation.status}`, cacheReconciliation.message)],
+      };
+    }
+  }
 
   if (params.dryRun) {
     return {
@@ -1158,16 +1222,19 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     };
   }
 
-  if (previousStatus === "timeout_unknown" && !params.forceResend) {
+  if (resolution.preview.cacheReconciliation && !resolution.preview.cacheReconciliation.eligibleForHumanExport) {
+    return withResult(resolution, { attemptRawRecordId: previous?.id ?? null });
+  }
+
+  if (params.humanConfirmed !== true) {
     return withResult(resolution, {
-      status: "timeout_unknown",
+      status: "blocked",
       exportable: false,
       mode: "blocked",
       blockers: [
         ...resolution.blockers,
-        blocker("zeta_timeout_requires_reconciliation", "El ultimo intento quedo en timeout_unknown. Reconciliacion manual requerida antes de reintentar."),
+        blocker("zeta_human_confirmation_required", "Confirma el proveedor, comprobante e importe revisados antes de enviarlos a Zeta."),
       ],
-      dryRun: false,
       attemptRawRecordId: previous?.id ?? null,
     });
   }
@@ -1355,13 +1422,18 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     expectedTotal,
   });
 
-  if (duplicate.found) {
+  if (duplicate.found || duplicate.fiscalConflict) {
+    const duplicateStatus = duplicate.found ? "already_exists_in_zeta" : "blocked";
     const result = withResult(resolution, {
-      status: "already_exists_in_zeta",
+      status: duplicateStatus,
       exportable: false,
       mode: "blocked",
+      blockers: duplicate.fiscalConflict ? [...resolution.blockers, blocker(
+        "zeta_preflight_fiscal_conflict",
+        "La comprobacion final encontro el mismo proveedor, serie y numero con datos diferentes. No se envia; revisa el comprobante existente en Zeta.",
+      )] : resolution.blockers,
       duplicate: {
-        found: true,
+        found: duplicate.found,
         registroId: duplicate.registroId,
         raw: duplicate.raw,
       },
@@ -1374,7 +1446,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       testMode: connection.test_mode,
       result,
       actorProfileId: params.actorProfileId,
-      status: "already_exists_in_zeta",
+      status: duplicateStatus,
       response: duplicate.raw,
       deps,
     });
@@ -1384,7 +1456,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       actorUserId: params.actorProfileId,
       entityType: "document",
       entityId: params.documentId,
-      action: "zeta_purchase_expense_already_exists",
+      action: duplicate.found ? "zeta_purchase_expense_already_exists" : "zeta_purchase_expense_fiscal_conflict",
       afterJson: {
         registro_id: duplicate.registroId,
       },

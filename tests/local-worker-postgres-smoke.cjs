@@ -61,6 +61,7 @@ async function runSmoke() {
     await db.exec(documentAlter[0]);
     const workerSql = source("16_local_document_worker.sql");
     await db.exec(workerSql);
+    await db.exec(source("18_document_upload_identity.sql"));
     // Verify idempotent DDL installation as well as CREATE FUNCTION parse/runtime.
     await db.exec(workerSql);
     await db.exec("grant usage on schema public to service_role; grant all on all tables in schema public to service_role;");
@@ -81,7 +82,7 @@ async function runSmoke() {
         values ($1,$2,'uploaded',$3,'fixture.pdf',$4,$5)`, [id, org, `${org}/${id}/fixture.pdf`, fileHash, actor]);
       return id;
     };
-    const enqueue = async (org, doc, snap) => (await db.query("select enqueue_local_document_processing($1,$2,$3,'upload',$4) as id", [org, doc, actor, snap])).rows[0].id;
+    const enqueue = async (org, doc, snap) => (await db.query("select enqueue_local_document_upload_once($1,$2,$3,'upload',$4) as id", [org, doc, actor, snap])).rows[0].id;
     const claim = async (org, worker) => (await db.query("select claim_local_document_processing($1,$2) as value", [org, worker])).rows[0].value;
     const heartbeat = async (org, run, worker, token) => (await db.query("select heartbeat_local_document_processing($1,$2,$3,$4) as value", [org, run, worker, token])).rows[0].value;
     const fail = async (org, run, worker, token, retry) => (await db.query("select fail_local_document_processing($1,$2,$3,$4,'fixture failure','fixture_stage',$5) as value", [org, run, worker, token, retry])).rows[0].value;
@@ -153,6 +154,11 @@ async function runSmoke() {
     const finalDoc = (await db.query("select status,posting_status,metadata from documents where id=$1", [docA1])).rows[0];
     assert.equal(finalDoc.status, "extracted"); assert.equal(finalDoc.posting_status, "draft"); assert.equal(finalDoc.metadata.review_required, true);
     passed("successful completion persists exactly one reviewed draft and repeat is idempotent");
+    assert.equal(await enqueue(orgA,docA1,snapA),runA1);
+    assert.equal(await count("document_processing_runs",docA1),1);
+    assert.equal(await count("document_drafts",docA1),1);
+    assert.equal((await db.query("select status from documents where id=$1",[docA1])).rows[0].status,"extracted");
+    passed("a delayed upload enqueue after completed extraction reuses the run without another draft or status change");
 
     const fiscalDuplicate = await complete(orgA, runA2, second.lease_owner, second.lease_token, payload(hash("A2")));
     assert.equal(fiscalDuplicate.status, "skipped"); assert.equal(await count("document_drafts", docA2), 0);

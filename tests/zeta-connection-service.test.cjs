@@ -31,6 +31,9 @@ function createSupabaseStub(resolver) {
         state.limitCount = value;
         return builder;
       },
+      order() {
+        return builder;
+      },
       maybeSingle() {
         return execute("maybeSingle");
       },
@@ -300,143 +303,52 @@ test("Zeta mock health check marks the connection as connected", async () => {
   assert.equal(result.status, "connected");
 });
 
-test("Zeta real health reports missing runtime configuration before calling the API", async () => {
+test("real connection status reads the cache without altering credential health or calling HTTP", async () => {
   const { testZetaConnection } = require("@/modules/integrations/zeta/services/connection-service");
-  const supabase = createSupabaseStub((query) => {
-    if (query.table === "organization_integration_connections" && query.mode === "maybeSingle") {
-      return {
-        data: zetaConnectionRow({
-          test_mode: false,
-          config_json: {
-            credential_source: "server_env",
-            mock_enabled: false,
-            health_mode: "real",
-          },
-          encrypted_credentials: null,
-          credentials_fingerprint: null,
-        }),
-        error: null,
-      };
+  const oldFetch = global.fetch;
+  let httpCalls = 0;
+  global.fetch = async () => { httpCalls++; throw new Error("Must not call Zeta"); };
+  try {
+    for (const scenario of ["complete", "pending", "unavailable"]) {
+      const queries = [];
+      const completed = { id: "daily-1", status: "completed", started_at: "2026-09-08T21:00:00.000Z",
+        finished_at: "2026-09-08T21:05:00.000Z", summary_json: { schemaVersion: 1, reports: [] }, metadata_json: {} };
+      const supabase = createSupabaseStub((query) => {
+        queries.push(query);
+        assert.equal(query.mutation, null);
+        assert.ok(query.filters.some((filter) => filter.column === "organization_id" && filter.value === "org-1"));
+        if (query.table === "organization_integration_connections") return { data: zetaConnectionRow({
+          test_mode: false, config_json: { mock_enabled: false },
+          last_connection_test_ok: true, last_connection_test_at: "2026-09-01T12:00:00.000Z",
+        }), error: null };
+        assert.equal(query.table, "integration_sync_runs");
+        assert.ok(query.filters.some((filter) => filter.column === "stream" && filter.value === "zeta.daily_cache"));
+        if (scenario === "unavailable") return { data: null, error: { code: "08006" } };
+        return { data: query.mode === "maybeSingle" ? (scenario === "complete" ? completed : null)
+          : scenario === "complete" ? [completed] : [], error: null };
+      });
+      const result = await testZetaConnection(supabase, { organizationId: "org-1", actorUserId: "user-1" }, {
+        healthCheck: async () => { throw new Error("A manual cache read cannot run an injected live probe"); },
+      });
+      assert.equal(result.code, scenario === "complete" ? "zeta_cache_available" : scenario === "pending" ? "zeta_cache_pending" : "zeta_cache_unavailable");
+      assert.equal(result.ok, scenario === "complete");
+      assert.match(result.message, /18:00.*America\/Montevideo/);
+      assert.equal(result.metadata.api_requests, 0);
+      assert.equal(result.metadata.live_connection_tested, false);
+      assert.ok(queries.every((query) => !query.mutation));
     }
-
-    if (query.table === "organization_integration_connections" && query.mutation === "update") {
-      assert.equal(query.payload.status, "error");
-      assert.equal(query.payload.last_connection_test_ok, false);
-      assert.match(query.payload.last_error, /Faltan|Falta|UsuarioCodigo/);
-
-      return {
-        data: null,
-        error: null,
-      };
-    }
-
-    if (query.table === "audit_log") {
-      assert.equal(query.payload.action, "zeta_connection_tested");
-      assert.match(query.payload.after_json.code, /zeta_(integrator_credentials|base_url|credentials)_missing/);
-
-      return {
-        data: null,
-        error: null,
-      };
-    }
-
-    throw new Error(`Unexpected query ${query.table}/${query.mode}/${query.mutation ?? "read"}`);
-  });
-
-  const result = await withEnv({
-    ZETASOFTWARE_BASE_URL: undefined,
-    ZETASOFTWARE_DESARROLLADOR_CODIGO: undefined,
-    ZETASOFTWARE_DESARROLLADOR_CLAVE: undefined,
-    ZETASOFTWARE_EMPRESA_CODIGO: undefined,
-    ZETASOFTWARE_EMPRESA_CLAVE: undefined,
-    ZETASOFTWARE_USUARIOCODIGO: undefined,
-    ZETASOFTWARE_USUARIOCLAVE: undefined,
-    ZETASOFTWARE_USUARIO_CLAVE: undefined,
-    ZETASOFTWARE_ROLCODIGO: undefined,
-  }, () => testZetaConnection(supabase, {
-    organizationId: "org-1",
-    actorUserId: "user-1",
-  }));
-
-  assert.equal(result.ok, false);
-  assert.equal(result.status, "error");
-  assert.match(result.code, /zeta_(integrator_credentials|base_url|credentials)_missing/);
+    assert.equal(httpCalls, 0);
+  } finally { global.fetch = oldFetch; }
 });
 
-test("Zeta real health result can mark connection as connected", async () => {
-  const { testZetaConnection } = require("@/modules/integrations/zeta/services/connection-service");
-  const supabase = createSupabaseStub((query) => {
-    if (query.table === "organization_integration_connections" && query.mode === "maybeSingle") {
-      return {
-        data: zetaConnectionRow({
-          test_mode: false,
-          config_json: {
-            credential_source: "server_env",
-            base_url: "https://zeta.example.test",
-            mock_enabled: false,
-            health_mode: "real",
-          },
-          encrypted_credentials: null,
-          credentials_fingerprint: null,
-        }),
-        error: null,
-      };
-    }
-
-    if (query.table === "organization_integration_connections" && query.mutation === "update") {
-      assert.equal(query.payload.status, "connected");
-      assert.equal(query.payload.last_connection_test_ok, true);
-      assert.equal(query.payload.last_error, null);
-
-      return {
-        data: null,
-        error: null,
-      };
-    }
-
-    if (query.table === "audit_log") {
-      assert.equal(query.payload.action, "zeta_connection_tested");
-      assert.equal(query.payload.after_json.code, "zeta_real_health_ok");
-      assert.equal(query.payload.metadata.endpoint, "RESTUsuariosEmpresaV1Query");
-
-      return {
-        data: null,
-        error: null,
-      };
-    }
-
-    throw new Error(`Unexpected query ${query.table}/${query.mode}/${query.mutation ?? "read"}`);
+test("direct real health without cache context defers to daily sync even with a fetch implementation", async () => {
+  const { runZetaHealthCheck } = require("@/modules/integrations/zeta/services/zeta-health-service");
+  let calls = 0;
+  const result = await runZetaHealthCheck({
+    isConfigured: true, isPaused: false, mockEnabled: false, requestedMode: "real",
+    fetchImpl: async () => { calls++; throw new Error("Must not probe Zeta"); },
   });
-
-  const result = await withEnv({
-    ZETASOFTWARE_DESARROLLADOR_CODIGO: "dev-code",
-    ZETASOFTWARE_DESARROLLADOR_CLAVE: "dev-secret",
-    ZETASOFTWARE_EMPRESA_CODIGO: "RONTIL",
-    ZETASOFTWARE_EMPRESA_CLAVE: "empresa-secret",
-    ZETASOFTWARE_USUARIOCODIGO: "42",
-    ZETASOFTWARE_ROLCODIGO: "7",
-  }, () => testZetaConnection(
-      supabase,
-      {
-        organizationId: "org-1",
-        actorUserId: "user-1",
-      },
-      {
-        healthCheck: async () => ({
-        ok: true,
-        status: "connected",
-        code: "zeta_real_health_ok",
-        message: "Conexion Zetasoftware validada con RESTUsuariosEmpresaV1Query.",
-        checkedAt: "2026-04-19T12:30:00.000Z",
-        metadata: {
-          health_mode: "real",
-          contract_status: "confirmed_pr_01",
-          endpoint: "RESTUsuariosEmpresaV1Query",
-        },
-        }),
-      },
-    ));
-
-  assert.equal(result.ok, true);
-  assert.equal(result.status, "connected");
+  assert.equal(result.code, "zeta_daily_sync_required");
+  assert.equal(result.metadata.live_connection_tested, false);
+  assert.equal(calls, 0);
 });

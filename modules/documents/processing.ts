@@ -1936,7 +1936,7 @@ export async function enqueueDocumentProcessing(
       return await withPaidAIDisabled(async () => {
         const supabase = getSupabaseServiceRoleClient();
         const { ruleSnapshot } = await materializeOrganizationRuleSnapshot(supabase, document.organization_id, input.requestedBy);
-        const { data, error } = await supabase.rpc("enqueue_local_document_processing", {
+        const { data, error } = await supabase.rpc(input.triggeredBy === "upload" ? "enqueue_local_document_upload_once" : "enqueue_local_document_processing", {
           p_organization_id: document.organization_id, p_document_id: document.id,
           p_requested_by: input.requestedBy, p_triggered_by: input.triggeredBy, p_rule_snapshot_id: ruleSnapshot.id,
         });

@@ -13,6 +13,7 @@ const stateDirectory = path.join(root, ".local-companion");
 const configPath = path.join(stateDirectory, "config.json");
 const statePath = path.join(stateDirectory, "supervisor.json");
 const stopPath = path.join(stateDirectory, "stop-request.json");
+const workerPollIntervalMs = 4 * 60 * 60 * 1000;
 const print = (value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 
 function parseCommand(argv) {
@@ -23,6 +24,7 @@ function parseCommand(argv) {
     article: { type: "string" }, "price-base": { type: "string" }, "max-pages": { type: "string" },
     "app-url": { type: "string" }, port: { type: "string" }, once: { type: "boolean" },
     cloud: { type: "boolean" }, "with-worker": { type: "boolean" },
+    "dry-run": { type: "boolean" }, "sync-config": { type: "string" },
   } });
 }
 
@@ -33,7 +35,11 @@ function help() {
   npm run local -- ingest --file "C:\\Facturas\\factura.jpg"
   npm run local -- status --document <UUID>
   npm run local -- worker [--once]
+  npm run local -- sync-zeta [--dry-run] [--sync-config "configuracion.json"]
+  npm run local -- cache-status
   npm run local -- report sales --from YYYY-MM-DD --to YYYY-MM-DD --out "ventas.json"
+  npm run local -- report purchases --from YYYY-MM-DD --to YYYY-MM-DD --out "compras.json"
+  npm run local -- report articles --out "articulos.json"
   npm run local -- report stock --out "stock.json"
   npm run local -- report base-prices --article "00001" --price-base "1" --out "precios.json"
   npm run local -- report stock --filters "filtros.json" --out "stock.csv"
@@ -41,7 +47,9 @@ function help() {
   npm run local -- stop
 
 --slug y --actor pueden darse por comando o guardarse con configure.
-Los reportes se consultan en Zeta; --filters es un archivo JSON con filtros del contrato.
+Los reportes se leen únicamente de Supabase; --filters es un archivo JSON con filtros del contrato.
+sync-zeta actualiza esa copia una vez al día desde las 18:00 de Uruguay, con presupuesto de solicitudes.
+--dry-run muestra el plan sin consultar Zeta ni escribir en Supabase. No existe --force.
 JSON conserva tipos originales. CSV guarda también un .metadata.json de trazabilidad.
 ingest guarda en Supabase y encola Codex local. status devuelve el enlace para revisión.
 El programa local deshabilita la API paga aun si existe OPENAI_API_KEY.
@@ -51,6 +59,45 @@ El programa local deshabilita la API paga aun si existe OPENAI_API_KEY.
 async function readJSON(file, fallback) {
   try { return JSON.parse(await fs.readFile(file, "utf8")); }
   catch (error) { if (error.code === "ENOENT") return fallback; throw error; }
+}
+
+function validateSyncConfig(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("La configuración diaria debe ser un objeto JSON.");
+  const allowed = ["maxRequests", "minIntervalMs", "maxPages", "pricePairs"];
+  if (Object.keys(config).some((key) => !allowed.includes(key))) throw new Error(`Configuración diaria: sólo se admiten ${allowed.join(", ")}.`);
+  const limits = { maxRequests: [1, 1000, 100], minIntervalMs: [1000, 60000, 2000], maxPages: [1, 200, 100] };
+  const result = { ...config };
+  for (const [key, [min, max, fallback]] of Object.entries(limits)) {
+    const value = config[key] ?? fallback;
+    if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`${key} debe ser un entero entre ${min} y ${max}.`);
+    result[key] = value;
+  }
+  const code = (value) => typeof value === "string" && value.length > 0 && value.length <= 150 && value === value.trim() && !/[\u0000-\u001f]/.test(value);
+  result.pricePairs = config.pricePairs ?? [];
+  if (!Array.isArray(result.pricePairs) || result.pricePairs.length > 50 || result.pricePairs.some((pair) => !pair
+    || Object.keys(pair).some((key) => !["articleCode", "priceBaseCode"].includes(key)) || !code(pair.articleCode) || !code(pair.priceBaseCode))) {
+    throw new Error("pricePairs admite hasta 50 pares articleCode/priceBaseCode con códigos exactos en texto.");
+  }
+  return result;
+}
+
+async function syncZeta(values, who) {
+  const file = values["sync-config"] ? path.resolve(values["sync-config"]) : path.join(stateDirectory, "zeta-daily.json");
+  const config = validateSyncConfig(await readJSON(file, values["sync-config"] ? null : {}));
+  if (values["dry-run"]) {
+    return print({ status: "dry_run", organization: who.slug, apiRequests: 0, databaseWrites: 0,
+      schedule: { time: "18:00", timeZone: "America/Montevideo", maxAttemptsPerDay: 1 },
+      reports: ["sales", "purchases", "articles", "stock"], masters: true,
+      salesWindow: "Desde el último día sincronizado; primera ejecución desde hoy",
+      purchasesWindow: "Mes actual completo, con historial acumulado por identificador", ...config,
+      pricesCoverage: { mode: "explicit_pairs", allArticlesCovered: false },
+      message: "Los límites son internos, no la cuota oficial de Zeta. Una actualización puede requerir varias páginas. Los valores de precios requieren pares explícitos; ausencia confirmada y falta de cobertura son estados diferentes." });
+  }
+  const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
+  const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
+  const { runDailyZetaSync } = require("@/modules/integrations/zeta/sync/daily-sync");
+  return print(await runDailyZetaSync({ ...config, supabase: context.supabase,
+    organizationId: context.organization.id, actorProfileId: who.actorProfileId }));
 }
 
 async function identity(values) {
@@ -139,7 +186,10 @@ async function worker(values, signal, dependencies = {}) {
         message: error.code === "quota" || error.code === "authentication" ? error.message
           : "Worker en espera: ejecutá local doctor --cloud para revisar sesión, conexión y migración." });
     }
-    await delay(Math.min(60_000, errors ? 10_000 * errors : 5_000), null, { signal }).catch(() => {});
+    if (signal.aborted) break;
+    report({ at: new Date().toISOString(), status: "waiting", pollIntervalSeconds: workerPollIntervalMs / 1000,
+      nextCheckAt: new Date(Date.now() + workerPollIntervalMs).toISOString() });
+    await delay(workerPollIntervalMs, null, { signal }).catch(() => {});
   }
 }
 
@@ -226,6 +276,13 @@ async function main(argv = process.argv.slice(2)) {
       return result;
     }
     const who = await identity(values);
+    if (command === "sync-zeta") return await syncZeta(values, who);
+    if (command === "cache-status") {
+      const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
+      const { loadZetaCacheStatus } = require("@/modules/integrations/zeta/cache/report-cache");
+      const context = await resolveLocalCompanionContext(who);
+      return print(await loadZetaCacheStatus({ supabase: context.supabase, organizationId: context.organization.id }));
+    }
     if (command === "configure") {
       const { resolveLocalCompanionContext, localDocumentReviewUrl } = require("@/modules/local-companion/context");
       const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
@@ -247,7 +304,7 @@ async function main(argv = process.argv.slice(2)) {
     if (command === "report") {
       if (!values.out || ![".json", ".csv"].includes(path.extname(values.out).toLowerCase())) throw new Error("Indicá --out con un archivo nuevo .json o .csv.");
       const destination = path.resolve(values.out);
-      // Fail before querying Zeta if an output already exists.
+      // Fail before reading the shared snapshot if an output already exists.
       if (await fs.stat(destination).then(() => true, () => false)) throw new Error("El archivo de salida ya existe; usá otro nombre.");
       const { exportZetaReport, serializeZetaReportCsv } = require("@/modules/local-companion/zeta-reports");
       const filters = values.filters ? await readJSON(path.resolve(values.filters), null) : {};
@@ -273,4 +330,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseCommand, main, worker };
+module.exports = { parseCommand, main, worker, validateSyncConfig };

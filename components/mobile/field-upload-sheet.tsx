@@ -44,16 +44,22 @@ type FieldUploadSheetProps = {
     message: string;
     documentId?: string;
     signedUploadUrl?: string;
+    uploadRequired?: boolean;
+    uploadLeaseToken?: string | null;
+    shouldEnqueue?: boolean;
   }>;
   finalizeUploadAction: (input: {
     documentId: string;
+    uploadLeaseToken?: string | null;
   }) => Promise<{
     ok: boolean;
     message: string;
     documentId?: string;
+    shouldEnqueue?: boolean;
   }>;
   failUploadAction: (input: {
     documentId: string;
+    uploadLeaseToken?: string | null;
     errorMessage?: string;
   }) => Promise<{
     ok: boolean;
@@ -149,6 +155,8 @@ export function FieldUploadSheet({
     }
 
     const uploadedDocumentIds: string[] = [];
+    const extractionDocumentIds: string[] = [];
+    let reusedDocumentCount = 0;
     const assignmentWarnings: string[] = [];
     const uploadErrors: string[] = [];
 
@@ -174,8 +182,19 @@ export function FieldUploadSheet({
         sourceSurface: "mobile_field",
       });
 
-      if (!preparedUpload.ok || !preparedUpload.documentId || !preparedUpload.signedUploadUrl) {
+      if (!preparedUpload.ok || !preparedUpload.documentId) {
         uploadErrors.push(preparedUpload.message);
+        continue;
+      }
+
+      if (preparedUpload.uploadRequired === false) {
+        uploadedDocumentIds.push(preparedUpload.documentId);
+        if (preparedUpload.shouldEnqueue) extractionDocumentIds.push(preparedUpload.documentId);
+        reusedDocumentCount += 1;
+        continue;
+      }
+      if (!preparedUpload.signedUploadUrl) {
+        uploadErrors.push("No se pudo preparar la subida del original.");
         continue;
       }
 
@@ -188,6 +207,7 @@ export function FieldUploadSheet({
         uploadErrors.push(uploadResult.message);
         await failUploadAction({
           documentId: preparedUpload.documentId,
+          uploadLeaseToken: preparedUpload.uploadLeaseToken,
           errorMessage: uploadResult.message,
         });
         continue;
@@ -195,6 +215,7 @@ export function FieldUploadSheet({
 
       const finalizedUpload = await finalizeUploadAction({
         documentId: preparedUpload.documentId,
+        uploadLeaseToken: preparedUpload.uploadLeaseToken,
       });
 
       if (!finalizedUpload.ok || !finalizedUpload.documentId) {
@@ -202,7 +223,7 @@ export function FieldUploadSheet({
         continue;
       }
 
-      if (selectedWorkUnitId) {
+      if (selectedWorkUnitId && finalizedUpload.shouldEnqueue) {
         const assignmentResult = await assignWorkUnitAction({
           documentId: finalizedUpload.documentId,
           workUnitId: selectedWorkUnitId,
@@ -214,6 +235,7 @@ export function FieldUploadSheet({
       }
 
       uploadedDocumentIds.push(finalizedUpload.documentId);
+      if (finalizedUpload.shouldEnqueue) extractionDocumentIds.push(finalizedUpload.documentId);
     }
 
     if (uploadedDocumentIds.length === 0) {
@@ -225,9 +247,9 @@ export function FieldUploadSheet({
     setStatus("processing");
     setMessage("Carga completa. Encolando extraccion para seguir el flujo canonico...");
 
-    const extractionResult = await enqueueExtractionsAction({
-      documentIds: uploadedDocumentIds,
-    });
+    const extractionResult = extractionDocumentIds.length > 0 ? await enqueueExtractionsAction({
+      documentIds: Array.from(new Set(extractionDocumentIds)),
+    }) : { ok: true, queuedCount: 0, failedCount: 0, message: "Se conserva el procesamiento del documento existente." };
 
     const completedWithoutErrors = extractionResult.failedCount === 0 && uploadErrors.length === 0;
 
@@ -235,6 +257,7 @@ export function FieldUploadSheet({
     setMessage([
       `${uploadedDocumentIds.length}/${acceptedFiles.length} archivo(s) quedaron cargado(s) en ${documentsStorageBucket}.`,
       extractionResult.message,
+      reusedDocumentCount > 0 ? `${reusedDocumentCount} documento(s) recuperado(s) sin crear copias ni cambiar su trabajo asociado.` : null,
       rejectedMessages.length > 0 ? rejectedMessages[0] : null,
       assignmentWarnings.length > 0 ? assignmentWarnings[0] : null,
       uploadErrors.length > 0 ? uploadErrors[0] : null,

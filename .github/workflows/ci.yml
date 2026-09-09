@@ -32,6 +32,14 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Install isolated PostgreSQL test runtime
+        run: npm install --prefix .local-companion/qa-sql --no-save --ignore-scripts @electric-sql/pglite@0.5.8
+
+      - name: Test daily snapshots and document upload identity
+        run: |
+          npm run test:zeta:cache
+          npm run test:documents:identity
+
       - name: Build
         run: npm run build
 

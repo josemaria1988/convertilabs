@@ -62,7 +62,7 @@ async function withPipeline(options, work) {
       if (name === "claim_local_document_processing") return { data: options.idle ? null : run, error: null };
       if (name === "heartbeat_local_document_processing") return { data: options.leaseLost ? false : true, error: null };
       if (name === "complete_local_document_processing") return { data: { status: "extracted", draftId: "draft-1" }, error: null };
-      if (name === "enqueue_local_document_processing") return options.enqueueError
+      if (name === "enqueue_local_document_upload_once") return options.enqueueError
         ? { data: null, error: { message: "fetch failed" } } : { data: "run-new", error: null };
       return { data: true, error: null };
     },
@@ -109,7 +109,7 @@ test("local enqueue uses shared atomic queue without Inngest or OpenAI configura
     const result = await processing.enqueueDocumentProcessing({ documentId: "doc-1", requestedBy: null, triggeredBy: "upload" });
     assert.equal(result.ok, true);
     assert.equal(result.runId, "run-new");
-    assert.deepEqual(calls.map((c) => c.name), ["enqueue_local_document_processing"]);
+    assert.deepEqual(calls.map((c) => c.name), ["enqueue_local_document_upload_once"]);
   });
 });
 

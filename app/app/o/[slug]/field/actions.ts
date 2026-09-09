@@ -185,9 +185,12 @@ export async function prepareFieldDocumentUploadAction(
 
   return {
     ok: result.ok,
-    message: result.ok ? "Upload preparado." : result.message,
+    message: result.message,
     documentId: result.ok ? result.documentId : undefined,
     signedUploadUrl: result.ok ? result.signedUploadUrl : undefined,
+    uploadRequired: result.ok ? result.uploadRequired : undefined,
+    uploadLeaseToken: result.ok ? result.uploadLeaseToken : undefined,
+    shouldEnqueue: result.ok ? result.shouldEnqueue : undefined,
   };
 }
 
@@ -195,6 +198,7 @@ export async function finalizeFieldDocumentUploadAction(
   slug: string,
   input: {
     documentId: string;
+    uploadLeaseToken?: string | null;
   },
 ) {
   const result = await finalizeDocumentUploadAction({
@@ -208,6 +212,7 @@ export async function finalizeFieldDocumentUploadAction(
       ? "Documento cargado y listo para encolar."
       : result.message,
     documentId: result.ok ? result.documentId : undefined,
+    shouldEnqueue: result.ok ? result.shouldEnqueue : undefined,
   };
 }
 
@@ -215,6 +220,7 @@ export async function failFieldDocumentUploadAction(
   slug: string,
   input: {
     documentId: string;
+    uploadLeaseToken?: string | null;
     errorMessage?: string;
   },
 ) {
@@ -240,5 +246,6 @@ export async function enqueueFieldDocumentExtractionsAction(
   return enqueueSelectedDocumentExtractionsAction({
     slug,
     ...input,
+    triggeredBy: "upload",
   });
 }

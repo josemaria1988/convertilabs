@@ -19,6 +19,7 @@ import {
 import { cancelSpreadsheetImport, loadSpreadsheetImportRun } from "@/modules/spreadsheets";
 import { validateDocumentUploadCandidate } from "@/modules/documents/upload";
 import { resolveMissingFxRates } from "@/modules/documents/spreadsheet-fx-resolution";
+import { inspectStoredDocumentUpload } from "@/modules/documents/upload-recovery";
 
 function buildPaths(slug: string, documentId?: string) {
   return {
@@ -78,6 +79,7 @@ type PrepareDocumentUploadInput = {
 type FinalizeDocumentUploadInput = {
   slug: string;
   documentId: string;
+  uploadLeaseToken?: string | null;
 };
 
 type FailDocumentUploadInput = FinalizeDocumentUploadInput & {
@@ -91,11 +93,16 @@ type PrepareDocumentUploadSuccess = {
   storagePath: string;
   uploadToken: string;
   signedUploadUrl: string;
+  uploadRequired: boolean;
+  uploadLeaseToken: string | null;
+  shouldEnqueue: boolean;
+  message: string;
 };
 
 type FinalizeDocumentUploadSuccess = {
   ok: true;
   documentId: string;
+  shouldEnqueue: boolean;
 };
 
 type UploadActionError = {
@@ -108,6 +115,9 @@ type PrepareDocumentUploadRpcRow = {
   storage_bucket: string;
   storage_path: string;
   status: string;
+  is_duplicate: boolean;
+  upload_state: "upload" | "resume" | "busy" | "existing";
+  upload_lease_token: string | null;
 };
 
 async function filterOrganizationDocumentIds(organizationId: string, documentIds: string[]) {
@@ -171,6 +181,7 @@ export async function enqueueDocumentExtractionAction(input: {
 export async function enqueueSelectedDocumentExtractionsAction(input: {
   slug: string;
   documentIds: string[];
+  triggeredBy?: "upload";
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
 
@@ -209,7 +220,7 @@ export async function enqueueSelectedDocumentExtractionsAction(input: {
     enqueueDocumentProcessing({
       documentId,
       requestedBy: authState.user?.id ?? null,
-      triggeredBy: "manual_retry",
+      triggeredBy: input.triggeredBy ?? "manual_retry",
     })));
   const queuedCount = results.filter((result) => result.ok).length;
   const failedMessages = results
@@ -391,6 +402,10 @@ export async function retryMissingFxRatesAction(input: {
 export async function prepareDocumentUploadAction(
   input: PrepareDocumentUploadInput,
 ): Promise<PrepareDocumentUploadSuccess | UploadActionError> {
+  const fileHash = input.fileHash?.trim().toLowerCase();
+  if (!fileHash || !/^[0-9a-f]{64}$/.test(fileHash)) {
+    return { ok: false, message: "No se pudo identificar el archivo para evitar duplicados. Volvé a seleccionar la foto o PDF." };
+  }
   let provider: DocumentProcessingProvider;
   try {
     provider = resolveDocumentProcessingProvider(input.processingProvider === undefined
@@ -418,52 +433,15 @@ export async function prepareDocumentUploadAction(
   const userSupabase = await getSupabaseServerClient();
   const serviceSupabase = getSupabaseServiceRoleClient();
 
-  if (input.fileHash?.trim()) {
-    const { data: duplicateDocument, error: duplicateError } = await serviceSupabase
-      .from("documents")
-      .select("id")
-      .eq("organization_id", organization.id)
-      .eq("file_hash", input.fileHash.trim())
-      .in("status", [
-        "uploading",
-        "uploaded",
-        "queued",
-        "extracting",
-        "extracted",
-        "draft_ready",
-        "classified",
-        "classified_with_open_revision",
-        "needs_review",
-        "approved",
-        "duplicate",
-        "archived",
-      ])
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (duplicateError) {
-      return {
-        ok: false,
-        message: duplicateError.message ?? "No se pudo validar si el archivo ya existia.",
-      };
-    }
-
-    if (duplicateDocument?.id) {
-      return {
-        ok: false,
-        message: `El archivo ya fue cargado previamente en la organizacion. Documento existente: ${duplicateDocument.id}.`,
-      };
-    }
-  }
-
   const { data, error } = await userSupabase
-    .rpc("prepare_document_upload", {
+    .rpc("prepare_document_upload_with_hash", {
       p_org_id: organization.id,
       p_original_filename: input.originalFilename,
       p_mime_type: input.mimeType,
       p_file_size: input.fileSize,
-      p_direction: "unknown",
+      p_file_hash: fileHash,
+      p_processing_provider: provider,
+      p_source_surface: input.sourceSurface ?? "web",
     })
     .single();
 
@@ -478,41 +456,32 @@ export async function prepareDocumentUploadAction(
     };
   }
 
-  {
-    const updatePayload: {
-      file_hash?: string;
-      upload_source?: string;
-      metadata?: Record<string, unknown>;
-    } = { metadata: { processing_provider: provider } };
-
-    if (input.fileHash?.trim()) {
-      updatePayload.file_hash = input.fileHash.trim();
+  const existingResult = (shouldEnqueue: boolean, message: string): PrepareDocumentUploadSuccess => ({
+    ok: true, documentId: row.document_id, storageBucket: row.storage_bucket, storagePath: row.storage_path,
+    uploadToken: "", signedUploadUrl: "", uploadRequired: false, uploadLeaseToken: row.upload_lease_token,
+    shouldEnqueue, message,
+  });
+  if (row.upload_state === "existing") {
+    return existingResult(false, "Este archivo ya tiene un documento. Conservamos su estado y abrimos el existente.");
+  }
+  if (row.upload_state === "busy" || !row.upload_lease_token) {
+    return { ok: false, message: `La carga ${row.document_id} sigue reservada. Volvé a seleccionar el mismo archivo en cinco minutos para retomarla.` };
+  }
+  if (row.upload_state === "resume") {
+    const stored = await inspectStoredDocumentUpload({ supabase: serviceSupabase, bucket: row.storage_bucket,
+      path: row.storage_path, fileHash, fileSize: input.fileSize });
+    if (stored === "match") {
+      const finished = await finishVerifiedDocumentUpload(userSupabase, row.document_id, row.upload_lease_token);
+      if (!finished.ok) return finished;
+      revalidateDocumentSurfaces(input.slug, row.document_id);
+      return existingResult(finished.shouldEnqueue, "El original ya estaba guardado. Recuperamos la misma carga sin subir otra copia.");
     }
-
-    if (input.sourceSurface === "mobile_field") {
-      updatePayload.upload_source = "mobile_field";
-      updatePayload.metadata = {
-        processing_provider: provider,
-        source_surface: "mobile_field",
-      };
-    }
-
-    const { error: fileHashError } = await serviceSupabase
-      .from("documents")
-      .update(updatePayload)
-      .eq("id", row.document_id)
-      .eq("organization_id", organization.id);
-
-    if (fileHashError) {
-      return {
-        ok: false,
-        message:
-          fileHashError.message
-          ?? "No se pudo registrar la metadata del archivo antes de subirlo.",
-      };
+    if (stored !== "missing") {
+      await userSupabase.rpc("finish_document_upload_with_lease", { p_document_id: row.document_id,
+        p_upload_lease_token: row.upload_lease_token, p_error_message: "No se pudo verificar el original para retomar la carga." });
+      return { ok: false, message: `No se pudo verificar el original de ${row.document_id}. No lo sobrescribimos; volvé a intentar o revisá ese documento.` };
     }
   }
-
   const { data: signedUpload, error: signedUploadError } = await serviceSupabase.storage
     .from(row.storage_bucket)
     .createSignedUploadUrl(row.storage_path, {
@@ -520,6 +489,8 @@ export async function prepareDocumentUploadAction(
     });
 
   if (signedUploadError || !signedUpload?.token || !signedUpload.signedUrl) {
+    await userSupabase.rpc("finish_document_upload_with_lease", { p_document_id: row.document_id,
+      p_upload_lease_token: row.upload_lease_token, p_error_message: "No se pudo preparar la subida al almacenamiento privado." });
     return {
       ok: false,
       message:
@@ -535,43 +506,63 @@ export async function prepareDocumentUploadAction(
     storagePath: row.storage_path,
     uploadToken: signedUpload.token,
     signedUploadUrl: signedUpload.signedUrl,
+    uploadRequired: true,
+    uploadLeaseToken: row.upload_lease_token,
+    shouldEnqueue: true,
+    message: row.upload_state === "resume" ? "Retomando el mismo documento." : "Carga preparada.",
   };
+}
+
+async function finishVerifiedDocumentUpload(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>, documentId: string, uploadLeaseToken: string,
+): Promise<FinalizeDocumentUploadSuccess | UploadActionError> {
+  const { data, error } = await supabase.rpc("finish_document_upload_with_lease", {
+    p_document_id: documentId, p_upload_lease_token: uploadLeaseToken, p_error_message: null,
+  }).single();
+  if (error || !data) return { ok: false, message: error?.message ?? "No se pudo finalizar la misma reserva de carga." };
+  const row = data as { status: string; current_draft_id: string | null; current_processing_run_id: string | null };
+  return { ok: true, documentId, shouldEnqueue: row.status === "uploaded" && !row.current_draft_id && !row.current_processing_run_id };
 }
 
 export async function finalizeDocumentUploadAction(
   input: FinalizeDocumentUploadInput,
 ): Promise<FinalizeDocumentUploadSuccess | UploadActionError> {
-  await requireOrganizationDashboardPage(input.slug);
+  const { organization, authState } = await requireOrganizationDashboardPage(input.slug);
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("complete_document_upload", {
-    p_document_id: input.documentId,
-  });
-
-  if (error) {
-    return {
-      ok: false,
-      message:
-        error.message
-        ?? "El archivo subio, pero no pudimos cerrar el estado del documento.",
-    };
+  const { data: document, error } = await supabase.from("documents")
+    .select("status, file_hash, file_size, storage_bucket, storage_path, metadata, current_draft_id, current_processing_run_id")
+    .eq("id", input.documentId).eq("organization_id", organization.id).eq("uploaded_by", authState.user?.id ?? "").maybeSingle();
+  if (error || !document || !input.uploadLeaseToken || document.metadata?.upload_lease_token !== input.uploadLeaseToken) {
+    return { ok: false, message: "La reserva de carga cambió. Volvé a seleccionar el archivo para recuperar el documento existente." };
   }
-
+  if (document.status === "uploading" && !document.current_draft_id && !document.current_processing_run_id) {
+    const stored = await inspectStoredDocumentUpload({ supabase: getSupabaseServiceRoleClient(), bucket: document.storage_bucket,
+      path: document.storage_path, fileHash: document.file_hash, fileSize: document.file_size });
+    if (stored !== "match") {
+      await supabase.rpc("finish_document_upload_with_lease", { p_document_id: input.documentId,
+        p_upload_lease_token: input.uploadLeaseToken, p_error_message: "El original no pudo verificarse por SHA-256." });
+      return { ok: false, message: `No pudimos verificar el original. Volvé a seleccionar el mismo archivo para retomar ${input.documentId}.` };
+    }
+  } else if (document.status === "error") {
+    return { ok: false, message: "Volvé a seleccionar el mismo archivo para retomar la carga fallida." };
+  }
+  const result = await finishVerifiedDocumentUpload(supabase, input.documentId, input.uploadLeaseToken);
   revalidateDocumentSurfaces(input.slug, input.documentId);
-
-  return {
-    ok: true,
-    documentId: input.documentId,
-  };
+  return result;
 }
 
 export async function failDocumentUploadAction(
   input: FailDocumentUploadInput,
 ): Promise<{ ok: true } | UploadActionError> {
-  await requireOrganizationDashboardPage(input.slug);
+  const { organization, authState } = await requireOrganizationDashboardPage(input.slug);
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("fail_document_upload", {
+  const document = await supabase.from("documents").select("id").eq("id", input.documentId)
+    .eq("organization_id", organization.id).eq("uploaded_by", authState.user?.id ?? "").maybeSingle();
+  if (document.error || !document.data) return { ok: false, message: "No encontramos esta carga en tu organización." };
+  const { error } = await supabase.rpc("finish_document_upload_with_lease", {
     p_document_id: input.documentId,
-    p_error_message: input.errorMessage ?? null,
+    p_upload_lease_token: input.uploadLeaseToken ?? null,
+    p_error_message: input.errorMessage ?? "No se pudo completar la carga.",
   });
 
   if (error) {

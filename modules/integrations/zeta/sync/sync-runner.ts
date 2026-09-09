@@ -19,6 +19,8 @@ import {
   type ZetaSyncSummary,
 } from "@/modules/integrations/zeta/services/sync-service";
 import type { ZetaFetch } from "@/modules/integrations/zeta/client/rest-client";
+import type { ZetaRequestPolicy } from "@/modules/integrations/zeta/client/read-policy";
+import { loadZetaCacheStatus } from "@/modules/integrations/zeta/cache/report-cache";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,12 +29,14 @@ export type { ZetaSyncStream };
 export type ZetaSyncRunMode = "manual" | "backfill" | "test" | "scheduled";
 
 export type ZetaSyncEnqueueResult = {
-  runId: string;
+  runId: string | null;
   stream: ZetaSyncStream;
   status: string;
   enqueued: boolean;
   testMode: boolean;
   testRunKey: string | null;
+  message?: string;
+  cacheStatus?: Awaited<ReturnType<typeof loadZetaCacheStatus>>;
 };
 
 export type ZetaQueuedSyncResult =
@@ -162,6 +166,15 @@ export async function enqueueZetaSyncRun(input: {
   testRunKeySuffix?: string | null;
   requestSource?: string;
 }): Promise<ZetaSyncEnqueueResult> {
+  const connection = await loadConnectionForSync(input.supabase, input.organizationId);
+  if (!connection.test_mode || input.mode !== "test" || input.testMode !== true) {
+    const cacheStatus = await loadZetaCacheStatus({ supabase: input.supabase, organizationId: input.organizationId });
+    return {
+      runId: cacheStatus.lastCompleteRunId, stream: input.stream, status: "daily_sync_only",
+      enqueued: false, testMode: false, testRunKey: null, cacheStatus,
+      message: "Las consultas usan la copia de Supabase. La sincronizacion con Zeta esta prevista diariamente a las 18:00 (America/Montevideo), con Convertilabs Local encendido. No se inicio una consulta a Zeta.",
+    };
+  }
   const period = normalizePeriod(input.stream, input.period);
   const maxPages = clampMaxPages(
     input.maxPages,
@@ -183,7 +196,6 @@ export async function enqueueZetaSyncRun(input: {
     throw new Error("Inngest no esta configurado en este entorno.");
   }
 
-  const connection = await loadConnectionForSync(input.supabase, input.organizationId);
   const runKind = input.mode ?? "manual";
   const testMode = input.testMode ?? (runKind === "test" ? true : connection.test_mode);
   const testRunKey = testMode
@@ -319,6 +331,7 @@ export async function runQueuedZetaSyncRun(input: {
   actorUserId?: string | null;
   supabase?: SupabaseClient;
   fetchImpl?: ZetaFetch;
+  requestPolicy?: ZetaRequestPolicy;
 }): Promise<ZetaQueuedSyncResult> {
   const supabase = input.supabase ?? getSupabaseServiceRoleClient();
   const run = await loadIntegrationSyncRun(supabase, {
@@ -364,5 +377,6 @@ export async function runQueuedZetaSyncRun(input: {
     testMode: run.test_mode === true,
     testRunKey: stringOrNull(run.test_run_key),
     fetchImpl: input.fetchImpl,
+    requestPolicy: input.requestPolicy,
   });
 }

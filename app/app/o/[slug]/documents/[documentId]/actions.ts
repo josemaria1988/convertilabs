@@ -368,6 +368,7 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
   slug: string;
   documentId: string;
   dryRun?: boolean;
+  humanConfirmed?: boolean;
 }) {
   const { authState, organization } = await requireOrganizationDashboardPage(input.slug);
   const role = organization.role;
@@ -385,6 +386,7 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
     documentId: input.documentId,
     actorProfileId: authState.user?.id ?? "system",
     dryRun: input.dryRun ?? false,
+    humanConfirmed: input.humanConfirmed === true,
     forceResend: false,
   });
   const paths = buildPaths(input.slug, input.documentId);
@@ -401,7 +403,9 @@ export async function exportDocumentPurchaseExpenseToZetaAction(input: {
     ].includes(result.status),
     message:
       result.status === "dry_run_ready"
-        ? "Compra lista para enviar a Zeta."
+        ? "Compra comparada con Supabase y lista para tu confirmacion de envio."
+        : result.status === "waiting_for_sync"
+          ? result.preview.cacheReconciliation?.message ?? "Espera la actualizacion diaria de Zeta a Supabase de las 18:00."
         : result.status === "success_pending_reconciliation"
           ? "Compra enviada a Zeta. Queda pendiente reconciliacion."
           : result.status === "found_in_zeta"

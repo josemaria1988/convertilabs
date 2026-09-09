@@ -120,6 +120,7 @@ export default async function DocumentReviewPage({
         >
           <DocumentProcessingAutoRefresh
             active={["queued", "extracting", "processing"].includes(originalPageData.document.status)}
+            waitingForLocalWorker={originalPageData.document.isWaitingForLocalWorker}
           />
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm">

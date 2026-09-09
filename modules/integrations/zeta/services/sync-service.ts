@@ -1,4 +1,6 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { ZetaReadPolicyError, type ZetaRequestPolicy } from "@/modules/integrations/zeta/client/read-policy";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -71,6 +73,7 @@ export type ZetaSyncInput = {
   testMode?: boolean;
   testRunKey?: string | null;
   fetchImpl?: ZetaFetch;
+  requestPolicy?: ZetaRequestPolicy;
   progressEvery?: number | null;
   onProgress?: (progress: ZetaSyncProgress) => void | Promise<void>;
 };
@@ -131,6 +134,8 @@ type MasterQueryDefinition = {
 };
 
 const masterQueries: MasterQueryDefinition[] = [
+  { key: "priceBasesQuery", entityType: "price_base", externalKeyFields: ["Codigo"] },
+  { key: "priceListsQuery", entityType: "price_list", externalKeyFields: ["PrecioVentaCodigo"] },
   { key: "userRolesQuery", entityType: "user_role", externalKeyFields: ["Codigo", "UsuarioEmail"] },
   { key: "contactsQuery", entityType: "contact", externalKeyFields: ["Codigo"], stream: "zeta.masters.contacts" },
   { key: "customerCommercialDataQuery", entityType: "customer_commercial_data", externalKeyFields: ["Codigo"] },
@@ -220,6 +225,12 @@ function makeMockFetch(): ZetaFetch {
         IsLastPage: true,
         Error: null,
       },
+      QueryPreciosOut: {
+        Succeed: true,
+        Response: [],
+        IsLastPage: true,
+        Error: null,
+      },
       CFEsRecibidosOut: {
         Succeed: true,
         Response: {
@@ -266,6 +277,7 @@ async function buildClient(input: {
   supabase: SupabaseClient;
   organizationId: string;
   fetchImpl?: ZetaFetch;
+  requestPolicy?: ZetaRequestPolicy;
 }) {
   const runtime = await buildZetaConnection({
     supabase: input.supabase,
@@ -273,6 +285,8 @@ async function buildClient(input: {
   });
 
   return createZetaRestClient({
+    organizationId: input.organizationId,
+    requestPolicy: input.requestPolicy,
     baseUrl: runtime.baseUrl,
     credentials: runtime.credentials,
     fetchImpl: input.fetchImpl ?? (
@@ -372,6 +386,7 @@ async function fetchAllQueryRows(
   },
 ) {
   const rows: JsonRecord[] = [];
+  const hashes = new Set<string>();
 
   for (let page = 1; page <= input.maxPages; page += 1) {
     const result = await queryZetaEndpoint<JsonRecord>(client, input.key, {
@@ -379,14 +394,17 @@ async function fetchAllQueryRows(
       filters: input.filters ?? {},
     });
 
+    const hash = createHash("sha256").update(JSON.stringify(result.rows)).digest("hex");
+    if (result.rows.length > 0 && hashes.has(hash)) throw new Error("Zeta repitio una pagina de maestros; se detuvo la actualizacion.");
+    hashes.add(hash);
     rows.push(...result.rows.map(asRecord));
+    if (rows.length > 100000) throw new Error("Los maestros exceden el limite interno de 100000 filas.");
 
-    if (result.isLastPage || result.rows.length === 0) {
-      break;
-    }
+    if (result.isLastPage) return rows;
+    if (result.rows.length === 0) throw new Error("Zeta devolvio una pagina vacia sin confirmar el final de maestros.");
   }
 
-  return rows;
+  throw new Error(`Se alcanzo el limite de ${input.maxPages} paginas de maestros sin confirmar el final.`);
 }
 
 async function syncMasters(input: {
@@ -761,6 +779,7 @@ async function syncReceivedCfes(input: {
 async function markInterruptedRunningSyncs(
   supabase: SupabaseClient,
   organizationId: string,
+  stream: ZetaSyncStream,
 ) {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const { error } = await supabase
@@ -775,6 +794,7 @@ async function markInterruptedRunningSyncs(
     })
     .eq("organization_id", organizationId)
     .eq("provider", "zetasoftware")
+    .eq("stream", stream)
     .eq("status", "running")
     .lt("started_at", cutoff);
 
@@ -784,6 +804,10 @@ async function markInterruptedRunningSyncs(
 }
 
 export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary> {
+  if (!input.requestPolicy || input.requestPolicy.purpose !== "daily_sync"
+      || input.requestPolicy.organizationId !== input.organizationId) {
+    throw new ZetaReadPolicyError("zeta_live_read_disabled", "Los maestros se actualizan dentro de la unica sincronizacion diaria; las consultas posteriores usan Supabase.");
+  }
   const isMasterStream = input.stream === "masters"
     || input.stream === "accounting_masters"
     || input.stream === "contacts";
@@ -807,7 +831,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
   };
 
   try {
-    await markInterruptedRunningSyncs(input.supabase, input.organizationId);
+    await markInterruptedRunningSyncs(input.supabase, input.organizationId, input.stream);
 
     const cursor = await readZetaSyncCursor(input.supabase, {
       organizationId: input.organizationId,
@@ -877,6 +901,7 @@ export async function runZetaSync(input: ZetaSyncInput): Promise<ZetaSyncSummary
       supabase: input.supabase,
       organizationId: input.organizationId,
       fetchImpl: input.fetchImpl,
+      requestPolicy: input.requestPolicy,
     });
 
     if (

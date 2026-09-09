@@ -163,12 +163,14 @@ async function main() {
 
     const fileBytes = new TextEncoder().encode("%PDF-1.4\n% smoke test\n");
     const { data: preparedUpload, error: preparedUploadError } = await userClient
-      .rpc("prepare_document_upload", {
+      .rpc("prepare_document_upload_with_hash", {
         p_org_id: organizationId,
         p_original_filename: `invoice-${suffix}.pdf`,
         p_mime_type: "application/pdf",
         p_file_size: fileBytes.byteLength,
-        p_direction: "purchase",
+        p_file_hash: crypto.createHash("sha256").update(fileBytes).digest("hex"),
+        p_processing_provider: "codex_local",
+        p_source_surface: "web",
       })
       .single();
 
@@ -181,7 +183,7 @@ async function main() {
       || !preparedUpload.storage_bucket
       || !preparedUpload.storage_path
     ) {
-      throw new Error("prepare_document_upload() did not return the upload metadata.");
+      throw new Error("prepare_document_upload_with_hash() did not return the upload metadata.");
     }
 
     storagePath = preparedUpload.storage_path;
@@ -214,9 +216,11 @@ async function main() {
     }
 
     const { error: completeUploadError } = await userClient.rpc(
-      "complete_document_upload",
+      "finish_document_upload_with_lease",
       {
         p_document_id: preparedUpload.document_id,
+        p_upload_lease_token: preparedUpload.upload_lease_token,
+        p_error_message: null,
       },
     );
 

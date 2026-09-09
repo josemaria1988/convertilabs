@@ -8,10 +8,8 @@ import {
   upsertOrganizationIntegrationConnection,
 } from "@/modules/integrations/repository";
 import {
-  buildZetaConnection,
   hasZetaRuntimeEnvCredentials,
   type ZetaCredentialSource,
-  ZetaConfigurationError,
 } from "@/modules/integrations/zeta/client/auth";
 import {
   encryptCredentials,
@@ -158,22 +156,6 @@ export function formatZetaConnectionStatusLabel(value: ZetaConnectionStatus) {
     default:
       return "Sin conexion";
   }
-}
-
-function formatZetaConfigurationError(error: ZetaConfigurationError) {
-  if (error.code === "zeta_integrator_credentials_missing") {
-    return "Faltan ZETASOFTWARE_DESARROLLADOR_CODIGO o ZETASOFTWARE_DESARROLLADOR_CLAVE en las variables de entorno del servidor.";
-  }
-
-  if (error.code === "zeta_base_url_missing") {
-    return "Falta la base URL de Zetasoftware. Usa https://api.zetasoftware.com/rest o define ZETASOFTWARE_BASE_URL.";
-  }
-
-  if (error.code === "zeta_credentials_invalid") {
-    return "UsuarioCodigo y RolCodigo deben ser numericos segun el contrato REST de Zetasoftware.";
-  }
-
-  return "Faltan credenciales o configuracion Zetasoftware del lado servidor.";
 }
 
 function mapZetaConnectionRow(row: ZetaConnectionRow | null): ZetaConnectionSettings {
@@ -485,47 +467,19 @@ export async function testZetaConnection(
   } = {},
 ) {
   const current = await loadZetaConnectionSettings(supabase, input.organizationId);
-  const healthCheck = options.healthCheck ?? runZetaHealthCheck;
-  let result: ZetaHealthCheckResult;
-
-  try {
-    const runtime = current.isConfigured && current.status !== "paused" && !current.mockEnabled
-      ? await buildZetaConnection({
-        supabase,
-        organizationId: input.organizationId,
-      })
-      : undefined;
-
-    result = await healthCheck({
-      isConfigured: current.isConfigured,
-      isPaused: current.status === "paused",
-      mockEnabled: current.mockEnabled,
-      requestedMode: current.mockEnabled ? "mock" : "real",
-      baseUrl: current.baseUrl,
-      envProfile: current.envProfile,
-      runtime,
+  if (!current.mockEnabled) {
+    // Reading a cached result must never overwrite the last real credential
+    // check or enable writes. The daily sync owns fresh API evidence.
+    return runZetaHealthCheck({
+      isConfigured: current.isConfigured, isPaused: current.status === "paused", mockEnabled: false,
+      requestedMode: "real", supabase, organizationId: input.organizationId,
     });
-  } catch (error) {
-    result = {
-      ok: false,
-      status: "error",
-      code: error instanceof ZetaConfigurationError
-        ? error.code
-        : "zeta_credentials_unavailable",
-      message: error instanceof ZetaConfigurationError
-        ? formatZetaConfigurationError(error)
-        : error instanceof Error
-          ? error.message
-          : "No se pudieron preparar las credenciales Zetasoftware.",
-      checkedAt: new Date().toISOString(),
-      metadata: {
-        health_mode: "real",
-        contract_status: "confirmed_pr_01",
-        credential_source: current.credentialSource,
-      },
-    };
   }
-
+  const healthCheck = options.healthCheck ?? runZetaHealthCheck;
+  const result = await healthCheck({
+    isConfigured: current.isConfigured, isPaused: current.status === "paused", mockEnabled: true,
+    requestedMode: "mock", baseUrl: current.baseUrl, envProfile: current.envProfile,
+  });
   if (current.id) {
     const { error } = await supabase
       .from(integrationTables.connections)

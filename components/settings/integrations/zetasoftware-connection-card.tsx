@@ -224,11 +224,11 @@ export function ZetaSoftwareConnectionCard({
       <form action={testAction}>
         <input type="hidden" name="slug" value={slug} />
         <SubmitButton
-          pendingLabel="Probando conexion..."
+          pendingLabel="Consultando copia..."
           disabled={!canManage || !connection.isConfigured}
           className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} px-5 py-3 text-sm`}
         >
-          Probar conexion
+          Consultar estado de la copia
         </SubmitButton>
       </form>
     </div>

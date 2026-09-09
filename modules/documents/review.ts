@@ -373,6 +373,7 @@ export type DocumentWorkspaceListItem = {
   canProcessExtraction: boolean;
   canClassify: boolean;
   hasExtractionInFlight: boolean;
+  isWaitingForLocalWorker: boolean;
   nextPrimaryAction: "open_review" | "retry_extraction" | "process_extraction" | null;
   nextPrimaryActionLabel: string | null;
   isProcessingStale: boolean;
@@ -417,6 +418,7 @@ export type PaginatedDocumentWorkspaceListResult = {
 type DocumentViewModel = {
   id: string;
   status: string;
+  isWaitingForLocalWorker: boolean;
   postingStatus: DocumentPostingStatus | null;
   direction: DocumentDirection;
   documentType: string | null;
@@ -1213,6 +1215,12 @@ function isStorageObjectNotFoundError(error: unknown) {
   );
 }
 
+function isDocumentWaitingForLocalWorker(status: string, metadata: JsonRecord | null) {
+  // Only the persisted provider describes this document; current server defaults
+  // must not relabel queued legacy API documents as local work.
+  return status === "queued" && asRecord(metadata).processing_provider === "codex_local";
+}
+
 async function buildDocumentViewModel(
   document: DocumentRow,
   organizationSlug: string,
@@ -1223,6 +1231,7 @@ async function buildDocumentViewModel(
   return {
     id: document.id,
     status: document.status,
+    isWaitingForLocalWorker: isDocumentWaitingForLocalWorker(document.status, document.metadata),
     postingStatus: document.posting_status,
     direction: document.direction,
     documentType: document.document_type,
@@ -1304,12 +1313,13 @@ function buildWorkspaceExtractionState(input: {
   }
 
   if (input.documentStatus === "queued") {
+    const waitingForLocalWorker = isDocumentWaitingForLocalWorker(input.documentStatus, input.metadata);
     return {
       status: "queued" as const,
-      label: "En cola",
+      label: waitingForLocalWorker ? "En espera de la PC" : "En cola",
       failureMessage: null,
       canProcess: false,
-      inFlight: true,
+      inFlight: !waitingForLocalWorker,
       isStale: false,
     };
   }
@@ -2925,6 +2935,7 @@ async function buildOrganizationWorkspaceDocumentList(input: {
       canProcessExtraction: extraction.canProcess,
       canClassify: classification.canClassify,
       hasExtractionInFlight: extraction.inFlight,
+      isWaitingForLocalWorker: isDocumentWaitingForLocalWorker(row.status, row.metadata),
       nextPrimaryAction: primaryAction.action,
       nextPrimaryActionLabel: primaryAction.label,
       isProcessingStale: extraction.isStale,

@@ -29,7 +29,9 @@ export async function reconcilePurchaseExpenseInvoiceExport(input: {
       status: "sent_not_found",
       registroId: null,
       queryComprasRaw: queryCompras.raw,
-      warnings: ["QueryCompras no encontro la factura proveedor exportada."],
+      warnings: [queryCompras.fiscalConflict
+        ? "QueryCompras encontro una posible coincidencia fiscal con diferencias. La reconciliacion sigue pendiente y no se reenvia."
+        : "QueryCompras no encontro la factura proveedor exportada."],
     } satisfies ZetaPurchaseExpenseInvoiceReconciliationResult;
   }
 

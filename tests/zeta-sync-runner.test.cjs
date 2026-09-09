@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { test, assert } = require("./testkit.cjs");
 
+function fakeDailyPolicy() {
+  const { createDailyZetaRequestPolicy } = require("@/modules/integrations/zeta/client/read-policy");
+  return createDailyZetaRequestPolicy({ organizationId: "org-1", reserveRequest: async () => {}, sleep: async () => {} });
+}
+
 function withEnv(patch, fn) {
   const previous = new Map();
 
@@ -206,6 +211,8 @@ test("Zeta sync enqueue creates a queued test run and sends the Inngest event", 
         stream: "sales_documents",
         period: "2026-06",
         maxPages: 10,
+        mode: "test",
+        testMode: true,
         testRunKey: "CVTLAB-ZETA-TST-20260617-1200-ABC123",
       });
 
@@ -234,6 +241,9 @@ test("Zeta sync enqueue returns the active run instead of duplicating the same s
     const inngestClientModule = require("@/lib/inngest/client");
     const originalSend = inngestClientModule.inngest.send;
     const { supabase } = createSupabaseStub((query) => {
+      if (query.table === "organization_integration_connections" && query.mode === "maybeSingle") {
+        return { data: connectionRow(), error: null };
+      }
       if (query.table === "integration_sync_runs" && query.mode === "maybeSingle") {
         return {
           data: queuedRunRow({
@@ -265,6 +275,8 @@ test("Zeta sync enqueue returns the active run instead of duplicating the same s
         actorUserId: "user-1",
         stream: "received_cfes",
         period: "2026-06",
+        mode: "test",
+        testMode: true,
       });
 
       assert.equal(result.enqueued, false);
@@ -276,6 +288,43 @@ test("Zeta sync enqueue returns the active run instead of duplicating the same s
       inngestClientModule.inngest.send = originalSend;
     }
   });
+});
+
+test("manual Zeta sync only reads daily cache status without enqueue, audit writes or HTTP, including mock connections", async () => {
+  const inngestClientModule = require("@/lib/inngest/client");
+  const originalSend = inngestClientModule.inngest.send;
+  const oldFetch = global.fetch;
+  let events = 0;
+  let httpCalls = 0;
+  let mockConnection = false;
+  inngestClientModule.inngest.send = async () => { events++; throw new Error("Must not enqueue"); };
+  global.fetch = async () => { httpCalls++; throw new Error("Must not call Zeta"); };
+  const { supabase, calls } = createSupabaseStub((query) => {
+    assert.equal(query.mutation, null);
+    assert.ok(hasFilter(query, "organization_id", "org-1"));
+    if (query.table === "organization_integration_connections") return { data: { ...connectionRow(), test_mode: mockConnection }, error: null };
+    assert.equal(query.table, "integration_sync_runs");
+    assert.ok(hasFilter(query, "stream", "zeta.daily_cache"));
+    return { data: query.mode === "maybeSingle" ? null : [], error: null };
+  });
+  try {
+    const { enqueueZetaSyncRun } = loadFresh("@/modules/integrations/zeta/sync/sync-runner");
+    for (const testMode of [false, true]) {
+      mockConnection = testMode;
+      const result = await enqueueZetaSyncRun({ supabase, organizationId: "org-1", stream: "sales_documents" });
+      assert.equal(result.enqueued, false);
+      assert.equal(result.status, "daily_sync_only");
+      assert.equal(result.runId, null);
+      assert.equal(result.cacheStatus.apiRequests, 0);
+      assert.match(result.message, /18:00.*America\/Montevideo/);
+    }
+    assert.equal(events, 0);
+    assert.equal(httpCalls, 0);
+    assert.equal(calls.length, 6);
+  } finally {
+    inngestClientModule.inngest.send = originalSend;
+    global.fetch = oldFetch;
+  }
 });
 
 test("Queued Zeta sync run opens, writes cursor and closes read-only with cleanup not_required", async () => {
@@ -322,6 +371,7 @@ test("Queued Zeta sync run opens, writes cursor and closes read-only with cleanu
     const { runQueuedZetaSyncRun } = loadFresh("@/modules/integrations/zeta/sync/sync-runner");
 
     const result = await runQueuedZetaSyncRun({
+      requestPolicy: fakeDailyPolicy(),
       supabase,
       organizationId: "org-1",
       runId: "run-1",
@@ -380,6 +430,7 @@ test("Queued Zeta sync run closes failed and records audit when the provider cal
 
     await assert.rejects(
       () => runQueuedZetaSyncRun({
+        requestPolicy: fakeDailyPolicy(),
         supabase,
         organizationId: "org-1",
         runId: "run-1",

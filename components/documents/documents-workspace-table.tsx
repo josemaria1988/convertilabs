@@ -82,6 +82,7 @@ type DocumentsWorkspaceTableItem = {
   canProcessExtraction: boolean;
   canClassify: boolean;
   hasExtractionInFlight: boolean;
+  isWaitingForLocalWorker: boolean;
   nextPrimaryAction: "open_review" | "retry_extraction" | "process_extraction" | null;
   nextPrimaryActionLabel: string | null;
   isProcessingStale: boolean;
@@ -248,6 +249,7 @@ export function DocumentsWorkspaceTable({
     .filter((document) => document.canProcessExtraction || document.canClassify)
     .map((document) => document.id);
   const hasExtractionInFlight = documents.some((document) => document.hasExtractionInFlight);
+  const hasDocumentsWaitingForLocalWorker = documents.some((document) => document.isWaitingForLocalWorker);
   const selectedProcessableIds = selectedIds.filter((id) => processableIds.includes(id));
   const selectedClassifiableIds = selectedIds.filter((id) => classifiableIds.includes(id));
   const allBulkSelectableSelected =
@@ -531,6 +533,19 @@ export function DocumentsWorkspaceTable({
         <div className="flex flex-wrap items-center gap-2">
           {hasExtractionInFlight ? (
             <span className="status-pill status-pill--warning">Auto-refresco activo</span>
+          ) : null}
+          {hasDocumentsWaitingForLocalWorker ? (
+            <>
+              <span className="status-pill status-pill--info">En espera de la PC · revisión cada 4 horas</span>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                disabled={isBusy}
+                onClick={() => startTransition(() => router.refresh())}
+              >
+                {isPending ? "Actualizando..." : "Actualizar estado"}
+              </button>
+            </>
           ) : null}
           {hasMissingFxDocuments ? (
             <span className="status-pill status-pill--danger">{missingFxSummary.count} sin cotizacion</span>

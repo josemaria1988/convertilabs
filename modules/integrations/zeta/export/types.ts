@@ -1,5 +1,6 @@
 import type { PaymentTerms, PostingTemplateCode, SettlementMethod } from "@/modules/accounting";
 import type { ZetaFacturaProveedorMovimiento } from "@/modules/integrations/zeta/contracts/factura-proveedor";
+import type { PurchaseInvoiceCacheReconciliation } from "@/modules/integrations/zeta/export/purchase-cache-reconciliation";
 
 export type ZetaPurchaseKind = "expense" | "merchandise" | "unknown";
 
@@ -7,6 +8,7 @@ export type ZetaPurchaseExportStatus =
   | "not_ready"
   | "dry_run_ready"
   | "blocked"
+  | "waiting_for_sync"
   | "sent"
   | "success_pending_reconciliation"
   | "found_in_zeta"
@@ -82,6 +84,7 @@ export type ZetaPurchaseExpenseDocumentLineInput = {
 export type ZetaPurchaseExpenseDocumentInput = {
   organizationId: string;
   documentId: string;
+  createdAt?: string | null;
   documentRole: "purchase" | "sale" | "other";
   documentType: string | null;
   postingTemplateCode?: PostingTemplateCode | string | null;
@@ -140,6 +143,7 @@ export type ZetaPurchaseInvoiceExportPreview = {
   paidByPartnerMessage?: string | null;
   workUnitName?: string | null;
   centroCostoCode?: string | null;
+  cacheReconciliation?: PurchaseInvoiceCacheReconciliation;
 };
 
 export type ZetaPurchaseInvoiceExportResolution = {

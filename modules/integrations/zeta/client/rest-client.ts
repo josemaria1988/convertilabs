@@ -1,4 +1,5 @@
 import "server-only";
+import { authorizeZetaRequest, type ZetaRequestPolicy } from "./read-policy";
 
 import {
   buildZetaEndpointUrl,
@@ -30,6 +31,8 @@ export type ZetaFetch = (
 ) => Promise<ZetaFetchResponse>;
 
 export type ZetaRestClient = {
+  organizationId?: string;
+  requestPolicy?: ZetaRequestPolicy;
   baseUrl: string;
   credentials: ZetaConnectionPayload;
   fetchImpl: ZetaFetch;
@@ -37,6 +40,8 @@ export type ZetaRestClient = {
 };
 
 export type ZetaRestClientOptions = {
+  organizationId?: string;
+  requestPolicy?: ZetaRequestPolicy;
   baseUrl: string;
   credentials: ZetaConnectionPayload;
   fetchImpl?: ZetaFetch;
@@ -80,7 +85,7 @@ function coerceBoolean(value: unknown) {
     return false;
   }
 
-  return Boolean(value);
+  throw new ZetaIntegrationError({ code: "zeta_pagination_invalid", message: "Zeta no confirmo IsLastPage; no se puede considerar completa la consulta." });
 }
 
 async function parseResponseJson(response: ZetaFetchResponse, endpointName: string) {
@@ -99,6 +104,8 @@ async function parseResponseJson(response: ZetaFetchResponse, endpointName: stri
 
 export function createZetaRestClient(options: ZetaRestClientOptions): ZetaRestClient {
   return {
+    organizationId: options.organizationId,
+    requestPolicy: options.requestPolicy,
     baseUrl: normalizeBaseUrl(options.baseUrl),
     credentials: options.credentials,
     fetchImpl: options.fetchImpl ?? defaultFetch,
@@ -111,6 +118,7 @@ export async function callZetaEndpoint<TResponse = unknown>(
   key: ZetaEndpointKey,
   data: ZetaJsonRecord = {},
 ) {
+  await authorizeZetaRequest(client, key);
   const endpoint = getZetaEndpoint(key);
   const url = buildZetaEndpointUrl(client.baseUrl, key);
   const controller = new AbortController();
@@ -166,6 +174,10 @@ export async function callZetaEndpoint<TResponse = unknown>(
         message: normalized.message,
         details: normalized.detail,
       });
+    }
+
+    if (output.Succeed !== true && output.Succeed !== "true" && output.Succeed !== "True") {
+      throw new ZetaIntegrationError({ code: "zeta_success_missing", endpointName: endpoint.endpointName, message: "Zeta no confirmo Succeed=true." });
     }
 
     return output;
@@ -225,8 +237,13 @@ export async function queryZetaEndpoint<
   });
 
   return {
-    rows: Array.isArray(output.Response) ? output.Response : [],
+    rows: requireQueryRows<TRecord>(output.Response),
     isLastPage: coerceBoolean(output.IsLastPage),
     raw: output,
   };
+}
+
+function requireQueryRows<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) throw new ZetaIntegrationError({ code: "zeta_rows_invalid", message: "Zeta no devolvio una lista de filas para la consulta." });
+  return value as T[];
 }

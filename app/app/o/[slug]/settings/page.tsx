@@ -6,6 +6,7 @@ import { ZetaSoftwareConnectionCard } from "@/components/settings/integrations/z
 import { ZetaSoftwarePurchaseExpenseConfig } from "@/components/settings/integrations/zetasoftware-purchase-expense-config";
 import { ZetaSoftwareRunHistory } from "@/components/settings/integrations/zetasoftware-run-history";
 import { ZetaSoftwareSyncPanel } from "@/components/settings/integrations/zetasoftware-sync-panel";
+import { ZetaSoftwareDailyCacheStatus } from "@/components/settings/integrations/zetasoftware-daily-cache-status";
 import { SettingsCapabilitiesList } from "@/components/settings/settings-capabilities-list";
 import {
   buttonBaseClassName,
@@ -435,6 +436,7 @@ export default async function OrganizationSettingsPage({
               defaultOpen
             >
               <div className="space-y-4">
+                <ZetaSoftwareDailyCacheStatus organizationId={organization.id} />
                 <ZetaSoftwareConnectionCard
                   slug={organization.slug}
                   connection={settings.zetaConnection}

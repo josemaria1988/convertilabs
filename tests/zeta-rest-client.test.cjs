@@ -23,16 +23,29 @@ function createJsonResponse(body, overrides = {}) {
   };
 }
 
+function dailySyncFixture(reserveRequest = async () => {}) {
+  const { createDailyZetaRequestPolicy } = require("@/modules/integrations/zeta/client/read-policy");
+  return {
+    organizationId: "org-1",
+    requestPolicy: createDailyZetaRequestPolicy({
+      organizationId: "org-1", reserveRequest, sleep: async () => {},
+    }),
+  };
+}
+
 test("Zeta REST client posts QueryIn payloads to the official endpoint URL", async () => {
   const {
     createZetaRestClient,
     queryZetaEndpoint,
   } = require("@/modules/integrations/zeta/client/rest-client");
   const calls = [];
+  const reservedEndpoints = [];
   const client = createZetaRestClient({
+    ...dailySyncFixture(async (endpoint) => { reservedEndpoints.push(endpoint); }),
     baseUrl: "https://api.zeta.example/",
     credentials: credentials(),
     fetchImpl: async (url, init) => {
+      assert.deepEqual(reservedEndpoints, ["RESTUsuariosEmpresaV1Query"]);
       calls.push({ url, init });
 
       return createJsonResponse({
@@ -82,6 +95,7 @@ test("Zeta REST client normalizes API errors without leaking request credentials
     queryZetaEndpoint,
   } = require("@/modules/integrations/zeta/client/rest-client");
   const client = createZetaRestClient({
+    ...dailySyncFixture(),
     baseUrl: "https://api.zeta.example",
     credentials: credentials(),
     fetchImpl: async () => createJsonResponse({
@@ -115,6 +129,7 @@ test("Zeta REST client supports non-Query wrappers such as CFEsRecibidosIn", asy
   } = require("@/modules/integrations/zeta/client/rest-client");
   let parsedBody = null;
   const client = createZetaRestClient({
+    ...dailySyncFixture(),
     baseUrl: "https://api.zeta.example",
     credentials: credentials(),
     fetchImpl: async (_url, init) => {
@@ -153,6 +168,7 @@ test("Zeta REST client posts Facturas de Clientes with the QueryVentas wrapper",
   } = require("@/modules/integrations/zeta/client/rest-client");
   let parsedBody = null;
   const client = createZetaRestClient({
+    ...dailySyncFixture(),
     baseUrl: "https://api.zeta.example",
     credentials: credentials(),
     fetchImpl: async (url, init) => {
@@ -189,6 +205,43 @@ test("Zeta REST client posts Facturas de Clientes with the QueryVentas wrapper",
   assert.equal(parsedBody.QueryVentasIn.Data.Filters.Anio, 2026);
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].RegistroId, 123);
+});
+
+test("Zeta REST never reaches HTTP without a policy matching the client organization, even with mocked fetch", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  let httpCalls = 0;
+  let reservations = 0;
+  const permitted = dailySyncFixture(async () => { reservations++; });
+  for (const access of [
+    {},
+    { organizationId: "org-1" },
+    { requestPolicy: permitted.requestPolicy },
+    { organizationId: "org-2", requestPolicy: permitted.requestPolicy },
+  ]) {
+    const client = createZetaRestClient({
+      ...access, baseUrl: "https://api.zeta.example", credentials: credentials(),
+      fetchImpl: async () => { httpCalls++; throw new Error("HTTP must not run"); },
+    });
+    await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => {
+      assert.equal(error.code, "zeta_live_read_disabled");
+      return true;
+    });
+  }
+  assert.equal(httpCalls, 0);
+  assert.equal(reservations, 0);
+});
+
+test("Zeta REST sends no HTTP when the persisted daily request reservation fails", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  let httpCalls = 0;
+  const budgetError = Object.assign(new Error("Daily request budget exhausted"), { code: "zeta_daily_budget_exhausted" });
+  const client = createZetaRestClient({
+    ...dailySyncFixture(async () => { throw budgetError; }),
+    baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => { httpCalls++; throw new Error("HTTP must not run"); },
+  });
+  await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => error === budgetError);
+  assert.equal(httpCalls, 0);
 });
 
 test("Zeta runtime derives base URL from legacy endpoint env variables", () => {

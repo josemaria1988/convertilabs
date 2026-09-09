@@ -12,13 +12,13 @@ Flujo: foto/PDF → Storage privado en Supabase → `document_processing_runs` �
 
 La IA sigue ejecutándose en OpenAI y consume el cupo de la cuenta ChatGPT. No es inferencia sin conexión. El modelo predeterminado es `gpt-5.6-terra`, configurable. No existe retorno automático a la API paga.
 
-Consultas de reportes incorporadas: ventas, stock actual y precios base por artículo/código de precio. Se conservan las credenciales y los contratos de la integración existente. El endpoint de listas de precios devuelve nombres de listas y no sustituye valores por artículo. Esta entrega no incorpora edición masiva de precios ni ajustes de stock en Zeta. Esas escrituras necesitan un flujo de cambios propuestos/revisados, validación real del endpoint e idempotencia; no deben inferirse de un reporte. El botón existente de facturas sigue limitado a compras/gastos admitidos por su preflight, no mercadería/stock.
+Los informes de ventas, compras, artículos, stock y precios base se leen de la copia compartida en Supabase. Una actualización diaria a las **18:00, America/Montevideo**, concentra las lecturas de Zeta. Se reutilizan las credenciales y los contratos existentes. El endpoint de listas de precios devuelve nombres de listas y no sustituye valores por artículo. Esta entrega no incorpora edición masiva de precios ni ajustes de stock en Zeta. El botón existente de facturas sigue limitado a compras/gastos admitidos por su preflight, no mercadería/stock.
 
 ## Activación y permisos
 
 Para instalar esta versión en otro entorno:
 
-1. Revisar y aplicar `supabase/migrations/20260908_local_document_worker.sql` al Supabase correcto. El script agrega columnas/funciones/trigger; no modifica comprobantes ni envía operaciones a Zeta.
+1. Revisar y aplicar al Supabase correcto `20260908_local_document_worker.sql`, `20260909_zeta_daily_cache.sql` y `20260909_document_upload_identity.sql`, bajo `supabase/migrations/`. Incorporan reservas, publicación de la copia y protección de cargas repetidas. No modifican comprobantes existentes ni envían operaciones a Zeta.
 2. Actualizar también el servidor web que accede a esa base. Las versiones anteriores pueden tratar la cola local como una corrida OpenAI detenida, o invocar IA paga al revisar el documento. No mezclar el worker nuevo con una web anterior a estos guards.
 3. Verificar la clave `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY` de la PC contra la conexión cifrada existente. Reutilizar exactamente la clave del mismo despliegue; generar una clave nueva no permite descifrar los datos anteriores.
 4. Ejecutar `local doctor --cloud`, abrir la UI y probar una factura real con revisión humana antes de habilitar cualquier envío definitivo.
@@ -55,6 +55,8 @@ No pegar tokens en el chat ni usar API keys para este proveedor. `forced_login_m
 
 Después de activar la cola, doble clic en `Convertilabs Local.cmd` inicia el programa y el worker ocultos y abre la interfaz. Alternativa visible para diagnóstico:
 
+El trabajador consulta la cola al iniciarse y luego espera **4 horas entre revisiones automáticas**, también si hubo un error recuperable de conexión. Cada revisión toma como máximo una factura. Mientras espera no consulta Supabase ni llama a la IA; el log indica `nextCheckAt`. Las renovaciones de reserva cada 45 segundos sólo ocurren mientras se procesa una factura. `worker --once` permite pedir una revisión inmediata.
+
 ```powershell
 npm run local -- serve --with-worker
 # Sólo interfaz:
@@ -75,9 +77,13 @@ npm run local -- status --document <UUID-devuelto>
 
 El resultado contiene `documentId`, `runId`, `status` y `reviewUrl`. La carga comprueba contenido PDF/JPG/PNG y un máximo de 20 MB. Repetir el mismo archivo reutiliza su identidad. Una subida interrumpida se retoma con el mismo comando tras vencer su reserva de cinco minutos; si el archivo ya quedó en Storage se verifica su hash antes de continuar. Los errores de extracción se reintentan desde el botón existente de la revisión. Nunca hay un comando `send` oculto en la CLI.
 
+Web y móvil reservan el mismo identificador por organización y SHA-256 que usa la CLI. Cada intento tiene un token; una respuesta tardía no reinicia un documento procesado. Las cargas interrumpidas se retoman desde el canal que las inició: web/móvil o CLI. Pasar un archivo entre esos canales reutiliza el documento, pero no transfiere una reserva de subida fallida de un canal al otro. Fotos distintas del mismo comprobante requieren además la comparación fiscal; no se consideran archivos idénticos sólo por mostrar una factura parecida.
+
 Las pantallas **Documentos** y **Campo / Subir** usan **Codex en mi PC · cuenta ChatGPT** cuando el servidor tiene `CONVERTILABS_PROCESSING_PROVIDER=codex_local` y `CONVERTILABS_DISABLE_PAID_AI=true`. Esta es la configuración interna de Rontil, tanto en la web como en el celular. El proveedor queda guardado en el documento; los documentos anteriores no se reprocesan al cambiar esta configuración. El ejecutable `npm run local` siempre fuerza `codex_local` y bloquea la API paga, aunque haya una clave configurada.
 
 Desde el teléfono se conserva la app y su cámara: la foto se guarda en Supabase y espera al trabajador de una PC. No requiere estar en la misma red Wi-Fi. También se puede adjuntar una foto o PDF en Codex y pedir «cargá esta factura», o indicar la ruta de un archivo local. Codex informa el estado real y entrega el enlace para revisar. La carga y la extracción no envían la factura al ERP.
+
+Antes del envío, la revisión contrasta la factura estructurada contra la copia mensual de compras. Esa copia debe ser posterior a la carga y tener menos de 24 horas; la fecha del comprobante debe estar dentro de la ventana efectivamente consultada. Un registro histórico acumulado no prueba que ese mes se haya vuelto a consultar. Si ya existe, si hay diferencias o si faltan datos suficientes para la comparación, se bloquea el envío. Sólo un faltante permite confirmar la carga al ERP, conservando el preflight puntual final y la reserva duradera del envío. No se consultan meses extra automáticamente al subir una foto.
 
 ```powershell
 # Detiene las instancias administradas por serve/.cmd, incluida la extracción en curso:
@@ -87,18 +93,47 @@ npm run local -- stop
 
 No se registra un servicio de Windows ni inicio automático. Los logs están en `.local-companion/app.log` y `app.error.log`; `supervisor.json` identifica la instancia administrada. `stop` pide una parada a esa instancia, sin detener otros servidores Node del usuario.
 
-## Reportes Zeta
+## Copia diaria de Zeta en Supabase
 
-Los comandos consultan Zeta y guardan archivos locales nuevos. No importan automáticamente el reporte a Supabase ni modifican el ERP. No sobrescriben archivos existentes.
+Aplicar `supabase/migrations/20260909_zeta_daily_cache.sql` junto con esta versión. Reutiliza `integration_sync_runs` e `integration_raw_records`: agrega control de horario, reserva por organización, presupuesto de solicitudes y publicación atómica de snapshots completos. No requiere duplicar las tablas documentales ni convertir facturas del ERP en cargas locales.
+
+```powershell
+# Plan sin consultar Zeta ni escribir en Supabase:
+npm run local -- sync-zeta --dry-run
+# Estado, fecha y cobertura de la copia, sólo lectura de Supabase:
+npm run local -- cache-status
+# La base permite una sola ejecución por día, desde las 18:00 de Uruguay:
+npm run local -- sync-zeta
+```
+
+La programación diaria se configura como automatización de Codex en esta PC. Requiere la PC encendida y Codex disponible; es independiente del trabajador de facturas. El horario se comprueba también con el reloj de Supabase: antes de las 18:00 el comando no reserva una corrida ni llama a Zeta. Si ya se intentó ese día, tampoco vuelve a consultar, aunque la corrida haya fallado. No hay `--force`, reintentos de HTTP ni fallback de un informe hacia la API.
+
+La configuración privada opcional es `.local-companion/zeta-daily.json`, o un archivo indicado con `--sync-config`. Campos admitidos: `maxRequests` (100 por defecto), `minIntervalMs` (2000), `maxPages` (100) y `pricePairs` (pares explícitos `articleCode`/`priceBaseCode`). Esos límites son precauciones internas; no representan una cuota oficial informada por Zeta. Una actualización diaria puede necesitar varias peticiones por endpoints y paginación. El presupuesto se comparte entre todos ellos y se reserva antes de cada solicitud.
+
+Las ventas se consultan desde el último día sincronizado, con un solapamiento de fecha para cubrir comprobantes posteriores a las 18:00. La primera ejecución comienza por el día actual. Las compras y gastos usan una consulta masiva del mes actual, porque el contrato documentado no ofrece la consulta diaria de todos los proveedores juntos. El usuario autorizó esta excepción mensual dentro de la actualización diaria. Se acumula la historia en Supabase y se actualiza por identificador de Zeta; una relectura no crea otra factura. Las fechas consultadas son fechas de comprobante: cambios retroactivos fuera de esa ventana requieren una reconciliación explícita.
+
+Se conservan las filas originales y las líneas de compras que entrega el servicio. También se actualizan los maestros existentes de proveedores, conceptos, impuestos y nombres de listas/precios base, necesarios para preparar gastos. No se agregan llamadas individuales por factura ni por cada proveedor. El detalle mensual de ventas tiene restricciones de moneda y uso; la copia de ventas debe indicar si sólo contiene cabeceras, sin presentarlas como líneas completas.
+
+Contratos contrastados con [Facturas de Clientes](https://zetasoftware.info/ayuda/apis/indice-de-apis/gestion-y-contabilidad/facturas-de-clientes/) y [Facturas de Proveedores](https://zetasoftware.info/ayuda/apis/indice-de-apis/gestion-y-contabilidad/facturas-de-proveedores/): período obligatorio, filtros de fecha y alcance de consultas masivas. No se inventa una moneda de salida.
+
+**Precios:** el contrato disponible exige un artículo y un precio base para obtener valores. No hay un endpoint masivo documentado para todos los importes. `pricePairs` queda vacío hasta seleccionar códigos reales; los catálogos de listas se sincronizan igualmente. Para un par consultado con éxito y sin precios se conserva `priceStatus: no_price_at_source`, `price: null` y filas vacías: es un resultado válido. Un par no consultado da `zeta_cache_coverage_missing`; nunca equivale a cero ni a ausencia confirmada. No se expanden silenciosamente todos los artículos en cientos de solicitudes.
+
+Cada snapshot conserva sus páginas inmutables, hash, filtros y fecha. Sólo una corrida completa publica el nuevo conjunto de informes; una corrida interrumpida deja disponible la copia anterior. Se guardan dos copias completas del historial acumulado para limitar almacenamiento; la auditoría de corridas permanece. El estado distingue último intento y última copia completa. Los maestros existentes mantienen su propia trazabilidad. Las validaciones de una factura enviada por una persona conservan lecturas puntuales de preflight y reconciliación: no habilitan consultas administrativas generales. Las fotos/PDF son respaldo en Supabase; a Zeta se envía el comprobante estructurado por la API, con confirmación humana.
+
+## Reportes desde Supabase
+
+Los comandos generan archivos locales nuevos leyendo exclusivamente Supabase. No sobrescriben archivos ni modifican el ERP. Si falta cobertura, fallan con una explicación en lugar de consultar Zeta.
 
 ```powershell
 npm run local -- report sales --from 2026-08-01 --to 2026-08-31 --out '.local-companion\reports\ventas-agosto.json'
+npm run local -- report purchases --from 2026-08-01 --to 2026-08-31 --out '.local-companion\reports\compras-agosto.json'
+npm run local -- report articles --out '.local-companion\reports\articulos.json'
 npm run local -- report stock --out '.local-companion\reports\stock.json'
 npm run local -- report base-prices --article '00001' --price-base '1' --out '.local-companion\reports\precio-00001.json'
 npm run local -- report stock --filters '.local-companion\filtros-stock.json' --out '.local-companion\reports\stock.csv'
 ```
 
-Ejemplo de filtros: `{"DepositoCodigo":1,"LocalCodigo":1}`. Los códigos reales se eligen de la conexión; `00001`/`1` son ejemplos. Se rechazan filtros desconocidos y fechas inválidas. JSON conserva los tipos de origen y los ceros iniciales. CSV protege los identificadores y las fórmulas con un apóstrofo y agrega un archivo `.metadata.json`; para reprocesar fielmente se prefiere JSON. La evidencia registra endpoint, filtros, fechas, páginas, filas y hash. Una paginación incompleta o repetida detiene la exportación, sin entregar resultados truncados como completos.
+Ejemplo de filtros: `{"DepositoCodigo":1,"LocalCodigo":1}`. Los códigos `00001`/`1` son ejemplos. Se rechazan filtros desconocidos y fechas inválidas. JSON conserva los tipos de origen, campos compuestos y ceros iniciales. CSV protege identificadores/fórmulas con un apóstrofo y agrega `.metadata.json`; para reprocesar fielmente se prefiere JSON. La evidencia incluye `source: supabase`, `dataAsOf`, antigüedad, cobertura, páginas y hash. Los datos de más de 24 horas se marcan `stale`. Un informe debe comunicar siempre su fecha, especialmente si se usa una copia anterior.
 
 ## Recuperación y límites
 
@@ -122,6 +157,8 @@ npm run test:local:codex
 npm install --prefix .local-companion/qa-sql --no-save --ignore-scripts @electric-sql/pglite
 npm run test:local:queue
 npm run test:internal:operations
+npm run test:zeta:cache
+npm run test:documents:identity
 npm run local -- doctor --cloud
 ```
 

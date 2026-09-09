@@ -24,6 +24,8 @@ export const canonicalFileOrder = [
   "db/schema/14_treasury.sql",
   "db/schema/15_work_intake.sql",
   "db/schema/16_local_document_worker.sql",
+  "db/schema/17_zeta_daily_cache.sql",
+  "db/schema/18_document_upload_identity.sql",
   "db/rls/supabase_rls_policies.sql",
 ];
 
@@ -295,11 +297,11 @@ function parseTriggerDefinitions(sql) {
 
 function parsePolicyDefinitions(sql) {
   const policyPattern =
-    /create policy "([^"]+)"\s+on public\.([a-z0-9_]+)/gi;
+    /create policy\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))\s+on public\.([a-z0-9_]+)/gi;
 
   return [...sql.matchAll(policyPattern)].map((match) => ({
-    policyName: match[1],
-    tableName: match[2],
+    policyName: match[1] ?? match[2],
+    tableName: match[3],
   }));
 }
 
@@ -365,9 +367,6 @@ export async function extractExpectedSchemaSpec() {
   const enumSection = sections.find((section) =>
     section.relativePath.endsWith("01_enums.sql"),
   );
-  const rlsSection = sections.find((section) =>
-    section.relativePath.endsWith("supabase_rls_policies.sql"),
-  );
   const tableDefinitions = sections.flatMap((section) =>
     parseTableDefinitions(section.sql),
   );
@@ -408,7 +407,8 @@ export async function extractExpectedSchemaSpec() {
     ],
     triggers: sections.flatMap((section) => parseTriggerDefinitions(section.sql)),
     enums: enumSection ? parseEnumDefinitions(enumSection.sql) : [],
-    policies: rlsSection ? parsePolicyDefinitions(rlsSection.sql) : [],
-    rlsTables: rlsSection ? parseRlsTables(rlsSection.sql) : [],
+    policies: [...new Map(sections.flatMap((section) => parsePolicyDefinitions(section.sql))
+      .map((policy) => [`${policy.tableName}|${policy.policyName}`, policy])).values()],
+    rlsTables: [...new Set(sections.flatMap((section) => parseRlsTables(section.sql)))],
   };
 }

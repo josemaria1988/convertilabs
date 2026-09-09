@@ -1,5 +1,6 @@
 import { normalizeDocumentNumber, roundCurrency } from "@/modules/accounting";
 import { queryZetaEndpoint, type ZetaRestClient } from "@/modules/integrations/zeta/client/rest-client";
+import { reportHash } from "@/modules/integrations/zeta/cache/report-contracts";
 import type { ZetaFacturaProveedorCompraQueryRow, ZetaFacturaProveedorMovimiento } from "@/modules/integrations/zeta/contracts/factura-proveedor";
 
 function firstText(...values: unknown[]) {
@@ -90,17 +91,32 @@ export function findDuplicateZetaPurchaseInvoice(input: {
         && Math.abs(roundCurrency(rowTotal) - expectedTotal) <= 0.05
       );
 
+    if ((firstText(row.ProveedorCodigo) === null || sameSupplier)
+      && (firstText(row.ProveedorCodigo) === null || typeof row.Serie !== "string" || firstText(row.Numero) === null)) {
+      return { found: false, fiscalConflict: true, registroId: row.RegistroId ?? null, row };
+    }
+
     if (sameSupplier && sameComprobante && sameCurrency && sameSerie && sameNumber && sameTotal) {
       return {
         found: true,
+        fiscalConflict: false,
         registroId: row.RegistroId ?? null,
         row,
       };
+    }
+    const rowNumero = normalizeDocumentNumber(firstText(row.Numero));
+    const possiblySameNumber = sameNumber || (typeof rowNumero === "string" && typeof expectedNumero === "string"
+      && rowNumero.replace(/^0+(?=\d)/, "") === expectedNumero.replace(/^0+(?=\d)/, ""));
+    // ComprobanteCodigo is an internal posting code, not a unique fiscal type.
+    // A different payment/posting code or corrected OCR amount cannot justify a resend.
+    if (sameSupplier && sameSerie && possiblySameNumber) {
+      return { found: false, fiscalConflict: true, registroId: row.RegistroId ?? null, row };
     }
   }
 
   return {
     found: false,
+    fiscalConflict: false,
     registroId: null,
     row: null,
   };
@@ -112,17 +128,16 @@ export async function preflightZetaPurchaseInvoiceDuplicate(input: {
   expectedTotal?: number | null;
 }) {
   const dateParts = parseDateParts(input.movimiento.Fecha);
+  if (!dateParts) throw new Error("La fecha de la factura no permite verificar duplicados; se detuvo el envio.");
   const filters = {
-    Mes: dateParts?.month ?? 0,
-    Anio: dateParts?.year ?? 0,
-    FechaDesde: dateParts?.startDate ?? "",
-    FechaHasta: dateParts?.endDate ?? "",
+    Mes: dateParts.month,
+    Anio: dateParts.year,
+    FechaDesde: dateParts.startDate,
+    FechaHasta: dateParts.endDate,
     ProveedorCodigo: input.movimiento.CodigoProveedor,
-    ComprobanteCodigo: input.movimiento.CodigoComprobante,
-    MonedaCodigo: input.movimiento.CodigoMoneda,
-    LocalCodigo: input.movimiento.CodigoLocal ?? 0,
   };
   const rawPages: unknown[] = [];
+  const seenPages = new Set<string>();
 
   // QueryCompras is paginated even with narrow filters. Stop as soon as the
   // exact fiscal identity is found, but never assume page 1 is complete.
@@ -139,7 +154,13 @@ export async function preflightZetaPurchaseInvoiceDuplicate(input: {
       expectedTotal: input.expectedTotal,
     });
 
-    if (duplicate.found || result.isLastPage || result.rows.length === 0) {
+    if (result.rows.length === 0 && !result.isLastPage) throw new Error("La comprobacion de duplicados devolvio una pagina vacia sin confirmar el final; no se envia la factura.");
+    if (result.rows.length > 0) {
+      const hash = reportHash(result.rows);
+      if (seenPages.has(hash)) throw new Error("La comprobacion de duplicados repitio una pagina; no se envia la factura.");
+      seenPages.add(hash);
+    }
+    if (duplicate.found || duplicate.fiscalConflict || result.isLastPage) {
       return {
         ...duplicate,
         raw: rawPages.length === 1 ? rawPages[0] : rawPages,

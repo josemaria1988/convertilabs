@@ -96,6 +96,7 @@ type SaveLearningRuleAction = (input: {
 
 type ExportPurchaseExpenseToZetaAction = (input: {
   dryRun?: boolean;
+  humanConfirmed?: boolean;
 }) => Promise<{
   ok: boolean;
   message: string;
@@ -450,6 +451,8 @@ function formatZetaExportStatus(value: ZetaPurchaseInvoiceExportResult["status"]
       return "Listo para enviar";
     case "blocked":
       return "Bloqueado";
+    case "waiting_for_sync":
+      return "Esperando actualizacion";
     case "not_ready":
       return "No listo";
     case "success_pending_reconciliation":
@@ -474,7 +477,7 @@ function formatZetaExportStatus(value: ZetaPurchaseInvoiceExportResult["status"]
 function zetaStatusTone(value: ZetaPurchaseInvoiceExportResult["status"]) {
   return value === "dry_run_ready" || value === "found_in_zeta" || value === "already_exists_in_zeta"
     ? "success"
-    : value === "not_ready" || value === "blocked" || value === "success_pending_reconciliation" || value === "timeout_unknown" || value === "zeta_error"
+    : value === "not_ready" || value === "blocked" || value === "waiting_for_sync" || value === "success_pending_reconciliation" || value === "timeout_unknown" || value === "zeta_error"
       ? "warning"
       : "neutral";
 }
@@ -1210,10 +1213,21 @@ export function DocumentReviewRuleWorkspace({
       return;
     }
 
+    if (!dryRun) {
+      if (!zetaExport?.exportable || !zetaExport.preview.cacheReconciliation?.eligibleForHumanExport) {
+        setFeedback({ tone: "danger", text: "Primero compara la factura con la copia actualizada de Zeta en Supabase." });
+        return;
+      }
+      const total = zetaExport.preview.lines.reduce((sum, line) => sum + line.totalAmount, 0);
+      if (!window.confirm(
+        `Confirmas enviar a Zeta la factura ${zetaExport.preview.serie ?? ""} ${zetaExport.preview.numero ?? ""} de ${zetaExport.preview.supplierName ?? zetaExport.preview.zetaSupplierCode ?? "proveedor pendiente"}, por ${formatMoney(total, currencyCode)}?`,
+      )) return;
+    }
+
     setPendingAction(dryRun ? "zeta_validate" : "zeta_export");
     startTransition(async () => {
       try {
-        const result = await exportPurchaseExpenseToZetaAction({ dryRun });
+        const result = await exportPurchaseExpenseToZetaAction({ dryRun, humanConfirmed: !dryRun });
 
         setFeedback({
           tone: result.ok ? "success" : "danger",
@@ -2200,7 +2214,7 @@ export function DocumentReviewRuleWorkspace({
               <div className="review-rule-card__header review-rule-card__header--stack">
                 <div>
                   <h2>Enviar gasto a Zeta</h2>
-                  <p>Factura de proveedor operativa, no asiento manual.</p>
+                  <p>Primero se compara con la copia de compras en Supabase. Tu confirmacion habilita el envio de las facturas faltantes.</p>
                 </div>
                 <span
                   className="review-rule-chip"
@@ -2209,6 +2223,28 @@ export function DocumentReviewRuleWorkspace({
                   {formatZetaExportStatus(zetaExport.status)}
                 </span>
               </div>
+
+              {zetaExport.preview.cacheReconciliation ? (
+                <div className="review-rule-note">
+                  <p className="review-rule-note__label">Comparacion con compras de Zeta</p>
+                  <p className="review-rule-note__text">{zetaExport.preview.cacheReconciliation.message}</p>
+                  {zetaExport.preview.cacheReconciliation.matches.map((match, index) => (
+                    <div key={`${match.registroId ?? "sin-id"}-${index}`} className="review-rule-note__text">
+                      <p>Registro Zeta: {match.registroId ?? "sin identificador confirmado"}</p>
+                      {match.differences.map((difference) => (
+                        <p key={difference.field}>{difference.message} Factura: {String(difference.expected ?? "sin dato")}. Zeta: {String(difference.actual ?? "sin dato")}.</p>
+                      ))}
+                      {match.uncertainties.map((message) => <p key={message}>{message}</p>)}
+                    </div>
+                  ))}
+                  {zetaExport.preview.cacheReconciliation.snapshot ? (
+                    <p className="review-rule-note__text">
+                      Copia actualizada: {new Date(zetaExport.preview.cacheReconciliation.snapshot.dataAsOf).toLocaleString("es-UY", { timeZone: "America/Montevideo" })} (Uruguay).
+                    </p>
+                  ) : null}
+                  <p className="review-rule-note__text">La comparacion y la validacion consultan Supabase. La actualizacion desde Zeta se ejecuta a las 18:00.</p>
+                </div>
+              ) : null}
 
               {zetaExport.preview.purchaseKind === "merchandise" ? (
                 <div className="review-rule-note">
@@ -2327,7 +2363,7 @@ export function DocumentReviewRuleWorkspace({
                   className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} review-rule-action-button`}
                 >
                   {pendingAction === "zeta_validate" && isPending ? <InlineSpinner /> : null}
-                  Validar para Zeta
+                  Comparar y validar
                 </button>
                 <button
                   type="button"
@@ -2337,6 +2373,7 @@ export function DocumentReviewRuleWorkspace({
                     || !selectedZetaPaymentTermCode
                     || zetaQuickHasUnsavedChanges
                     || !zetaExport.exportable
+                    || !zetaExport.preview.cacheReconciliation?.eligibleForHumanExport
                     || isPending
                   }
                   className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} review-rule-action-button`}

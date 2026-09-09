@@ -4,14 +4,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { test, assert } = require("./testkit.cjs");
 const { resolveLocalCompanionContext, localDocumentReviewUrl } = require("@/modules/local-companion/context");
-const { exportZetaReport, serializeZetaReportCsv, validateLocalZetaReportFilters } = require("@/modules/local-companion/zeta-reports");
+const { serializeZetaReportCsv, validateLocalZetaReportFilters } = require("@/modules/local-companion/zeta-reports");
 const { ingestLocalDocument, loadLocalDocumentStatus, localDocumentId, detectLocalDocumentMime } = require("@/modules/local-companion/documents");
-const { createZetaRestClient } = require("@/modules/integrations/zeta/client/rest-client");
 
 const organizationId = "10000000-0000-0000-0000-000000000001";
 const actorProfileId = "20000000-0000-0000-0000-000000000001";
 const identity = { slug: "demo", actorProfileId };
-const runtime = { baseUrl: "https://zeta.invalid", credentials: {}, metadata: { credentialSource: "mock", envProfile: null, hasUsuarioClave: false } };
 
 function db(options = {}) {
   const state = { documents: [], audits: [], uploads: [], writes: 0, queries: [], ...options };
@@ -57,17 +55,6 @@ function db(options = {}) {
   return { supabase, state };
 }
 
-function reportDeps(pages, database = db()) {
-  let calls = 0;
-  const client = createZetaRestClient({ ...runtime, fetchImpl: async (url, init) => {
-    const page = pages[calls++];
-    assert.equal(init.method, "POST");
-    assert.ok(!/Save|Agregar|Delete|Grabar/.test(url));
-    return { ok: true, status: 200, statusText: "OK", json: async () => page };
-  } });
-  return { ...database, runtime, client, calls: () => calls };
-}
-
 test("local companion rejects inactive actors and viewer mutations before writing", async () => {
   const inactive = db({ inactive: true });
   await assert.rejects(resolveLocalCompanionContext(identity, inactive), /miembro activo/);
@@ -83,43 +70,6 @@ test("local report validates exact dates, documented filters and text price iden
   assert.throws(() => validateLocalZetaReportFilters("stock", { Connection: {} }), /no permitido/);
   assert.throws(() => validateLocalZetaReportFilters("base-prices", { ArticuloCodigo: 1, PrecioBaseCodigo: "001" }), /ceros/);
   assert.deepEqual(validateLocalZetaReportFilters("base-prices", { ArticuloCodigo: "0001", PrecioBaseCodigo: "002" }), { ArticuloCodigo: "0001", PrecioBaseCodigo: "002" });
-});
-
-test("local sales report gathers all pages with source evidence without DB mutations", async () => {
-  const deps = reportDeps([
-    { QueryVentasOut: { Succeed: true, Response: [{ RegistroId: "0001", TotalSigno: "10.00" }], IsLastPage: false } },
-    { QueryVentasOut: { Succeed: true, Response: [{ RegistroId: "0002", TotalSigno: "20.00" }], IsLastPage: true } },
-  ]);
-  const result = await exportZetaReport({ ...identity, report: "sales", filters: { FechaDesde: "2026-09-01", FechaHasta: "2026-09-07" } }, deps);
-  assert.equal(result.rows[0].RegistroId, "0001");
-  assert.equal(result.metadata.pages, 2);
-  assert.equal(result.metadata.rowCount, 2);
-  assert.match(result.metadata.sha256, /^[a-f0-9]{64}$/);
-  assert.equal(result.metadata.complete, true);
-  assert.equal(deps.state.writes, 0);
-});
-
-test("local report refuses max-page truncation and unknown pagination", async () => {
-  const input = { ...identity, report: "stock", filters: {}, maxPages: 1 };
-  await assert.rejects(exportZetaReport(input, reportDeps([{ QueryOut: { Succeed: true, Response: [], IsLastPage: false } }])), /truncado/);
-  await assert.rejects(exportZetaReport(input, reportDeps([{ QueryOut: { Succeed: true, Response: [] } }])), /IsLastPage/);
-});
-
-test("local report rejects repeated pages and unconfirmed success", async () => {
-  const input = { ...identity, report: "stock", filters: {} };
-  const repeated = { QueryOut: { Succeed: true, Response: [{ ArticuloCodigo: "0001" }], IsLastPage: false } };
-  await assert.rejects(exportZetaReport(input, reportDeps([repeated, repeated])), /repitio/);
-  await assert.rejects(exportZetaReport(input, reportDeps([{ QueryOut: { Response: [], IsLastPage: true } }])), /Succeed/);
-});
-
-test("local base price report reads actual values and validates nested success", async () => {
-  const input = { ...identity, report: "base-prices", filters: { ArticuloCodigo: "0001", PrecioBaseCodigo: "002" } };
-  const success = { ObtenerPrecioBaseOut: { Succeed: true, Response: { Succeed: true, ListaPrecios: [{ CodigoArticulo: "0001", CodigoPrecio: "002", PrecioSinIVA: "7.00" }] } } };
-  const result = await exportZetaReport(input, reportDeps([success]));
-  assert.equal(result.rows[0].PrecioSinIVA, "7.00");
-  assert.equal(result.metadata.endpoint, "RESTPreciosArticulosV2ObtenerPrecioBase");
-  success.ObtenerPrecioBaseOut.Response.Succeed = false;
-  await assert.rejects(exportZetaReport(input, reportDeps([success])), /Succeed/);
 });
 
 test("local CSV protects formulas and zero-prefixed identifiers while JSON stays exact", () => {

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { test, assert } = require("./testkit.cjs");
+const { createHumanExportZetaRequestPolicy } = require("@/modules/integrations/zeta/client/read-policy");
 
 test("Preflight detecta duplicado por proveedor, comprobante, serie, numero, total y moneda", () => {
   const {
@@ -34,7 +35,7 @@ test("Preflight detecta duplicado por proveedor, comprobante, serie, numero, tot
   assert.equal(result.registroId, 9001);
 });
 
-test("Preflight no marca duplicado si cambia el total", () => {
+test("Preflight bloquea coincidencia fiscal si cambia el total", () => {
   const {
     findDuplicateZetaPurchaseInvoice,
   } = require("@/modules/integrations/zeta/export/duplicate-preflight");
@@ -63,6 +64,7 @@ test("Preflight no marca duplicado si cambia el total", () => {
   });
 
   assert.equal(result.found, false);
+  assert.equal(result.fiscalConflict, true);
 });
 
 test("QueryCompras usa wrapper oficial QueryComprasIn", async () => {
@@ -74,6 +76,8 @@ test("QueryCompras usa wrapper oficial QueryComprasIn", async () => {
   } = require("@/modules/integrations/zeta/client/rest-client");
   let parsedBody = null;
   const client = createZetaRestClient({
+    organizationId: "org-1",
+    requestPolicy: createHumanExportZetaRequestPolicy("org-1"),
     baseUrl: "https://api.zeta.example",
     credentials: {
       DesarrolladorCodigo: "dev",
@@ -119,6 +123,9 @@ test("QueryCompras usa wrapper oficial QueryComprasIn", async () => {
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.ProveedorCodigo, "PR0031");
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.Mes, 4);
   assert.equal(parsedBody.QueryComprasIn.Data.Filters.Anio, 2026);
+  assert.equal(Object.hasOwn(parsedBody.QueryComprasIn.Data.Filters, "MonedaCodigo"), false);
+  assert.equal(Object.hasOwn(parsedBody.QueryComprasIn.Data.Filters, "ComprobanteCodigo"), false);
+  assert.equal(Object.hasOwn(parsedBody.QueryComprasIn.Data.Filters, "LocalCodigo"), false);
 });
 
 test("Preflight pagina QueryCompras hasta encontrar un duplicado exacto", async () => {
@@ -130,6 +137,8 @@ test("Preflight pagina QueryCompras hasta encontrar un duplicado exacto", async 
   } = require("@/modules/integrations/zeta/client/rest-client");
   const requestedPages = [];
   const client = createZetaRestClient({
+    organizationId: "org-1",
+    requestPolicy: createHumanExportZetaRequestPolicy("org-1"),
     baseUrl: "https://api.zeta.example",
     credentials: {
       DesarrolladorCodigo: "dev",

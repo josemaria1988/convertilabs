@@ -6,7 +6,7 @@ No reemplaza ZetaSoftware, la web ni el email. Los conecta y ordena en un modelo
 
 ## Documentacion principal
 
-El piloto **Convertilabs Local** agrega captura por comandos, procesamiento con Codex/ChatGPT y reportes de Zeta desde Windows, conservando Supabase y la revisión existente. Ver [instalación, activación y pruebas](docs/integrations/local-companion.md). Diagnóstico sin escrituras: `npm run local -- doctor`.
+**Convertilabs Local** agrega captura por comandos, procesamiento con Codex/ChatGPT e informes desde Supabase. Zeta actualiza esa copia una vez al día, a las 18:00 de Uruguay; los informes muestran fecha y cobertura. Se conservan la captura móvil y la revisión humana. Ver [instalación, sincronización y pruebas](docs/integrations/local-companion.md). Diagnóstico: `npm run local -- doctor`; plan sin escrituras ni consultas Zeta: `npm run local -- sync-zeta --dry-run`.
 
 La documentacion viva esta concentrada en:
 

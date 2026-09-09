@@ -15,6 +15,34 @@ export type ZetaEndpointDefinition = {
 };
 
 export const zetaEndpointRegistry = {
+  priceBasesQuery: {
+    endpointName: "RESTPreciosBaseV1Query", httpMethod: "POST", inputWrapper: "QueryIn", outputWrapper: "QueryOut",
+    kind: "query", stream: "zeta.masters.price_base", description: "Base-price catalog names; does not contain article price values.",
+    requestShape: { Data: { Page: 1, Filters: { CodigoDesde: "", CodigoHasta: "", NombreContiene: "" } } },
+    responseShape: { Response: [{ Codigo: "", Nombre: "" }], IsLastPage: true },
+  },
+  priceListsQuery: {
+    endpointName: "RESTListasV1QueryPrecios", httpMethod: "POST", inputWrapper: "QueryPreciosIn", outputWrapper: "QueryPreciosOut",
+    kind: "query", stream: "zeta.masters.price_list", description: "Sale-price list catalog names and validity; does not contain article price values.",
+    requestShape: { Data: { Page: 1, Filters: { CodigoDesde: "", CodigoHasta: "", TituloContiene: "" } } },
+    responseShape: { Response: [{ PrecioVentaCodigo: "", PrecioVentaNombre: "", PrecioVentaAbrevia: "", PrecioVentaVigencia: "" }], IsLastPage: true },
+  },
+  articlesQuery: {
+    endpointName: "RESTArticulosV3Query",
+    httpMethod: "POST",
+    inputWrapper: "QueryIn",
+    outputWrapper: "QueryOut",
+    kind: "query",
+    stream: "zeta.reports.articles",
+    description: "Article catalog from the supplied Postman contract. Costo is cost, not a selling price.",
+    requestShape: { Data: { Page: 1, Filters: {
+      CodigoDesde: "", CodigoHasta: "", NombreContiene: "", CodigoOrigen: "", CodigoBarras: "",
+      ArticulosActivo: "", CategoriaCodigo: "", FamiliaCodigoDesde: "", FamiliaCodigoHasta: "",
+      MarcaCodigo: "", ProveedorCodigo: "", ConceptoCodigo: "", IVACodigo: 0,
+      UnidadPrincipalCodigo: "", MonedaCodigo: 0, FechaRegistroDesde: "", FechaRegistroHasta: "",
+    } } },
+    responseShape: { Response: [{ Codigo: "", Nombre: "", Costo: 0, MonedaCodigo: 0, FechaRegistro: "" }], IsLastPage: true },
+  },
   stockActualQuery: {
     endpointName: "RESTStockActualV3Query",
     httpMethod: "POST",

@@ -350,6 +350,8 @@ export function DocumentUploadDropzone({
     }
 
     const uploadedDocumentIds: string[] = [];
+    const extractionDocumentIds: string[] = [];
+    let reusedDocumentCount = 0;
     const failureMessages: string[] = [];
     let uploadErrorCount = 0;
 
@@ -383,6 +385,13 @@ export function DocumentUploadDropzone({
         continue;
       }
 
+      if (!preparedUpload.uploadRequired) {
+        uploadedDocumentIds.push(preparedUpload.documentId);
+        if (preparedUpload.shouldEnqueue) extractionDocumentIds.push(preparedUpload.documentId);
+        reusedDocumentCount += 1;
+        continue;
+      }
+
       const uploadResult = await uploadFileToSignedUrl({
         signedUploadUrl: preparedUpload.signedUploadUrl,
         file,
@@ -394,6 +403,7 @@ export function DocumentUploadDropzone({
         await failDocumentUploadAction({
           slug,
           documentId: preparedUpload.documentId,
+          uploadLeaseToken: preparedUpload.uploadLeaseToken,
           errorMessage: uploadResult.message,
         });
         continue;
@@ -402,6 +412,7 @@ export function DocumentUploadDropzone({
       const finalizedUpload = await finalizeDocumentUploadAction({
         slug,
         documentId: preparedUpload.documentId,
+        uploadLeaseToken: preparedUpload.uploadLeaseToken,
       });
 
       if (!finalizedUpload.ok) {
@@ -411,6 +422,7 @@ export function DocumentUploadDropzone({
       }
 
       uploadedDocumentIds.push(finalizedUpload.documentId);
+      if (finalizedUpload.shouldEnqueue) extractionDocumentIds.push(finalizedUpload.documentId);
     }
 
     if (uploadedDocumentIds.length === 0) {
@@ -428,21 +440,22 @@ export function DocumentUploadDropzone({
     let queuedForExtractionCount = 0;
     let extractionQueueErrorCount = 0;
 
-    if (autoProcessAfterUpload) {
+    if (autoProcessAfterUpload && extractionDocumentIds.length > 0) {
       setMessage(
-        `Carga completa. Encolando extraccion para ${uploadedDocumentIds.length} documento(s)...`,
+        `Carga completa. Encolando extraccion para ${extractionDocumentIds.length} documento(s)...`,
       );
 
       try {
         const extractionResult = await enqueueSelectedDocumentExtractionsAction({
           slug,
-          documentIds: uploadedDocumentIds,
+          documentIds: Array.from(new Set(extractionDocumentIds)),
+          triggeredBy: "upload",
         });
 
         queuedForExtractionCount = extractionResult.queuedCount;
         extractionQueueErrorCount = extractionResult.failedCount;
       } catch {
-        extractionQueueErrorCount = uploadedDocumentIds.length;
+        extractionQueueErrorCount = extractionDocumentIds.length;
       }
     }
 
@@ -461,7 +474,7 @@ export function DocumentUploadDropzone({
       autoProcessRequested: autoProcessAfterUpload,
       queuedForExtractionCount,
       extractionQueueErrorCount,
-    }));
+    }) + (reusedDocumentCount > 0 ? ` ${reusedDocumentCount} archivo(s) reutilizan el documento existente, sin crear copias.` : ""));
     startTransition(() => {
       router.refresh();
     });

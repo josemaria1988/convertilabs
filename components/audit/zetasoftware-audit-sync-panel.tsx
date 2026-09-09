@@ -84,7 +84,7 @@ export function ZetaSoftwareAuditSyncPanel({
         <div>
           <h2 className="text-[18px] font-semibold text-white">Zetasoftware</h2>
           <p className="mt-1 text-[14px] text-[color:var(--color-muted)]">
-            Trae comprobantes estructurados por mes, sin OCR y sin escribir nada en Zeta.
+            Comprobantes y reportes conservados en Supabase, con historial de sincronización.
           </p>
         </div>
         <span className={isConfigured ? "status-pill status-pill--success" : "status-pill status-pill--warning"}>
@@ -92,78 +92,15 @@ export function ZetaSoftwareAuditSyncPanel({
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <form action={syncAction} className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] p-4">
-          <input type="hidden" name="slug" value={slug} />
-          <input type="hidden" name="stream" value="received_cfes" />
-          <input type="hidden" name="maxPages" value="200" />
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-[16px] font-semibold text-white">Compras</h3>
-              <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                CFEs Recibidos / CFERECIBIDOS y CFERECIBIDODETALLE.
-              </p>
-            </div>
-            <span className="status-pill status-pill--info">API compras</span>
-          </div>
-
-          <label className="mt-4 block">
-            <span className="mb-2 block text-[13px] font-medium uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-              Mes IVA
-            </span>
-            <input
-              type="month"
-              name="period"
-              defaultValue={period}
-              className="min-h-[48px] w-full rounded-lg border border-[color:var(--color-border)] bg-[rgba(8,15,32,0.72)] px-4 text-[15px] text-white outline-none transition focus:border-[color:var(--color-accent)]"
-            />
-          </label>
-
-          <SubmitButton
-            disabled={disabled}
-            pendingLabel="Trayendo compras..."
-            className="ui-button ui-button--primary mt-4 w-full"
-          >
-            Traer facturas de compra
-          </SubmitButton>
-        </form>
-
-        <form action={syncAction} className="rounded-lg border border-[color:var(--color-border)] bg-[rgba(18,29,60,0.86)] p-4">
-          <input type="hidden" name="slug" value={slug} />
-          <input type="hidden" name="stream" value="sales_documents" />
-          <input type="hidden" name="maxPages" value="200" />
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-[16px] font-semibold text-white">Ventas</h3>
-              <p className="mt-1 text-[13px] text-[color:var(--color-muted)]">
-                Facturas de Clientes / QueryVentas y VentaDetallada.
-              </p>
-            </div>
-            <span className="status-pill status-pill--info">API ventas</span>
-          </div>
-
-          <label className="mt-4 block">
-            <span className="mb-2 block text-[13px] font-medium uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
-              Mes IVA
-            </span>
-            <input
-              type="month"
-              name="period"
-              defaultValue={period}
-              className="min-h-[48px] w-full rounded-lg border border-[color:var(--color-border)] bg-[rgba(8,15,32,0.72)] px-4 text-[15px] text-white outline-none transition focus:border-[color:var(--color-accent)]"
-            />
-          </label>
-
-          <SubmitButton
-            disabled={disabled}
-            pendingLabel="Trayendo ventas..."
-            className="ui-button ui-button--primary mt-4 w-full"
-          >
-            Traer facturas de venta
-          </SubmitButton>
-        </form>
-      </div>
-
+      <form action={syncAction} className="mt-4 space-y-3">
+        <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="stream" value="sales_documents" />
+        <input type="hidden" name="period" value={period} />
+        <p className="text-sm text-[color:var(--color-muted)]">La actualización diaria desde Zeta está prevista a las 18:00, hora de Montevideo, con Convertilabs Local encendido. Las consultas usan Supabase. Revisá la fecha de la última copia completa en Integraciones.</p>
+        <SubmitButton disabled={disabled} pendingLabel="Consultando copia..." className="ui-button ui-button--secondary">
+          Actualizar estado de la copia
+        </SubmitButton>
+      </form>
       {!isConfigured || !canRun ? (
         <div className="mt-4 rounded-lg border border-[color:var(--color-border)] bg-white/6 px-4 py-3 text-[14px] text-[color:var(--color-muted)]">
           {!isConfigured ? (

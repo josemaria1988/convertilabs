@@ -1,19 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 type DocumentProcessingAutoRefreshProps = {
   active: boolean;
+  waitingForLocalWorker?: boolean;
 };
 
 export function DocumentProcessingAutoRefresh({
   active,
+  waitingForLocalWorker = false,
 }: DocumentProcessingAutoRefreshProps) {
   const router = useRouter();
+  const [isRefreshing, startTransition] = useTransition();
 
   useEffect(() => {
-    if (!active) {
+    if (!active || waitingForLocalWorker) {
       return;
     }
 
@@ -28,7 +31,23 @@ export function DocumentProcessingAutoRefresh({
       window.clearInterval(intervalId);
       window.clearTimeout(timeoutId);
     };
-  }, [active, router]);
+  }, [active, waitingForLocalWorker, router]);
+
+  if (waitingForLocalWorker) {
+    return (
+      <div className="rounded-2xl border border-blue-300/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+        <p>La factura está guardada y espera al trabajador de una PC encendida. Las revisiones automáticas son cada 4 horas.</p>
+        <button
+          type="button"
+          className="ui-button ui-button--secondary mt-3"
+          disabled={isRefreshing}
+          onClick={() => startTransition(() => router.refresh())}
+        >
+          {isRefreshing ? "Actualizando..." : "Actualizar estado"}
+        </button>
+      </div>
+    );
+  }
 
   if (!active) {
     return null;
