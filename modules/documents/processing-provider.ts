@@ -4,7 +4,8 @@ export type DocumentProcessingProvider = "openai" | "codex_local";
 
 /** A persisted document choice survives changes to the server default. Never fall back. */
 export function resolveDocumentProcessingProvider(metadata?: Record<string, unknown> | null): DocumentProcessingProvider {
-  const value = metadata?.processing_provider ?? process.env.CONVERTILABS_PROCESSING_PROVIDER ?? "openai";
+  // Deployment inputs may carry CRLF; persisted document choices remain strict.
+  const value = metadata?.processing_provider ?? process.env.CONVERTILABS_PROCESSING_PROVIDER?.trim() ?? "openai";
   if (value !== "openai" && value !== "codex_local") {
     throw new Error("Proveedor documental invalido. Usa codex_local u openai explicitamente.");
   }

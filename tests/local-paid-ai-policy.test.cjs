@@ -66,7 +66,26 @@ test("cloud review checks tenant-scoped document provider and fails closed on re
 });
 
 test("invalid provider configuration cannot fall back to paid inference", async () => {
-  await withEnv({ CONVERTILABS_PROCESSING_PROVIDER: "codex_typo" }, async () => {
-    assert.throws(() => policy.assertPaidAIAllowed(), (error) => error.code === "paid_ai_disabled");
-  });
+  for (const provider of ["codex_typo", "", " \r\n", "codex_local\r\n"]) {
+    await withEnv({ CONVERTILABS_PROCESSING_PROVIDER: provider, CONVERTILABS_DISABLE_PAID_AI: null }, async () => {
+      assert.throws(() => policy.assertPaidAIAllowed(), (error) => error.code === "paid_ai_disabled");
+    });
+  }
+});
+
+test("paid API disable flag accepts CRLF and spaces even for an explicit API provider", async () => {
+  const originalFetch = global.fetch;
+  let requests = 0;
+  global.fetch = async () => { requests++; throw new Error("Unexpected paid network request"); };
+  try {
+    for (const disabled of ["true\r\n", " true ", "1\r\n", " 1 "]) {
+      await withEnv({ CONVERTILABS_PROCESSING_PROVIDER: "openai\r\n", CONVERTILABS_DISABLE_PAID_AI: disabled }, async () => {
+        assert.equal(policy.isPaidAIAllowed(), false);
+        await assert.rejects(() => api.retrieveOpenAIResponse("response-test"), (error) => error.code === "paid_ai_disabled");
+      });
+    }
+    assert.equal(requests, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

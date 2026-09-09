@@ -91,6 +91,28 @@ test("local provider choice persists per document and invalid configuration fail
   } finally { if (previous === undefined) delete process.env.CONVERTILABS_PROCESSING_PROVIDER; else process.env.CONVERTILABS_PROCESSING_PROVIDER = previous; }
 });
 
+test("environment provider accepts deployment whitespace without relaxing persisted choices or blank values", () => {
+  const previous = process.env.CONVERTILABS_PROCESSING_PROVIDER;
+  try {
+    for (const value of ["codex_local\r\n", " codex_local ", "\topenai\r\n"]) {
+      process.env.CONVERTILABS_PROCESSING_PROVIDER = value;
+      assert.equal(resolveDocumentProcessingProvider(), value.trim());
+      assert.equal(resolveDocumentProcessingProvider({ processing_provider: "codex_local" }), "codex_local");
+    }
+    process.env.CONVERTILABS_PROCESSING_PROVIDER = "codex_local";
+    for (const value of ["", " ", "codex_local\r\n", " openai ", "invalid", 1]) {
+      assert.throws(() => resolveDocumentProcessingProvider({ processing_provider: value }), /invalido/);
+    }
+    for (const value of ["", " \r\n", "invalid\r\n"]) {
+      process.env.CONVERTILABS_PROCESSING_PROVIDER = value;
+      assert.throws(() => resolveDocumentProcessingProvider(), /invalido/);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CONVERTILABS_PROCESSING_PROVIDER;
+    else process.env.CONVERTILABS_PROCESSING_PROVIDER = previous;
+  }
+});
+
 test("local arithmetic and ambiguous dates remain visible for review without inventing facts", () => {
   const output = fixture();
   output.facts.total_amount = 150;

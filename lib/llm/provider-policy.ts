@@ -16,10 +16,11 @@ export class PaidAIDisabledError extends Error {
 
 export function isPaidAIAllowed() {
   const provider = process.env.CONVERTILABS_PROCESSING_PROVIDER?.trim();
+  const disabled = process.env.CONVERTILABS_DISABLE_PAID_AI?.trim();
   return !paidAIPolicy.getStore()?.disabled
-    && (!provider || provider === "openai")
-    && process.env.CONVERTILABS_DISABLE_PAID_AI !== "true"
-    && process.env.CONVERTILABS_DISABLE_PAID_AI !== "1";
+    && (provider === undefined || provider === "openai")
+    && disabled !== "true"
+    && disabled !== "1";
 }
 
 export function assertPaidAIAllowed() {
