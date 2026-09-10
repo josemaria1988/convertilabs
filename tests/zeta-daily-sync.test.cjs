@@ -76,6 +76,22 @@ test("Daily Zeta sync before due time makes no HTTP calls and never loads or sta
   assert.equal(f.rpcCalls.length, 1);
 });
 
+test("Explicit manual authorization is audited by the daily claim and never bypasses the consumed daily slot", async () => {
+  const f = dailyFixture();
+  const manualAuthorization = { reason: "Solicitud del usuario de actualizar los precios ahora" };
+  assert.equal((await runDailyZetaSync({ ...identity, supabase: f.supabase, manualAuthorization }, f.deps)).status, "completed");
+  assert.deepEqual(f.rpcCalls[0].params.p_input.manualAuthorization, manualAuthorization);
+  assert.equal(f.rpcCalls[0].params.p_max_requests, 100);
+  assert.equal((await runDailyZetaSync({ ...identity, supabase: f.supabase, manualAuthorization }, f.deps)).status, "skipped");
+  assert.equal(f.http.length, 5);
+  const invalid = dailyFixture();
+  for (const value of [null, {}, { reason: "" }, { reason: "a".repeat(501) }, { reason: manualAuthorization.reason, force: true }]) {
+    await assert.rejects(runDailyZetaSync({ ...identity, supabase: invalid.supabase, manualAuthorization: value }, invalid.deps), /autorizacion manual/);
+  }
+  assert.equal(invalid.rpcCalls.length, 0);
+  assert.equal(invalid.http.length, 0);
+});
+
 test("Daily sales fetch starts at the previous covered day and retains older invoices only in Supabase", async () => {
   const f = dailyFixture();
   const rows = [{ RegistroId: 1, Fecha: "2026-09-01", ClienteCodigo: "00001" }];

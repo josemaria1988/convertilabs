@@ -26,7 +26,12 @@ function parseCommand(argv) {
     "app-url": { type: "string" }, port: { type: "string" }, once: { type: "boolean" },
     cloud: { type: "boolean" }, "with-worker": { type: "boolean" },
     "dry-run": { type: "boolean" }, "sync-config": { type: "string" },
+    now: { type: "boolean" }, reason: { type: "string" },
   } });
+  if (!parsed.values.help && (parsed.values.now !== undefined || parsed.values.reason !== undefined)) {
+    if (parsed.positionals[0] !== "sync-zeta") throw new Error("--now y --reason sólo se admiten para sync-zeta.");
+    manualSyncAuthorization(parsed.values);
+  }
   if (parsed.positionals[0] === "report" && !parsed.values.help) {
     if (parsed.positionals.length !== 2) throw new Error("Indicá exactamente un tipo de reporte después de report.");
     const allowed = ["slug", "actor", "out", "filters", "from", "to", "article", "price-base", "price-list", "currency", "max-pages", "app-url"];
@@ -43,6 +48,7 @@ function help() {
   npm run local -- status --document <UUID>
   npm run local -- worker [--once]
   npm run local -- sync-zeta [--dry-run] [--sync-config "configuracion.json"]
+  npm run local -- sync-zeta --now --reason "Solicitud explícita del usuario para adelantar la corrida de hoy"
   npm run local -- cache-status
   npm run local -- report sales --from YYYY-MM-DD --to YYYY-MM-DD --out "ventas.json"
   npm run local -- report purchases --from YYYY-MM-DD --to YYYY-MM-DD --out "compras.json"
@@ -59,6 +65,7 @@ function help() {
 Los reportes se leen únicamente de Supabase; --filters es un archivo JSON con filtros del contrato.
 sync-zeta actualiza esa copia una vez al día desde las 18:00 de Uruguay, con presupuesto de solicitudes.
 --dry-run muestra el plan sin consultar Zeta ni escribir en Supabase. No existe --force.
+--now requiere --reason y autorización humana explícita; adelanta la única corrida de hoy, sin repetirla a las 18:00.
 JSON conserva tipos originales. CSV guarda también un .metadata.json de trazabilidad.
 ingest guarda en Supabase y encola Codex local. status devuelve el enlace para revisión.
 El programa local deshabilita la API paga aun si existe OPENAI_API_KEY.
@@ -111,12 +118,24 @@ function reportFilters(values, fileFilters = {}) {
   return filters;
 }
 
+function manualSyncAuthorization(values) {
+  if (values.now === undefined && values.reason === undefined) return undefined;
+  const reason = values.reason;
+  if (values.now !== true || typeof reason !== "string" || reason !== reason.trim()
+    || reason.length < 12 || reason.length > 500 || /[\u0000-\u001f]/.test(reason)) {
+    throw new Error("Adelantar la corrida requiere --now y --reason con la autorización humana explícita (12 a 500 caracteres, sin controles ni espacios extremos).");
+  }
+  return { reason };
+}
+
 async function syncZeta(values, who) {
   const file = values["sync-config"] ? path.resolve(values["sync-config"]) : path.join(stateDirectory, "zeta-daily.json");
   const config = validateSyncConfig(await readJSON(file, values["sync-config"] ? null : {}));
+  const manualAuthorization = manualSyncAuthorization(values);
   if (values["dry-run"]) {
     return print({ status: "dry_run", organization: who.slug, apiRequests: 0, databaseWrites: 0,
       schedule: { time: "18:00", timeZone: "America/Montevideo", maxAttemptsPerDay: 1 },
+      ...(manualAuthorization ? { manualAuthorization, execution: "advance_today_once", repeatsAtScheduledTime: false } : {}),
       reports: ["sales", "purchases", "articles", "stock", ...(config.pricePairs.length || config.salesPriceLists.length ? ["base-prices"] : []), ...(config.salesPriceLists.length ? ["sales-prices"] : [])], masters: true,
       salesWindow: "Desde el último día sincronizado; primera ejecución desde hoy",
       purchasesWindow: "Mes actual completo, con historial acumulado por identificador", ...config,
@@ -127,7 +146,7 @@ async function syncZeta(values, who) {
   const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
   const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
   const { runDailyZetaSync } = require("@/modules/integrations/zeta/sync/daily-sync");
-  return print(await runDailyZetaSync({ ...config, supabase: context.supabase,
+  return print(await runDailyZetaSync({ ...config, ...(manualAuthorization ? { manualAuthorization } : {}), supabase: context.supabase,
     organizationId: context.organization.id, actorProfileId: who.actorProfileId }));
 }
 
@@ -357,4 +376,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters };
+module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters, manualSyncAuthorization };

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const { test } = require("./testkit.cjs");
-const { validateSyncConfig, parseCommand, reportFilters } = require("../scripts/local-companion/cli.cjs");
+const { validateSyncConfig, parseCommand, reportFilters, manualSyncAuthorization } = require("../scripts/local-companion/cli.cjs");
 
 test("daily config preserves exact price codes and rejects requests outside its declared limits", () => {
   const config = validateSyncConfig({ pricePairs: [{ articleCode: "000001", priceBaseCode: "LP" }] });
@@ -23,6 +23,19 @@ test("daily config selects sales price lists explicitly and bounds the request s
     assert.throws(() => validateSyncConfig({ salesPriceLists }), /salesPriceLists/);
   }
   assert.equal(validateSyncConfig({ salesPriceLists: Array.from({ length: 20 }, (_, i) => i + 1) }).salesPriceLists.length, 20);
+});
+
+test("manual daily synchronization requires an explicit paired authorization that cannot become persistent configuration", () => {
+  const reason = "El usuario solicita actualizar los precios de venta ahora";
+  assert.deepEqual(manualSyncAuthorization(parseCommand(["sync-zeta", "--now", "--reason", reason]).values), { reason });
+  assert.equal(manualSyncAuthorization({}), undefined);
+  for (const args of [["sync-zeta", "--now"], ["sync-zeta", "--reason", reason],
+    ["sync-zeta", "--now", "--reason", "corto"], ["worker", "--now", "--reason", reason],
+    ["sync-zeta", "--now", "--reason", reason + "\n"], ["sync-zeta", "--now", "--reason", "a".repeat(501)]]) {
+    assert.throws(() => parseCommand(args));
+  }
+  assert.throws(() => validateSyncConfig({ manualAuthorization: { reason } }));
+  assert.throws(() => validateSyncConfig({ now: true, reason }));
 });
 
 test("sales price CLI filters keep article identifiers exact and reject malformed options", () => {

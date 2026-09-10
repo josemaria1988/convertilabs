@@ -24,6 +24,8 @@ declare
   v_run public.integration_sync_runs;
   v_connection public.organization_integration_connections;
   v_token uuid := gen_random_uuid();
+  v_manual_authorized boolean := false;
+  v_manual_reason text;
 begin
   if p_max_requests is null or p_max_requests < 1 or p_max_requests > 1000 then
     raise exception 'El presupuesto interno debe ser entre 1 y 1000 solicitudes.';
@@ -32,7 +34,23 @@ begin
     and user_id = p_actor_user_id and is_active and role::text in ('owner','admin','developer','admin_processing')) then
     raise exception 'El actor no puede sincronizar esta organizacion.';
   end if;
-  if v_local::time < time '18:00:00' then
+  if coalesce(p_input, '{}'::jsonb) ? 'manualAuthorization' then
+    if jsonb_typeof(p_input->'manualAuthorization') is distinct from 'object'
+      or jsonb_typeof(p_input->'manualAuthorization'->'reason') is distinct from 'string'
+      or (p_input->'manualAuthorization') - 'reason' <> '{}'::jsonb then
+      raise exception 'manualAuthorization debe contener solamente reason como texto.';
+    end if;
+    v_manual_reason := p_input->'manualAuthorization'->>'reason';
+    if char_length(v_manual_reason) < 12 or char_length(v_manual_reason) > 500
+      or v_manual_reason <> btrim(v_manual_reason, U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF')
+      or exists (select 1 from generate_series(1, 31) as control(code) where strpos(v_manual_reason, chr(control.code)) > 0) then
+      raise exception 'manualAuthorization.reason requiere 12 a 500 caracteres, sin espacios extremos ni caracteres de control.';
+    end if;
+    v_manual_authorized := true;
+  end if;
+  -- A current human request may advance today's only attempt. It never changes
+  -- the recurring window, daily unique slot, request budget or fenced lease.
+  if v_local::time < time '18:00:00' and not v_manual_authorized then
     return jsonb_build_object('claimed', false, 'reason', 'outside_window', 'scheduledDay', v_day);
   end if;
   perform pg_advisory_xact_lock(hashtextextended('zeta.daily_cache:' || p_organization_id::text, 0));
@@ -71,10 +89,15 @@ begin
   values (p_organization_id, v_connection.id, 'zetasoftware', 'zeta.daily_cache', 'scheduled', 'running', false,
     p_actor_user_id, v_now, coalesce(p_input, '{}'::jsonb), jsonb_build_object('schemaVersion', 1,
       'scheduledDay', v_day, 'leaseToken', v_token, 'leaseExpiresAt', v_now + interval '4 hours',
-      'maxRequests', p_max_requests, 'requestsUsed', 0, 'timezone', 'America/Montevideo', 'scheduledHour', 18))
+      'maxRequests', p_max_requests, 'requestsUsed', 0, 'timezone', 'America/Montevideo', 'scheduledHour', 18)
+      || case when v_manual_authorized then jsonb_build_object('trigger', 'user_requested',
+        'scheduleOverrideApplied', v_local::time < time '18:00:00',
+        'manualAuthorization', jsonb_build_object('reason', v_manual_reason, 'actorUserId', p_actor_user_id,
+          'authorizedAt', v_now, 'scheduledDay', v_day, 'scope', 'advance_today_only')) else '{}'::jsonb end)
   returning * into v_run;
   return jsonb_build_object('claimed', true, 'runId', v_run.id, 'leaseToken', v_token,
-    'scheduledDay', v_day, 'connectionId', v_connection.id, 'maxRequests', p_max_requests);
+    'scheduledDay', v_day, 'connectionId', v_connection.id, 'maxRequests', p_max_requests,
+    'manualAuthorized', v_manual_authorized);
 end;
 $$;
 

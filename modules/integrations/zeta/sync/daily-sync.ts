@@ -32,6 +32,8 @@ export type DailyZetaSyncInput = {
   pricePairs?: Array<{ articleCode: string; priceBaseCode: string }>;
   /** Selected generic sale-price rules; their required bases are fetched in bulk. */
   salesPriceLists?: number[];
+  /** Explicit human request only; advances today's single slot, never permits a second attempt. */
+  manualAuthorization?: { reason: string };
 };
 type DailyDependencies = {
   runtime?: ZetaRuntimeConfig;
@@ -263,10 +265,19 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
   }
   const uniquePairs = [...new Map(pairs.map((pair) => [JSON.stringify(pair), pair])).values()];
   const salesPriceLists = validateSalesPriceLists(input.salesPriceLists ?? []);
+  const manualAuthorization = input.manualAuthorization;
+  if (manualAuthorization !== undefined && (!manualAuthorization || typeof manualAuthorization !== "object"
+    || Array.isArray(manualAuthorization) || Object.keys(manualAuthorization).some((key) => key !== "reason")
+    || typeof manualAuthorization.reason !== "string" || manualAuthorization.reason !== manualAuthorization.reason.trim()
+    || manualAuthorization.reason.length < 12 || manualAuthorization.reason.length > 500
+    || /[\u0000-\u001f]/.test(manualAuthorization.reason))) {
+    throw new Error("La autorizacion manual requiere un motivo explicito de 12 a 500 caracteres sin controles ni espacios extremos.");
+  }
   const claim = await dailyRpc(input.supabase, "claim_zeta_daily_sync", {
     p_organization_id: input.organizationId, p_actor_user_id: input.actorProfileId,
     p_max_requests: maxRequests,
-    p_input: { invoiceMode: "incremental_sales_monthly_purchases", pricePairs: uniquePairs, salesPriceLists, maxPages, minIntervalMs, timeZone: "America/Montevideo", scheduledHour: 18 },
+    p_input: { invoiceMode: "incremental_sales_monthly_purchases", pricePairs: uniquePairs, salesPriceLists, maxPages, minIntervalMs, timeZone: "America/Montevideo", scheduledHour: 18,
+      ...(manualAuthorization ? { manualAuthorization } : {}) },
   });
   if (claim.claimed !== true) {
     return { status: "skipped" as const, runId: claim.runId ?? null, reason: claim.reason ?? "daily_not_due", scheduledDay: claim.scheduledDay ?? null };

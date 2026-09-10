@@ -30,13 +30,28 @@ async function main() {
     const sql = read("db/schema/17_zeta_daily_cache.sql");
     const originalSql = read("supabase/migrations/20260909_zeta_daily_cache.sql");
     const pricesSql = read("supabase/migrations/20260910_zeta_sales_prices.sql");
-    assert.equal(sql.replaceAll("'stock','base-prices','sales-prices'", "'stock','base-prices'"), originalSql);
+    const earlySql = read("supabase/migrations/20260910_zeta_authorized_early_sync.sql");
+    const functionSql = (source, name) => {
+      const start = source.indexOf(`create or replace function public.${name}(`);
+      assert.ok(start >= 0, `Missing function ${name}`);
+      return source.slice(start, source.indexOf("\n$$;", start) + 4).trim();
+    };
+    const updatedClaim = functionSql(sql, "claim_zeta_daily_sync");
+    assert.equal(earlySql.trim(), updatedClaim, "early migration must contain only the claim function");
+    assert.equal(sql.replace(updatedClaim, () => functionSql(originalSql, "claim_zeta_daily_sync"))
+      .replaceAll("'stock','base-prices','sales-prices'", "'stock','base-prices'"), originalSql,
+    "only the claim function and previously authorized sale-price guards may change");
     const updatedFunctions = ["guard_zeta_report_snapshot_page", "publish_zeta_daily_sync"].map((name) => {
       const start = sql.indexOf(`create or replace function public.${name}(`);
       return sql.slice(start, sql.indexOf("\n$$;", start) + 4).trim();
     });
     assert.equal(pricesSql.trim(), updatedFunctions.join("\n\n"));
-    await db.exec(originalSql); await db.exec(pricesSql); await db.exec(pricesSql);
+    await db.exec(originalSql); await db.exec(pricesSql); await db.exec(earlySql); await db.exec(pricesSql); await db.exec(earlySql);
+    const privileges = (await db.query(`select
+      has_function_privilege('anon', 'public.claim_zeta_daily_sync(uuid,uuid,integer,jsonb)', 'EXECUTE') as anon,
+      has_function_privilege('authenticated', 'public.claim_zeta_daily_sync(uuid,uuid,integer,jsonb)', 'EXECUTE') as authenticated,
+      has_function_privilege('service_role', 'public.claim_zeta_daily_sync(uuid,uuid,integer,jsonb)', 'EXECUTE') as service`)).rows[0];
+    assert.deepEqual(privileges, { anon: false, authenticated: false, service: true });
     await db.exec(`grant usage on schema public to authenticated,service_role; grant all on all tables in schema public to authenticated,service_role;
       create function public.is_active_member(p_org uuid) returns boolean language sql security definer set search_path=public
       as $$ select exists(select 1 from organization_members where organization_id=p_org and user_id=nullif(current_setting('test.actor',true),'')::uuid and is_active) $$;
@@ -50,7 +65,7 @@ async function main() {
     await db.query("insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')", [org, actor]);
     await db.query("insert into organization_integration_connections(id,organization_id,provider,test_mode) values($1,$2,'zetasoftware',false),($3,$4,'zetasoftware',false)", [connection, org, otherConnection, otherOrg]);
     const now = async (instant) => db.exec(`create or replace function public.zeta_daily_sync_now() returns timestamptz language sql volatile set search_path=pg_catalog as $$ select '${instant}'::timestamptz $$;`);
-    const claim = async (organization = org, budget = 3) => (await db.query("select claim_zeta_daily_sync($1,$2,$3,'{}') as value", [organization, actor, budget])).rows[0].value;
+    const claim = async (organization = org, budget = 3, input = {}) => (await db.query("select claim_zeta_daily_sync($1,$2,$3,$4) as value", [organization, actor, budget, JSON.stringify(input)])).rows[0].value;
     const reserve = async (r, organization = org, token = r.leaseToken) => (await db.query("select reserve_zeta_daily_request($1,$2,$3,'RESTFixtureQuery') as value", [organization, r.runId, token])).rows[0].value;
     const publish = async (r, reports, token = r.leaseToken) => (await db.query("select publish_zeta_daily_sync($1,$2,$3,$4) as value", [org, r.runId, token, JSON.stringify({ schemaVersion: 1, reports })])).rows[0].value;
     const fail = async (r) => (await db.query("select fail_zeta_daily_sync($1,$2,$3,'fixture','fixture') as value", [org, r.runId, r.leaseToken])).rows[0].value;
@@ -68,13 +83,44 @@ async function main() {
     assert.equal((await claim()).reason, "outside_window");
     assert.equal((await db.query("select count(*)::integer as n from integration_sync_runs")).rows[0].n, 0);
     await assert.rejects(claim(otherOrg), /actor/);
-    await now("2026-09-09T21:00:00Z");
+    const manualReason = "El usuario autoriza adelantar hoy la sincronizacion de precios de venta.";
+    const manualInput = { manualAuthorization: { reason: manualReason }, salesPriceLists: [1] };
+    for (const manualAuthorization of [null, true, "approved", [], {}, { reason: 123 }, { reason: "" }, { reason: "corto" },
+      { reason: "x".repeat(501) }, { reason: ` ${manualReason}` }, { reason: `${manualReason} ` },
+      { reason: `\u00a0${manualReason}` }, { reason: `${manualReason}\n` }, { reason: `Autorizacion\tmanual del usuario` },
+      { reason: manualReason, actorUserId: actor }]) {
+      await assert.rejects(claim(org, 3, { manualAuthorization }), /manualAuthorization/);
+    }
+    await assert.rejects(claim(otherOrg, 3, manualInput), /actor/);
     await db.query("update organization_members set role='viewer' where organization_id=$1", [org]);
     await assert.rejects(claim(), /actor/);
+    await assert.rejects(claim(org, 3, manualInput), /actor/);
     await db.query("update organization_members set role='owner' where organization_id=$1", [org]);
-    const first = await claim(); assert.equal(first.claimed, true); assert.equal(first.scheduledDay, "2026-09-09");
+    await db.query("update organization_members set is_active=false where organization_id=$1", [org]);
+    await assert.rejects(claim(org, 3, manualInput), /actor/);
+    await db.query("update organization_members set is_active=true where organization_id=$1", [org]);
+    assert.equal((await db.query("select count(*)::integer as n from integration_sync_runs")).rows[0].n, 0, "invalid authorization must never spend a slot");
+    await db.exec("set role service_role");
+    const first = await claim(org, 3, manualInput); assert.equal(first.claimed, true); assert.equal(first.scheduledDay, "2026-09-09");
+    await db.exec("reset role");
+    assert.equal(first.manualAuthorized, true);
+    const audit = (await db.query("select input_json, metadata_json, initiated_by_user_id from integration_sync_runs where id=$1", [first.runId])).rows[0];
+    assert.deepEqual(audit.input_json, manualInput);
+    assert.equal(audit.initiated_by_user_id, actor);
+    assert.equal(audit.metadata_json.trigger, "user_requested");
+    assert.equal(audit.metadata_json.scheduleOverrideApplied, true);
+    assert.equal(audit.metadata_json.scheduledHour, 18);
+    assert.equal(audit.metadata_json.maxRequests, 3);
+    assert.equal(audit.metadata_json.manualAuthorization.reason, manualReason);
+    assert.equal(audit.metadata_json.manualAuthorization.actorUserId, actor);
+    assert.equal(audit.metadata_json.manualAuthorization.scheduledDay, "2026-09-09");
+    assert.equal(audit.metadata_json.manualAuthorization.scope, "advance_today_only");
+    assert.equal(Date.parse(audit.metadata_json.manualAuthorization.authorizedAt), Date.parse("2026-09-09T20:59:59Z"));
+    assert.equal((await claim(org, 3, manualInput)).reason, "already_attempted");
+    await now("2026-09-09T21:00:00Z");
     assert.equal((await claim()).reason, "already_attempted");
-    passed("18:00 Montevideo window, actor permission and one daily attempt across worker restarts");
+    passed("explicit audited authorization advances today's sole attempt; invalid reasons and unauthorized actors remain blocked");
+    passed("18:00 Montevideo window remains the default and the normal scheduled run cannot repeat an advanced attempt");
     await assert.rejects(reserve(first, otherOrg), /vigente/);
     await assert.rejects(reserve(first, org, randomUUID()), /vigente/);
     await assert.rejects(reserve(first, org, null), /vigente/);
@@ -82,7 +128,10 @@ async function main() {
     await assert.rejects(reserve(first), /presupuesto/);
     await fail(first); assert.equal((await claim()).reason, "already_attempted");
     passed("fenced request reservations consume the daily budget even after failures");
+    await now("2026-09-10T20:59:59Z"); assert.equal((await claim()).reason, "outside_window");
     await now("2026-09-10T21:00:00Z"); const second = await claim();
+    assert.equal(second.manualAuthorized, false, "manual authorization never carries over into the next daily run");
+    assert.equal((await db.query("select metadata_json ? 'manualAuthorization' as manual from integration_sync_runs where id=$1", [second.runId])).rows[0].manual, false);
     await assert.rejects(page(second, "stock", { organizationId: otherOrg, connectionId: otherConnection }), /organizacion/);
     await assert.rejects(page(second, "stock", { connectionId: otherConnection }), /organizacion/);
     const reports = await allPages(second);
@@ -110,6 +159,7 @@ async function main() {
     assert.equal((await db.query("update integration_sync_runs set metadata_json='{}' where id=$1 returning id", [second.runId])).rows.length, 0);
     assert.equal((await db.query("delete from integration_raw_records where last_sync_run_id=$1 returning id", [second.runId])).rows.length, 0);
     await assert.rejects(db.query("select claim_zeta_daily_sync($1,$2,3,'{}')", [org, actor]), /permission denied/);
+    await assert.rejects(claim(org, 3, manualInput), /permission denied/);
     await assert.rejects(db.query("insert into integration_sync_runs(organization_id,provider,stream,status,test_mode) values($1,'zetasoftware','zeta.daily_cache','completed',false)", [org]), /row-level security/);
     await db.query("select set_config('test.actor',$1,false)", [randomUUID()]);
     assert.equal((await db.query("select count(*)::integer as n from integration_sync_runs")).rows[0].n, 0);
