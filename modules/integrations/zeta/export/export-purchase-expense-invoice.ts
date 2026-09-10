@@ -1182,6 +1182,7 @@ function hasUnknownWriteOutcome(error: unknown) {
     "zeta_http_error",
     "zeta_invalid_json",
     "zeta_output_wrapper_missing",
+    "zeta_success_missing",
     "zeta_factura_proveedor_response_invalid",
   ].includes(error.code);
 }
@@ -1653,15 +1654,15 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     const result = withResult(resolution, {
       status,
       exportable: false,
-      zetaResponse: error instanceof Error
-        ? {
-          name: error.name,
-          message: error.message,
-          code: error instanceof ZetaIntegrationError ? error.code : "zeta_unexpected_error",
-        }
-        : {
-          message: "Error inesperado al exportar a Zeta.",
-        },
+      zetaResponse: {
+        name: error instanceof Error ? error.name : "Error",
+        ...normalizeZetaException(error),
+        // HTTP diagnostics are bounded and sanitized by the REST client. Do
+        // not newly persist arbitrary API Detail fields from other errors.
+        details: error instanceof ZetaIntegrationError && error.code === "zeta_http_error"
+          ? error.details
+          : undefined,
+      },
     });
     const raw = await persistExportAttempt({
       supabase,

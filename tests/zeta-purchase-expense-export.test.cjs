@@ -1566,6 +1566,64 @@ test("timeout queda timeout_unknown y no reintenta automatico", async () => {
   assert.equal(agregarCalls, 1);
 });
 
+test("HTTP 400 conserva diagnostico saneado, reserva e incertidumbre sin reenvio", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase();
+  let agregarCalls = 0;
+  const client = zetaClient(async (url) => {
+    if (url.endsWith("RESTFacturaProveedorV1QueryCompras")) {
+      return {
+        ok: true, status: 200, statusText: "OK",
+        json: async () => ({ QueryComprasOut: { Succeed: true, Response: [], IsLastPage: true, Error: null } }),
+      };
+    }
+    agregarCalls++;
+    return new Response(JSON.stringify({ Message: "Error field Tipo", Connection: { EmpresaClave: "secret" } }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  });
+  const input = { organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true };
+  const result = await exportPurchaseExpenseInvoiceToZeta(input, { supabase, client });
+  assert.equal(result.status, "timeout_unknown");
+  assert.equal(result.zetaResponse.status, 400);
+  assert.equal(result.zetaResponse.endpointName, "RESTFacturaProveedorV1Agregar");
+  assert.match(result.zetaResponse.details.body, /Error field Tipo/);
+  assert.doesNotMatch(JSON.stringify(result.zetaResponse), /secret/);
+  const attempt = supabase.state.integration_raw_records.find((row) => row.entity_type === "purchase_expense_export_attempt");
+  assert.deepEqual(attempt.payload_json.response, result.zetaResponse);
+  const audit = supabase.state.audit_log.find((row) => row.action === "zeta_purchase_expense_export_timeout_unknown");
+  assert.equal(audit.after_json.status, 400);
+  const retry = await exportPurchaseExpenseInvoiceToZeta({ ...input, forceResend: true }, { supabase, client });
+  assert.equal(retry.status, "timeout_unknown");
+  assert.equal(agregarCalls, 1);
+});
+
+test("Succeed ausente es incierto y otros errores no persisten Detail arbitrario", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const scenario of [
+    { output: { Response: {} }, status: "timeout_unknown", code: "zeta_success_missing" },
+    { output: { Succeed: false, Error: { Code: "REJECTED", Message: "Invalid field", Detail: [{ Private: "unknown-sensitive-detail" }] } }, status: "zeta_error", code: "REJECTED" },
+  ]) {
+    const supabase = createFakeSupabase();
+    let calls = 0;
+    const client = zetaClient(async (url) => {
+      if (url.endsWith("RESTFacturaProveedorV1QueryCompras")) {
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ QueryComprasOut: { Succeed: true, Response: [], IsLastPage: true } }) };
+      }
+      calls++;
+      return { ok: true, status: 200, statusText: "OK", json: async () => ({ AgregarOut: scenario.output }) };
+    });
+    const input = { organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true };
+    const result = await exportPurchaseExpenseInvoiceToZeta(input, { supabase, client });
+    assert.equal(result.status, scenario.status);
+    assert.equal(result.zetaResponse.code, scenario.code);
+    assert.equal(result.zetaResponse.details, undefined);
+    assert.doesNotMatch(JSON.stringify(supabase.state.integration_raw_records), /unknown-sensitive-detail/);
+    await exportPurchaseExpenseInvoiceToZeta({ ...input, forceResend: true }, { supabase, client });
+    assert.equal(calls, 1);
+  }
+});
+
 test("reconciliacion QueryCompras guarda RegistroId cuando encuentra la factura", async () => {
   const {
     reconcilePurchaseExpenseInvoiceExport,

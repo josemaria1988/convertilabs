@@ -1,5 +1,6 @@
 import "server-only";
 import { authorizeZetaRequest, type ZetaRequestPolicy } from "./read-policy";
+import { readZetaHttpErrorDiagnostic } from "./http-error-diagnostics";
 
 import {
   buildZetaEndpointUrl,
@@ -21,6 +22,8 @@ export type ZetaFetchResponse = {
   ok: boolean;
   status: number;
   statusText: string;
+  headers?: { get: (name: string) => string | null };
+  body?: ReadableStream<Uint8Array> | null;
   json: () => Promise<unknown>;
   text?: () => Promise<string>;
 };
@@ -142,11 +145,13 @@ export async function callZetaEndpoint<TResponse = unknown>(
     });
 
     if (!response.ok) {
+      const details = await readZetaHttpErrorDiagnostic(response, client.credentials);
       throw new ZetaIntegrationError({
         code: "zeta_http_error",
         endpointName: endpoint.endpointName,
         status: response.status,
-        message: `Zetasoftware respondio HTTP ${response.status} ${response.statusText}.`,
+        message: `Zetasoftware respondio HTTP ${response.status}.`,
+        details,
       });
     }
 

@@ -122,6 +122,100 @@ test("Zeta REST client normalizes API errors without leaking request credentials
   );
 });
 
+test("Zeta HTTP errors retain sanitized JSON diagnostics and status without retrying", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const { normalizeZetaException } = require("@/modules/integrations/zeta/client/errors");
+  let calls = 0;
+  const client = createZetaRestClient({
+    ...dailySyncFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify({
+        error: { Message: "Cannot convert field CodigoComprobante", token: "unrelated-sensitive-value" },
+        Connection: credentials(),
+        echoed: "dev-secret empresa-secret",
+      }), { status: 400, headers: { "content-type": "application/json" } });
+    },
+  });
+  await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => {
+    const normalized = normalizeZetaException(error);
+    assert.equal(normalized.code, "zeta_http_error");
+    assert.equal(normalized.status, 400);
+    assert.equal(normalized.endpointName, "RESTUsuariosEmpresaV1Query");
+    assert.equal(normalized.details.contentType, "application/json");
+    assert.equal(normalized.details.bodyReadFailed, false);
+    assert.equal(normalized.details.bodyTruncated, false);
+    assert.match(normalized.details.body, /Cannot convert field CodigoComprobante/);
+    assert.doesNotMatch(JSON.stringify(normalized), /dev-secret|empresa-secret|unrelated-sensitive-value/);
+    assert.equal(JSON.parse(normalized.details.body).Connection, "[REDACTED]");
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test("Zeta HTTP diagnostics cap a streamed HTML response and redact echoed secrets", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  let cancelled = false;
+  let reads = 0;
+  const prefix = '<html>Bad field. Password="unknown-password" Bearer unknown-token dev-secret empresa-secret ';
+  const body = new ReadableStream({
+    pull(controller) {
+      reads++;
+      controller.enqueue(new TextEncoder().encode(prefix + "x".repeat(20000)));
+    },
+    cancel() { cancelled = true; },
+  });
+  const client = createZetaRestClient({
+    ...dailySyncFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => new Response(body, { status: 502, headers: { "content-type": "text/html" } }),
+  });
+  await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => {
+    assert.equal(error.status, 502);
+    assert.equal(error.details.contentType, "text/html");
+    assert.equal(error.details.bodyTruncated, true);
+    assert.equal(error.details.body.length, 8192);
+    assert.match(error.details.body, /Bad field/);
+    assert.doesNotMatch(error.details.body, /unknown-password|unknown-token|dev-secret|empresa-secret/);
+    return true;
+  });
+  assert.equal(cancelled, true);
+  assert.ok(reads <= 2);
+});
+
+test("Zeta HTTP diagnostics preserve HTTP failure when its body cannot be read", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const client = createZetaRestClient({
+    ...dailySyncFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => createJsonResponse(null, {
+      ok: false, status: 400, statusText: "dev-secret",
+      text: async () => { throw new Error("empresa-secret"); },
+    }),
+  });
+  await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => {
+    assert.equal(error.code, "zeta_http_error");
+    assert.equal(error.status, 400);
+    assert.equal(error.details.body, null);
+    assert.equal(error.details.bodyReadFailed, true);
+    assert.doesNotMatch(JSON.stringify(error), /dev-secret|empresa-secret/);
+    return true;
+  });
+});
+
+test("Zeta HTTP diagnostics support injected JSON-only responses", async () => {
+  const { createZetaRestClient, queryZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const client = createZetaRestClient({
+    ...dailySyncFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => createJsonResponse({ Message: "Unknown field", EmpresaClave: "another-secret" }, {
+      ok: false, status: 400, statusText: "Bad Request",
+    }),
+  });
+  await assert.rejects(queryZetaEndpoint(client, "userRolesQuery"), (error) => {
+    assert.match(error.details.body, /Unknown field/);
+    assert.doesNotMatch(error.details.body, /another-secret/);
+    return true;
+  });
+});
+
 test("Zeta REST client supports non-Query wrappers such as CFEsRecibidosIn", async () => {
   const {
     callZetaEndpoint,
