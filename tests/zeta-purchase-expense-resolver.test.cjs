@@ -12,11 +12,11 @@ function catalogs(overrides = {}) {
         ContactoActivo: "S",
       },
     ],
-    supplierCommercialData: [{ Codigo: "PR0031", Nombre: "Los Delfines" }],
+    supplierCommercialData: [{ Codigo: "PR0031", Nombre: "Los Delfines", IVA: "N" }],
     documentTypes: [
-      { Codigo: 11, Nombre: "Compra gasto credito", ComprobanteGastos: "S", Activo: "S" },
-      { Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S" },
-      { Codigo: 13, Nombre: "Nota credito proveedor gasto", ComprobanteGastos: "S", Activo: "S" },
+      { Codigo: 11, Nombre: "Compra gasto credito", ComprobanteGastos: "S", Activo: "S", IVA: "N" },
+      { Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S", IVA: "N" },
+      { Codigo: 13, Nombre: "Nota credito proveedor gasto", ComprobanteGastos: "S", Activo: "S", IVA: "N" },
       { Codigo: 99, Nombre: "Compra mercaderia", ComprobanteGastos: "N", TomarParaActualizarCostos: "S", Activo: "S" },
     ],
     concepts: [
@@ -144,6 +144,126 @@ test("CFE de gasto con proveedor existente genera payload valido para Factura Pr
   assert.equal(movimiento.Lineas[0].CodigoLocalLinea, 1);
   assert.equal(movimiento.Lineas[0].Cantidad, 1);
   assert.equal(movimiento.Lineas[0].PrecioUnitario, 1000);
+});
+
+for (const supplierMode of ["S", "M", " m "]) {
+  test(`IVA positivo y proveedor ${supplierMode} bloquean precio incluido sin alterar importes revisados`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031", IVA: supplierMode }] });
+    data.documentTypes[0].IVA = "N";
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: data });
+
+    assert.equal(result.exportable, false);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((entry) => entry.code === "zeta_purchase_price_vat_included_unverified"));
+    assert.deepEqual(result.preview.lines.map((line) => [line.netAmount, line.ivaAmount, line.totalAmount]), [[1000, 220, 1220]]);
+  });
+}
+
+for (const supplierMode of ["N", "O"]) {
+  test(`Proveedor ${supplierMode} y comprobante sin IVA incluido conservan precio neto`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031", IVA: supplierMode }] });
+    data.documentTypes[0].IVA = "N";
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: data });
+
+    assert.equal(result.exportable, true);
+    assert.equal(result.payload.Data.Movimiento[0].Lineas[0].PrecioUnitario, 1000);
+    assert.equal(result.preview.lines[0].ivaAmount, 220);
+    assert.equal(result.preview.lines[0].totalAmount, 1220);
+  });
+}
+
+for (const documentMode of ["S", "M"]) {
+  test(`Comprobante ${documentMode} y proveedor N no inventan precedencia de precio con IVA`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031", IVA: "N" }] });
+    data.documentTypes[0].IVA = documentMode;
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: data });
+
+    assert.equal(result.exportable, false);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((entry) => entry.code === "zeta_purchase_price_vat_included_unverified"));
+  });
+}
+
+for (const exemptSource of ["supplier", "document"]) {
+  test(`IVA positivo incompatible con ${exemptSource} exento queda bloqueado`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031", IVA: exemptSource === "supplier" ? "E" : "N" }] });
+    data.documentTypes[0].IVA = exemptSource === "document" ? "E" : "N";
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: data });
+
+    assert.equal(result.exportable, false);
+    assert.ok(result.blockers.some((entry) => entry.code === "zeta_purchase_vat_exempt_conflict"));
+    assert.equal(result.preview.lines[0].ivaAmount, 220);
+  });
+}
+
+for (const supplierMode of ["S", "M", "N", "O", "E"]) {
+  test(`IVA cero con proveedor ${supplierMode} conserva el camino sin diferencia entre neto y total`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031", IVA: supplierMode }] });
+    data.documentTypes[0].IVA = "S";
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+      document: document({ taxAmount: 0, totalAmount: 1000, lines: [{ lineNumber: 1, netAmount: 1000, taxRate: 0, taxAmount: 0, totalAmount: 1000 }] }),
+      catalogs: data,
+    });
+
+    assert.equal(result.exportable, true);
+    assert.equal(result.payload.Data.Movimiento[0].Lineas[0].PrecioUnitario, 1000);
+    assert.deepEqual(result.preview.lines.map((line) => [line.netAmount, line.ivaAmount, line.totalAmount]), [[1000, 0, 1000]]);
+  });
+}
+
+test("El modo IVA incluido de otro proveedor no bloquea la factura revisada", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+    document: document(),
+    catalogs: catalogs({ supplierCommercialData: [{ Codigo: "OTHER", IVA: "M" }, { Codigo: "PR0031", IVA: "N" }] }),
+  });
+  assert.equal(result.exportable, true);
+});
+
+for (const [label, supplierRows, documentMode] of [
+  ["proveedor sin indicador", [{ Codigo: "PR0031" }], "N"],
+  ["comprobante sin indicador", [{ Codigo: "PR0031", IVA: "N" }], undefined],
+  ["ambos indicadores ausentes", [{ Codigo: "PR0031" }], undefined],
+  ["proveedor con indicador desconocido", [{ Codigo: "PR0031", IVA: "X" }], "N"],
+  ["comprobante con indicador desconocido", [{ Codigo: "PR0031", IVA: "N" }], "X"],
+  ["proveedor con filas contradictorias", [{ Codigo: "PR0031", IVA: "N" }, { Codigo: "PR0031", IVA: "O" }], "N"],
+  ["proveedor con fila adicional incompleta", [{ Codigo: "PR0031", IVA: "N" }, { Codigo: "PR0031" }], "N"],
+]) {
+  test(`Precio gravado bloqueado si hay ${label}`, () => {
+    const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+    const data = catalogs({ supplierCommercialData: supplierRows });
+    data.documentTypes[0].IVA = documentMode;
+    const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: data });
+    assert.equal(result.exportable, false);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((entry) => entry.code === "zeta_purchase_price_vat_basis_unknown"));
+    assert.deepEqual(result.preview.lines.map((line) => [line.netAmount, line.ivaAmount, line.totalAmount]), [[1000, 220, 1220]]);
+  });
+}
+
+test("Filas comerciales coincidentes confirman el modo sin IVA incluido", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(), catalogs: catalogs({
+    supplierCommercialData: [{ Codigo: "PR0031", IVA: "N" }, { Codigo: "PR0031", IVA: " n " }],
+  }) });
+  assert.equal(result.exportable, true);
+});
+
+test("IVA cero no requiere resolver indicadores de precio ausentes", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const data = catalogs({ supplierCommercialData: [{ Codigo: "PR0031" }] });
+  delete data.documentTypes[0].IVA;
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+    document: document({ taxAmount: 0, totalAmount: 1000, lines: [{ lineNumber: 1, netAmount: 1000, taxRate: 0, taxAmount: 0, totalAmount: 1000 }] }),
+    catalogs: data,
+  });
+  assert.equal(result.exportable, true);
+  assert.equal(result.payload.Data.Movimiento[0].Lineas[0].PrecioUnitario, 1000);
 });
 
 test("condicion de credito exacta confirmada en el documento gana al default", () => {

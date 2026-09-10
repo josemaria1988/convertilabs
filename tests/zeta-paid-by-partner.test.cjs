@@ -10,8 +10,8 @@ function readProjectFile(...segments) {
 function baseCatalogs(overrides = {}) {
   return {
     suppliers: [{ Codigo: "PR0031", Nombre: "Los Delfines", RUT: "21.999.888.777", EsProveedor: "S" }],
-    supplierCommercialData: [{ Codigo: "PR0031" }],
-    documentTypes: [{ Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S" }],
+    supplierCommercialData: [{ Codigo: "PR0031", IVA: "N" }],
+    documentTypes: [{ Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S", IVA: "N" }],
     concepts: [{ Codigo: "GASTOSVAR", Nombre: "Gastos varios", ConceptoActivo: "S" }],
     vatRates: [{ Codigo: 1, Nombre: "Basico", Tasa: 22 }],
     paymentTerms: [{ Codigo: "SOC", Nombre: "Pago socio", Activo: "S" }],

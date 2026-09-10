@@ -221,6 +221,56 @@ function resolveVatCode(input: {
   return byRate ? codeNumber(rowCode(byRate)) : null;
 }
 
+function validatePurchasePriceVatBasis(input: {
+  supplierCode: string | null;
+  catalogs: ZetaPurchaseExpenseCatalogs;
+  comprobante: ZetaCatalogRow | null;
+  sourceLines: ResolvedSourceLine[];
+  blockers: ZetaPurchaseExportBlocker[];
+}) {
+  // At zero tax, gross and net coincide. Preserve that supported path even
+  // when the supplier permits entering prices with VAT included.
+  if (!input.sourceLines.some((line) => Math.abs(line.taxAmount) >= 0.01)) return;
+
+  const commercialRows = (input.catalogs.supplierCommercialData ?? [])
+    .filter((row) => rowCode(row) === input.supplierCode);
+  const supplierModes = commercialRows.map((row) => firstText(row.IVA)?.toUpperCase());
+  const documentMode = firstText(input.comprobante?.IVA)?.toUpperCase();
+  const supportedModes = ["S", "M", "N", "O", "E"];
+  if (!supplierModes.length
+    || supplierModes.some((mode) => !mode || !supportedModes.includes(mode))
+    || new Set(supplierModes).size !== 1
+    || !documentMode || !supportedModes.includes(documentMode)) {
+    addBlocker(
+      input.blockers,
+      "zeta_purchase_price_vat_basis_unknown",
+      "Falta una configuracion de IVA explicita y consistente del proveedor y del comprobante Zeta. Confirma si los precios incluyen IVA antes de enviar esta factura gravada.",
+      "vat",
+    );
+    return;
+  }
+  const modes = [...supplierModes, documentMode];
+
+  if (modes.includes("E")) {
+    addBlocker(
+      input.blockers,
+      "zeta_purchase_vat_exempt_conflict",
+      "El proveedor o comprobante Zeta figura como exento, pero la factura tiene IVA. Confirma esa configuracion antes de enviarla.",
+      "vat",
+    );
+  } else if (modes.some((mode) => mode === "S" || mode === "M")) {
+    // Zeta documents S/M as VAT included and N/O as excluded, but its public
+    // REST contract does not establish which setting wins when supplier and
+    // comprobante differ. Never infer API input semantics from the UI alone.
+    addBlocker(
+      input.blockers,
+      "zeta_purchase_price_vat_included_unverified",
+      "El proveedor o comprobante Zeta usa precios con IVA incluido. Falta confirmar como interpreta PrecioUnitario la API para esta configuracion; no se enviara un importe neto como si fuera el total.",
+      "vat",
+    );
+  }
+}
+
 function resolveCurrency(input: {
   currencyCode: string | null;
   catalogs: ZetaPurchaseExpenseCatalogs;
@@ -1072,6 +1122,13 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
     document,
     catalogs: input.catalogs,
     supplierCode: supplier.zetaSupplierCode,
+    blockers,
+  });
+  validatePurchasePriceVatBasis({
+    supplierCode: supplier.zetaSupplierCode,
+    catalogs: input.catalogs,
+    comprobante: comprobante.row,
+    sourceLines,
     blockers,
   });
   const grouped = buildGroupedExpenseLines({

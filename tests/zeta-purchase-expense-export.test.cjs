@@ -41,10 +41,10 @@ function createFakeSupabase(options = {}) {
     }],
     integration_raw_records: [
       raw("contact", "PR0031", { Codigo: "PR0031", Nombre: "Los Delfines", RUT: "21.999.888.777", EsProveedor: "S" }),
-      raw("supplier_commercial_data", "PR0031", { Codigo: "PR0031" }),
-      raw("document_type", "11", { Codigo: 11, Nombre: "Compra gasto credito", ComprobanteGastos: "S", Activo: "S" }),
-      raw("document_type", "12", { Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S" }),
-      raw("document_type", "13", { Codigo: 13, Nombre: "Nota gasto", ComprobanteGastos: "S", Activo: "S" }),
+      raw("supplier_commercial_data", "PR0031", { Codigo: "PR0031", IVA: "N" }),
+      raw("document_type", "11", { Codigo: 11, Nombre: "Compra gasto credito", ComprobanteGastos: "S", Activo: "S", IVA: "N" }),
+      raw("document_type", "12", { Codigo: 12, Nombre: "Compra gasto contado", ComprobanteGastos: "S", Activo: "S", IVA: "N" }),
+      raw("document_type", "13", { Codigo: 13, Nombre: "Nota gasto", ComprobanteGastos: "S", Activo: "S", IVA: "N" }),
       raw("concept", "GASTOSVAR", { Codigo: "GASTOSVAR", Nombre: "Gastos varios", ConceptoActivo: "S" }),
       raw("vat_rate", "1", { Codigo: 1, Tasa: 22 }),
       raw("vat_rate", "2", { Codigo: 2, Tasa: 10 }),
@@ -440,6 +440,31 @@ function successfulEmptyClient(calls) {
         : { AgregarOut: { Succeed: true, Response: { Succeed: true, Mensaje: "OK" }, Error: null } } };
   });
 }
+
+test("IVA incluido bloquea dry-run y envio confirmado antes de HTTP o reservas", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase();
+  supabase.state.integration_raw_records.find((row) => row.entity_type === "supplier_commercial_data").payload_json.row.IVA = "M";
+  const before = JSON.stringify(supabase.state);
+  let calls = 0;
+  const client = zetaClient(async () => { calls++; throw new Error("No debe consultar Zeta."); });
+  for (const dryRun of [true, false]) {
+    const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1",
+      actorProfileId: "user-1", humanConfirmed: true, dryRun }, { supabase, client });
+    assert.equal(result.exportable, false);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((entry) => entry.code === "zeta_purchase_price_vat_included_unverified"));
+    assert.equal(result.preview.lines[0].netAmount, 1000);
+    assert.equal(result.preview.lines[0].ivaAmount, 220);
+    assert.equal(result.preview.lines[0].totalAmount, 1220);
+    if (dryRun) assert.equal(JSON.stringify(supabase.state), before);
+  }
+  assert.equal(calls, 0);
+  assert.equal(supabase.state.integration_raw_records.some((row) => row.entity_type === "purchase_expense_export_claim"), false);
+  const attempt = supabase.state.integration_raw_records.find((row) => row.entity_type === "purchase_expense_export_attempt");
+  assert.equal(attempt.metadata_json.status, "blocked");
+  assert.equal(attempt.payload_json.request, null);
+});
 
 test("servicio no proyecta codigo local ni external_code generico como centro ERP", async () => {
   for (const metadata of [{}, { external_code: "OTHER-ERP" }, { zeta_cost_center_code: "Z01" }, { zeta_centro_costo_codigo: "Z02" }, { cost_center_external_code: "Z03" }]) {

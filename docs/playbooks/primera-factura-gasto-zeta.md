@@ -82,6 +82,14 @@ Antes de llamar `Agregar`, Convertilabs crea una reserva durable por proveedor Z
 
 Para Rontil, conservar el trabajo/proyecto en Convertilabs sin enviar su codigo como centro de costos Zeta. Combustible/otros gastos pagados con tarjeta usan la forma confirmada `10 - Tarjeta Emitida`, sin exigir banco o titular. El aviso habitual de documentos de tarjeta pendientes se deja para la conciliacion posterior; no confundirlo con un rechazo de la API ni con una compra ya conciliada. El efectivo mantiene su forma de pago propia.
 
+### Precio digitado y tratamiento del IVA
+
+El [maestro de proveedores de Zeta](https://zetasoftware.info/ayuda/configuracion/contactos/contactos-clientes-y-proveedores/exportar-e-importar-contactos-con-excel/) define `S/M` como IVA incluido (M permite modificarlo), `N/O` como no incluido (O permite modificarlo) y `E` como exento. El [contrato de compras](https://zetasoftware.info/ayuda/apis/indice-de-apis/gestion-y-contabilidad/facturas-de-proveedores/) indica que el calculo depende del proveedor, comprobante e IVA, pero no fija su precedencia cuando difieren.
+
+Mientras esa semantica de `PrecioUnitario` REST no este confirmada, el resolver bloquea facturas con IVA distinto de cero si el proveedor o comprobante declara `S/M`. Tambien bloquea IVA positivo con configuracion `E`. Una factura gravada exige indicadores explicitos validos tanto del proveedor como del comprobante; datos ausentes, desconocidos o filas comerciales contradictorias quedan bloqueados. Conserva neto, IVA y total en la vista previa; no convierte a bruto por inferencia ni produce un payload enviable. Solo `N/O` confirmados en ambos mantienen precio neto. Con IVA cero, neto y total coinciden y este bloqueo no aplica.
+
+En la interfaz de Zeta el campo Importe puede incluir IVA: un gasto de total388, neto318.03 e IVA69.97 requiere comparar esos tres resultados antes de guardar. No copiar el neto al Importe por su nombre ni trasladar automaticamente el comportamiento UI al contrato REST. Una conciliacion del piloto debe comprobar neto, IVA y total, ademas de identidad y fecha.
+
 ## Controles implementados
 
 - escritura bloqueada en modo mock o `read_only`;
