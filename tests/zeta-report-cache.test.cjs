@@ -99,6 +99,75 @@ test("Zeta cache distinguishes unavailable coverage from a confirmed empty resul
   await assert.rejects(exportZetaReport({ ...identity, report: "base-prices", filters: { ...priceFilters, ArticuloCodigo: "000002" } }, f), (e) => e.code === "zeta_cache_coverage_missing");
 });
 
+test("complete base price snapshots filter exact article codes and mark only the filtered absence as no price", async () => {
+  const f = fixture();
+  const rows = [{ CodigoArticulo: "000275", CodigoPrecio: "LP", Precio: "150.50000" }, { CodigoArticulo: "275", CodigoPrecio: "LP", Precio: "20.00000" }];
+  await f.snapshot("base-prices", rows, { PrecioBaseCodigo: "LP" });
+  const bulk = await exportZetaReport({ ...identity, report: "base-prices", filters: { PrecioBaseCodigo: "LP" } }, f);
+  assert.equal(bulk.rows.length, 2);
+  const exact = await exportZetaReport({ ...identity, report: "base-prices", filters: { PrecioBaseCodigo: "LP", ArticuloCodigo: "000275" } }, f);
+  assert.deepEqual(exact.rows, [rows[0]]); assert.equal(exact.metadata.priceStatus, "available");
+  const absent = await exportZetaReport({ ...identity, report: "base-prices", filters: { PrecioBaseCodigo: "LP", ArticuloCodigo: "000747" } }, f);
+  assert.deepEqual(absent.rows, []); assert.equal(absent.metadata.priceStatus, "no_price_at_source"); assert.equal(absent.metadata.price, null);
+  await assert.rejects(exportZetaReport({ ...identity, report: "base-prices", filters: { PrecioBaseCodigo: "000", ArticuloCodigo: "000275" } }, f), (e) => e.code === "zeta_cache_coverage_missing");
+});
+
+test("base price registration dates require exact source coverage even for complete article bases", async () => {
+  const f = fixture();
+  const filters = { PrecioBaseCodigo: "LP", FechaRegistroDesde: "2026-09-01", FechaRegistroHasta: "2026-09-09" };
+  await f.snapshot("base-prices", [{ CodigoArticulo: "000275", CodigoPrecio: "LP", Precio: 20 }], filters);
+  const exact = await exportZetaReport({ ...identity, report: "base-prices", filters: { ...filters, ArticuloCodigo: "000275" } }, f);
+  assert.equal(exact.rows.length, 1);
+  for (const request of [{ PrecioBaseCodigo: "LP" }, { ...filters, FechaRegistroDesde: "2026-09-02" }, { ...filters, FechaRegistroHasta: "2026-09-10" }]) {
+    await assert.rejects(exportZetaReport({ ...identity, report: "base-prices", filters: request }, f), (e) => e.code === "zeta_cache_coverage_missing");
+  }
+  const complete = fixture(); await complete.snapshot("base-prices", [], { PrecioBaseCodigo: "LP" });
+  await assert.rejects(exportZetaReport({ ...identity, report: "base-prices", filters }, complete), (e) => e.code === "zeta_cache_coverage_missing");
+});
+
+test("sales price reports preserve currencies and decimal strings without API requests or source writes", async () => {
+  const f = fixture();
+  const row = { CodigoArticulo: "01483", CodigoMoneda: 1, CodigoPrecioVenta: 1, PrecioSinIVA: "123.45000", PrecioConIVA: "150.60900", CodigoPrecioBase: "LP" };
+  await f.snapshot("sales-prices", [row, { ...row, CodigoMoneda: 2, PrecioSinIVA: "3.00000", PrecioConIVA: "3.66000" },
+    { ...row, CodigoArticulo: "1483", PrecioSinIVA: "0.00000", PrecioConIVA: "0.00000" }], { PrecioVentaCodigo: 1 });
+  const writes = f.state.writes; const originalFetch = global.fetch;
+  global.fetch = async () => assert.fail("price reports must not access Zeta");
+  try {
+    const currencies = await exportZetaReport({ ...identity, report: "sales-prices", filters: { ArticuloCodigo: "01483" } }, f);
+    assert.equal(currencies.rows.length, 2); assert.equal(currencies.metadata.filters.PrecioVentaCodigo, 1);
+    assert.equal(currencies.metadata.pricingScope, "generic_list_without_customer_conditions");
+    assert.equal(currencies.metadata.source, "supabase"); assert.equal(currencies.metadata.dataAsOf, "2026-09-09T21:03:00Z");
+    const currency = await exportZetaReport({ ...identity, report: "sales-prices", filters: { ArticuloCodigo: "01483", PrecioVentaCodigo: 1, MonedaCodigo: 2 } }, f);
+    assert.equal(currency.rows.length, 1); assert.equal(currency.rows[0].PrecioConIVA, "3.66000");
+    assert.equal(typeof currency.rows[0].PrecioConIVA, "string"); assert.equal(currency.rows[0].CodigoMoneda, 2);
+    const zero = await exportZetaReport({ ...identity, report: "sales-prices", filters: { ArticuloCodigo: "1483", PrecioVentaCodigo: 1 } }, f);
+    assert.equal(zero.metadata.priceStatus, "available"); assert.equal(zero.rows[0].PrecioSinIVA, "0.00000");
+    const missing = await exportZetaReport({ ...identity, report: "sales-prices", filters: { ArticuloCodigo: "000747", PrecioVentaCodigo: 1 } }, f);
+    assert.equal(missing.metadata.priceStatus, "no_price_at_source"); assert.equal(missing.metadata.price, null); assert.deepEqual(missing.rows, []);
+    assert.equal(f.state.writes, writes);
+  } finally { global.fetch = originalFetch; }
+});
+
+test("multiple sales price lists require an explicit selection and never silently choose a list", async () => {
+  const f = fixture();
+  await f.snapshot("sales-prices", [], { PrecioVentaCodigo: 1 });
+  await f.snapshot("sales-prices", [], { PrecioVentaCodigo: 2 });
+  await assert.rejects(exportZetaReport({ ...identity, report: "sales-prices", filters: { ArticuloCodigo: "000275" } }, f), (e) => e.code === "zeta_cache_price_list_required");
+  const selected = await exportZetaReport({ ...identity, report: "sales-prices", filters: { PrecioVentaCodigo: 2 } }, f);
+  assert.equal(selected.metadata.sourceFilters.PrecioVentaCodigo, 2); assert.equal(selected.metadata.priceStatus, "no_price_at_source");
+  await assert.rejects(exportZetaReport({ ...identity, report: "sales-prices", filters: { PrecioVentaCodigo: 3 } }, f), (e) => e.code === "zeta_cache_coverage_missing");
+  await assert.rejects(f.snapshot("sales-prices", [], {}), (e) => e.code === "zeta_cache_invalid_manifest");
+});
+
+test("older exact price pairs stay readable without claiming sales price or full-base coverage", async () => {
+  const f = fixture(); const filters = { PrecioBaseCodigo: "LP", ArticuloCodigo: "000275" };
+  await f.snapshot("base-prices", [{ Precio: 100 }], filters);
+  const report = await exportZetaReport({ ...identity, report: "base-prices", filters }, f);
+  assert.equal(report.rows[0].Precio, 100); assert.equal(report.metadata.priceStatus, "available");
+  await assert.rejects(exportZetaReport({ ...identity, report: "base-prices", filters: { PrecioBaseCodigo: "LP" } }, f), (e) => e.code === "zeta_cache_coverage_missing");
+  await assert.rejects(exportZetaReport({ ...identity, report: "sales-prices", filters: { PrecioVentaCodigo: 1 } }, f), (e) => e.code === "zeta_cache_coverage_missing");
+});
+
 test("Zeta cache refuses missing pages, tampering, incomplete manifests and wrong tenant pages", async () => {
   for (const mutate of [
     (f) => { f.state.pages.length = 0; },

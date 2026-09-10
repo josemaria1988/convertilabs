@@ -28,6 +28,7 @@ export type ZetaReportSnapshotManifest = Omit<ZetaReportSnapshotInput, "rows"> &
   snapshotKey: string; cachePages: number; rowCount: number; sha256: string; complete: true;
   priceStatus?: "available" | "no_price_at_source";
   price?: null;
+  pricingScope?: "generic_list_without_customer_conditions";
 };
 export type LocalZetaReport = {
   metadata: {
@@ -38,6 +39,7 @@ export type LocalZetaReport = {
     snapshotRunId: string; snapshotKey: string; dataAsOf: string; cacheAgeSeconds: number; stale: boolean;
     coverage: Record<string, Scalar>; csvTextProtection: string;
     priceStatus?: "available" | "no_price_at_source"; price?: null;
+    pricingScope?: "generic_list_without_customer_conditions";
     incremental?: ZetaInvoiceIncrementalMetadata;
   };
   columns: string[]; rows: ReportRow[];
@@ -70,6 +72,7 @@ export async function stageZetaReportSnapshot(input: {
 }): Promise<ZetaReportSnapshotManifest> {
   const s = input.snapshot;
   const filters = validateLocalZetaReportFilters(s.report, s.filters);
+  if (s.report === "sales-prices" && filters.PrecioVentaCodigo === undefined) fail("zeta_cache_invalid_manifest", "El snapshot de precios de venta requiere una lista explicita.");
   validateZetaSnapshotRows(s.rows);
   if (!validInstant(s.startedAt) || !validInstant(s.completedAt) || Date.parse(s.completedAt) < Date.parse(s.startedAt)
     || !Number.isSafeInteger(s.pages) || s.pages < 1 || !/^REST[A-Za-z0-9]+$/.test(s.endpoint)
@@ -84,8 +87,9 @@ export async function stageZetaReportSnapshot(input: {
     pages: s.pages, columns: s.columns, snapshotKey, cachePages, rowCount: s.rows.length,
     sha256: reportHash({ columns: s.columns, rows: s.rows }), complete: true,
     ...(s.incremental ? { incremental: s.incremental } : {}),
-    ...(s.report === "base-prices" ? { priceStatus: s.rows.length ? "available" as const : "no_price_at_source" as const,
+    ...(s.report === "base-prices" || s.report === "sales-prices" ? { priceStatus: s.rows.length ? "available" as const : "no_price_at_source" as const,
       ...(!s.rows.length ? { price: null } : {}) } : {}),
+    ...(s.report === "sales-prices" ? { pricingScope: "generic_list_without_customer_conditions" as const } : {}),
   };
   for (let offset = 0; offset < cachePages; offset += 1) {
     const payload = { rows: s.rows.slice(offset * PAGE_SIZE, (offset + 1) * PAGE_SIZE) };
@@ -114,6 +118,7 @@ function readManifest(value: unknown): ZetaReportSnapshotManifest {
     || new Set(m.columns).size !== m.columns.length) fail("zeta_cache_corrupt", "El snapshot no confirma integridad y cobertura.");
   try { validateLocalZetaReportFilters(m.report, m.filters); }
   catch { fail("zeta_cache_corrupt", "El snapshot tiene filtros de origen no validos."); }
+  if (m.report === "sales-prices" && m.filters.PrecioVentaCodigo === undefined) fail("zeta_cache_corrupt", "El snapshot de precios de venta no identifica su lista.");
   if (m.snapshotKey !== reportHash({ report: m.report, filters: m.filters }).slice(0, 32)) fail("zeta_cache_corrupt", "La identidad del snapshot no coincide con sus filtros.");
   return m;
 }
@@ -137,12 +142,13 @@ const filterColumns: Record<string, string> = {
   FechaDesde: "Fecha", FechaHasta: "Fecha", NumeroDesde: "Numero", NumeroHasta: "Numero",
   VencimientoDesde: "Vencimiento", VencimientoHasta: "Vencimiento", CantidadDesde: "StockActual", CantidadHasta: "StockActual",
   CodigoDesde: "Codigo", CodigoHasta: "Codigo", NombreContiene: "Nombre", ArticuloCodigo: "CodigoArticulo", PrecioBaseCodigo: "CodigoPrecio",
+  PrecioVentaCodigo: "CodigoPrecioVenta",
 };
 function filteredRows(m: ZetaReportSnapshotManifest, rows: ReportRow[], filters: Record<string, Scalar>) {
   return rows.filter((row) => Object.entries(filters).every(([key, expected]) => {
     // Exactly matching source filters have already been applied by the ERP.
     if (m.filters[key] === expected) return true;
-    const column = filterColumns[key] ?? key;
+    const column = m.report === "sales-prices" && key === "MonedaCodigo" ? "CodigoMoneda" : filterColumns[key] ?? key;
     if (!Object.hasOwn(row, column)) fail("zeta_cache_filter_unavailable", `La copia de Supabase no contiene ${column} para aplicar ${key}.`);
     const original = row[column];
     if (original === null || original === "") return false;
@@ -200,12 +206,18 @@ export async function loadCachedZetaReport(input: LocalCompanionContext & {
   report: LocalZetaReportKind; filters: Record<string, Scalar>; now?: Date;
 }): Promise<LocalZetaReport> {
   const startedAt = new Date().toISOString();
-  const filters = validateLocalZetaReportFilters(input.report, input.filters);
+  let filters = validateLocalZetaReportFilters(input.report, input.filters);
   const runs = await completedRuns(input.supabase, input.organization.id);
   let selected: { run: CachedRun; manifest: ZetaReportSnapshotManifest } | undefined;
   for (const run of runs) {
     if (run.summary_json?.schemaVersion !== 1 || !Array.isArray(run.summary_json.reports)) fail("zeta_cache_corrupt", "La ultima copia publicada no tiene un manifiesto valido.");
-    const manifest = run.summary_json.reports.map(readManifest).find((m) => m.report === input.report && covers(m, filters));
+    const candidates = run.summary_json.reports.map(readManifest).filter((m) => m.report === input.report);
+    if (input.report === "sales-prices" && filters.PrecioVentaCodigo === undefined && candidates.length) {
+      const lists = [...new Set(candidates.map((m) => m.filters.PrecioVentaCodigo))];
+      if (lists.length !== 1) fail("zeta_cache_price_list_required", "La copia contiene varias listas de precios de venta. Indica --price-list para elegir una sin mezclar importes.");
+      filters = { ...filters, PrecioVentaCodigo: lists[0] };
+    }
+    const manifest = candidates.find((m) => covers(m, filters));
     if (manifest) { selected = { run, manifest }; break; }
   }
   if (!selected) fail("zeta_cache_coverage_missing", "No hay una copia completa en Supabase que cubra este reporte o periodo. Debe incorporarse a la sincronizacion diaria; no se consulta Zeta ahora.");
@@ -223,8 +235,9 @@ export async function loadCachedZetaReport(input: LocalCompanionContext & {
       dataAsOf: m.completedAt, cacheAgeSeconds: age, stale: age > 86400,
       ...(m.incremental ? { incremental: m.incremental } : {}),
       csvTextProtection: "CSV protege identificadores y formulas; campos compuestos contienen JSON. JSON conserva valores originales.",
-      ...(m.report === "base-prices" ? { priceStatus: rows.length ? "available" as const : "no_price_at_source" as const,
-        ...(!rows.length ? { price: null } : {}) } : {}),
+      ...(m.report === "base-prices" || m.report === "sales-prices" ? { priceStatus: resultRows.length ? "available" as const : "no_price_at_source" as const,
+        ...(!resultRows.length ? { price: null } : {}) } : {}),
+      ...(m.report === "sales-prices" ? { pricingScope: "generic_list_without_customer_conditions" as const } : {}),
     }, columns: m.columns, rows: resultRows,
   };
 }
@@ -246,6 +259,7 @@ export async function loadZetaCacheStatus(input: { supabase: SupabaseClient; org
     reports: reports.map((m) => ({ report: m.report, filters: m.filters, rows: m.rowCount, dataAsOf: m.completedAt,
       stale: (input.now ?? new Date()).getTime() - Date.parse(m.completedAt) > 86400000,
       ...(m.incremental ? { incremental: m.incremental } : {}),
+      ...(m.report === "sales-prices" ? { pricingScope: "generic_list_without_customer_conditions" as const } : {}),
       ...(m.priceStatus ? { priceStatus: m.priceStatus, ...(m.price === null ? { price: null } : {}) } : {}) })),
   };
 }

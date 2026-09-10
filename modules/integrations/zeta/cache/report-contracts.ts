@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { stableJsonStringify } from "@/modules/integrations/credentials";
 
-export type LocalZetaReportKind = "sales" | "purchases" | "articles" | "stock" | "base-prices";
+export type LocalZetaReportKind = "sales" | "purchases" | "articles" | "stock" | "base-prices" | "sales-prices";
 export type Scalar = string | number | boolean | null;
 export type ReportCell = Scalar | ReportCell[] | { [key: string]: ReportCell };
 export type ReportRow = Record<string, ReportCell>;
@@ -21,8 +21,9 @@ export function validateLocalZetaReportFilters(report: LocalZetaReportKind, filt
     articles: { CodigoDesde: "text", CodigoHasta: "text", NombreContiene: "text" },
     stock: { VencimientoDesde: "date", VencimientoHasta: "date", DepositoCodigo: "integer", LocalCodigo: "integer", CantidadDesde: "number", CantidadHasta: "number" },
     "base-prices": { ArticuloCodigo: "text", PrecioBaseCodigo: "text", FechaRegistroDesde: "date", FechaRegistroHasta: "date" },
+    "sales-prices": { ArticuloCodigo: "text", PrecioVentaCodigo: "integer", MonedaCodigo: "integer" },
   };
-  if (!Object.hasOwn(allowed, report)) throw new Error("Reporte no soportado: sales, purchases, articles, stock o base-prices.");
+  if (!Object.hasOwn(allowed, report)) throw new Error("Reporte no soportado: sales, purchases, articles, stock, base-prices o sales-prices.");
   const output: Record<string, Scalar> = {};
   for (const [key, value] of Object.entries(filters)) {
     const type = Object.hasOwn(allowed[report], key) ? allowed[report][key] : null;
@@ -35,10 +36,11 @@ export function validateLocalZetaReportFilters(report: LocalZetaReportKind, filt
       throw new Error(`${key} debe ser numerico.`);
     }
     if (type === "integer" && (!Number.isSafeInteger(value) || (value as number) < 0)) throw new Error(`${key} debe ser un entero no negativo.`);
+    if (report === "sales-prices" && type === "integer" && (value as number) < 1) throw new Error(`${key} debe ser un entero positivo.`);
     output[key] = value as Scalar;
   }
   if ((report === "sales" || report === "purchases") && (!output.FechaDesde || !output.FechaHasta)) throw new Error("Ventas/compras requiere FechaDesde y FechaHasta.");
-  if (report === "base-prices" && (!output.ArticuloCodigo || !output.PrecioBaseCodigo)) throw new Error("Precios base requiere ArticuloCodigo y PrecioBaseCodigo explicitos.");
+  if (report === "base-prices" && !output.PrecioBaseCodigo) throw new Error("Precios base requiere PrecioBaseCodigo explicito; ArticuloCodigo es opcional.");
   for (const [from, to] of [["FechaDesde", "FechaHasta"], ["VencimientoDesde", "VencimientoHasta"], ["FechaRegistroDesde", "FechaRegistroHasta"], ["NumeroDesde", "NumeroHasta"], ["CantidadDesde", "CantidadHasta"], ["CodigoDesde", "CodigoHasta"]]) {
     if (output[from] !== undefined && output[to] !== undefined && output[from]! > output[to]!) throw new Error(`${from} no puede superar ${to}.`);
   }

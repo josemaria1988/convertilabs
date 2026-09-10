@@ -33,6 +33,10 @@ function dailyFixture(options = {}) {
     assert.equal(requests, http.length + 1, "reserve before every HTTP");
     http.push({ url, body: JSON.parse(init.body) });
     const wrapper = url.includes("QueryVentas") ? "QueryVentasOut" : url.includes("ComprasDetalladas") ? "ComprasDetalladasOut" : url.includes("ObtenerPrecioBase") ? "ObtenerPrecioBaseOut" : "QueryOut";
+    if (options.response) {
+      const response = options.response(url, JSON.parse(init.body));
+      if (response) return { ok: true, status: 200, statusText: "OK", json: async () => ({ [wrapper]: response }) };
+    }
     return { ok: true, status: 200, statusText: "OK", json: async () => ({ [wrapper]: { Succeed: true, IsLastPage: true, Response: wrapper === "ObtenerPrecioBaseOut" ? { Succeed: true, ListaPrecios: [] } : wrapper === "ComprasDetalladasOut" ? { Succeed: true, ComprasDetalladas: [] } : [] } }) };
   };
   const deps = {
@@ -189,4 +193,90 @@ test("Daily policy spaces each reserved request and a failed reservation cannot 
   await assert.rejects(() => policy.authorize("contactsQuery"), /lease lost/);
   assert.equal(reserves, 2);
   assert.deepEqual(waits, [2000]);
+});
+
+function salePriceFixture(overrides = {}) {
+  const articles = [{ Codigo: "000104", Nombre: "Abrazadera", PorcentajeUtilidadCosto: 0 }];
+  const baseRows = [{ CodigoArticulo: "000104", CodigoPrecio: "LP", CodigoMoneda: 2, PrecioSinIVA: "10", PrecioConIVA: "12.2" }];
+  const rules = [{ Codigo: 1, Nombre: "Publico", PrecioBaseCodigo: "LP", Porcentaje: 0, SumarUtilidadArticulo: "N", VigenciaHasta: "0000-00-00" }];
+  const data = { articles, baseRows, rules, ...overrides };
+  return dailyFixture({ ...overrides, response(url, body) {
+    if (url.endsWith("RESTArticulosV3Query")) return { Succeed: true, IsLastPage: true, Response: data.articles };
+    if (url.endsWith("RESTPreciosVentaV1Query")) return { Succeed: true, IsLastPage: true, Response: data.rules };
+    if (url.endsWith("RESTPreciosArticulosV2ObtenerPrecioBase")) {
+      assert.equal(body.ObtenerPrecioBaseIn.Data.ArticuloCodigo, "", "bulk query explicitly uses the documented empty article");
+      return { Succeed: true, Response: { Succeed: true, ListaPrecios: data.baseRows } };
+    }
+  } });
+}
+
+test("Daily sale-price sync shares one bulk base between lists and explicit pairs, publishes generic prices and preserves rule evidence", async () => {
+  const rule = { Codigo: 1, Nombre: "Publico", PrecioBaseCodigo: "LP", Porcentaje: 0, SumarUtilidadArticulo: "N", VigenciaHasta: "0000-00-00" };
+  const f = salePriceFixture({ rules: [rule, { ...rule, Codigo: 2, Porcentaje: 20 }] });
+  const result = await runDailyZetaSync({ ...identity, supabase: f.supabase, salesPriceLists: [1, 2], pricePairs: [{ articleCode: "000104", priceBaseCode: "LP" }] }, f.deps);
+  assert.equal(result.requestsUsed, 7, "four reports, one rules query, one bulk base, one fixture master");
+  assert.equal(f.http.filter((x) => x.url.includes("ObtenerPrecioBase")).length, 1);
+  assert.equal(f.http.some((x) => x.url.includes("ObtenerPrecioVenta")), false, "never query every article separately");
+  assert.deepEqual(f.staged.find((x) => x.report === "base-prices").filters, { PrecioBaseCodigo: "LP" });
+  const sales = f.staged.filter((x) => x.report === "sales-prices");
+  assert.deepEqual(sales.map((x) => x.filters.PrecioVentaCodigo), [1, 2]);
+  assert.equal(sales[1].rows[0].PrecioSinIVA, "12.00000");
+  assert.equal(sales[1].rows[0].CodigoMoneda, 2);
+  assert.equal(result.pricesCoverage.allArticlesCovered, true);
+  assert.equal(result.pricesCoverage.customerOrPaymentTermsApplied, false);
+  assert.deepEqual(result.pricesCoverage.salesPriceRules.rows[0], rule);
+  assert.equal(f.rpcCalls.at(-1).name, "publish_zeta_daily_sync");
+});
+
+test("Daily empty bulk base yields an empty complete sale-price snapshot without invented zeros", async () => {
+  const f = salePriceFixture({ baseRows: [] });
+  await runDailyZetaSync({ ...identity, supabase: f.supabase, salesPriceLists: [1] }, f.deps);
+  assert.deepEqual(f.staged.find((x) => x.report === "sales-prices").rows, []);
+});
+
+test("Daily requested absent rule, unknown price article or duplicate price prevents publication without a retry", async () => {
+  for (const overrides of [
+    { rules: [] },
+    { articles: [] },
+    { baseRows: Array(2).fill({ CodigoArticulo: "000104", CodigoPrecio: "LP", CodigoMoneda: 2, PrecioSinIVA: "10", PrecioConIVA: "12.2" }) },
+  ]) {
+    const f = salePriceFixture(overrides);
+    await assert.rejects(() => runDailyZetaSync({ ...identity, supabase: f.supabase, salesPriceLists: [1] }, f.deps), /falta la regla|no existe|repetido/);
+    assert.equal(f.rpcCalls.some((x) => x.name === "publish_zeta_daily_sync"), false);
+    assert.equal(f.rpcCalls.at(-1).name, "fail_zeta_daily_sync");
+    assert.ok(f.http.filter((x) => x.url.includes("ObtenerPrecioBase")).length <= 1);
+  }
+});
+
+test("Daily sale-price configuration and existing due gate reject invalid or premature work before API requests", async () => {
+  const f = salePriceFixture({ notDue: true });
+  assert.equal((await runDailyZetaSync({ ...identity, supabase: f.supabase, salesPriceLists: [1] }, f.deps)).status, "skipped");
+  assert.equal(f.http.length, 0);
+  for (const lists of [[1, 1], [0], ["1"]]) {
+    const invalid = salePriceFixture();
+    await assert.rejects(() => runDailyZetaSync({ ...identity, supabase: invalid.supabase, salesPriceLists: lists }, invalid.deps));
+    assert.equal(invalid.rpcCalls.length, 0);
+  }
+});
+
+test("Daily price rules paginate under the shared budget and reject incomplete or repeated pages", async () => {
+  const rule = { Codigo: 1, Nombre: "Publico", PrecioBaseCodigo: "LP", Porcentaje: 0, SumarUtilidadArticulo: "N", VigenciaHasta: "0000-00-00" };
+  function fixture(repeat = false) {
+    return dailyFixture({ response(url, body) {
+      if (!url.endsWith("RESTPreciosVentaV1Query")) return;
+      const page = body.QueryIn.Data.Page;
+      return { Succeed: true, IsLastPage: !repeat && page === 2, Response: [{ ...rule, Codigo: repeat ? 1 : page }] };
+    } });
+  }
+  const f = fixture();
+  const result = await runDailyZetaSync({ ...identity, supabase: f.supabase, salesPriceLists: [1, 2] }, f.deps);
+  assert.equal(result.requestsUsed, 8);
+  assert.equal(result.pricesCoverage.salesPriceRules.pages, 2);
+  const incomplete = fixture();
+  await assert.rejects(() => runDailyZetaSync({ ...identity, supabase: incomplete.supabase, maxPages: 1, salesPriceLists: [1] }, incomplete.deps), /limite de paginas/);
+  assert.equal(incomplete.http.length, 5);
+  assert.equal(incomplete.rpcCalls.some((x) => x.name === "publish_zeta_daily_sync"), false);
+  const repeated = fixture(true);
+  await assert.rejects(() => runDailyZetaSync({ ...identity, supabase: repeated.supabase, salesPriceLists: [1] }, repeated.deps), /repitio una pagina/);
+  assert.equal(repeated.http.length, 6);
 });

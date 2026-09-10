@@ -27,6 +27,12 @@ export const zetaEndpointRegistry = {
     requestShape: { Data: { Page: 1, Filters: { CodigoDesde: "", CodigoHasta: "", TituloContiene: "" } } },
     responseShape: { Response: [{ PrecioVentaCodigo: "", PrecioVentaNombre: "", PrecioVentaAbrevia: "", PrecioVentaVigencia: "" }], IsLastPage: true },
   },
+  salesPriceRulesQuery: {
+    endpointName: "RESTPreciosVentaV1Query", httpMethod: "POST", inputWrapper: "QueryIn", outputWrapper: "QueryOut",
+    kind: "query", stream: "zeta.masters.sales_price_rule", description: "Sale-price calculation rules, including the exact base code and article utility flag.",
+    requestShape: { Data: { Page: 1, Filters: { CodigoDesde: 0, CodigoHasta: 0, NombreContiene: "" } } },
+    responseShape: { Response: [{ Codigo: 0, Nombre: "", Abreviacion: "", Porcentaje: 0, PrecioBaseCodigo: "", PrecioBaseNombre: "", SumarUtilidadArticulo: "", VigenciaHasta: "" }], IsLastPage: true },
+  },
   articlesQuery: {
     endpointName: "RESTArticulosV3Query",
     httpMethod: "POST",
@@ -68,7 +74,7 @@ export const zetaEndpointRegistry = {
     outputWrapper: "ObtenerPrecioBaseOut",
     kind: "load",
     stream: "zeta.reports.base_prices",
-    description: "Read-only actual base price values, with explicit article and base price code.",
+    description: "Read-only actual base price values; an empty article requests all articles in the specified base.",
     requestShape: { Data: {
       ArticuloCodigo: "", PrecioBaseCodigo: "", FechaRegistroDesde: "", FechaRegistroHasta: "",
     } },

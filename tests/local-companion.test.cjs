@@ -72,6 +72,18 @@ test("local report validates exact dates, documented filters and text price iden
   assert.deepEqual(validateLocalZetaReportFilters("base-prices", { ArticuloCodigo: "0001", PrecioBaseCodigo: "002" }), { ArticuloCodigo: "0001", PrecioBaseCodigo: "002" });
 });
 
+test("local price report contract allows complete bases and generic sales lists without customer conditions", () => {
+  assert.deepEqual(validateLocalZetaReportFilters("base-prices", { PrecioBaseCodigo: "LP" }), { PrecioBaseCodigo: "LP" });
+  assert.throws(() => validateLocalZetaReportFilters("base-prices", { ArticuloCodigo: "0001" }), /PrecioBaseCodigo/);
+  assert.deepEqual(validateLocalZetaReportFilters("sales-prices", { ArticuloCodigo: "01483", PrecioVentaCodigo: 1, MonedaCodigo: 2 }),
+    { ArticuloCodigo: "01483", PrecioVentaCodigo: 1, MonedaCodigo: 2 });
+  assert.deepEqual(validateLocalZetaReportFilters("sales-prices", {}), {});
+  for (const filters of [{ PrecioVentaCodigo: "1" }, { PrecioVentaCodigo: 0 }, { MonedaCodigo: -1 }, { MonedaCodigo: 0 },
+    { ArticuloCodigo: 1483 }, { ClienteCodigo: "CL1" }, { CondicionPagoCodigo: "001" }, { FechaRegistroDesde: "2026-09-01" }, { PrecioBaseCodigo: "LP" }]) {
+    assert.throws(() => validateLocalZetaReportFilters("sales-prices", filters));
+  }
+});
+
 test("local CSV protects formulas and zero-prefixed identifiers while JSON stays exact", () => {
   const report = { columns: ["CodigoArticulo", "Nombre", "StockActual"], rows: [{ CodigoArticulo: "0001", Nombre: '=HYPERLINK("bad")', StockActual: -2 }] };
   const csv = serializeZetaReportCsv(report);

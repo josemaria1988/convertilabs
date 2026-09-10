@@ -7,7 +7,7 @@ const assert = require("node:assert/strict");
 const { randomUUID, createHash } = require("node:crypto");
 const root = path.resolve(__dirname, "..");
 const { PGlite } = require(process.env.CONVERTILABS_PGLITE_MODULE || path.join(root, ".local-companion/qa-sql/node_modules/@electric-sql/pglite"));
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8").replaceAll("\r\n", "\n");
 function table(file, name) {
   const source = read(`db/schema/${file}`); const start = source.indexOf(`create table if not exists public.${name} (`);
   assert.ok(start >= 0); return source.slice(start, source.indexOf("\n);", start) + 3);
@@ -28,8 +28,15 @@ async function main() {
     await db.exec(`create unique index idx_integration_sync_runs_one_active_per_stream on integration_sync_runs
       (organization_id,provider,stream) where status in ('queued','running');`);
     const sql = read("db/schema/17_zeta_daily_cache.sql");
-    assert.equal(sql, read("supabase/migrations/20260909_zeta_daily_cache.sql"));
-    await db.exec(sql); await db.exec(sql);
+    const originalSql = read("supabase/migrations/20260909_zeta_daily_cache.sql");
+    const pricesSql = read("supabase/migrations/20260910_zeta_sales_prices.sql");
+    assert.equal(sql.replaceAll("'stock','base-prices','sales-prices'", "'stock','base-prices'"), originalSql);
+    const updatedFunctions = ["guard_zeta_report_snapshot_page", "publish_zeta_daily_sync"].map((name) => {
+      const start = sql.indexOf(`create or replace function public.${name}(`);
+      return sql.slice(start, sql.indexOf("\n$$;", start) + 4).trim();
+    });
+    assert.equal(pricesSql.trim(), updatedFunctions.join("\n\n"));
+    await db.exec(originalSql); await db.exec(pricesSql); await db.exec(pricesSql);
     await db.exec(`grant usage on schema public to authenticated,service_role; grant all on all tables in schema public to authenticated,service_role;
       create function public.is_active_member(p_org uuid) returns boolean language sql security definer set search_path=public
       as $$ select exists(select 1 from organization_members where organization_id=p_org and user_id=nullif(current_setting('test.actor',true),'')::uuid and is_active) $$;
@@ -52,7 +59,7 @@ async function main() {
       const metadata = { schemaVersion: 1, snapshotKey: key, page: 1, report: kind };
       await db.query(`insert into integration_raw_records(organization_id,connection_id,provider,stream,entity_type,external_key,payload_json,payload_hash,last_sync_run_id,metadata_json)
         values($1,$2,'zetasoftware',$3,'report_snapshot_page',$4,$5,$6,$7,$8)`,
-      [options.organizationId ?? org, options.connectionId ?? connection, `zeta.reports.${kind}`, `${r.runId}:${key}:000001`, JSON.stringify(payload), hash(payload), r.runId, JSON.stringify(metadata)]);
+      [options.organizationId ?? org, options.connectionId ?? connection, `zeta.reports.${kind.replaceAll("-", "_")}`, `${r.runId}:${key}:000001`, JSON.stringify(payload), hash(payload), r.runId, JSON.stringify(metadata)]);
       return { snapshotKey: key, report: kind, endpoint: "RESTFixtureQuery", filters: {}, startedAt: "2026-09-09T21:00:00Z", completedAt: "2026-09-09T21:02:00Z",
         pages: 1, cachePages: 1, rowCount: payload.rows.length, columns: ["Codigo", "amount"], sha256: hash(payload), complete: true };
     }
@@ -79,6 +86,9 @@ async function main() {
     await assert.rejects(page(second, "stock", { organizationId: otherOrg, connectionId: otherConnection }), /organizacion/);
     await assert.rejects(page(second, "stock", { connectionId: otherConnection }), /organizacion/);
     const reports = await allPages(second);
+    const priceReports = [await page(second, "base-prices"), await page(second, "sales-prices")];
+    await assert.rejects(publish(second, [...reports, { ...priceReports[1], report: "unsupported-prices" }]), /incompleto/);
+    await assert.rejects(publish(second, [...reports, { ...priceReports[1], rowCount: 2 }]), /Faltan paginas/);
     await assert.rejects(publish(second, reports.slice(0, 3)), /requiere ventas/);
     await assert.rejects(publish(second, reports, randomUUID()), /pertenece/);
     const malformed = reports.map((r) => ({ ...r })); delete malformed[0].complete;
@@ -87,10 +97,10 @@ async function main() {
     const missingRows = reports.map((r) => ({ ...r, rowCount: 100 }));
     await assert.rejects(publish(second, missingRows), /Faltan paginas/);
     assert.equal((await db.query("select status from integration_sync_runs where id=$1", [second.runId])).rows[0].status, "running");
-    assert.equal((await publish(second, reports)).published, true);
-    assert.equal((await publish(second, reports)).idempotent, true);
+    assert.equal((await publish(second, [...reports, ...priceReports])).published, true);
+    assert.equal((await publish(second, [...reports, ...priceReports])).idempotent, true);
     assert.equal((await fail(second)).failed, false);
-    passed("atomic publication requires four complete datasets and preserves status on any invalid manifest");
+    passed("atomic publication accepts complete sales prices, requires four core datasets and rejects missing price pages or unknown reports");
     await assert.rejects(db.query("update integration_raw_records set payload_json='{}' where last_sync_run_id=$1", [second.runId]), /inmutables/);
     await assert.rejects(page(second, "base-prices"), /organizacion/);
     passed("snapshot pages are immutable and cannot be appended after publication");

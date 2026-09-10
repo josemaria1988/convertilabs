@@ -122,7 +122,7 @@ begin
     or coalesce(new.metadata_json->>'snapshotKey', '') !~ '^[a-f0-9]{32}$' or coalesce(new.metadata_json->>'page', '') !~ '^[1-9][0-9]*$'
     or new.last_sync_run_id is null or new.metadata_json->>'schemaVersion' is distinct from '1'
     or coalesce(new.payload_hash, '') !~ '^[a-f0-9]{64}$'
-    or coalesce(new.metadata_json->>'report', '') not in ('sales','purchases','articles','stock','base-prices')
+    or coalesce(new.metadata_json->>'report', '') not in ('sales','purchases','articles','stock','base-prices','sales-prices')
     or new.stream <> 'zeta.reports.' || replace(new.metadata_json->>'report', '-', '_')
     or new.external_key <> new.last_sync_run_id::text || ':' || (new.metadata_json->>'snapshotKey') || ':' || lpad(new.metadata_json->>'page', 6, '0')
     or not exists (select 1 from public.integration_sync_runs where id = new.last_sync_run_id
@@ -166,7 +166,7 @@ begin
   for v_report in select value from jsonb_array_elements(p_summary->'reports') loop
     v_key := v_report->>'snapshotKey';
     if v_key is null or v_key !~ '^[a-f0-9]{32}$' or v_key = any(v_keys)
-      or coalesce(v_report->>'report', '') not in ('sales','purchases','articles','stock','base-prices') or coalesce(v_report->>'complete', '') <> 'true'
+      or coalesce(v_report->>'report', '') not in ('sales','purchases','articles','stock','base-prices','sales-prices') or coalesce(v_report->>'complete', '') <> 'true'
       or coalesce(v_report->>'sha256', '') !~ '^[a-f0-9]{64}$' or jsonb_typeof(v_report->'columns') is distinct from 'array'
       or jsonb_typeof(v_report->'filters') is distinct from 'object'
       or not (v_report ?& array['cachePages','rowCount','pages','startedAt','completedAt']) then raise exception 'El snapshot tiene un manifiesto incompleto.'; end if;

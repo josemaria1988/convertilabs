@@ -17,15 +17,22 @@ const workerPollIntervalMs = 4 * 60 * 60 * 1000;
 const print = (value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 
 function parseCommand(argv) {
-  return parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
+  const parsed = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
     help: { type: "boolean", short: "h" }, slug: { type: "string" }, actor: { type: "string" },
     file: { type: "string" }, document: { type: "string" }, out: { type: "string" },
     filters: { type: "string" }, from: { type: "string" }, to: { type: "string" },
     article: { type: "string" }, "price-base": { type: "string" }, "max-pages": { type: "string" },
+    "price-list": { type: "string" }, currency: { type: "string" },
     "app-url": { type: "string" }, port: { type: "string" }, once: { type: "boolean" },
     cloud: { type: "boolean" }, "with-worker": { type: "boolean" },
     "dry-run": { type: "boolean" }, "sync-config": { type: "string" },
   } });
+  if (parsed.positionals[0] === "report" && !parsed.values.help) {
+    if (parsed.positionals.length !== 2) throw new Error("Indicá exactamente un tipo de reporte después de report.");
+    const allowed = ["slug", "actor", "out", "filters", "from", "to", "article", "price-base", "price-list", "currency", "max-pages", "app-url"];
+    for (const key of Object.keys(parsed.values)) if (!allowed.includes(key)) throw new Error(`Opción no permitida para report: --${key}.`);
+  }
+  return parsed;
 }
 
 function help() {
@@ -42,6 +49,8 @@ function help() {
   npm run local -- report articles --out "articulos.json"
   npm run local -- report stock --out "stock.json"
   npm run local -- report base-prices --article "00001" --price-base "1" --out "precios.json"
+  npm run local -- report base-prices --price-base "LP" --out "precios-base.json"
+  npm run local -- report sales-prices --price-list 1 --article "00001" --currency 1 --out "precios-venta.json"
   npm run local -- report stock --filters "filtros.json" --out "stock.csv"
   npm run local -- serve [--with-worker] [--port 4318]
   npm run local -- stop
@@ -63,7 +72,7 @@ async function readJSON(file, fallback) {
 
 function validateSyncConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("La configuración diaria debe ser un objeto JSON.");
-  const allowed = ["maxRequests", "minIntervalMs", "maxPages", "pricePairs"];
+  const allowed = ["maxRequests", "minIntervalMs", "maxPages", "pricePairs", "salesPriceLists"];
   if (Object.keys(config).some((key) => !allowed.includes(key))) throw new Error(`Configuración diaria: sólo se admiten ${allowed.join(", ")}.`);
   const limits = { maxRequests: [1, 1000, 100], minIntervalMs: [1000, 60000, 2000], maxPages: [1, 200, 100] };
   const result = { ...config };
@@ -78,7 +87,28 @@ function validateSyncConfig(config) {
     || Object.keys(pair).some((key) => !["articleCode", "priceBaseCode"].includes(key)) || !code(pair.articleCode) || !code(pair.priceBaseCode))) {
     throw new Error("pricePairs admite hasta 50 pares articleCode/priceBaseCode con códigos exactos en texto.");
   }
+  result.salesPriceLists = config.salesPriceLists ?? [];
+  if (!Array.isArray(result.salesPriceLists) || result.salesPriceLists.length > 20
+    || result.salesPriceLists.some((value) => !Number.isSafeInteger(value) || value < 1)
+    || new Set(result.salesPriceLists).size !== result.salesPriceLists.length) {
+    throw new Error("salesPriceLists admite hasta 20 códigos de lista enteros positivos, sin repetidos.");
+  }
   return result;
+}
+
+function reportFilters(values, fileFilters = {}) {
+  if (!fileFilters || typeof fileFilters !== "object" || Array.isArray(fileFilters)) throw new Error("filters debe ser un objeto JSON.");
+  const filters = { ...fileFilters };
+  for (const [option, key] of [["from", "FechaDesde"], ["to", "FechaHasta"], ["article", "ArticuloCodigo"], ["price-base", "PrecioBaseCodigo"]]) {
+    if (values[option] !== undefined) filters[key] = values[option];
+  }
+  for (const [option, key] of [["price-list", "PrecioVentaCodigo"], ["currency", "MonedaCodigo"]]) {
+    if (values[option] === undefined) continue;
+    const value = values[option];
+    if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`--${option} debe ser un entero positivo.`);
+    filters[key] = Number(value);
+  }
+  return filters;
 }
 
 async function syncZeta(values, who) {
@@ -87,11 +117,12 @@ async function syncZeta(values, who) {
   if (values["dry-run"]) {
     return print({ status: "dry_run", organization: who.slug, apiRequests: 0, databaseWrites: 0,
       schedule: { time: "18:00", timeZone: "America/Montevideo", maxAttemptsPerDay: 1 },
-      reports: ["sales", "purchases", "articles", "stock"], masters: true,
+      reports: ["sales", "purchases", "articles", "stock", ...(config.pricePairs.length || config.salesPriceLists.length ? ["base-prices"] : []), ...(config.salesPriceLists.length ? ["sales-prices"] : [])], masters: true,
       salesWindow: "Desde el último día sincronizado; primera ejecución desde hoy",
       purchasesWindow: "Mes actual completo, con historial acumulado por identificador", ...config,
-      pricesCoverage: { mode: "explicit_pairs", allArticlesCovered: false },
-      message: "Los límites son internos, no la cuota oficial de Zeta. Una actualización puede requerir varias páginas. Los valores de precios requieren pares explícitos; ausencia confirmada y falta de cobertura son estados diferentes." });
+      pricesCoverage: { mode: config.salesPriceLists.length ? "configured_sales_lists" : "explicit_pairs", salesPriceLists: config.salesPriceLists,
+        allArticlesCovered: false, pendingSynchronization: true, pricingScope: "generic_list_without_customer_conditions" },
+      message: "Los límites son internos, no la cuota oficial de Zeta. Las listas seleccionadas requieren sus reglas y las bases completas correspondientes, dentro del mismo presupuesto diario. Este plan no confirma precios actuales ni cobertura publicada; ausencia confirmada y falta de cobertura son estados diferentes." });
   }
   const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
   const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
@@ -307,11 +338,7 @@ async function main(argv = process.argv.slice(2)) {
       // Fail before reading the shared snapshot if an output already exists.
       if (await fs.stat(destination).then(() => true, () => false)) throw new Error("El archivo de salida ya existe; usá otro nombre.");
       const { exportZetaReport, serializeZetaReportCsv } = require("@/modules/local-companion/zeta-reports");
-      const filters = values.filters ? await readJSON(path.resolve(values.filters), null) : {};
-      if (values.from) filters.FechaDesde = values.from;
-      if (values.to) filters.FechaHasta = values.to;
-      if (values.article) filters.ArticuloCodigo = values.article;
-      if (values["price-base"]) filters.PrecioBaseCodigo = values["price-base"];
+      const filters = reportFilters(values, values.filters ? await readJSON(path.resolve(values.filters), null) : {});
       const report = await exportZetaReport({ ...who, report: positionals[1], filters,
         maxPages: values["max-pages"] ? Number(values["max-pages"]) : undefined });
       const csv = path.extname(destination).toLowerCase() === ".csv";
@@ -330,4 +357,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseCommand, main, worker, validateSyncConfig };
+module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters };
