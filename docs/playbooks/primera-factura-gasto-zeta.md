@@ -78,7 +78,9 @@ Detener el piloto si ocurre cualquiera de estos casos:
 
 Ante timeout o respuesta ambigua, consultar primero Zeta. Nunca repetir el envio a ciegas.
 
-Antes de llamar `Agregar`, Convertilabs crea una reserva durable por huella fiscal. Esa reserva no se borra automaticamente aunque falle una operacion local posterior o Zeta rechace expresamente el alta. Por ahora, repetir exactamente la misma huella requiere una liberacion manual, auditada y precedida por una verificacion en Zeta; no eliminar la reserva para "probar de nuevo".
+Antes de llamar `Agregar`, Convertilabs crea una reserva durable por proveedor Zeta exacto y serie/numero normalizados. Fecha, moneda, importe y tipo interno no cambian esa identidad; la huella de contenido se conserva aparte para auditoria. Esa reserva no se borra automaticamente aunque falle una operacion local posterior o Zeta rechace expresamente el alta. Las reservas de versiones anteriores tambien se comprueban y una identidad antigua no verificable bloquea el envio. No eliminar la reserva para "probar de nuevo"; cualquier liberacion requiere revision manual auditada y verificacion previa en Zeta.
+
+Para Rontil, conservar el trabajo/proyecto en Convertilabs sin enviar su codigo como centro de costos Zeta. Combustible/otros gastos pagados con tarjeta usan la forma confirmada `10 - Tarjeta Emitida`, sin exigir banco o titular. El aviso habitual de documentos de tarjeta pendientes se deja para la conciliacion posterior; no confundirlo con un rechazo de la API ni con una compra ya conciliada. El efectivo mantiene su forma de pago propia.
 
 ## Controles implementados
 
@@ -90,7 +92,7 @@ Antes de llamar `Agregar`, Convertilabs crea una reserva durable por huella fisc
 - fecha enviada como `AAAAMMDD`;
 - limites oficiales de notas y concepto;
 - preflight de duplicado por proveedor/comprobante/serie/numero;
-- claim durable y atomica por huella fiscal antes de `Agregar`;
+- reserva durable y atomica por identidad fiscal estable antes de `Agregar`, con compatibilidad conservadora de reservas anteriores;
 - una sola llamada de alta;
 - validacion de `Response.Succeed`;
 - consulta posterior `QueryCompras` para recuperar `RegistroId`;

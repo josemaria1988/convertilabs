@@ -395,6 +395,76 @@ test("Export de compra incluye work_unit como CodigoCentroCosto cuando existe ma
   assert.equal(result.payload.Data.Movimiento[0].CodigoCentroCosto, "NP01");
 });
 
+test("proyecto local sin mapping conserva nombre y omite centro Zeta sin bloquear", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+    document: document({ workUnitId: "work-local", workUnitCode: "NP-LOCAL", workUnitName: "Servicio NP" }),
+    catalogs: catalogs(),
+  });
+  assert.equal(result.exportable, true);
+  assert.equal(result.preview.workUnitName, "Servicio NP");
+  assert.equal(result.preview.centroCostoCode, null);
+  assert.equal(Object.hasOwn(result.payload.Data.Movimiento[0], "CodigoCentroCosto"), false);
+});
+
+test("identidad de envio no cambia con fecha importe moneda o tipo de comprobante", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const resolve = (changes) => resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document(changes), catalogs: catalogs() });
+  const original = resolve({});
+  for (const changes of [
+    { issueDate: "2026-04-21" },
+    { currencyCode: "USD", exchangeRate: 40 },
+    { totalAmount: 2440, netAmount: 2000, taxAmount: 440, lines: [{ netAmount: 2000, taxRate: 22, taxAmount: 440, totalAmount: 2440 }] },
+    { cfeTypeCode: 112 },
+    { paymentTerms: "cash", settlementMethod: "cash" },
+    { number: "000123456", series: " a " },
+  ]) {
+    const changed = resolve(changes);
+    assert.equal(changed.exportable, true);
+    assert.deepEqual(changed.fiscalIdentity, original.fiscalIdentity);
+  }
+  assert.notEqual(resolve({ issueDate: "2026-04-21" }).fiscalFingerprint, original.fiscalFingerprint);
+  assert.notEqual(resolve({ number: "123457" }).fiscalIdentity.key, original.fiscalIdentity.key);
+});
+
+test("identidad preserva codigo opaco del proveedor y rechaza numero inseguro", () => {
+  const { buildPurchaseExpenseFiscalIdentity } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const identity = (supplierCode, number = "0001") => buildPurchaseExpenseFiscalIdentity({ supplierCode, series: "A", number });
+  assert.notEqual(identity("000104").key, identity("104").key);
+  assert.equal(identity("000104").number, "1");
+  assert.equal(identity("000104", Number.MAX_SAFE_INTEGER + 1), null);
+  assert.equal(identity("000104", "1.5"), null);
+});
+
+test("tarjeta general 10 no requiere banco numero o marca para compra contado", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const configured = catalogs();
+  configured.paymentMethods.push({ Codigo: 10, Nombre: "Tarjeta Emitida", Tipo: "TC", Activo: "S" });
+  configured.config.paymentMethods.card = 10;
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({
+    document: document({ paymentTerms: "cash", settlementMethod: "card" }), catalogs: configured,
+  });
+  assert.equal(result.exportable, true);
+  assert.deepEqual(result.payload.Data.Movimiento[0].FormasPago, [{
+    CodigoFormaPago: 10, CodigoMonedaPago: 1, MontoMonedaPago: 1220, MontoMonedaMovimiento: 1220,
+  }]);
+});
+
+test("grupo de varios articulos de gasto describe el concepto y no solo el primer articulo", () => {
+  const { resolveZetaPurchaseExpenseInvoiceFromInputs } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const result = resolveZetaPurchaseExpenseInvoiceFromInputs({ document: document({
+    netAmount: 1500, taxAmount: 330, totalAmount: 1830,
+    lines: [
+      { conceptDescription: "Refresco", netAmount: 1000, taxRate: 22, taxAmount: 220, totalAmount: 1220 },
+      { conceptDescription: "Comida", netAmount: 500, taxRate: 22, taxAmount: 110, totalAmount: 610 },
+    ],
+  }), catalogs: catalogs() });
+  assert.equal(result.exportable, true);
+  assert.equal(result.payload.Data.Movimiento[0].Lineas.length, 1);
+  assert.equal(result.payload.Data.Movimiento[0].Lineas[0].Concepto, "Alimentos");
+  assert.equal(result.preview.lines[0].totalAmount, 1830);
+});
+
 test("Documento con varias tasas genera lineas agrupadas por concepto e IVA", () => {
   const {
     resolveZetaPurchaseExpenseInvoiceFromInputs,

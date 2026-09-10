@@ -200,6 +200,12 @@ function createFakeSupabase(options = {}) {
       return this;
     }
 
+    like(field, pattern) {
+      assert.equal(pattern, "purchase_expense_invoice:sha256:%");
+      this.filters.push({ field, prefix: pattern.slice(0, -1) });
+      return this;
+    }
+
     order() {
       return this;
     }
@@ -345,7 +351,8 @@ function createFakeSupabase(options = {}) {
       return (state[this.table] || []).filter((row) =>
         this.filters.every((filter) => {
           const [column, jsonKey] = filter.field.split("->>");
-          return (jsonKey ? row[column]?.[jsonKey] : row[column]) === filter.value;
+          const value = jsonKey ? row[column]?.[jsonKey] : row[column];
+          return filter.prefix ? typeof value === "string" && value.startsWith(filter.prefix) : value === filter.value;
         }));
     }
   }
@@ -390,6 +397,182 @@ function monthlyPurchaseRows(total = 1220) {
     LineaSubtotal: total - 220, LineaIVA: 220, LineaTotal: total,
   }], "2026-04", "2026-04-30");
 }
+
+function addDocumentCopy(supabase, documentId, facts = {}) {
+  const draftId = `${documentId}-draft`;
+  supabase.state.documents.push({ ...structuredClone(supabase.state.documents[0]), id: documentId, current_draft_id: draftId });
+  const draft = structuredClone(supabase.state.document_drafts[0]);
+  Object.assign(draft, { id: draftId, document_id: documentId });
+  Object.assign(draft.fields_json.facts, facts);
+  supabase.state.document_drafts.push(draft);
+  supabase.state.document_accounting_contexts.push({ ...structuredClone(supabase.state.document_accounting_contexts[0]), draft_id: draftId });
+  supabase.state.document_draft_steps.push({ draft_id: draftId, step_code: "identity", status: "confirmed" });
+  return draft;
+}
+
+async function exportReady(supabase, documentId = "doc-1") {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  return exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId, actorProfileId: "user-1", dryRun: true }, { supabase });
+}
+
+function seedLegacyClaim(supabase, ready, options = {}) {
+  const documentId = options.documentId ?? ready.documentId;
+  const fingerprint = options.fingerprint ?? ready.fiscalFingerprint;
+  const claim = { id: `legacy-${documentId}`, organization_id: "org-1", provider: "zetasoftware",
+    entity_type: "purchase_expense_export_claim", external_key: `purchase_expense_invoice:${fingerprint}`,
+    payload_json: { document_id: documentId, fiscal_fingerprint: fingerprint }, metadata_json: {} };
+  supabase.state.integration_raw_records.push(claim);
+  if (options.attempt) supabase.state.integration_raw_records.push({
+    id: `legacy-attempt-${documentId}`, organization_id: "org-1", provider: "zetasoftware",
+    entity_type: "purchase_expense_export_attempt", external_key: `purchase_expense_invoice:${documentId}`,
+    payload_json: { fiscal_fingerprint: fingerprint, request: ready.payload, preview: ready.preview },
+    metadata_json: { status: "zeta_error" },
+  });
+  return claim;
+}
+
+function successfulEmptyClient(calls) {
+  return zetaClient(async (url) => {
+    calls.push(url);
+    return { ok: true, status: 200, statusText: "OK", json: async () =>
+      url.endsWith("RESTFacturaProveedorV1QueryCompras")
+        ? { QueryComprasOut: { Succeed: true, Response: [], IsLastPage: true, Error: null } }
+        : { AgregarOut: { Succeed: true, Response: { Succeed: true, Mensaje: "OK" }, Error: null } } };
+  });
+}
+
+test("servicio no proyecta codigo local ni external_code generico como centro ERP", async () => {
+  for (const metadata of [{}, { external_code: "OTHER-ERP" }, { zeta_cost_center_code: "Z01" }, { zeta_centro_costo_codigo: "Z02" }, { cost_center_external_code: "Z03" }]) {
+    const supabase = createFakeSupabase();
+    supabase.state.documents[0].work_unit_id = "work-1";
+    supabase.state.work_units = [{ id: "work-1", organization_id: "org-1", code: "LOCAL-NP", name: "Servicio NP", metadata_json: metadata }];
+    const result = await exportReady(supabase);
+    const expected = metadata.zeta_cost_center_code ?? metadata.zeta_centro_costo_codigo ?? metadata.cost_center_external_code;
+    assert.equal(result.exportable, true);
+    assert.equal(result.preview.workUnitName, "Servicio NP");
+    assert.equal(result.payload.Data.Movimiento[0].CodigoCentroCosto, expected);
+    assert.equal(supabase.state.documents[0].work_unit_id, "work-1");
+  }
+});
+
+test("totales confirmados de comida con varios items usan nombre del concepto conservando detalle", async () => {
+  const supabase = createFakeSupabase();
+  const fields = supabase.state.document_drafts[0].fields_json;
+  Object.assign(fields.facts, { subtotal: 318.03, tax_amount: 69.97, total_amount: 388 });
+  fields.line_items = [
+    { line_number: 1, concept_description: "COCA COLA ZERO 600ML", net_amount: null, tax_rate: null, tax_amount: null, total_amount: 65 },
+    { line_number: 2, concept_description: "AGUA NATIVA", net_amount: null, tax_rate: null, tax_amount: null, total_amount: 83 },
+    { line_number: 3, concept_description: "EMPANADAS", net_amount: null, tax_rate: null, tax_amount: null, total_amount: 220 },
+  ];
+  supabase.state.integration_raw_records.find((row) => row.entity_type === "concept").payload_json.row.Nombre = "Gastos de comidas";
+  const originalLines = structuredClone(fields.line_items);
+  const result = await exportReady(supabase);
+  assert.equal(result.exportable, true);
+  assert.equal(result.payload.Data.Movimiento[0].Lineas[0].Concepto, "Gastos de comidas");
+  assert.equal(result.preview.lines[0].netAmount, 318.03);
+  assert.equal(result.preview.lines[0].totalAmount, 388);
+  assert.deepEqual(fields.line_items, originalLines);
+});
+
+test("dos fotos con misma identidad y distinto importe fecha moneda y tipo reservan un solo envio", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase();
+  const copy = addDocumentCopy(supabase, "doc-2", { document_date: "2026-04-21", subtotal: 2000, tax_amount: 440, total_amount: 2440, currency_code: "USD", document_number: "000123456", series: " a " });
+  copy.intake_context_json.cfe_type_code = "112";
+  copy.journal_suggestion_json.fxRate = 40;
+  supabase.state.organization_integration_connections[0].config_json.purchase_expense_export.currencies.USD = 2;
+  supabase.state.integration_raw_records.push({ ...structuredClone(supabase.state.integration_raw_records.find((row) => row.entity_type === "currency")), id: "usd", external_key: "2", payload_json: { row: { Codigo: 2, CodigoISO: "USD" } } });
+  const calls = [], client = successfulEmptyClient(calls);
+  const results = await Promise.all(["doc-1", "doc-2"].map((documentId) => exportPurchaseExpenseInvoiceToZeta({
+    organizationId: "org-1", documentId, actorProfileId: "user-1", humanConfirmed: true,
+  }, { supabase, client })));
+  assert.notEqual(results[0].fiscalFingerprint, results[1].fiscalFingerprint);
+  assert.deepEqual(results[0].fiscalIdentity, results[1].fiscalIdentity);
+  assert.equal(calls.filter((url) => url.endsWith("RESTFacturaProveedorV1Agregar")).length, 1);
+  assert.equal(results.filter((result) => result.status === "success_pending_reconciliation").length, 1);
+  assert.equal(results.filter((result) => result.blockers.some((b) => b.code === "zeta_export_claim_already_exists")).length, 1);
+  const claims = supabase.state.integration_raw_records.filter((row) => row.entity_type === "purchase_expense_export_claim");
+  assert.equal(claims.length, 1);
+  assert.deepEqual(claims[0].payload_json.fiscal_identity, results[0].fiscalIdentity);
+});
+
+test("claim legacy bloquea otra foto corregida desde intento guardado o documento sin cambios", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const attempt of [false, true]) {
+    const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+    seedLegacyClaim(supabase, ready, { attempt });
+    addDocumentCopy(supabase, "doc-2", { document_date: "2026-04-21", subtotal: 2000, tax_amount: 440, total_amount: 2440 });
+    if (attempt) supabase.state.document_drafts[0].fields_json.facts.document_number = "999999";
+    const before = structuredClone(supabase.state), calls = [];
+    const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-2", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+    assert.equal(result.status, "blocked");
+    assert.ok(result.blockers.some((b) => b.code === "zeta_export_claim_already_exists"));
+    assert.equal(calls.length, 0);
+    assert.deepEqual(supabase.state, before);
+  }
+});
+
+test("claim legacy no identificable bloquea sin HTTP ni liberar aunque cambie el documento", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+  seedLegacyClaim(supabase, ready);
+  addDocumentCopy(supabase, "doc-2", { document_number: "777777" });
+  supabase.state.document_drafts[0].fields_json.facts.document_number = "999999";
+  const calls = [];
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-2", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+  assert.ok(result.blockers.some((b) => b.code === "zeta_export_legacy_claim_unresolved"));
+  assert.equal(calls.length, 0);
+  assert.equal(supabase.state.integration_raw_records.filter((r) => r.entity_type === "purchase_expense_export_claim").length, 1);
+});
+
+test("claim legacy del mismo documento sobrevive a correcciones de identidad", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+  seedLegacyClaim(supabase, ready);
+  supabase.state.document_drafts[0].fields_json.facts.document_number = "999999";
+  const calls = [];
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+  assert.ok(result.blockers.some((b) => b.code === "zeta_export_claim_already_exists"));
+  assert.equal(calls.length, 0);
+});
+
+test("claim legacy de otra organizacion no bloquea ni se utiliza para inferir identidad", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+  seedLegacyClaim(supabase, ready).organization_id = "org-other";
+  const calls = [];
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+  assert.equal(result.status, "success_pending_reconciliation");
+  assert.equal(calls.filter((url) => url.endsWith("RESTFacturaProveedorV1Agregar")).length, 1);
+});
+
+test("claim legacy identificado de otro comprobante permite nueva identidad sin reescribirlo", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+  const claim = seedLegacyClaim(supabase, ready), original = structuredClone(claim);
+  addDocumentCopy(supabase, "doc-2", { document_number: "777777" });
+  const calls = [];
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-2", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+  assert.equal(result.status, "success_pending_reconciliation");
+  assert.equal(calls.filter((url) => url.endsWith("RESTFacturaProveedorV1Agregar")).length, 1);
+  assert.deepEqual(claim, original);
+});
+
+test("compatibilidad legacy recorre paginas y encuentra identidad reservada despues de 500 filas", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(), ready = await exportReady(supabase);
+  const { createHash } = require("node:crypto");
+  for (let i = 0; i < 501; i += 1) {
+    const stored = structuredClone(ready);
+    stored.payload.Data.Movimiento[0].Numero = i === 500 ? 123456 : 700000 + i;
+    seedLegacyClaim(supabase, stored, { documentId: `legacy-source-${i}`, fingerprint: `sha256:${createHash("sha256").update(String(i)).digest("hex")}`, attempt: true });
+  }
+  const calls = [];
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true }, { supabase, client: successfulEmptyClient(calls) });
+  assert.ok(result.blockers.some((b) => b.code === "zeta_export_claim_already_exists"));
+  assert.equal(result.attemptRawRecordId, "legacy-legacy-source-500");
+  assert.equal(calls.length, 0);
+});
 
 test("sin copia mensual ambas validacion y envio esperan sin HTTP ni escrituras", async () => {
   const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
@@ -758,7 +941,7 @@ test("claim durable permite un solo Agregar ante dos exportaciones concurrentes"
   assert.equal(claims.length, 1);
   assert.equal(
     claims[0].external_key,
-    `purchase_expense_invoice:${first.fiscalFingerprint}`,
+    `purchase_expense_invoice:${first.fiscalIdentity.key}`,
   );
 });
 
@@ -825,6 +1008,25 @@ test("claim durable impide reenvio si falla persistencia despues de Agregar", as
     entry.code === "zeta_export_claim_already_exists"));
   assert.equal(claims.length, 1);
   assert.equal(claims[0].metadata_json.status, "reserved_before_add");
+});
+
+test("claim nuevo sin intento persistido bloquea el mismo documento aunque corrijan serie y numero", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const onlyMetadata of [false, true]) {
+    const supabase = createFakeSupabase({ failExportAttemptUpsert: true }), calls = [];
+    const client = successfulEmptyClient(calls);
+    const params = { organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1", humanConfirmed: true };
+    await assert.rejects(exportPurchaseExpenseInvoiceToZeta(params, { supabase, client }), /fallo de persistencia posterior a Agregar/);
+    const claim = supabase.state.integration_raw_records.find((row) => row.entity_type === "purchase_expense_export_claim");
+    if (onlyMetadata) delete claim.payload_json.document_id;
+    Object.assign(supabase.state.document_drafts[0].fields_json.facts, { series: "B", document_number: "999999" });
+    const before = structuredClone(supabase.state), callCount = calls.length;
+    const retry = await exportPurchaseExpenseInvoiceToZeta(params, { supabase, client });
+    assert.ok(retry.blockers.some((b) => b.code === "zeta_export_claim_already_exists"));
+    assert.equal(calls.length, callCount);
+    assert.equal(calls.filter((url) => url.endsWith("RESTFacturaProveedorV1Agregar")).length, 1);
+    assert.deepEqual(supabase.state, before);
+  }
 });
 
 test("source_tax_breakdown tiene prioridad sobre line_items OCR para varias tasas", async () => {

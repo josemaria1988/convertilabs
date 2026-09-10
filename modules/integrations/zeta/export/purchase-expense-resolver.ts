@@ -28,6 +28,7 @@ import type {
   ZetaPurchaseInvoiceExportPreview,
   ZetaPurchaseInvoiceExportPreviewLine,
   ZetaPurchaseInvoiceExportResolution,
+  ZetaPurchaseFiscalIdentity,
 } from "@/modules/integrations/zeta/export/types";
 
 const MONEY_TOLERANCE = 0.05;
@@ -760,7 +761,9 @@ function resolveSourceLines(input: {
     resolved.push({
       ...line,
       lineNumber: line.lineNumber ?? index + 1,
-      description: firstText(line.conceptDescription) ?? concept.name ?? concept.code,
+      description: line.isAggregate
+        ? concept.name ?? "Gastos agrupados"
+        : firstText(line.conceptDescription) ?? concept.name ?? concept.code,
       netAmount,
       taxAmount,
       totalAmount,
@@ -789,7 +792,7 @@ function buildGroupedExpenseLines(input: {
       current.netAmount = roundCurrency(current.netAmount + line.netAmount);
       current.taxAmount = roundCurrency(current.taxAmount + line.taxAmount);
       current.totalAmount = roundCurrency(current.totalAmount + line.totalAmount);
-      current.description = current.description || line.description;
+      current.description = current.conceptName ?? "Gastos agrupados";
     } else {
       groups.set(key, { ...line });
     }
@@ -866,8 +869,28 @@ function fiscalFingerprint(input: {
   return `sha256:${createHash("sha256").update(parts.join("|"), "utf8").digest("hex")}`;
 }
 
+export function buildPurchaseExpenseFiscalIdentity(input: {
+  supplierCode: unknown;
+  series: unknown;
+  number: unknown;
+}): ZetaPurchaseFiscalIdentity | null {
+  // Supplier codes are opaque. Only fiscal series/numbers share the conservative
+  // normalization used by duplicate preflight; amounts/dates/CFE/posting type
+  // must not create a second sendable identity after an OCR correction.
+  const supplierCode = typeof input.supplierCode === "string" ? input.supplierCode.trim() : "";
+  if (!supplierCode || (input.series != null && typeof input.series !== "string")) return null;
+  const series = normalizeDocumentNumber(input.series as string | null | undefined) ?? "";
+  const numberText = typeof input.number === "number" && Number.isSafeInteger(input.number) && input.number >= 0
+    ? String(input.number) : typeof input.number === "string" ? input.number.trim() : "";
+  if (!/^\d+$/.test(numberText)) return null;
+  const number = numberText.replace(/^0+(?=\d)/, "");
+  const key = `identity:v1:${createHash("sha256")
+    .update(JSON.stringify([supplierCode, series, number]), "utf8").digest("hex")}`;
+  return { version: 1, supplierCode, series, number, key };
+}
+
 function emptyPreview(document: ZetaPurchaseExpenseDocumentInput): ZetaPurchaseInvoiceExportPreview {
-  const centroCostoCode = firstText(document.workUnitExternalCode, document.workUnitCode);
+  const centroCostoCode = firstText(document.workUnitExternalCode);
 
   return {
     supplierName: document.supplierName,
@@ -1131,6 +1154,9 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
       : null,
     preview,
     fiscalFingerprint: fingerprint,
+    fiscalIdentity: buildPurchaseExpenseFiscalIdentity({
+      supplierCode: supplier.zetaSupplierCode, series: document.series, number: numero,
+    }),
   };
 }
 

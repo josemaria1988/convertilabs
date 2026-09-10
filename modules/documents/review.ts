@@ -3264,6 +3264,7 @@ function buildUnavailableZetaPurchaseExport(input: {
       paidByPartnerMessage: null,
     },
     fiscalFingerprint: null,
+    fiscalIdentity: null,
     dryRun: true,
     duplicate: null,
     attemptRawRecordId: null,

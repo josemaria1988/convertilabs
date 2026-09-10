@@ -73,6 +73,7 @@ export type ZetaPurchaseExpenseCatalogs = {
 
 export type ZetaPurchaseExpenseDocumentLineInput = {
   lineNumber?: number | null;
+  isAggregate?: boolean;
   conceptCode?: string | null;
   conceptDescription?: string | null;
   netAmount?: number | null;
@@ -160,6 +161,16 @@ export type ZetaPurchaseInvoiceExportResolution = {
   } | null;
   preview: ZetaPurchaseInvoiceExportPreview;
   fiscalFingerprint: string | null;
+  fiscalIdentity: ZetaPurchaseFiscalIdentity | null;
+};
+
+/** Conservative ERP identity, independent of amounts, dates and posting choices. */
+export type ZetaPurchaseFiscalIdentity = {
+  version: 1;
+  supplierCode: string;
+  series: string;
+  number: string;
+  key: string;
 };
 
 export type ZetaPurchaseInvoiceExportResult = ZetaPurchaseInvoiceExportResolution & {

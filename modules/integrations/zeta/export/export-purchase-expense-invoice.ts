@@ -32,7 +32,7 @@ import {
   recordIntegrationAuditEvent,
   upsertIntegrationRawRecord,
 } from "@/modules/integrations/repository";
-import { normalizeZetaPurchaseExpenseConfig, resolveZetaPurchaseExpenseInvoicePayload } from "@/modules/integrations/zeta/export/purchase-expense-resolver";
+import { buildPurchaseExpenseFiscalIdentity, normalizeZetaPurchaseExpenseConfig, resolveZetaPurchaseExpenseInvoicePayload } from "@/modules/integrations/zeta/export/purchase-expense-resolver";
 import { preflightZetaPurchaseInvoiceDuplicate } from "@/modules/integrations/zeta/export/duplicate-preflight";
 import { reconcilePurchaseExpenseInvoiceExport } from "@/modules/integrations/zeta/reconcile/reconcile-purchase-expense-invoice";
 import type {
@@ -47,6 +47,7 @@ import type {
   ZetaPurchaseInvoiceExportPreview,
   ZetaPurchaseInvoiceExportResolution,
   ZetaPurchaseInvoiceExportResult,
+  ZetaPurchaseFiscalIdentity,
 } from "@/modules/integrations/zeta/export/types";
 
 type JsonRecord = Record<string, unknown>;
@@ -211,6 +212,7 @@ function buildPreferredExpenseLines(input: {
 
     return [{
       lineNumber: 1,
+      isAggregate: sourceLines.length > 1 || input.lineItems.length > 1,
       conceptCode: first.conceptCode,
       conceptDescription: first.conceptDescription ?? "Gasto",
       netAmount: input.facts.subtotal,
@@ -411,9 +413,7 @@ function getZetaCostCenterCode(workUnit: WorkUnitRow | null) {
 
   return asString(metadata.zeta_cost_center_code)
     ?? asString(metadata.zeta_centro_costo_codigo)
-    ?? asString(metadata.external_code)
     ?? asString(metadata.cost_center_external_code)
-    ?? workUnit?.code
     ?? null;
 }
 
@@ -574,8 +574,8 @@ async function loadPreviousExportRecord(input: {
   return data as PreviousExportRecord | null;
 }
 
-function exportClaimExternalKey(fiscalFingerprint: string) {
-  return `purchase_expense_invoice:${fiscalFingerprint}`;
+function exportClaimExternalKey(identityKey: string) {
+  return `purchase_expense_invoice:${identityKey}`;
 }
 
 function isUniqueConstraintViolation(error: unknown) {
@@ -591,7 +591,7 @@ function isUniqueConstraintViolation(error: unknown) {
 async function loadExportClaimId(input: {
   supabase: SupabaseClient;
   organizationId: string;
-  fiscalFingerprint: string;
+  fiscalIdentity: ZetaPurchaseFiscalIdentity;
 }) {
   const { data, error } = await input.supabase
     .from(integrationTables.rawRecords)
@@ -599,7 +599,7 @@ async function loadExportClaimId(input: {
     .eq("organization_id", input.organizationId)
     .eq("provider", "zetasoftware")
     .eq("entity_type", exportClaimEntityType)
-    .eq("external_key", exportClaimExternalKey(input.fiscalFingerprint))
+    .eq("external_key", exportClaimExternalKey(input.fiscalIdentity.key))
     .limit(1)
     .maybeSingle();
 
@@ -610,12 +610,34 @@ async function loadExportClaimId(input: {
   return data?.id ? String(data.id) : null;
 }
 
+async function loadDocumentExportClaimId(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  documentId: string;
+}) {
+  // A persisted claim survives even if saving the attempt failed. Correcting
+  // the fiscal series/number of that source must never make it retryable.
+  for (const field of ["payload_json->>document_id", "metadata_json->>document_id"]) {
+    const { data, error } = await input.supabase.from(integrationTables.rawRecords)
+      .select("id")
+      .eq("organization_id", input.organizationId)
+      .eq("provider", "zetasoftware")
+      .eq("entity_type", exportClaimEntityType)
+      .eq(field, input.documentId)
+      .limit(1).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return String(data.id);
+  }
+  return null;
+}
+
 async function acquireExportClaim(input: {
   supabase: SupabaseClient;
   organizationId: string;
   connectionId: string;
   documentId: string;
   fiscalFingerprint: string;
+  fiscalIdentity: ZetaPurchaseFiscalIdentity;
   actorProfileId: string;
   testMode: boolean;
   deps?: ExportDependencies;
@@ -624,6 +646,7 @@ async function acquireExportClaim(input: {
   const payload = {
     document_id: input.documentId,
     fiscal_fingerprint: input.fiscalFingerprint,
+    fiscal_identity: input.fiscalIdentity,
     status: "reserved_before_add",
     claimed_at: claimedAt,
     actor_profile_id: input.actorProfileId,
@@ -636,7 +659,7 @@ async function acquireExportClaim(input: {
       provider: "zetasoftware",
       stream: exportStream,
       entity_type: exportClaimEntityType,
-      external_key: exportClaimExternalKey(input.fiscalFingerprint),
+      external_key: exportClaimExternalKey(input.fiscalIdentity.key),
       external_version_key: input.fiscalFingerprint,
       payload_json: payload,
       payload_hash: fingerprintIntegrationPayload(payload),
@@ -647,6 +670,7 @@ async function acquireExportClaim(input: {
         document_id: input.documentId,
         actor_profile_id: input.actorProfileId,
         fiscal_fingerprint: input.fiscalFingerprint,
+        fiscal_identity: input.fiscalIdentity,
       },
       updated_at: claimedAt,
     });
@@ -666,6 +690,75 @@ async function acquireExportClaim(input: {
     acquired: false,
     claimRawRecordId: await loadExportClaimId(input),
   } as const;
+}
+
+async function findLegacyExportClaimBlocker(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  documentId: string;
+  fiscalFingerprint: string;
+  fiscalIdentity: ZetaPurchaseFiscalIdentity;
+  catalogs: ZetaPurchaseExpenseCatalogs;
+}) {
+  const unresolved = (id: string | null) => ({ id, blocker: blocker(
+    "zeta_export_legacy_claim_unresolved",
+    "Hay una reserva de envio anterior cuya identidad no se pudo verificar. Revisa ese intento antes de enviar; no se libera ni se ignora automaticamente.",
+  ) });
+  const duplicate = (id: string) => ({ id, blocker: blocker(
+    "zeta_export_claim_already_exists",
+    "Este comprobante tiene una reserva de envio anterior. Primero hay que conciliar o revisar ese intento; cambiar fecha, moneda o importe no habilita reenviarlo.",
+  ) });
+  // Legacy claims contain only a content fingerprint and document id. Their
+  // identity must be recovered from a matching stored attempt or an unchanged
+  // source document. Never release claims or trust a changed draft on its own.
+  // Drain old-version exporters before deploying: their keys cannot serialize
+  // concurrent writes with the new immutable-identity keys.
+  const pageSize = 500;
+  for (let page = 0; page < 100; page += 1) {
+    const { data, error } = await input.supabase.from(integrationTables.rawRecords)
+      .select("id, external_key, payload_json, metadata_json")
+      .eq("organization_id", input.organizationId)
+      .eq("provider", "zetasoftware")
+      .eq("entity_type", exportClaimEntityType)
+      .like("external_key", "purchase_expense_invoice:sha256:%")
+      .order("id", { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) throw new Error(error.message);
+    if (!Array.isArray(data)) return unresolved(null);
+    for (const row of data) {
+      const id = String(row.id);
+      const payload = asRecord(row.payload_json), metadata = asRecord(row.metadata_json);
+      const fingerprint = asString(payload.fiscal_fingerprint) ?? asString(metadata.fiscal_fingerprint);
+      const documentId = asString(payload.document_id) ?? asString(metadata.document_id);
+      if (!fingerprint || row.external_key !== exportClaimExternalKey(fingerprint) || !documentId) return unresolved(id);
+      if (fingerprint === input.fiscalFingerprint || documentId === input.documentId) return duplicate(id);
+      const previous = await loadPreviousExportRecord({ ...input, documentId });
+      const previousPayload = asRecord(previous?.payload_json);
+      const previousFingerprint = asString(previousPayload.fiscal_fingerprint)
+        ?? asString(asRecord(previous?.metadata_json).fiscal_fingerprint);
+      let identity: ZetaPurchaseFiscalIdentity | null = null;
+      if (previousFingerprint === fingerprint) {
+        const movement = parseStoredRequest(previousPayload.request)?.Data.Movimiento[0];
+        if (movement) identity = buildPurchaseExpenseFiscalIdentity({
+          supplierCode: movement.CodigoProveedor, series: movement.Serie, number: movement.Numero,
+        });
+      }
+      if (!identity) {
+        try {
+          const document = await buildDocumentInput({ ...input, documentId });
+          const resolved = resolveZetaPurchaseExpenseInvoicePayload({ document, catalogs: input.catalogs });
+          if (resolved.fiscalFingerprint === fingerprint) identity = resolved.fiscalIdentity;
+        } catch {
+          // Missing/deleted source or read error cannot establish non-duplication.
+          return unresolved(id);
+        }
+      }
+      if (!identity) return unresolved(id);
+      if (identity.key === input.fiscalIdentity.key) return duplicate(id);
+    }
+    if (data.length < pageSize) return null;
+  }
+  return unresolved(null);
 }
 
 function parseStoredMessages<T extends ZetaPurchaseExportBlocker | ZetaPurchaseExportWarning>(
@@ -784,6 +877,9 @@ function buildPreviousExportResult(input: {
     fiscalFingerprint:
       asString(payload.fiscal_fingerprint)
       ?? asString(asRecord(input.previous.metadata_json).fiscal_fingerprint),
+    fiscalIdentity: movimiento ? buildPurchaseExpenseFiscalIdentity({
+      supplierCode: movimiento.CodigoProveedor, series: movimiento.Serie, number: movimiento.Numero,
+    }) : null,
     dryRun: input.dryRun,
     zetaResponse: payload.response ?? null,
     duplicate: null,
@@ -983,6 +1079,7 @@ async function persistExportAttempt(input: {
     status: input.status,
     dry_run: input.result.dryRun,
     fiscal_fingerprint: input.result.fiscalFingerprint,
+    fiscal_identity: input.result.fiscalIdentity,
     request: input.result.payload,
     response: input.response ?? input.result.zetaResponse ?? null,
     blockers: input.result.blockers,
@@ -1014,6 +1111,7 @@ async function persistExportAttempt(input: {
       status: input.status,
       actor_profile_id: input.actorProfileId,
       fiscal_fingerprint: input.result.fiscalFingerprint,
+      fiscal_identity: input.result.fiscalIdentity,
     },
   });
 }
@@ -1377,8 +1475,9 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
   }
 
   const fiscalFingerprint = resolution.fiscalFingerprint;
+  const fiscalIdentity = resolution.fiscalIdentity;
 
-  if (!fiscalFingerprint) {
+  if (!fiscalFingerprint || !fiscalIdentity) {
     const result = withResult(resolution, {
       status: "blocked",
       exportable: false,
@@ -1408,6 +1507,25 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       attemptRawRecordId: String(raw.id),
     };
   }
+
+  const documentClaimId = await loadDocumentExportClaimId({
+    supabase, organizationId: params.organizationId, documentId: params.documentId,
+  });
+  if (documentClaimId) return withResult(resolution, {
+    status: "blocked", exportable: false, mode: "blocked",
+    blockers: [...resolution.blockers, blocker("zeta_export_claim_already_exists",
+      "Este documento ya fue reservado para envio. Una correccion de su identidad no habilita reenviarlo; primero hay que conciliar o revisar el intento existente.")],
+    attemptRawRecordId: documentClaimId,
+  });
+
+  const legacyClaim = await findLegacyExportClaimBlocker({
+    supabase, organizationId: params.organizationId, documentId: params.documentId,
+    fiscalFingerprint, fiscalIdentity, catalogs,
+  });
+  if (legacyClaim) return withResult(resolution, {
+    status: "blocked", exportable: false, mode: "blocked",
+    blockers: [...resolution.blockers, legacyClaim.blocker], attemptRawRecordId: legacyClaim.id,
+  });
 
   const client = await buildClient({
     supabase,
@@ -1469,7 +1587,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
   }
 
   // This insert is the durable, organization-wide point of no return. The
-  // existing unique constraint elects one caller for a fiscal fingerprint
+  // existing unique constraint elects one caller for the immutable identity
   // before any external write. We intentionally never delete the claim here:
   // even a later local failure or a definitive Zeta rejection remains blocked
   // until an audited manual-release workflow exists.
@@ -1479,6 +1597,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     connectionId: connection.id,
     documentId: params.documentId,
     fiscalFingerprint,
+    fiscalIdentity,
     actorProfileId: params.actorProfileId,
     testMode: connection.test_mode,
     deps,
@@ -1513,6 +1632,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     action: "zeta_purchase_expense_export_started",
     metadata: {
       fiscal_fingerprint: resolution.fiscalFingerprint,
+      fiscal_identity: resolution.fiscalIdentity,
       force_resend: params.forceResend === true,
     },
   });
