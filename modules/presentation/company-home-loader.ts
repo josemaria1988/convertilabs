@@ -174,6 +174,7 @@ async function loadWorkUnitSignals(
 ): Promise<{
   isAvailable: boolean;
   totalCount: number;
+  activeCount?: number;
   recent: CompanyHomeWorkUnitSignal[];
 }> {
   const { data, count, error } = await supabase
@@ -183,7 +184,7 @@ async function loadWorkUnitSignals(
       { count: "exact" },
     )
     .eq("organization_id", organizationId)
-    .neq("status", "archived")
+    .in("status", ["planned", "active", "paused", "blocked"])
     .order("updated_at", { ascending: false })
     .limit(8);
 
@@ -240,6 +241,7 @@ async function loadWorkUnitSignals(
   return {
     isAvailable: true,
     totalCount: count ?? data?.length ?? 0,
+    activeCount: count ?? data?.length ?? 0,
     recent: rows.map((row) => mapWorkUnitRow(row, documentAmountsByWorkUnitId)),
   };
 }

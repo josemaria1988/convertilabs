@@ -84,6 +84,7 @@ export type CompanyHomePresenterInput = {
   work: {
     isAvailable: boolean;
     totalCount: number;
+    activeCount?: number;
     recent: CompanyHomeWorkUnitSignal[];
   };
   directory: {
@@ -200,6 +201,7 @@ export function buildCompanyHomeDashboard(
   const processingDocuments = input.documents.filter((document) => document.bucket === "processing");
   const actionableDocuments = input.documents.filter((document) => document.bucket !== "done");
   const activeWorkUnits = input.work.recent.filter(isActiveWorkUnit);
+  const activeWorkUnitCount = input.work.activeCount ?? activeWorkUnits.length;
   const intake = input.intake ?? {
     isAvailable: false,
     totalCount: 0,
@@ -259,13 +261,13 @@ export function buildCompanyHomeDashboard(
     {
       key: "work",
       label: "Trabajos activos",
-      value: input.work.isAvailable ? formatCount(input.work.totalCount) : "--",
+      value: input.work.isAvailable ? formatCount(activeWorkUnitCount) : "--",
       hint: input.work.isAvailable
-        ? "Trabajos y centros de costo conectados al modelo madre."
-        : "La tabla work_units no esta disponible en esta base.",
+        ? "Trabajos en curso, planificados o con pendientes."
+        : "No se pudo consultar el estado de los trabajos.",
       href: `/app/o/${slug}/work`,
       cta: "Abrir trabajos",
-      tone: input.work.totalCount > 0 ? "success" : "neutral",
+      tone: activeWorkUnitCount > 0 ? "success" : "neutral",
     },
     {
       key: "documents",
@@ -453,8 +455,8 @@ export function buildCompanyHomeDashboard(
     input.work.isAvailable && input.work.totalCount === 0
       ? {
         key: "first_work",
-        title: "Crear el primer trabajo",
-        description: "Inicio necesita trabajos reales para conectar documentos, dinero y margen.",
+        title: "Registrar un nuevo trabajo",
+        description: "Cuando ingrese un nuevo servicio, podés vincular su cliente y documentación.",
         href: `/app/o/${slug}/work`,
         cta: "Abrir trabajos",
         tone: "neutral",
@@ -476,7 +478,7 @@ export function buildCompanyHomeDashboard(
     summary: {
       actionableDocuments: actionableDocuments.length,
       blockedDocuments: blockedDocuments.length,
-      activeWorkUnits: activeWorkUnits.length,
+      activeWorkUnits: activeWorkUnitCount,
       openMoneyItems: input.money.totalCount,
       overdueMoneyItems: overdueMoneyItems.length,
       outstandingAmount,
@@ -501,7 +503,7 @@ export function buildCompanyHomeDashboard(
     actions,
     documents: input.documents.slice(0, 8),
     intakeItems: intake.recent.slice(0, 6),
-    workUnits: input.work.recent.slice(0, 6),
+    workUnits: activeWorkUnits.slice(0, 6),
     parties: input.directory.recent.slice(0, 6),
     moneyItems: input.money.recent.slice(0, 6),
     availability: {

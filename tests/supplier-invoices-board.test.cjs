@@ -76,13 +76,13 @@ test("supplier board does not turn invalid dates into a valid displayed due date
   const html = render(props({ unconfirmed: [group({ invoices: [invoice({ issuedAt: "2026-02-30", dueAt: "invalid" })] })] }));
   assert.match(html, /Por confirmar/); assert.doesNotMatch(html, /30\/02\/2026|>invalid</);
 });
-test("supplier board gives the populated section full width and keeps the empty section compact and first", () => {
+test("supplier board uses full-width expandable supplier rows with confirmed first and compact empty states", () => {
   const html = render(props({ unconfirmed: [group(), group({ id: "second", name: "Segundo proveedor" })] }));
-  assert.doesNotMatch(html, /lg:grid-cols-2/); assert.match(html, /md:grid-cols-2/);
-  assert.match(html, /border-dashed[^\"]*px-3 py-2/);
+  assert.doesNotMatch(html, /(?:md|lg):grid-cols-2/);
+  assert.match(html, /rounded-md[^\"]*px-3 py-2/);
   assert.ok(html.indexOf("Pendientes de pago") < html.indexOf("Por confirmar"));
   const both = render(props({ confirmed: [group()], unconfirmed: [group({ id: "second" })] }));
-  assert.match(both, /lg:grid-cols-2/); assert.doesNotMatch(both, /md:grid-cols-2/);
-  const onlyOne = render(props({ unconfirmed: [group()] }));
-  assert.doesNotMatch(onlyOne, /(?:md|lg):grid-cols-2/);
+  assert.doesNotMatch(both, /(?:md|lg):grid-cols-2/);
+  assert.match(both, /<summary/); assert.match(both, /Comprobante/);
+  assert.doesNotMatch(both, /status-pill|text-white|text-amber-100/);
 });

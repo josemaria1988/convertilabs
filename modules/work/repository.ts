@@ -12,6 +12,7 @@ import {
   summarizeWorkUnitFinancials,
 } from "@/modules/work/service";
 import { summarizeWorkUnitDocuments } from "@/modules/work/work-unit-financial-summary";
+import { readWorkInvoiceCloseout, type WorkInvoiceCloseout } from "@/modules/work/invoice-closeout";
 import type {
   WorkUnitKind,
   WorkUnitStatus,
@@ -37,6 +38,7 @@ type WorkUnitRow = {
   currency_code: string | null;
   description: string | null;
   source: string | null;
+  metadata_json?: unknown;
   created_at: string;
   updated_at: string;
 };
@@ -92,6 +94,7 @@ export type WorkUnitDocumentItem = {
 };
 
 export type WorkUnitListItem = {
+  invoiceCloseout?: WorkInvoiceCloseout | null;
   id: string;
   code: string | null;
   name: string;
@@ -213,6 +216,7 @@ function mapWorkUnit(
   return {
     id: row.id,
     code: row.code,
+    invoiceCloseout: readWorkInvoiceCloseout(row.metadata_json),
     name: row.name,
     kind: row.kind,
     status: row.status,
@@ -387,7 +391,7 @@ export async function listOrganizationWorkUnits(
   const { data, error } = await supabase
     .from("work_units")
     .select(
-      "id, organization_id, code, name, kind, status, customer_party_id, start_date, end_date, estimated_revenue, estimated_cost, actual_revenue, actual_cost, margin_status, currency_code, description, source, created_at, updated_at",
+      "id, organization_id, code, name, kind, status, customer_party_id, start_date, end_date, estimated_revenue, estimated_cost, actual_revenue, actual_cost, margin_status, currency_code, description, source, metadata_json, created_at, updated_at",
     )
     .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false })
@@ -442,7 +446,7 @@ export async function loadWorkUnitDetail(
   const { data, error } = await supabase
     .from("work_units")
     .select(
-      "id, organization_id, code, name, kind, status, customer_party_id, start_date, end_date, estimated_revenue, estimated_cost, actual_revenue, actual_cost, margin_status, currency_code, description, source, created_at, updated_at",
+      "id, organization_id, code, name, kind, status, customer_party_id, start_date, end_date, estimated_revenue, estimated_cost, actual_revenue, actual_cost, margin_status, currency_code, description, source, metadata_json, created_at, updated_at",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.workUnitId)

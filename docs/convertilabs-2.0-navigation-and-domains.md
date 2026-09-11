@@ -94,4 +94,8 @@ Aliases legacy mantenidos:
 
 ## Regla
 
+La presentación administrativa usa fondo claro, paneles blancos y una barra lateral azul pizarra. En el teléfono, el menú reúne las mismas seis secciones en un panel desplegable. Inicio prioriza actividad, facturas de proveedores y acciones; no repite resúmenes técnicos ni añade gráficos sin datos. Los trabajos terminados se consultan en Trabajos y no se cuentan como activos en Inicio.
+
+Un cierre confirmado por el usuario puede quedar registrado aunque falte incorporar el comprobante externo. En ese caso la ficha muestra la referencia declarada y el vínculo documental pendiente; no convierte esa declaración en una factura canónica, asiento, margen o cobro. Se conserva el evento de cierre y la evidencia de lo que falta revisar.
+
 No crear pantallas nuevas con nombres que vuelvan a separar documentos, dinero, trabajos y procesos como productos aislados. Cada superficie debe conectarse al modelo madre.

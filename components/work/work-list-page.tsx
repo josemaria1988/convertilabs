@@ -1,4 +1,5 @@
 import { LoadingLink } from "@/components/ui/loading-link";
+import { formatCloseoutReference } from "@/modules/work/invoice-closeout";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { WorkIntakePanel } from "@/components/work-intake/work-intake-panel";
 import { CustomerPartySearchField } from "@/components/work/customer-party-search-field";
@@ -44,9 +45,12 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  if (!Number.isFinite(date.getTime())) return "Sin fecha";
   return new Intl.DateTimeFormat("es-UY", {
     dateStyle: "medium",
-  }).format(new Date(value));
+    timeZone: "America/Montevideo",
+  }).format(date);
 }
 
 function formatStatus(value: string) {
@@ -353,7 +357,7 @@ export function WorkListPage({
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
+                {item.invoiceCloseout ? <div className="mt-3 text-sm text-[color:var(--color-muted)]"><p className="font-medium">{formatCloseoutReference(item.invoiceCloseout)}</p><p className="mt-1">Facturado según tu confirmación. Comprobante pendiente de incorporar; cobro por verificar.</p></div> : <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
                   <div className="ui-subtle-row">
                     <span>Venta</span>
                     <span>{formatMoney(item.actualRevenue, item.currencyCode)}</span>
@@ -370,7 +374,7 @@ export function WorkListPage({
                     <span>Actualizado</span>
                     <span>{formatDate(item.updatedAt)}</span>
                   </div>
-                </div>
+                </div>}
               </article>
             ))
           )}

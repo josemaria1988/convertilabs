@@ -11,7 +11,7 @@ export function ConvertilabsLogo({
 }: ConvertilabsLogoProps) {
   return (
     <div className={`flex items-center gap-2.5 ${className ?? ""}`.trim()}>
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[#7ca6f1]">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[color:var(--color-accent)]">
         <svg
           aria-hidden="true"
           viewBox="0 0 24 24"
@@ -30,7 +30,7 @@ export function ConvertilabsLogo({
         </svg>
       </span>
       <div className="min-w-0">
-        <p className="truncate text-[17px] font-semibold tracking-[-0.03em] text-white">
+        <p className="truncate text-[17px] font-semibold tracking-[-0.03em] text-inherit">
           Convertilabs
         </p>
         {subtitle ? (

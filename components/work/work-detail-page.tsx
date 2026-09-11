@@ -1,5 +1,6 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { formatCloseoutReference } from "@/modules/work/invoice-closeout";
 import type { WorkIntakeItem } from "@/modules/work-intake";
 import type {
   WorkUnitDetail,
@@ -32,9 +33,12 @@ function formatDate(value: string | null) {
     return "Sin fecha";
   }
 
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  if (!Number.isFinite(date.getTime())) return "Sin fecha";
   return new Intl.DateTimeFormat("es-UY", {
     dateStyle: "medium",
-  }).format(new Date(value));
+    timeZone: "America/Montevideo",
+  }).format(date);
 }
 
 function formatStatus(value: string) {
@@ -81,6 +85,7 @@ export function WorkDetailPage({
 }: WorkDetailPageProps) {
   const unlinkedDocumentOptions = documentOptions.filter((document) =>
     !document.workUnitId || document.workUnitId === workUnit.id);
+  const invoiceCloseout = workUnit.invoiceCloseout;
 
   return (
     <div className="space-y-4">
@@ -104,7 +109,14 @@ export function WorkDetailPage({
           <span className="status-pill status-pill--info">{workUnit.documentCount} documento(s)</span>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {invoiceCloseout ? (
+          <div className="mt-4 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-strong)] p-4 text-sm">
+            <p className="font-semibold text-[color:var(--color-foreground)]">Facturado y terminado · comprobante pendiente de incorporar</p>
+            <p className="mt-2 font-medium">{formatCloseoutReference(invoiceCloseout)}</p>
+            <p className="mt-2 text-[color:var(--color-muted)]">Cierre confirmado por vos. La referencia queda asociada al trabajo; falta la factura original en la copia compartida para completar el vínculo documental y el margen. El cobro no se da por confirmado.</p>
+            {invoiceCloseout.reviewNotes.length > 0 ? <details className="mt-3"><summary className="cursor-pointer font-medium">Revisiones pendientes ({invoiceCloseout.reviewNotes.length})</summary>{invoiceCloseout.reviewNotes.map((note, index) => <p key={index} className="mt-2 text-[color:var(--color-muted)]">{note}</p>)}</details> : null}
+          </div>
+        ) : <div className="mt-4 grid gap-3 md:grid-cols-4">
           <article className="metric-card">
             <span className="metric-card__label">Venta actual</span>
             <span className="metric-card__value">{formatMoney(workUnit.actualRevenue, workUnit.currencyCode)}</span>
@@ -125,7 +137,7 @@ export function WorkDetailPage({
             <span className="metric-card__value">{formatMoney(workUnit.documentMargin, workUnit.currencyCode)}</span>
             <p className="metric-card__hint">Ventas y compras vinculadas al trabajo.</p>
           </article>
-        </div>
+        </div>}
         <div className="mt-3 flex flex-wrap gap-2">
           <span className="status-pill status-pill--success">{workUnit.saleDocumentCount} venta(s)</span>
           <span className="status-pill status-pill--info">{workUnit.purchaseDocumentCount} compra(s)</span>
@@ -190,7 +202,7 @@ export function WorkDetailPage({
           </LoadingLink>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {invoiceCloseout ? <p className="mt-4 text-sm text-[color:var(--color-muted)]">El estado de cobro y los importes contables se revisan en Dinero. La venta informada no se incorpora como asiento, saldo ni IVA hasta contar con su comprobante.</p> : <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <article className="metric-card">
             <span className="metric-card__label">Asientos</span>
             <span className="metric-card__value">{workUnit.journalEntryCount}</span>
@@ -221,7 +233,7 @@ export function WorkDetailPage({
             <span className="metric-card__value">{formatMoney(workUnit.vatOutputAmount, workUnit.currencyCode)}</span>
             <p className="metric-card__hint">Tax amount en ventas.</p>
           </article>
-        </div>
+        </div>}
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">

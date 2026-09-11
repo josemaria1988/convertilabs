@@ -5,6 +5,22 @@ const {
   buildCompanyHomeDashboard,
 } = require("@/modules/presentation/company-home");
 
+test("completed work leaves active home metrics and rows without being treated as uncollected or new work", () => {
+  const closed = ['completed', 'cancelled', 'archived'].map((status, i) => ({ id: `closed-${i}`, name: 'Servicio anterior', status, kind: 'service', actualRevenue: 0, actualCost: 0, marginStatus: null, updatedAt: null }));
+  const dashboard = buildCompanyHomeDashboard({organizationSlug:'rontil',documents:[],work:{isAvailable:true,totalCount:3,recent:closed},directory:{isAvailable:true,totalCount:0,recent:[]},money:{isAvailable:true,totalCount:0,recent:[]}});
+  assert.equal(dashboard.summary.activeWorkUnits, 0);
+  assert.equal(dashboard.metrics.find(metric=>metric.key==='work').value, '0');
+  assert.deepEqual(dashboard.workUnits, []);
+});
+
+test("home active work count uses the complete scoped count instead of only the recent preview", () => {
+  const active = {id:'active',name:'Trabajo en curso',status:'active',kind:'service',actualRevenue:0,actualCost:0,marginStatus:null,updatedAt:null};
+  const dashboard = buildCompanyHomeDashboard({organizationSlug:'rontil',documents:[],work:{isAvailable:true,totalCount:12,activeCount:12,recent:[active]},directory:{isAvailable:true,totalCount:0,recent:[]},money:{isAvailable:true,totalCount:0,recent:[]}});
+  assert.equal(dashboard.summary.activeWorkUnits,12);
+  assert.equal(dashboard.metrics.find(metric=>metric.key==='work').value,'12');
+  assert.equal(dashboard.workUnits.length,1);
+});
+
 test("company home dashboard prioritizes real blockers and overdue money", () => {
   const dashboard = buildCompanyHomeDashboard({
     organizationSlug: "rontil",

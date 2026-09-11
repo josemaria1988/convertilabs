@@ -50,37 +50,27 @@ function safeInternalHref(value: string | undefined) {
   return value?.startsWith("/app/") && !value.includes("\\") ? value : null;
 }
 
-function DueBadge({ invoice, confirmed }: { invoice: SupplierInvoiceItem; confirmed: boolean }) {
+function DueLabel({ invoice, confirmed }: { invoice: SupplierInvoiceItem; confirmed: boolean }) {
   const labels = {
     overdue: confirmed ? "Vencida" : "Fecha informada vencida",
     due_soon: "Vence en los próximos 7 días", future: "A vencer", no_due_date: "Sin vencimiento informado",
   };
-  const tone = confirmed && invoice.dueState === "overdue" ? "danger" : invoice.dueState === "due_soon" ? "warning" : "info";
-  return <span className={`status-pill status-pill--${tone}`}>{labels[invoice.dueState]}</span>;
+  const color = confirmed && invoice.dueState === "overdue" ? "text-[color:var(--color-danger)]" : "text-[color:var(--color-muted)]";
+  return <span className={`text-xs ${color}`}>{labels[invoice.dueState]}</span>;
 }
 
 function InvoiceRow({ invoice, confirmed }: { invoice: SupplierInvoiceItem; confirmed: boolean }) {
   const href = safeInternalHref(invoice.reviewHref);
   return (
-    <li className="min-w-0 rounded-md border border-[color:var(--color-border)] bg-white/[0.025] p-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="break-words font-semibold text-[color:var(--color-foreground)]">{invoice.number ? `Factura ${invoice.number}` : "Número por confirmar"}</p>
-          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-            <div><dt className="text-[color:var(--color-muted)]">Emisión</dt><dd className="mt-0.5">{formatDate(invoice.issuedAt)}</dd></div>
-            <div><dt className="text-[color:var(--color-muted)]">Vencimiento</dt><dd className="mt-0.5">{invoice.dueAt ? formatDate(invoice.dueAt) : "Sin informar"}</dd></div>
-          </dl>
-        </div>
-        <div className="min-w-0 sm:text-right">
-          <p className="text-xs text-[color:var(--color-muted)]">{confirmed ? "Saldo pendiente" : "Importe por verificar"}</p>
-          <p className="mt-0.5 break-words text-base font-semibold tabular-nums">{formatAmount(invoice.amount, invoice.currency)}</p>
-        </div>
+    <li className="min-w-0 border-t border-[color:var(--color-border)] py-3 first:border-0">
+      <div className="grid min-w-0 grid-cols-2 items-start gap-x-4 gap-y-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_auto] lg:items-center">
+        <p className="col-span-2 break-words text-sm font-semibold lg:col-span-1">{invoice.number ? `Factura ${invoice.number}` : "Número por confirmar"}</p>
+        <div className="text-sm"><p className="text-xs text-[color:var(--color-muted)] lg:sr-only">Emisión</p><p>{formatDate(invoice.issuedAt)}</p></div>
+        <div className="min-w-0 text-sm"><p className="text-xs text-[color:var(--color-muted)] lg:sr-only">Vencimiento</p><p>{invoice.dueAt ? formatDate(invoice.dueAt) : "Sin informar"}</p><DueLabel invoice={invoice} confirmed={confirmed} /></div>
+        <div className="min-w-0 lg:text-right"><p className="text-xs text-[color:var(--color-muted)] lg:sr-only">{confirmed ? "Saldo pendiente" : "Importe por verificar"}</p><p className="break-words text-sm font-semibold tabular-nums">{formatAmount(invoice.amount, invoice.currency)}</p></div>
+        {href ? <a href={href} className="inline-flex min-h-11 items-center justify-end text-sm font-medium text-[color:var(--color-accent)] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={`Revisar factura ${invoice.number ?? "sin número"}`}>Revisar factura <span aria-hidden="true" className="ml-1">↗</span></a> : <span className="text-right text-xs text-[color:var(--color-muted)]">Revisión no disponible</span>}
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <DueBadge invoice={invoice} confirmed={confirmed} />
-        {href ? <a href={href} className="ui-button ui-button--secondary min-h-11 w-full sm:w-auto" aria-label={`Revisar factura ${invoice.number ?? "sin número"}`}>Revisar factura</a> : <span className="text-xs text-[color:var(--color-muted)]">Revisión no disponible</span>}
-      </div>
-      {invoice.reason ? <p className="mt-2 break-words text-xs leading-relaxed text-[color:var(--color-muted)]">{invoice.reason}</p> : null}
+      {invoice.reason ? <p className="mt-1 break-words text-xs leading-relaxed text-[color:var(--color-muted)]">{invoice.reason}</p> : null}
     </li>
   );
 }
@@ -90,48 +80,36 @@ function SupplierCard({ supplier, confirmed }: { supplier: SupplierInvoiceGroup;
   const soon = supplier.invoices.filter((invoice) => invoice.dueState === "due_soon").length;
   const noDue = supplier.invoices.filter((invoice) => invoice.dueState === "no_due_date").length;
   return (
-    <details className="group min-w-0 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)]" data-supplier-id={supplier.id}>
-      <summary className="cursor-pointer list-none rounded-md p-4 outline-offset-4 transition hover:bg-white/[0.025] focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)] [&::-webkit-details-marker]:hidden">
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h4 className="break-words text-base font-semibold text-[color:var(--color-foreground)]">{supplier.name.trim() || "Proveedor por identificar"}</h4>
-            <p className="mt-1 text-xs text-[color:var(--color-muted)]">{supplier.taxId ? `RUT ${supplier.taxId}` : "RUT por confirmar"}</p>
+    <details className="group min-w-0 border-t border-[color:var(--color-border)] first:border-0" data-supplier-id={supplier.id}>
+      <summary className="cursor-pointer list-none px-3 py-3 outline-offset-2 transition hover:bg-[color:var(--color-surface-strong)] focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)] [&::-webkit-details-marker]:hidden">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)_110px_16px]">
+          <div className="min-w-0"><h4 className="break-words text-sm font-semibold">{supplier.name.trim() || "Proveedor por identificar"}</h4><p className="mt-0.5 text-xs text-[color:var(--color-muted)]">{supplier.taxId ? `RUT ${supplier.taxId}` : "RUT por confirmar"}</p>
+            {confirmed && (overdue > 0 || soon > 0 || noDue > 0) ? <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-[color:var(--color-muted)]">{overdue > 0 ? <span className="text-[color:var(--color-danger)]">{overdue} {overdue === 1 ? "vencida" : "vencidas"}</span> : null}{soon > 0 ? <span>{soon} {soon === 1 ? "próxima" : "próximas"}</span> : null}{noDue > 0 ? <span>{noDue} sin vencimiento</span> : null}</p> : null}
           </div>
-          <span aria-hidden="true" className="mt-1 shrink-0 text-[color:var(--color-muted)] transition-transform group-open:rotate-180">⌄</span>
+          <div className="col-start-1 row-start-2 min-w-0 sm:col-start-2 sm:row-start-1 sm:text-right"><p className="text-xs text-[color:var(--color-muted)]">{confirmed ? "Saldo pendiente" : "Importes por confirmar"}</p>{supplier.totals.length ? supplier.totals.map((total) => <p key={total.currency} className="break-words text-sm font-semibold tabular-nums">{formatAmount(total.amount, total.currency)}</p>) : <p className="text-sm text-[color:var(--color-muted)]">Importe por confirmar</p>}</div>
+          <span className="col-start-2 row-start-2 text-right text-xs text-[color:var(--color-muted)] sm:col-start-3 sm:row-start-1">Ver {supplier.invoices.length} {supplier.invoices.length === 1 ? "factura" : "facturas"}</span>
+          <span aria-hidden="true" className="col-start-2 row-start-1 justify-self-end text-[color:var(--color-muted)] transition-transform group-open:rotate-180 sm:col-start-4">⌄</span>
         </div>
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <p className="text-xs text-[color:var(--color-muted)]">{confirmed ? "Saldo pendiente" : "Importes por confirmar"}</p>
-            {supplier.totals.length ? supplier.totals.map((total) => <p key={total.currency} className="break-words text-lg font-semibold tabular-nums">{formatAmount(total.amount, total.currency)}</p>) : <p className="text-sm text-[color:var(--color-muted)]">Importe por confirmar</p>}
-          </div>
-          <span className="text-xs font-medium text-[color:var(--color-muted)]">Ver {supplier.invoices.length} {supplier.invoices.length === 1 ? "factura" : "facturas"}</span>
-        </div>
-        {confirmed && (overdue > 0 || soon > 0 || noDue > 0) ? (
-          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            {overdue > 0 ? <span className="status-pill status-pill--danger">{overdue} {overdue === 1 ? "vencida" : "vencidas"}</span> : null}
-            {soon > 0 ? <span className="status-pill status-pill--warning">{soon} {soon === 1 ? "próxima" : "próximas"}</span> : null}
-            {noDue > 0 ? <span className="status-pill status-pill--info">{noDue} sin vencimiento</span> : null}
-          </div>
-        ) : null}
       </summary>
-      <div className="border-t border-[color:var(--color-border)] px-3 py-3">
+      <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-surface-strong)] px-3 py-2 sm:px-4">
         {!confirmed ? <p className="mb-3 text-xs leading-relaxed text-[color:var(--color-muted)]">Revisá el comprobante y cómo se pagó para confirmar si queda un saldo pendiente.</p> : null}
-        <ul className="space-y-2">{supplier.invoices.map((invoice) => <InvoiceRow key={invoice.id} invoice={invoice} confirmed={confirmed} />)}</ul>
+        <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_auto] gap-4 text-xs text-[color:var(--color-muted)] lg:grid"><span>Comprobante</span><span>Emisión</span><span>Vencimiento</span><span className="text-right">{confirmed ? "Saldo pendiente" : "Importe por verificar"}</span><span className="invisible">Revisar factura ↗</span></div>
+        <ul>{supplier.invoices.map((invoice) => <InvoiceRow key={invoice.id} invoice={invoice} confirmed={confirmed} />)}</ul>
       </div>
     </details>
   );
 }
 
-function BoardSection({ groups, confirmed, emptyMessage, id, unavailable, wide }: { groups: SupplierInvoiceGroup[]; confirmed: boolean; emptyMessage: string; id: string; unavailable: boolean; wide: boolean }) {
+function BoardSection({ groups, confirmed, emptyMessage, id, unavailable }: { groups: SupplierInvoiceGroup[]; confirmed: boolean; emptyMessage: string; id: string; unavailable: boolean }) {
   const invoiceCount = groups.reduce((sum, group) => sum + group.invoices.length, 0);
   return (
-    <section aria-labelledby={id} className="min-w-0 space-y-3">
+    <section aria-labelledby={id} className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id={id} className="text-base font-semibold">{confirmed ? "Pendientes de pago" : "Por confirmar"}</h3>
-        <span className={`status-pill status-pill--${confirmed ? "info" : "warning"}`}>{unavailable && !groups.length ? "Sin datos" : `${invoiceCount} ${invoiceCount === 1 ? "factura" : "facturas"}`}</span>
+        <span className="text-xs text-[color:var(--color-muted)]">{unavailable && !groups.length ? "Sin datos" : `${invoiceCount} ${invoiceCount === 1 ? "factura" : "facturas"}`}</span>
       </div>
-      {groups.length > 0 ? <p className="text-sm leading-relaxed text-[color:var(--color-muted)]">{confirmed ? "Saldos pendientes respaldados por los registros disponibles." : "Facturas recibidas cuyo pago o saldo todavía necesita revisión."}</p> : null}
-      {groups.length ? <div className={`grid min-w-0 items-start gap-3 ${wide && groups.length > 1 ? "md:grid-cols-2" : ""}`}>{groups.map((supplier) => <SupplierCard key={supplier.id} supplier={supplier} confirmed={confirmed} />)}</div> : <p className="rounded-md border border-dashed border-[color:var(--color-border)] px-3 py-2 text-sm leading-relaxed text-[color:var(--color-muted)]">{emptyMessage}</p>}
+      {groups.length > 0 ? <p className="text-xs leading-relaxed text-[color:var(--color-muted)]">{confirmed ? "Saldos pendientes respaldados por los registros disponibles." : "Facturas recibidas cuyo pago o saldo todavía necesita revisión."}</p> : null}
+      {groups.length ? <div className="min-w-0 overflow-hidden rounded-lg border border-[color:var(--color-border)]">{groups.map((supplier) => <SupplierCard key={supplier.id} supplier={supplier} confirmed={confirmed} />)}</div> : <p className="rounded-md bg-[color:var(--color-surface-strong)] px-3 py-2 text-sm leading-relaxed text-[color:var(--color-muted)]">{emptyMessage}</p>}
     </section>
   );
 }
@@ -141,7 +119,6 @@ export function SupplierInvoicesBoard(props: SupplierInvoicesBoardProps) {
   const id = useId();
   const confirmed = filterSupplierInvoiceGroups(props.confirmed, query);
   const unconfirmed = filterSupplierInvoiceGroups(props.unconfirmed, query);
-  const bothSectionsHaveData = confirmed.length > 0 && unconfirmed.length > 0;
   const searching = query.trim().length > 0;
   const unavailable = props.coverage.status === "unavailable";
   const hasData = props.confirmed.length + props.unconfirmed.length > 0;
@@ -149,21 +126,21 @@ export function SupplierInvoicesBoard(props: SupplierInvoicesBoardProps) {
     ? "No hay información suficiente para mostrar este bloque." : "No hay facturas en este grupo entre los registros disponibles.";
   const pendingHref = safeInternalHref(props.inboxPendingHref);
   return (
-    <section aria-labelledby={`${id}-title`} className="ui-panel min-w-0 space-y-5">
+    <section aria-labelledby={`${id}-title`} className="ui-panel min-w-0 space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 id={`${id}-title`} className="text-xl font-semibold tracking-tight">Facturas de proveedores</h2>
-          <p className="mt-1 text-sm text-[color:var(--color-muted)]">Facturas recibidas en Convertilabs, agrupadas por proveedor.</p>
+          <h2 id={`${id}-title`} className="text-lg font-semibold tracking-tight">Facturas de proveedores</h2>
+          <p className="mt-1 text-xs text-[color:var(--color-muted)]">Facturas recibidas en Convertilabs, agrupadas por proveedor.</p>
         </div>
         <p className="text-xs leading-relaxed text-[color:var(--color-muted)]">{updatedLabel(props.updatedAt)}</p>
       </div>
-      {props.error ? <div role="alert" className="rounded-md border border-amber-300/20 bg-amber-400/10 p-3 text-sm text-amber-100">No pudimos cargar toda la información. Volvé a abrir Inicio en unos momentos.</div> : null}
-      {props.coverage.status !== "complete" ? <div role="status" className="rounded-md border border-[color:var(--color-border)] bg-white/[0.025] p-3 text-sm leading-relaxed text-[color:var(--color-muted)]"><span className="font-semibold text-[color:var(--color-foreground)]">{unavailable ? "Información no disponible. " : "Información parcial. "}</span>{props.coverage.message ?? (unavailable ? "Todavía no podemos confirmar el estado de las facturas." : "Puede haber facturas o pagos que aún no estén incorporados.")}</div> : null}
-      {props.inboxPendingCount !== undefined && props.inboxPendingCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300/20 bg-amber-400/5 p-3 text-sm"><p>{props.inboxPendingCount} {props.inboxPendingCount === 1 ? "comprobante recibido necesita" : "comprobantes recibidos necesitan"} revisión antes de aparecer aquí.</p>{pendingHref ? <a href={pendingHref} className="ui-button ui-button--secondary min-h-11">Revisar recibidos</a> : null}</div> : null}
-      {hasData ? <div className="space-y-2"><label htmlFor={`${id}-search`} className="block text-sm font-medium">Buscar proveedor</label><div className="flex flex-wrap gap-2"><input id={`${id}-search`} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre o RUT" className="min-h-11 min-w-0 flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-strong)] px-3 text-base text-[color:var(--color-foreground)] outline-offset-2 focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]" />{searching ? <button type="button" onClick={() => setQuery("")} className="ui-button ui-button--secondary min-h-11">Limpiar</button> : null}</div><p aria-live="polite" className="text-xs text-[color:var(--color-muted)]">{confirmed.length + unconfirmed.length} {confirmed.length + unconfirmed.length === 1 ? "grupo de proveedor" : "grupos de proveedores"}{searching ? " en la búsqueda" : " disponibles"}</p></div> : null}
-      <div className={`grid min-w-0 gap-6 ${bothSectionsHaveData ? "lg:grid-cols-2" : ""}`}>
-        <BoardSection groups={confirmed} confirmed emptyMessage={empty} id={`${id}-confirmed`} unavailable={unavailable || Boolean(props.error)} wide={!bothSectionsHaveData} />
-        <BoardSection groups={unconfirmed} confirmed={false} emptyMessage={empty} id={`${id}-unconfirmed`} unavailable={unavailable || Boolean(props.error)} wide={!bothSectionsHaveData} />
+      {props.error ? <div role="alert" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">No pudimos cargar toda la información. Volvé a abrir Inicio en unos momentos.</div> : null}
+      {props.coverage.status !== "complete" ? <p role="status" className="text-xs leading-relaxed text-[color:var(--color-muted)]"><span className="font-medium">{unavailable ? "Información no disponible. " : "Información parcial. "}</span>{props.coverage.message ?? (unavailable ? "Todavía no podemos confirmar el estado de las facturas." : "Puede haber facturas o pagos que aún no estén incorporados.")}</p> : null}
+      {props.inboxPendingCount !== undefined && props.inboxPendingCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-[color:var(--color-accent-soft)] px-3 py-2 text-sm"><p>{props.inboxPendingCount} {props.inboxPendingCount === 1 ? "comprobante recibido necesita" : "comprobantes recibidos necesitan"} revisión antes de aparecer aquí.</p>{pendingHref ? <a href={pendingHref} className="inline-flex min-h-11 items-center font-medium text-[color:var(--color-accent)] hover:underline">Revisar recibidos</a> : null}</div> : null}
+      {hasData ? <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-sm"><label htmlFor={`${id}-search`} className="sr-only">Buscar proveedor</label><input id={`${id}-search`} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar proveedor por nombre o RUT" className="min-h-11 min-w-0 flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-base text-[color:var(--color-foreground)] outline-offset-2 focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]" />{searching ? <button type="button" onClick={() => setQuery("")} className="ui-button ui-button--secondary min-h-11">Limpiar</button> : null}</div><p aria-live="polite" className="text-xs text-[color:var(--color-muted)]">{confirmed.length + unconfirmed.length} {confirmed.length + unconfirmed.length === 1 ? "grupo de proveedor" : "grupos de proveedores"}{searching ? " en la búsqueda" : " disponibles"}</p></div> : null}
+      <div className="grid min-w-0 gap-5">
+        <BoardSection groups={confirmed} confirmed emptyMessage={empty} id={`${id}-confirmed`} unavailable={unavailable || Boolean(props.error)} />
+        <BoardSection groups={unconfirmed} confirmed={false} emptyMessage={empty} id={`${id}-unconfirmed`} unavailable={unavailable || Boolean(props.error)} />
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-[color:var(--color-border)] pt-3 text-xs leading-relaxed text-[color:var(--color-muted)]">
         <p>Los importes se muestran por moneda.</p>

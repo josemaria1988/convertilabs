@@ -79,6 +79,11 @@ test("current private navigation items stay clickable", () => {
                 description: "Bandeja",
                 current: true,
               },
+              { href: "/app/o/rontil/dashboard", label: "Inicio", icon: "home", description: "Inicio" },
+              { href: "/app/o/rontil/work", label: "Trabajos", icon: "work", description: "Trabajos" },
+              { href: "/app/o/rontil/money", label: "Dinero", icon: "money", description: "Dinero" },
+              { href: "/app/o/rontil/agenda", label: "Agenda", icon: "agenda", description: "Agenda", mobilePrimary: false },
+              { href: "/app/o/rontil/advanced", label: "Mas", icon: "more", description: "Otras herramientas" },
             ],
           },
           React.createElement("div", null, "Contenido"),
@@ -88,6 +93,19 @@ test("current private navigation items stay clickable", () => {
       assert.match(html, /href="\/app\/o\/rontil\/documents"/);
       assert.match(html, /data-current="true"/);
       assert.match(html, /aria-current="page"/);
+      assert.match(html, /<main id="workspace-content" tabindex="-1"/);
+      assert.match(html, /href="#workspace-content"/);
+      assert.match(html, /aria-label="Abrir navegación"/);
+      assert.match(html, /<dialog[^>]+aria-label="Navegación principal"/);
+      const drawer = html.match(/<dialog[\s\S]*?<\/dialog>/)?.[0];
+      assert.ok(drawer, "Mobile navigation must use the accessible modal drawer");
+      for (const path of ["dashboard", "work", "documents", "money", "agenda", "advanced"]) {
+        assert.ok(drawer.includes(`href="/app/o/rontil/${path}"`), `The mobile drawer must retain ${path}`);
+      }
+      assert.ok(!drawer.includes('/app/o/rontil/audit'), "Navigation must not invent routes absent from the permission-filtered items");
+      assert.match(drawer, />Más<\/span>/);
+      assert.match(drawer, /action="\/logout" method="post"/);
+      assert.doesNotMatch(html, /app-mobile-header__card|app-mobile-nav__item|>Soporte<|>Ayuda</);
     },
   );
 });

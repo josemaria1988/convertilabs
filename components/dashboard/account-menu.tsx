@@ -90,7 +90,8 @@ export function AccountMenu({
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        aria-haspopup="menu"
+        aria-label="Opciones de la cuenta"
+        aria-controls="app-account-options"
         aria-expanded={isOpen}
         onClick={() => {
           setIsOpen((current) => !current);
@@ -114,13 +115,13 @@ export function AccountMenu({
       </button>
 
       {isOpen ? (
-        <div className="absolute right-0 z-40 mt-2 w-[278px] rounded-[6px] border border-[color:var(--color-border)] bg-[linear-gradient(180deg,rgba(35,43,58,0.99),rgba(28,35,49,1))] p-2 shadow-[0_18px_40px_rgba(7,9,14,0.35)]">
-          <div className="rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3">
-            <p className="text-sm font-semibold text-white">
+        <div id="app-account-options" className="app-account-menu">
+          <div className="border-b border-[color:var(--color-border)] px-3 py-3">
+            <p className="break-words text-sm font-semibold text-[color:var(--color-foreground)]">
               {userEmail ?? "Cuenta autenticada"}
             </p>
             <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-[color:var(--muted-soft)]">
-              Organizacion activa
+              Organización activa
             </p>
             <p className="mt-1 text-xs text-[color:var(--color-muted)]">
               {organizationName}
@@ -128,24 +129,17 @@ export function AccountMenu({
           </div>
 
           <div className="mt-2 space-y-2">
-            <div className="rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm">
-              <p className="font-medium text-white">Perfil y preferencias</p>
-              <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
-                Proximamente: contrasena, preferencias y MFA.
-              </p>
-            </div>
-
             <LoadingLink
               href={`/app/o/${organizationSlug}/settings`}
               pendingLabel="Abriendo..."
-              className="block rounded-[5px] border border-[color:var(--color-border)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm transition hover:border-[rgba(255,255,255,0.12)] hover:bg-[rgba(255,255,255,0.05)]"
+              className="block rounded-md px-3 py-3 text-sm transition hover:bg-[color:var(--color-accent-soft)]"
               onClick={() => {
                 setIsOpen(false);
               }}
             >
-              <p className="font-medium text-white">Organizacion</p>
+              <p className="font-medium text-[color:var(--color-foreground)]">Ajustes de la organización</p>
               <p className="mt-1 text-xs leading-5 text-[color:var(--color-muted)]">
-                Perfil de la organizacion, datos fiscales y plan de cuentas.
+                Datos fiscales, integraciones y plan de cuentas.
               </p>
             </LoadingLink>
 
@@ -154,7 +148,7 @@ export function AccountMenu({
                 pendingLabel="Cerrando..."
                 className={`${buttonBaseClassName} ${buttonSecondaryChromeClassName} mt-1 w-full justify-start px-4 py-2.5 text-sm`}
               >
-                Cerrar sesion
+                Cerrar sesión
               </SubmitButton>
             </form>
           </div>
