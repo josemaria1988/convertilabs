@@ -16,6 +16,7 @@ import {
 } from "@/modules/presentation/company-home";
 import { loadOrganizationVatRuns } from "@/modules/tax/vat-runs";
 import { loadTreasuryDashboard, treasuryMinorToDisplay } from "@/modules/treasury";
+import { loadSupplierInvoicesBoard } from "@/modules/money/supplier-invoices";
 
 type WorkUnitHomeRow = {
   id: string;
@@ -556,7 +557,7 @@ export async function loadCompanyHomeDashboard(
     organizationSlug: string;
   },
 ): Promise<CompanyHomeDashboard> {
-  const [documents, work, directory, intake, money, treasury, operations] = await Promise.all([
+  const [documents, work, directory, intake, money, treasury, operations, supplierInvoices] = await Promise.all([
     listAllOrganizationWorkspaceDocuments({
       organizationId: input.organizationId,
       organizationSlug: input.organizationSlug,
@@ -569,10 +570,12 @@ export async function loadCompanyHomeDashboard(
     loadMoneySignals(supabase, input.organizationId),
     loadTreasurySignals(supabase, input),
     loadOperationsSignals(supabase, input.organizationId),
+    loadSupplierInvoicesBoard(supabase, input),
   ]);
 
   return buildCompanyHomeDashboard({
     organizationSlug: input.organizationSlug,
+    supplierInvoices,
     documents: documents.map((document) =>
       mapDocumentSignal({
         organizationSlug: input.organizationSlug,

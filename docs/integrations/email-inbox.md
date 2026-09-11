@@ -56,3 +56,11 @@ Un cierre abrupto puede dejar `poll.lock`. El lector no roba esa reserva automá
 Los estados `configured`, `received`, `pending_review`, `pending_configuration` y `error` distinguen preparación, conexión/recepción, documentos pendientes y fallos. Nunca registrar ni mostrar la contraseña, respuestas IMAP crudas o cuerpos completos de correo.
 
 Después de abrir INBOX correctamente se registra una observación segura de conexión en la configuración compartida de correo. La fecha de última recepción se actualiza sólo después de una ingesta durable. El resultado `cloudObservation` permite detectar si falló guardar esa observación; un fallo de ese registro no cancela documentos ya recibidos. La pantalla web muestra fechas de observación, no una garantía de que la PC siga encendida en ese instante.
+
+## Facturas de proveedores en Inicio
+
+Inicio muestra un tablero por proveedor que incluye las facturas recibidas en Convertilabs por correo, foto u otros canales. Permite buscar por nombre o RUT y abrir el documento para revisarlo. Los vencimientos faltantes se muestran como tales y los importes se mantienen separados por moneda.
+
+El tablero distingue saldos pendientes confirmados de facturas cuyo pago todavía requiere confirmación. Recibir un CFE, que diga contado o que esté registrado en Zeta no prueba por sí solo que esté pagado. Un comprobante de cobranza, una nota de crédito o un movimiento de tarjeta no se convierten automáticamente en otra deuda a proveedor. La foto y el XML de una misma factura deben contar una sola vez.
+
+El origen de lectura es Supabase: documentos y borradores, partidas abiertas y evidencia de pago ya conservada. Abrir Inicio no conecta a Gmail ni consulta la API de Zeta. La recepción conserva su intervalo de cuatro horas y Zeta su sincronización diaria. El tablero informa la cobertura disponible y cualquier lectura incompleta; no representa por sí solo todas las deudas del ERP ni genera pagos, asientos o envíos automáticos.

@@ -1,3 +1,5 @@
+import type { SupplierInvoicesBoardData } from "@/modules/money/supplier-invoice-types";
+
 export type CompanyHomeTone = "neutral" | "success" | "warning" | "danger" | "info";
 
 export type CompanyHomeDocumentSignal = {
@@ -77,6 +79,7 @@ export type CompanyHomeTreasurySignal = {
 
 export type CompanyHomePresenterInput = {
   organizationSlug: string;
+  supplierInvoices?: SupplierInvoicesBoardData;
   documents: CompanyHomeDocumentSignal[];
   work: {
     isAvailable: boolean;
@@ -122,6 +125,7 @@ export type CompanyHomeAction = {
 };
 
 export type CompanyHomeDashboard = {
+  supplierInvoices?: SupplierInvoicesBoardData;
   summary: {
     actionableDocuments: number;
     blockedDocuments: number;
@@ -492,6 +496,7 @@ export function buildCompanyHomeDashboard(
       closeBlockers: operations.closeBlockers,
       closeWarnings: operations.closeWarnings,
     },
+    supplierInvoices: input.supplierInvoices,
     metrics,
     actions,
     documents: input.documents.slice(0, 8),

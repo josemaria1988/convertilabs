@@ -1,4 +1,5 @@
 import { LoadingLink } from "@/components/ui/loading-link";
+import { SupplierInvoicesBoard } from "@/components/money/supplier-invoices-board";
 import type {
   CompanyHomeAction,
   CompanyHomeDashboard as CompanyHomeDashboardData,
@@ -155,6 +156,7 @@ export function CompanyHomeDashboard({
 
   return (
     <div className="space-y-4">
+      {data.supplierInvoices ? <SupplierInvoicesBoard {...data.supplierInvoices} /> : null}
       <section className="ui-panel">
         <div className="ui-panel-header">
           <div>
