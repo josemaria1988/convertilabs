@@ -29,6 +29,7 @@ import type {
   ZetaPurchaseInvoiceExportPreviewLine,
   ZetaPurchaseInvoiceExportResolution,
   ZetaPurchaseFiscalIdentity,
+  ZetaPurchasePriceInputReview,
 } from "@/modules/integrations/zeta/export/types";
 
 const MONEY_TOLERANCE = 0.05;
@@ -227,6 +228,7 @@ function validatePurchasePriceVatBasis(input: {
   comprobante: ZetaCatalogRow | null;
   sourceLines: ResolvedSourceLine[];
   blockers: ZetaPurchaseExportBlocker[];
+  reviewedVatIncluded?: boolean;
 }) {
   // At zero tax, gross and net coincide. Preserve that supported path even
   // when the supplier permits entering prices with VAT included.
@@ -258,7 +260,7 @@ function validatePurchasePriceVatBasis(input: {
       "El proveedor o comprobante Zeta figura como exento, pero la factura tiene IVA. Confirma esa configuracion antes de enviarla.",
       "vat",
     );
-  } else if (modes.some((mode) => mode === "S" || mode === "M")) {
+  } else if (!input.reviewedVatIncluded && modes.some((mode) => mode === "S" || mode === "M")) {
     // Zeta documents S/M as VAT included and N/O as excluded, but its public
     // REST contract does not establish which setting wins when supplier and
     // comprobante differ. Never infer API input semantics from the UI alone.
@@ -269,6 +271,133 @@ function validatePurchasePriceVatBasis(input: {
       "vat",
     );
   }
+}
+
+function stablePriceReviewScope(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stablePriceReviewScope);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, stablePriceReviewScope(record[key])]));
+  }
+  return value;
+}
+
+function priceReviewDecision(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const review = value as Record<string, unknown>;
+  if (review.version !== 1 || review.basis !== "vat_included" || review.lineMode !== "single_item_total"
+    || review.quantity !== 1 || typeof review.description !== "string"
+    || !review.description || review.description !== review.description.trim()
+    || review.description.length > ZETA_LINE_CONCEPT_MAX_LENGTH || /[\u0000-\u001f\u007f]/.test(review.description)
+    || typeof review.unitPrice !== "number" || !Number.isFinite(review.unitPrice)
+    || review.unitPrice <= 0 || review.unitPrice !== roundCurrency(review.unitPrice)) return null;
+  return {
+    version: 1, basis: "vat_included", lineMode: "single_item_total",
+    description: review.description, quantity: 1, unitPrice: review.unitPrice,
+  };
+}
+
+function fingerprintPriceReviewScope(input: {
+  document: ZetaPurchaseExpenseDocumentInput;
+  catalogs: ZetaPurchaseExpenseCatalogs;
+  preview: ZetaPurchaseInvoiceExportPreview;
+  review: unknown;
+}): string | null {
+  const decision = priceReviewDecision(input.review);
+  if (!decision || !firstText(input.document.sourceDraftId)
+    || !input.preview.zetaSupplierCode || input.preview.comprobanteCode === null) return null;
+  const document = { ...input.document };
+  delete document.priceInputReview;
+  const select = (rows: ZetaCatalogRow[] | undefined, codes: Array<string | number | null | undefined>) =>
+    (rows ?? []).filter((row) => codes.some((code) => code !== null && code !== undefined && rowCode(row) === String(code)))
+      .map(stablePriceReviewScope).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  const { catalogs, preview } = input;
+  const defaults = catalogs.config?.defaults;
+  const scope = {
+    version: 1, document, decision, preview,
+    supplierCommercialData: select(catalogs.supplierCommercialData, [preview.zetaSupplierCode]),
+    documentTypes: select(catalogs.documentTypes, [preview.comprobanteCode]),
+    concepts: select(catalogs.concepts, preview.lines.map((line) => line.conceptCode)),
+    vatRates: select(catalogs.vatRates, preview.lines.map((line) => line.ivaCode)),
+    paymentTerms: select(catalogs.paymentTerms, [preview.conditionCode]),
+    paymentMethods: select(catalogs.paymentMethods, [preview.paymentMethodCode]),
+    currencies: select(catalogs.currencies, [preview.monedaCode]),
+    operationalCodes: { localCode: defaults?.localCode, userCode: defaults?.userCode, cashboxCode: defaults?.cashboxCode },
+    businessLocations: select(catalogs.businessLocations, [defaults?.localCode]),
+    users: select(catalogs.users, [defaults?.userCode]),
+    cashboxes: select(catalogs.cashboxes, [defaults?.cashboxCode]),
+  };
+  // Attribution is validated and stored with the review. Excluding its server
+  // timestamp lets confirmation recompute the same inspected financial scope.
+  return `price-input:v1:${createHash("sha256").update(JSON.stringify(stablePriceReviewScope(scope)), "utf8").digest("hex")}`;
+}
+
+/** Rebuilds the unreviewed scope so callers cannot approve a previously transformed preview. */
+export function buildZetaPurchasePriceInputReviewFingerprint(input: {
+  document: ZetaPurchaseExpenseDocumentInput;
+  catalogs: ZetaPurchaseExpenseCatalogs;
+  review: Omit<ZetaPurchasePriceInputReview, "scopeFingerprint">;
+}): string | null {
+  const document = { ...input.document };
+  delete document.priceInputReview;
+  const resolution = resolveZetaPurchaseExpenseInvoicePayload({ document, catalogs: input.catalogs });
+  return fingerprintPriceReviewScope({ ...input, document, preview: resolution.preview });
+}
+
+function validatePurchasePriceInputReview(input: {
+  document: ZetaPurchaseExpenseDocumentInput;
+  catalogs: ZetaPurchaseExpenseCatalogs;
+  preview: ZetaPurchaseInvoiceExportPreview;
+  sourceLines: ResolvedSourceLine[];
+  comprobante: ZetaCatalogRow | null;
+  blockers: ZetaPurchaseExportBlocker[];
+}): ZetaPurchasePriceInputReview | null {
+  const value = input.document.priceInputReview;
+  if (value === undefined || value === null) return null;
+  const fail = (code: string, message: string) => { addBlocker(input.blockers, code, message, "price_input_review"); return null; };
+  const keys = ["version", "basis", "lineMode", "description", "quantity", "unitPrice", "scopeFingerprint", "confirmedBy", "confirmedAt"];
+  const review = value as ZetaPurchasePriceInputReview;
+  if (!priceReviewDecision(value) || Object.keys(review).length !== keys.length || Object.keys(review).some((key) => !keys.includes(key))
+    || typeof review.scopeFingerprint !== "string" || !/^price-input:v1:[0-9a-f]{64}$/.test(review.scopeFingerprint)
+    || typeof review.confirmedBy !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(review.confirmedBy)
+    || typeof review.confirmedAt !== "string" || !Number.isFinite(Date.parse(review.confirmedAt))) {
+    return fail("zeta_purchase_price_review_invalid", "La confirmacion del precio con IVA no tiene una estructura o atribucion valida.");
+  }
+  const confirmedAt = Date.parse(review.confirmedAt);
+  const createdAt = input.document.createdAt ? Date.parse(input.document.createdAt) : null;
+  if (new Date(confirmedAt).toISOString() !== review.confirmedAt || confirmedAt > Date.now() + 60_000
+    || (createdAt !== null && (!Number.isFinite(createdAt) || confirmedAt < createdAt))) {
+    return fail("zeta_purchase_price_review_invalid", "La fecha de la confirmacion debe ser valida, posterior a la carga y no futura.");
+  }
+  const supplierModes = (input.catalogs.supplierCommercialData ?? [])
+    .filter((row) => rowCode(row) === input.preview.zetaSupplierCode).map((row) => firstText(row.IVA)?.toUpperCase());
+  const documentMode = firstText(input.comprobante?.IVA)?.toUpperCase();
+  if (!supplierModes.length || new Set(supplierModes).size !== 1 || !supplierModes.every((mode) => mode === "S" || mode === "M")
+    || !documentMode || !["S", "M", "N", "O"].includes(documentMode)) {
+    return fail("zeta_purchase_price_review_basis_conflict", "La confirmacion con IVA requiere proveedor con IVA incluido y configuracion de comprobante explicita compatible.");
+  }
+  const fingerprint = fingerprintPriceReviewScope({ ...input, review });
+  if (!fingerprint || fingerprint !== review.scopeFingerprint) {
+    return fail("zeta_purchase_price_review_stale", "La factura, su borrador o la configuracion cambiaron desde la confirmacion del precio. Revisa nuevamente el alcance.");
+  }
+  if (input.preview.lines.length !== 1 || input.sourceLines.length === 0
+    || new Set(input.sourceLines.map((line) => line.taxRate)).size !== 1) {
+    return fail("zeta_purchase_price_review_single_item_required", "El precio total confirmado solo se admite para una agrupacion de concepto e IVA.");
+  }
+  const line = input.preview.lines[0];
+  const rate = input.sourceLines[0].taxRate;
+  const amounts = [input.document.netAmount, input.document.taxAmount, input.document.totalAmount];
+  const isMoney = (amount: unknown): amount is number => typeof amount === "number" && Number.isFinite(amount)
+    && amount >= 0 && amount === roundCurrency(amount);
+  if (!amounts.every(isMoney) || !Number.isFinite(rate) || rate < 0
+    || review.unitPrice !== input.document.totalAmount
+    || line.netAmount !== input.document.netAmount || line.ivaAmount !== input.document.taxAmount || line.totalAmount !== input.document.totalAmount
+    || roundCurrency(line.netAmount + line.ivaAmount) !== line.totalAmount
+    || roundCurrency(review.unitPrice / (1 + rate / 100)) !== line.netAmount
+    || roundCurrency(review.unitPrice - line.netAmount) !== line.ivaAmount) {
+    return fail("zeta_purchase_price_review_amount_mismatch", "El precio total confirmado no reproduce exactamente el neto, IVA y total revisados.");
+  }
+  return review;
 }
 
 function resolveCurrency(input: {
@@ -1124,19 +1253,26 @@ export function resolveZetaPurchaseExpenseInvoicePayload(input: {
     supplierCode: supplier.zetaSupplierCode,
     blockers,
   });
-  validatePurchasePriceVatBasis({
-    supplierCode: supplier.zetaSupplierCode,
-    catalogs: input.catalogs,
-    comprobante: comprobante.row,
-    sourceLines,
-    blockers,
-  });
   const grouped = buildGroupedExpenseLines({
     document,
     sourceLines,
     localCode: local.code ?? undefined,
   });
   preview.lines = grouped.map((line) => line.previewLine);
+  const priceInputReview = validatePurchasePriceInputReview({
+    document, catalogs: input.catalogs, preview, sourceLines, comprobante: comprobante.row, blockers,
+  });
+  validatePurchasePriceVatBasis({
+    supplierCode: supplier.zetaSupplierCode, catalogs: input.catalogs, comprobante: comprobante.row,
+    sourceLines, blockers, reviewedVatIncluded: priceInputReview !== null,
+  });
+  if (priceInputReview) {
+    grouped[0].zetaLine.PrecioUnitario = priceInputReview.unitPrice;
+    grouped[0].zetaLine.Concepto = priceInputReview.description;
+    preview.lines[0].unitPrice = priceInputReview.unitPrice;
+    preview.lines[0].description = priceInputReview.description;
+    preview.priceInputReview = priceInputReview;
+  }
 
   const groupedNet = roundCurrency(preview.lines.reduce((sum, line) => sum + line.netAmount, 0));
   const groupedTax = roundCurrency(preview.lines.reduce((sum, line) => sum + line.ivaAmount, 0));

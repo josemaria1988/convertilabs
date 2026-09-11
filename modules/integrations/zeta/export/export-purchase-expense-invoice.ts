@@ -32,7 +32,7 @@ import {
   recordIntegrationAuditEvent,
   upsertIntegrationRawRecord,
 } from "@/modules/integrations/repository";
-import { buildPurchaseExpenseFiscalIdentity, normalizeZetaPurchaseExpenseConfig, resolveZetaPurchaseExpenseInvoicePayload } from "@/modules/integrations/zeta/export/purchase-expense-resolver";
+import { buildPurchaseExpenseFiscalIdentity, buildZetaPurchasePriceInputReviewFingerprint, normalizeZetaPurchaseExpenseConfig, resolveZetaPurchaseExpenseInvoicePayload } from "@/modules/integrations/zeta/export/purchase-expense-resolver";
 import { preflightZetaPurchaseInvoiceDuplicate } from "@/modules/integrations/zeta/export/duplicate-preflight";
 import { reconcilePurchaseExpenseInvoiceExport } from "@/modules/integrations/zeta/reconcile/reconcile-purchase-expense-invoice";
 import type {
@@ -48,6 +48,7 @@ import type {
   ZetaPurchaseInvoiceExportResolution,
   ZetaPurchaseInvoiceExportResult,
   ZetaPurchaseFiscalIdentity,
+  ZetaPurchasePriceInputReview,
 } from "@/modules/integrations/zeta/export/types";
 
 type JsonRecord = Record<string, unknown>;
@@ -56,6 +57,7 @@ type DocumentRow = {
   id: string;
   organization_id: string;
   created_at: string;
+  updated_at: string;
   document_date: string | null;
   current_draft_id: string | null;
   work_unit_id: string | null;
@@ -371,7 +373,7 @@ async function loadDocumentRow(input: {
 }) {
   const { data, error } = await input.supabase
     .from("documents")
-    .select("id, organization_id, created_at, document_date, current_draft_id, work_unit_id, metadata")
+    .select("id, organization_id, created_at, updated_at, document_date, current_draft_id, work_unit_id, metadata")
     .eq("organization_id", input.organizationId)
     .eq("id", input.documentId)
     .limit(1)
@@ -522,6 +524,8 @@ async function buildDocumentInput(input: {
   return {
     organizationId: input.organizationId,
     documentId: input.documentId,
+    sourceDraftId: draft.id,
+    priceInputReview: document.metadata?.zeta_purchase_price_input_review,
     createdAt: document.created_at,
     documentRole: draft.document_role,
     documentType: draft.document_type,
@@ -854,6 +858,14 @@ function parseStoredTotal(previous: PreviousExportRecord, preview: ZetaPurchaseI
   return Number.isFinite(lineTotal) && preview.lines.length > 0 ? lineTotal : null;
 }
 
+function reviewedPriceExpectedAmounts(preview: ZetaPurchaseInvoiceExportPreview) {
+  if (!preview.priceInputReview) return {};
+  return {
+    expectedNetAmount: preview.lines.length ? roundCurrency(preview.lines.reduce((sum, line) => sum + line.netAmount, 0)) : null,
+    expectedTaxAmount: preview.lines.length ? roundCurrency(preview.lines.reduce((sum, line) => sum + line.ivaAmount, 0)) : null,
+  };
+}
+
 function buildPreviousExportResult(input: {
   previous: PreviousExportRecord;
   documentId: string;
@@ -975,6 +987,7 @@ async function reconcilePreviousPendingExport(input: {
         client,
         movimiento,
         expectedTotal: parseStoredTotal(input.previous, baseResult.preview),
+        ...reviewedPriceExpectedAmounts(baseResult.preview),
       });
     } catch (error) {
       reconciliationError = normalizeZetaException(error);
@@ -1218,7 +1231,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
           movimiento, expectedTotal: parseStoredTotal(previous, stored.preview), now: deps.now?.() ?? new Date(),
         });
         stored = { ...stored, preview: { ...stored.preview, cacheReconciliation } };
-        if (cacheReconciliation.status === "already_in_erp") {
+        if (cacheReconciliation.status === "already_in_erp" && !stored.preview.priceInputReview) {
           return {
             ...stored, status: "found_in_zeta",
             blockers: stored.blockers.filter((entry) => entry.code !== "zeta_purchase_reconciliation_pending_no_resend"),
@@ -1230,7 +1243,9 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
         ...stored,
         blockers: [...stored.blockers.filter((entry) => entry.code !== "zeta_purchase_reconciliation_pending_no_resend"), blocker(
           "zeta_purchase_reconciliation_pending_no_resend",
-          "Esta factura ya fue aceptada para envio. La validacion no consulta Zeta ni permite reenviarla; queda pendiente de reconciliacion.",
+          stored.preview.priceInputReview
+            ? "Esta factura ya fue aceptada para envio. Falta verificar neto, IVA y total en la reconciliacion controlada; la copia general no habilita reenviarla."
+            : "Esta factura ya fue aceptada para envio. La validacion no consulta Zeta ni permite reenviarla; queda pendiente de reconciliacion.",
         )],
       };
     }
@@ -1702,6 +1717,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       client,
       movimiento,
       expectedTotal,
+      ...reviewedPriceExpectedAmounts(resolution.preview),
     });
   } catch (error) {
     reconciliationError = normalizeZetaException(error);
@@ -1777,6 +1793,85 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     ...result,
     attemptRawRecordId: String(raw.id),
   };
+}
+
+/** Record an explicit human decision for one invoice; never changes ERP masters
+ * or sends a purchase. The resolver rechecks the bound facts on every export. */
+export async function confirmZetaPurchaseExpensePriceInputReview(params: {
+  organizationId: string;
+  documentId: string;
+  actorProfileId: string;
+  expectedDraftId: string;
+  description: string;
+  unitPrice: number;
+  dryRun: boolean;
+  humanConfirmed?: boolean;
+  expectedScopeFingerprint?: string;
+}, deps: ExportDependencies = {}) {
+  const supabase = deps.supabase ?? getSupabaseServiceRoleClient();
+  const { data: member, error: memberError } = await supabase.from("organization_members")
+    .select("role").eq("organization_id", params.organizationId)
+    .eq("user_id", params.actorProfileId).eq("is_active", true).maybeSingle();
+  if (memberError || !member || !["owner", "admin", "admin_processing", "accountant", "reviewer"].includes(member.role)) {
+    throw new Error("El actor no puede confirmar precios de compras para esta organizacion.");
+  }
+  if (!params.dryRun && (params.humanConfirmed !== true || !params.expectedScopeFingerprint)) {
+    throw new Error("Falta la confirmacion humana y la huella de la vista previa del precio.");
+  }
+  const documentRow = await loadDocumentRow({ supabase, ...params });
+  if (documentRow.current_draft_id !== params.expectedDraftId) {
+    throw new Error("El borrador cambio. Revisa el documento antes de confirmar el precio.");
+  }
+  const [document, connection, previous, documentClaim] = await Promise.all([
+    buildDocumentInput({ supabase, ...params }),
+    loadConnection(supabase, params.organizationId),
+    loadPreviousExportRecord({ supabase, ...params }),
+    loadDocumentExportClaimId({ supabase, ...params }),
+  ]);
+  if (previous || documentClaim) {
+    throw new Error("Esta factura tiene un intento o reserva previo. Debe conciliarse antes de cambiar su precio de envio.");
+  }
+  if (!connection || document.sourceDraftId !== params.expectedDraftId) {
+    throw new Error("La conexion o el borrador no estan disponibles para esta revision.");
+  }
+  const catalogs = await loadCatalogs({ supabase, organizationId: params.organizationId, connection });
+  const decision = {
+    version: 1, basis: "vat_included", lineMode: "single_item_total",
+    description: params.description, quantity: 1, unitPrice: params.unitPrice,
+    confirmedBy: params.actorProfileId, confirmedAt: nowIso(deps),
+  } satisfies Omit<ZetaPurchasePriceInputReview, "scopeFingerprint">;
+  const scopeFingerprint = buildZetaPurchasePriceInputReviewFingerprint({ document, catalogs, review: decision });
+  if (!scopeFingerprint) throw new Error("No se pudo vincular el precio a los datos y configuracion de esta factura.");
+  if (params.expectedScopeFingerprint && scopeFingerprint !== params.expectedScopeFingerprint) {
+    throw new Error("Los datos o la configuracion cambiaron desde la vista previa. Revisa nuevamente el precio.");
+  }
+  const review = { ...decision, scopeFingerprint } satisfies ZetaPurchasePriceInputReview;
+  const resolution = resolveZetaPurchaseExpenseInvoicePayload({ document: { ...document, priceInputReview: review }, catalogs });
+  if (!resolution.exportable || !resolution.payload || !resolution.fiscalIdentity) {
+    throw new Error(`La revision no permite preparar la factura: ${resolution.blockers.map((b) => b.message).join(" ")}`);
+  }
+  const identityClaim = await loadExportClaimId({ supabase, organizationId: params.organizationId, fiscalIdentity: resolution.fiscalIdentity });
+  if (identityClaim) throw new Error("La identidad fiscal ya tiene una reserva de envio. No se modifica ni se libera.");
+  if (params.dryRun) return { saved: false, review, preview: resolution.preview, payload: resolution.payload };
+  if (!documentRow.updated_at) throw new Error("Falta la version del documento para guardar la revision sin sobrescribir cambios.");
+  // Audit the intended decision before activating it. A failed compare-and-set
+  // leaves only this attempted confirmation, never a claim of a saved review.
+  await recordIntegrationAuditEvent(supabase, {
+    organizationId: params.organizationId, actorUserId: params.actorProfileId,
+    entityType: "document", entityId: params.documentId,
+    action: "zeta_purchase_price_input_review_requested",
+    beforeJson: { review: documentRow.metadata?.zeta_purchase_price_input_review ?? null },
+    afterJson: { review }, metadata: { source: "explicit_human_confirmation", erp_write: false, activation: "pending_document_compare_and_set" },
+  });
+  const { data: saved, error: saveError } = await supabase.from("documents")
+    .update({ metadata: { ...asRecord(documentRow.metadata), zeta_purchase_price_input_review: review }, updated_at: nowIso(deps) })
+    .eq("organization_id", params.organizationId).eq("id", params.documentId)
+    .eq("current_draft_id", params.expectedDraftId).eq("updated_at", documentRow.updated_at)
+    .select("id");
+  if (saveError || saved?.length !== 1) {
+    throw new Error(saveError?.message ?? "El documento cambio durante la confirmacion. La revision no se guardo; volve a revisarlo.");
+  }
+  return { saved: true, review, preview: resolution.preview, payload: resolution.payload };
 }
 
 export async function resolveZetaPurchaseExpenseInvoiceForDocument(params: {

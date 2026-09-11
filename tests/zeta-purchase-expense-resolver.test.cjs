@@ -117,6 +117,174 @@ function document(overrides = {}) {
   };
 }
 
+function includedPriceFixture() {
+  const data = catalogs();
+  data.supplierCommercialData[0].IVA = "M";
+  const invoice = document({
+    sourceDraftId: "draft-current-1", createdAt: "2026-09-11T17:59:52.000Z",
+    postingTemplateCode: "purchase_expense_cash.v1", paymentTerms: "cash", settlementMethod: "cash",
+    issueDate: "2026-09-11", number: "0000200", zetaConceptCodeOverride: "ALIMENTOS",
+    netAmount: 565.57, taxAmount: 124.43, totalAmount: 690,
+    lines: [{ lineNumber: 1, conceptDescription: "Comida", netAmount: 565.57, taxRate: 22, taxAmount: 124.43, totalAmount: 690 }],
+  });
+  const review = {
+    version: 1, basis: "vat_included", lineMode: "single_item_total", description: "Comida", quantity: 1, unitPrice: 690,
+    confirmedBy: "c62a473b-e35a-4397-885f-38a1b84e32bd", confirmedAt: "2026-09-11T18:00:00.000Z",
+  };
+  return { document: invoice, catalogs: data, review };
+}
+
+function confirmIncludedPrice(input) {
+  const { buildZetaPurchasePriceInputReviewFingerprint } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const scopeFingerprint = buildZetaPurchasePriceInputReviewFingerprint(input);
+  assert.match(scopeFingerprint, /^price-input:v1:[0-9a-f]{64}$/);
+  input.document.priceInputReview = { ...input.review, scopeFingerprint };
+}
+
+test("document-specific included price sends Comida x1 at 690 while preserving net VAT total and fiscal identity", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const input = includedPriceFixture();
+  const before = resolveZetaPurchaseExpenseInvoicePayload(input);
+  assert.equal(before.payload, null);
+  assert.ok(before.blockers.some((b) => b.code === "zeta_purchase_price_vat_included_unverified"));
+  confirmIncludedPrice(input);
+  const untouched = structuredClone(input);
+  const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+  assert.equal(result.status, "dry_run_ready");
+  const movement = result.payload.Data.Movimiento[0];
+  assert.equal(movement.Lineas.length, 1);
+  assert.equal(movement.Lineas[0].Concepto, "Comida");
+  assert.equal(movement.Lineas[0].Cantidad, 1);
+  assert.equal(movement.Lineas[0].PrecioUnitario, 690);
+  assert.equal(movement.Lineas[0].CodigoIVA, 1);
+  assert.deepEqual(movement.FormasPago, [{ CodigoFormaPago: 1, CodigoMonedaPago: 1, MontoMonedaPago: 690, MontoMonedaMovimiento: 690 }]);
+  assert.deepEqual(result.preview.lines.map((line) => [line.description, line.quantity, line.unitPrice, line.netAmount, line.ivaAmount, line.totalAmount]),
+    [["Comida", 1, 690, 565.57, 124.43, 690]]);
+  assert.deepEqual(result.preview.priceInputReview, input.document.priceInputReview);
+  assert.deepEqual(result.fiscalIdentity, before.fiscalIdentity);
+  assert.equal(result.fiscalFingerprint, before.fiscalFingerprint);
+  assert.deepEqual(input, untouched);
+});
+
+test("included approval supports explicit supplier S/M and valid document modes without changing the global default", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  for (const supplierMode of ["S", "M"]) for (const documentMode of ["S", "M", "N", "O"]) {
+    const input = includedPriceFixture();
+    input.catalogs.supplierCommercialData[0].IVA = supplierMode;
+    input.catalogs.documentTypes[1].IVA = documentMode;
+    confirmIncludedPrice(input);
+    assert.equal(resolveZetaPurchaseExpenseInvoicePayload(input).exportable, true);
+    delete input.document.priceInputReview;
+    assert.equal(resolveZetaPurchaseExpenseInvoicePayload(input).exportable, false);
+  }
+});
+
+test("price approval expires when document draft fiscal facts lines mappings payment or VAT basis change", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const changes = [
+    (i) => { i.document.organizationId = "other-org"; },
+    (i) => { i.document.documentId = "other-document"; },
+    (i) => { i.document.sourceDraftId = "new-draft"; },
+    (i) => { i.document.series = "B"; },
+    (i) => { i.document.number = "201"; },
+    (i) => { i.document.issueDate = "2026-09-10"; },
+    (i) => { i.document.lines[0].conceptDescription = "Otra comida"; },
+    (i) => { i.document.workUnitId = "other-work"; },
+    (i) => { i.document.zetaConceptCodeOverride = "GASTOSVAR"; },
+    (i) => { i.catalogs.config.paymentMethods.cash = 7; },
+    (i) => { i.catalogs.supplierCommercialData[0].IVA = "S"; },
+    (i) => { i.catalogs.documentTypes[1].IVA = "O"; },
+    (i) => { i.catalogs.vatRates[0].Tasa = 21; },
+    (i) => { i.catalogs.config.defaults.userCode = 43; i.catalogs.users.push({ Codigo: 43, Nombre: "Otro" }); },
+    (i) => { i.document.netAmount = 565.56; i.document.taxAmount = 124.44; },
+    (i) => { i.document.priceInputReview.description = "Almuerzo"; },
+    (i) => { i.document.priceInputReview.unitPrice = 691; },
+  ];
+  for (const change of changes) {
+    const input = includedPriceFixture(); confirmIncludedPrice(input); change(input);
+    const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((b) => b.code === "zeta_purchase_price_review_stale"), JSON.stringify(result.blockers));
+  }
+});
+
+test("malformed or unaudited included-price confirmations remain blocked", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const patches = [
+    { version: 2 }, { basis: "vat_excluded" }, { lineMode: "many" }, { quantity: 2 },
+    { description: " Comida" }, { description: "" }, { description: "x".repeat(51) }, { description: "Comida\n" },
+    { unitPrice: "690" }, { unitPrice: NaN }, { unitPrice: 690.001 }, { confirmedBy: "anonymous" },
+    { confirmedAt: "bad-date" }, { confirmedAt: "2026-09-11T17:00:00.000Z" },
+    { confirmedAt: new Date(Date.now() + 120_000).toISOString() },
+    { scopeFingerprint: "arbitrary" }, { extra: true },
+  ];
+  for (const patch of patches) {
+    const input = includedPriceFixture(); confirmIncludedPrice(input);
+    Object.assign(input.document.priceInputReview, patch);
+    const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((b) => b.code === "zeta_purchase_price_review_invalid"));
+  }
+});
+
+test("unknown conflicting exempt or excluded supplier bases cannot gain included-price approval", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  for (const mode of [undefined, "invalid", "E", "N", "O"]) {
+    const input = includedPriceFixture(); confirmIncludedPrice(input);
+    input.catalogs.supplierCommercialData[0].IVA = mode;
+    const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((b) => b.code === "zeta_purchase_price_review_basis_conflict"));
+  }
+  for (const change of [
+    (i) => { i.catalogs.documentTypes[1].IVA = "E"; },
+    (i) => { delete i.catalogs.documentTypes[1].IVA; },
+    (i) => { i.catalogs.supplierCommercialData.push({ Codigo: "PR0031", IVA: "N" }); },
+  ]) {
+    const input = includedPriceFixture(); confirmIncludedPrice(input); change(input);
+    assert.equal(resolveZetaPurchaseExpenseInvoicePayload(input).payload, null);
+  }
+});
+
+test("even a fresh scope cannot approve wrong gross price or an inconsistent VAT calculation", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  for (const change of [
+    (i) => { i.review.unitPrice = 689; },
+    (i) => { i.document.lines[0].taxRate = 10; },
+    (i) => { i.document.netAmount = 565.56; i.document.taxAmount = 124.44; Object.assign(i.document.lines[0], { netAmount: 565.56, taxAmount: 124.44 }); },
+  ]) {
+    const input = includedPriceFixture(); change(input); confirmIncludedPrice(input);
+    const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+    assert.equal(result.payload, null);
+    assert.ok(result.blockers.some((b) => b.code === "zeta_purchase_price_review_amount_mismatch"), JSON.stringify(result.blockers));
+  }
+});
+
+test("single-item approval never discards another concept or VAT group", () => {
+  const { resolveZetaPurchaseExpenseInvoicePayload } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const input = includedPriceFixture();
+  Object.assign(input.document, { netAmount: 580, taxAmount: 110, totalAmount: 690, lines: [
+    { lineNumber: 1, conceptDescription: "Comida", netAmount: 500, taxRate: 22, taxAmount: 110, totalAmount: 610 },
+    { lineNumber: 2, conceptDescription: "Exento", netAmount: 80, taxRate: 0, taxAmount: 0, totalAmount: 80 },
+  ] });
+  confirmIncludedPrice(input);
+  const result = resolveZetaPurchaseExpenseInvoicePayload(input);
+  assert.equal(result.preview.lines.length, 2);
+  assert.equal(result.payload, null);
+  assert.ok(result.blockers.some((b) => b.code === "zeta_purchase_price_review_single_item_required"));
+});
+
+test("scope ignores server attribution timestamps but binds the draft and financial decision", () => {
+  const { buildZetaPurchasePriceInputReviewFingerprint } = require("@/modules/integrations/zeta/export/purchase-expense-resolver");
+  const input = includedPriceFixture();
+  const expected = buildZetaPurchasePriceInputReviewFingerprint(input);
+  input.review.confirmedAt = "2026-09-11T18:05:00.000Z";
+  input.review.confirmedBy = "11111111-2222-3333-4444-555555555555";
+  assert.equal(buildZetaPurchasePriceInputReviewFingerprint(input), expected);
+  delete input.document.sourceDraftId;
+  assert.equal(buildZetaPurchasePriceInputReviewFingerprint(input), null);
+});
+
 test("CFE de gasto con proveedor existente genera payload valido para Factura Proveedor", () => {
   const {
     resolveZetaPurchaseExpenseInvoiceFromInputs,

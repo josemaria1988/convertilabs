@@ -85,6 +85,8 @@ export type ZetaPurchaseExpenseDocumentLineInput = {
 export type ZetaPurchaseExpenseDocumentInput = {
   organizationId: string;
   documentId: string;
+  sourceDraftId?: string | null;
+  priceInputReview?: unknown;
   createdAt?: string | null;
   documentRole: "purchase" | "sale" | "other";
   documentType: string | null;
@@ -112,6 +114,19 @@ export type ZetaPurchaseExpenseDocumentInput = {
   workUnitName?: string | null;
   workUnitExternalCode?: string | null;
   lines: ZetaPurchaseExpenseDocumentLineInput[];
+};
+
+/** Document-specific human confirmation; never an organization-wide pricing default. */
+export type ZetaPurchasePriceInputReview = {
+  version: 1;
+  basis: "vat_included";
+  lineMode: "single_item_total";
+  description: string;
+  quantity: 1;
+  unitPrice: number;
+  scopeFingerprint: string;
+  confirmedBy: string;
+  confirmedAt: string;
 };
 
 export type ZetaPurchaseInvoiceExportPreviewLine = {
@@ -145,6 +160,7 @@ export type ZetaPurchaseInvoiceExportPreview = {
   workUnitName?: string | null;
   centroCostoCode?: string | null;
   cacheReconciliation?: PurchaseInvoiceCacheReconciliation;
+  priceInputReview?: ZetaPurchasePriceInputReview;
 };
 
 export type ZetaPurchaseInvoiceExportResolution = {

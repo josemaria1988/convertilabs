@@ -60,6 +60,7 @@ function createFakeSupabase(options = {}) {
       id: "doc-1",
       organization_id: "org-1",
       created_at: "2026-04-20T15:00:00.000Z",
+      updated_at: "2026-04-20T15:00:00.000Z",
       document_date: "2026-04-20",
       current_draft_id: "draft-1",
       metadata: {},
@@ -237,6 +238,10 @@ function createFakeSupabase(options = {}) {
     insert(payload) {
       const rows = Array.isArray(payload) ? payload : [payload];
 
+      if (this.table === "audit_log" && options.failPriceReviewAudit) {
+        return Promise.resolve({ data: null, error: { message: "Test audit unavailable" } });
+      }
+
       if (this.table === "integration_raw_records") {
         const pendingKeys = new Set();
         const duplicate = rows.some((row) => {
@@ -295,6 +300,9 @@ function createFakeSupabase(options = {}) {
 
     execute() {
       if (this.operation === "update") {
+        if (this.table === "documents" && options.failPriceReviewCas && this.payload.metadata?.zeta_purchase_price_input_review) {
+          return { data: [], error: null };
+        }
         const rows = this.filterRows();
         for (const row of rows) {
           Object.assign(row, this.payload);
@@ -387,6 +395,150 @@ function zetaClient(fetchImpl) {
     fetchImpl,
   });
 }
+
+const PRICE_REVIEW_ACTOR = "11111111-1111-4111-8111-111111111111";
+function priceReviewFixture(options = {}) {
+  const supabase = createFakeSupabase(options);
+  supabase.state.organization_members = [{ organization_id: "org-1", user_id: PRICE_REVIEW_ACTOR, role: "owner", is_active: true }];
+  supabase.state.integration_raw_records.find((row) => row.entity_type === "supplier_commercial_data").payload_json.row.IVA = "M";
+  supabase.state.documents[0].metadata = { preserved: "unchanged" };
+  return supabase;
+}
+function priceReviewParams(extra = {}) {
+  return { organizationId: "org-1", documentId: "doc-1", actorProfileId: PRICE_REVIEW_ACTOR,
+    expectedDraftId: "draft-1", description: "Comida", unitPrice: 1220, dryRun: true, ...extra };
+}
+
+test("envio con precio bruto verifica desglose y pending no se valida solo por total en copia", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview, exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const expectedNet of [1000, 900, null]) {
+    const supabase = priceReviewFixture();
+    const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+    await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams({ dryRun: false, humanConfirmed: true,
+      expectedScopeFingerprint: prepared.review.scopeFingerprint }), { supabase });
+    let queryCount = 0, addCount = 0;
+    const client = zetaClient(async (url, init) => {
+      if (url.endsWith("RESTFacturaProveedorV1Agregar")) {
+        addCount++;
+        const line = JSON.parse(init.body).AgregarIn.Data.Movimiento.Lineas[0];
+        assert.equal(line.PrecioUnitario, 1220);
+        assert.equal(line.Cantidad, 1);
+        assert.equal(line.Concepto, "Comida");
+        return { ok: true, status: 200, statusText: "OK", json: async () => ({ AgregarOut: { Succeed: true, Response: { Succeed: true }, Error: null } }) };
+      }
+      assert.ok(url.endsWith("RESTFacturaProveedorV1QueryCompras"));
+      queryCount++;
+      const row = { RegistroId: 777, ComprobanteCodigo: 11, Serie: "A", Numero: 123456, Fecha: "2026-04-20", MonedaCodigo: 1, ProveedorCodigo: "PR0031", Total: 1220,
+        ...(expectedNet === null ? {} : { Subtotal: expectedNet, IVA: 1220 - expectedNet }) };
+      return { ok: true, status: 200, statusText: "OK", json: async () => ({ QueryComprasOut: { Succeed: true, Response: queryCount === 1 ? [] : [row], IsLastPage: true, Error: null } }) };
+    });
+    const params = { organizationId: "org-1", documentId: "doc-1", actorProfileId: PRICE_REVIEW_ACTOR, humanConfirmed: true };
+    const result = await exportPurchaseExpenseInvoiceToZeta(params, { supabase, client });
+    assert.equal(addCount, 1);
+    assert.equal(result.status, expectedNet === 1000 ? "found_in_zeta" : "success_pending_reconciliation");
+    assert.equal(result.zetaResponse.reconciliation.status, expectedNet === 1000 ? "found_in_zeta" : "amount_mismatch");
+    if (expectedNet !== 1000) {
+      const updatedCache = createFakeSupabase({ purchaseRows: monthlyPurchaseRows() });
+      supabase.state.integration_sync_runs = updatedCache.state.integration_sync_runs;
+      supabase.state.integration_raw_records = supabase.state.integration_raw_records.filter(row => row.entity_type !== "report_snapshot_page")
+        .concat(updatedCache.state.integration_raw_records.filter(row => row.entity_type === "report_snapshot_page"));
+      const before = structuredClone(supabase.state);
+      const countBefore = queryCount;
+      const pending = await exportPurchaseExpenseInvoiceToZeta({ ...params, dryRun: true }, { supabase, client });
+      assert.equal(pending.preview.cacheReconciliation.status, "already_in_erp");
+      assert.equal(pending.status, "success_pending_reconciliation");
+      assert.equal(queryCount, countBefore);
+      assert.deepEqual(supabase.state, before);
+      const rechecked = await exportPurchaseExpenseInvoiceToZeta(params, { supabase, client });
+      assert.equal(rechecked.status, "success_pending_reconciliation");
+      assert.equal(rechecked.zetaResponse.reconciliation.status, "amount_mismatch");
+      assert.equal(addCount, 1);
+    }
+  }
+});
+
+test("confirmacion IVA incluido guarda decision puntual y preserva extraccion, configuracion y reservas", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = priceReviewFixture();
+  const before = structuredClone(supabase.state);
+  const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+  assert.equal(prepared.saved, false);
+  assert.deepEqual(supabase.state, before);
+  assert.equal(prepared.payload.Data.Movimiento[0].Lineas[0].PrecioUnitario, 1220);
+  assert.equal(prepared.payload.Data.Movimiento[0].Lineas[0].Concepto, "Comida");
+  const saved = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams({ dryRun: false, humanConfirmed: true,
+    expectedScopeFingerprint: prepared.review.scopeFingerprint }), { supabase });
+  assert.equal(saved.saved, true);
+  assert.equal(supabase.state.documents[0].metadata.preserved, "unchanged");
+  assert.deepEqual(supabase.state.documents[0].metadata.zeta_purchase_price_input_review, saved.review);
+  assert.deepEqual(supabase.state.document_drafts, before.document_drafts);
+  assert.deepEqual(supabase.state.organization_integration_connections, before.organization_integration_connections);
+  assert.deepEqual(supabase.state.integration_raw_records, before.integration_raw_records);
+  assert.equal(supabase.state.audit_log.length, 1);
+  const ready = await exportReady(supabase);
+  assert.equal(ready.exportable, true);
+  assert.equal(ready.preview.lines[0].unitPrice, 1220);
+  assert.equal(ready.preview.lines[0].netAmount, 1000);
+  assert.equal(ready.preview.lines[0].ivaAmount, 220);
+  const reviewBefore = structuredClone(saved.review);
+  supabase.state.document_drafts[0].fields_json.line_items[0].concept_description = "Otro contenido";
+  const stale = await exportReady(supabase);
+  assert.equal(stale.exportable, false);
+  assert.equal(stale.payload, null);
+  assert.deepEqual(supabase.state.documents[0].metadata.zeta_purchase_price_input_review, reviewBefore);
+});
+
+test("confirmacion IVA incluido rechaza actor, consentimiento, draft o alcance distintos sin activar review", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const scenario of ["role", "tenant", "consent", "draft", "fingerprint", "price", "previous_claim"]) {
+    const supabase = priceReviewFixture();
+    const params = priceReviewParams({ dryRun: false, humanConfirmed: true });
+    const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+    params.expectedScopeFingerprint = prepared.review.scopeFingerprint;
+    if (scenario === "role") supabase.state.organization_members[0].role = "viewer";
+    if (scenario === "tenant") params.organizationId = "other-org";
+    if (scenario === "consent") params.humanConfirmed = false;
+    if (scenario === "draft") params.expectedDraftId = "other-draft";
+    if (scenario === "fingerprint") params.expectedScopeFingerprint = "stale";
+    if (scenario === "price") params.unitPrice = 1000;
+    if (scenario === "previous_claim") supabase.state.integration_raw_records.push({ id: "prior-reservation", organization_id: "org-1", provider: "zetasoftware",
+      entity_type: "purchase_expense_export_claim", external_key: "reserved", payload_json: { document_id: "doc-1" }, metadata_json: {} });
+    const before = structuredClone(supabase.state);
+    await assert.rejects(() => confirmZetaPurchaseExpensePriceInputReview(params, { supabase }));
+    assert.deepEqual(supabase.state, before, scenario);
+  }
+});
+
+test("fallos de auditoria o CAS dejan confirmacion de precio inactiva", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const option of ["failPriceReviewAudit", "failPriceReviewCas"]) {
+    const supabase = priceReviewFixture({ [option]: true });
+    const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+    const documentBefore = structuredClone(supabase.state.documents);
+    await assert.rejects(() => confirmZetaPurchaseExpensePriceInputReview(priceReviewParams({ dryRun: false, humanConfirmed: true,
+      expectedScopeFingerprint: prepared.review.scopeFingerprint }), { supabase }));
+    assert.deepEqual(supabase.state.documents, documentBefore);
+    assert.equal(supabase.state.audit_log.length, option === "failPriceReviewCas" ? 1 : 0);
+    assert.equal((await exportReady(supabase)).exportable, false);
+  }
+});
+
+test("precio confirmado no evita espera de copia mensual ni produce HTTP con cache antigua", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview, exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = priceReviewFixture({ cacheAgeMs: 2 * 86400000 });
+  const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+  await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams({ dryRun: false, humanConfirmed: true,
+    expectedScopeFingerprint: prepared.review.scopeFingerprint }), { supabase });
+  let calls = 0;
+  const client = zetaClient(async () => { calls++; throw new Error("No HTTP with stale cache"); });
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1", actorProfileId: PRICE_REVIEW_ACTOR,
+    dryRun: true, humanConfirmed: true }, { supabase, client });
+  assert.equal(result.status, "waiting_for_sync");
+  assert.equal(result.exportable, false);
+  assert.equal(result.preview.lines[0].unitPrice, 1220);
+  assert.equal(calls, 0);
+  assert.equal(supabase.state.integration_raw_records.some(r => r.entity_type === "purchase_expense_export_claim"), false);
+});
 
 function monthlyPurchaseRows(total = 1220) {
   const { groupZetaPurchaseDetailRows } = require("@/modules/integrations/zeta/sync/daily-sync");
