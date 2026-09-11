@@ -47,6 +47,8 @@ function help() {
   npm run local -- ingest --file "C:\\Facturas\\factura.jpg"
   npm run local -- status --document <UUID>
   npm run local -- worker [--once]
+  npm run local -- email-inbox --dry-run
+  npm run local -- email-inbox --once
   npm run local -- sync-zeta [--dry-run] [--sync-config "configuracion.json"]
   npm run local -- sync-zeta --now --reason "Solicitud explícita del usuario para adelantar la corrida de hoy"
   npm run local -- cache-status
@@ -199,11 +201,27 @@ function waitForStop(signal) {
   return new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
 }
 
+async function emailInbox(who, signal, dryRun = false, manual = false) {
+  const { loadEmailInboxEnv } = require("./email-config.cjs");
+  const { resolveEmailInboxConfig, pollEmailInbox, emailInvoiceQuery } = require("@/modules/local-companion/email-inbox");
+  const resolved = resolveEmailInboxConfig(await loadEmailInboxEnv(path.join(root, ".env.email.local")));
+  if (resolved.status !== "ready") return resolved;
+  if (dryRun) return { status: "configured", connectionTested: false, databaseWrites: 0,
+    address: resolved.config.address, mailbox: resolved.config.mailbox, since: resolved.config.since,
+    search: emailInvoiceQuery, pollIntervalSeconds: workerPollIntervalMs / 1000,
+    message: "Configuración local completa; falta probar Gmail. Sólo adjuntos de facturas, sin marcar correos ni enviar a Zeta." };
+  const { ingestEmailAttachments } = require("@/modules/local-companion/email-documents");
+  const { recordLocalCfeEmailObservation } = require("@/modules/integrations/cfe-email-settings");
+  return pollEmailInbox({ ...who, config: resolved.config, stateDirectory, signal, manual },
+    { ingest: ingestEmailAttachments, observe: recordLocalCfeEmailObservation });
+}
+
 async function worker(values, signal, dependencies = {}) {
   const resolveLocalCompanionContext = dependencies.context || require("@/modules/local-companion/context").resolveLocalCompanionContext;
   const processNextLocalDocument = dependencies.processNext || require("@/modules/documents/processing").processNextLocalDocument;
   const doctorCodexProvider = dependencies.doctor || require("@/modules/local-companion/codex-provider").doctorCodexProvider;
   const report = dependencies.report || print;
+  const receiveEmail = dependencies.emailPoll || emailInbox;
   const who = await identity(values);
   const readiness = await doctorCodexProvider();
   if (!readiness.ready) throw new Error("Codex no está listo. Ejecutá local doctor y resolvé los checks antes de procesar facturas.");
@@ -217,6 +235,15 @@ async function worker(values, signal, dependencies = {}) {
     try {
       // Recheck membership on each iteration so revoked access stops the pilot.
       const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
+      // One existing worker, one email poll per four-hour cycle. Failure never stops phone uploads.
+      try {
+        const mail = await receiveEmail(who, signal);
+        if (mail.status !== "disabled") report({ at: new Date().toISOString(), source: "email_inbox", ...mail });
+      } catch {
+        report({ at: new Date().toISOString(), source: "email_inbox", status: "error",
+          message: "La recepción de correo quedó pendiente. El trabajador continúa con los documentos ya cargados." });
+      }
+      if (signal.aborted) break;
       const result = await processNextLocalDocument({ organizationId: context.organization.id, workerId, signal });
       errors = 0;
       if (result.claimed || values.once) report({ at: new Date().toISOString(), ...result });
@@ -326,6 +353,16 @@ async function main(argv = process.argv.slice(2)) {
       return result;
     }
     const who = await identity(values);
+    if (command === "email-inbox") {
+      if (positionals.length !== 1 || Boolean(values.once) === Boolean(values["dry-run"])
+        || Object.keys(values).some((key) => !["once", "dry-run", "slug", "actor", "app-url"].includes(key))) {
+        throw new Error("Usá email-inbox --dry-run para revisar configuración o email-inbox --once para recibir adjuntos una vez.");
+      }
+      const result = await emailInbox(who, controller.signal, Boolean(values["dry-run"]), true);
+      print(result);
+      if (result.status === "error") process.exitCode = 1;
+      return result;
+    }
     if (command === "sync-zeta") return await syncZeta(values, who);
     if (command === "cache-status") {
       const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
@@ -376,4 +413,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters, manualSyncAuthorization };
+module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters, manualSyncAuthorization, emailInbox };

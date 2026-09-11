@@ -1924,6 +1924,14 @@ export async function enqueueDocumentProcessing(
   try {
     document = await loadDocument(input.documentId);
 
+    // XML email originals live in immutable raw evidence, not in the visual-file bucket.
+    // They already have deterministic review drafts and must never enter an AI queue.
+    if (document.metadata?.processing_provider === "cfe_xml_local"
+      || ["application/xml", "text/xml"].includes(document.mime_type ?? "")) {
+      return { ok: false, documentId: document.id, runId: null, status: "skipped",
+        message: "Este XML se extrae de forma determinista. Revisá el borrador o volvé a importar el original mediante la recepción de correo; no se encola en IA." };
+    }
+
     const provider = resolveDocumentProcessingProvider(document.metadata);
     selectedLocalProvider = provider === "codex_local";
     if (document.current_processing_run_id) {

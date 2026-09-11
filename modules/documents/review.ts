@@ -1180,6 +1180,11 @@ async function loadConfirmations(
 async function buildPreviewUrl(document: DocumentRow) {
   const metadata = asRecord(document.metadata);
 
+  if (document.mime_type === "application/xml" && metadata.original_storage === "integration_raw_records"
+    && metadata.binary_available === false && typeof metadata.integration_raw_record_id === "string") {
+    return `/api/v1/documents/${encodeURIComponent(document.id)}/original`;
+  }
+
   if (metadata.synthetic_preview === true) {
     return null;
   }

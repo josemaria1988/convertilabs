@@ -35,7 +35,7 @@ import { loadOrganizationBusinessProfileData } from "@/modules/organizations/bus
 import { getOrganizationFeatureFlags } from "@/modules/organizations/feature-flags";
 import { buildOrganizationPrivateNavItems } from "@/modules/organizations/private-nav";
 import { loadOrganizationSettingsData } from "@/modules/organizations/settings";
-import { formatCfeEmailConnectionStatusLabel } from "@/modules/integrations/cfe-email-settings";
+import { formatCfeEmailConnectionStatusLabel, getLocalCfeEmailLastProbe } from "@/modules/integrations/cfe-email-settings";
 import {
   supportedCfeStatuses,
   supportedDgiGroups,
@@ -170,6 +170,11 @@ export default async function OrganizationSettingsPage({
       ? loadOrganizationDocumentsCountByCostCenter(organization.id)
       : Promise.resolve({}),
   ]);
+  const localCfeEmail = settings.currentUserCfeEmailConnection?.ingestionMode === "local_imap";
+  const localCfeLastProbe = getLocalCfeEmailLastProbe(settings.currentUserCfeEmailConnection);
+  const formatEmailDate = (value: string) => new Intl.DateTimeFormat("es-UY", {
+    dateStyle: "short", timeStyle: "short", timeZone: "America/Montevideo",
+  }).format(new Date(value));
   const effectiveFromDefault = new Date().toISOString().slice(0, 10);
   const activeProfileJson = (settings.activeProfile?.profile_json ?? {}) as Record<string, unknown>;
   const activeFiscalAddress =
@@ -466,38 +471,46 @@ export default async function OrganizationSettingsPage({
             </ExpandableSectionCard>
 
           <ExpandableSectionCard
-            title="Conectar email de eFacturas"
-            description="Usa esta conexion para recibir en el sistema directamente los CFE de esta organizacion desde la casilla que cada usuario opera."
+            title="Correo de eFacturas"
+            description="Registra la casilla de esta organizacion. La lectura automatica se configura y verifica en Convertilabs Local."
           >
             <div className="space-y-4">
               <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 p-4 text-sm text-[color:var(--color-muted)]">
-                <p className="font-semibold text-white">Conexion personal dentro de la organizacion</p>
+                <p className="font-semibold text-white">Casilla registrada para la organizacion</p>
                 <p className="mt-2">
                   Cada usuario puede registrar su propia casilla de CFE para esta organizacion.
                   La casilla queda aislada por organizacion y no puede compartirse con otra empresa.
                 </p>
                 <p className="mt-2">
-                  Metodo inicial recomendado: reenvio automatico desde tu email de CFE hacia un alias
-                  seguro generado por Convertilabs.
+                  Guardar este formulario no conecta el correo ni verifica la recepcion de mensajes.
+                  La configuracion del lector local se realiza por separado en la PC.
                 </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/70 p-4 text-sm">
-                  <p className="font-semibold">Estado actual</p>
+                  <p className="font-semibold">Estado del registro</p>
                   <p className="mt-2 text-[color:var(--color-muted)]">
                     {settings.currentUserCfeEmailConnection
                       ? formatCfeEmailConnectionStatusLabel(
                         settings.currentUserCfeEmailConnection.status,
+                        settings.currentUserCfeEmailConnection.lastInboundEmailAt,
                       )
-                      : "Sin conexion guardada"}
+                      : "Sin casilla guardada"}
                   </p>
                   <p className="mt-1 text-[color:var(--color-muted)]">
                     Casilla: {settings.currentUserCfeEmailConnection?.mailboxEmail ?? "Sin definir"}
                   </p>
                   <p className="mt-1 text-[color:var(--color-muted)]">
-                    Alias de ingreso: {settings.currentUserCfeEmailConnection?.inboundAddress ?? "Se genera al guardar"}
+                    {localCfeLastProbe
+                      ? `Ultima comprobacion exitosa: ${formatEmailDate(localCfeLastProbe)} (Uruguay). No indica que la PC siga encendida.`
+                      : "La ultima lectura del correo aun no fue registrada por Convertilabs Local."}
                   </p>
+                  {settings.currentUserCfeEmailConnection?.lastInboundEmailAt && (
+                    <p className="mt-1 text-[color:var(--color-muted)]">
+                      Ultima recepcion registrada: {formatEmailDate(settings.currentUserCfeEmailConnection.lastInboundEmailAt)} (Uruguay).
+                    </p>
+                  )}
                   <p className="mt-1 text-[color:var(--color-muted)]">
                     Usuario: {authState.user?.email ?? "Sesion autenticada"}
                   </p>
@@ -509,10 +522,10 @@ export default async function OrganizationSettingsPage({
                     1. Guarda tu casilla de CFE.
                   </p>
                   <p className="mt-1 text-[color:var(--color-muted)]">
-                    2. Configura un reenvio automatico desde ese correo hacia el alias de ingreso.
+                    2. Configura y verifica el acceso al correo en Convertilabs Local.
                   </p>
                   <p className="mt-1 text-[color:var(--color-muted)]">
-                    3. Los CFEs reenviados quedaran asociados a esta organizacion y a tu conexion.
+                    3. Comprueba el resultado de la lectura y revisa las facturas antes de enviarlas a Zeta.
                   </p>
                 </div>
               </div>
@@ -522,7 +535,7 @@ export default async function OrganizationSettingsPage({
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium">Nombre de la conexion</span>
+                    <span className="font-medium">Nombre de la casilla</span>
                     <input
                       name="connectionLabel"
                       defaultValue={settings.currentUserCfeEmailConnection?.connectionLabel ?? "Casilla principal de eFacturas"}
@@ -535,6 +548,7 @@ export default async function OrganizationSettingsPage({
                     <input
                       type="email"
                       name="mailboxEmail"
+                      readOnly={localCfeEmail}
                       defaultValue={settings.currentUserCfeEmailConnection?.mailboxEmail ?? authState.user?.email ?? ""}
                       className="w-full rounded-2xl border border-[color:var(--color-border)] bg-white/80 px-4 py-3"
                       placeholder="facturas@tuempresa.com.uy"
@@ -547,20 +561,23 @@ export default async function OrganizationSettingsPage({
                     type="checkbox"
                     name="isActive"
                     defaultChecked={settings.currentUserCfeEmailConnection?.isActive ?? true}
+                    disabled={localCfeEmail}
                     className="h-4 w-4 rounded border-white/20 bg-transparent"
                   />
-                  <span>Dejar esta conexion activa para recibir CFE en esta organizacion</span>
+                  <span>{localCfeEmail ? "Lectura administrada por Convertilabs Local" : "Mantener habilitado este registro de casilla"}</span>
                 </label>
 
                 <div className="rounded-2xl border border-[color:var(--color-border)] bg-white/65 px-4 py-3 text-sm text-[color:var(--color-muted)]">
-                  Alias de ingreso seguro: {settings.currentUserCfeEmailConnection?.inboundAddress ?? "Se genera automaticamente al guardar la conexion por primera vez."}
+                  {localCfeEmail
+                    ? "Para pausar la lectura o cambiar esta casilla, modifica la configuracion de correo en Convertilabs Local y reinicia el lector. Guardar este formulario no enciende ni apaga el trabajador."
+                    : "Este formulario no habilita un servicio de reenvio. Las credenciales del correo se configuran en la PC."}
                 </div>
 
                 <SubmitButton
-                  pendingLabel="Guardando conexion..."
+                  pendingLabel="Guardando casilla..."
                   className={`${buttonBaseClassName} ${buttonPrimaryChromeClassName} px-5 py-3 text-sm`}
                 >
-                  Guardar conexion de eFacturas
+                  Guardar casilla de eFacturas
                 </SubmitButton>
               </form>
             </div>

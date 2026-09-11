@@ -34,6 +34,15 @@ export function DocumentPreview({
     );
   }
 
+  if (mimeType === "application/xml" || mimeType === "text/xml") {
+    return (
+      <div className="flex h-full min-h-48 flex-col items-center justify-center gap-4 rounded-3xl border border-[color:var(--color-border)] bg-white px-6 py-10 text-center text-sm text-[color:var(--color-muted)]">
+        <p>El original es una factura electrónica en XML. Los datos recibidos están disponibles en la revisión del documento.</p>
+        <a href={previewUrl} className="ui-button ui-button--secondary" download>Descargar XML original</a>
+      </div>
+    );
+  }
+
   if (mimeType === "application/pdf") {
     return (
       <iframe

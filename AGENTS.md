@@ -13,6 +13,10 @@ Guia y limites: `docs/integrations/local-companion.md`. Ejecutar los comandos de
 - Reportes de lectura: `npm run local -- report sales --from YYYY-MM-DD --to YYYY-MM-DD --out '<archivo nuevo.json>'`; `report stock --out '<archivo nuevo.json>'`; `report sales-prices --price-list 1 --article '<codigo exacto>' --out '<archivo nuevo.json>'`; `report base-prices --article '<codigo exacto>' --price-base '<codigo exacto>' --out '<archivo nuevo.json>'`.
 - Guardar reportes y pruebas privadas bajo `.local-companion/`, que esta excluido de Git. Conservar ceros iniciales en los codigos de Zeta.
 
+## Facturas recibidas por correo
+
+Guia: `docs/integrations/email-inbox.md`. La casilla se configura solo en `.env.email.local`, excluido de Git; nunca imprimir su contenido ni propagar la contraseña a Codex. `npm run local -- email-inbox --dry-run` revisa la configuracion sin red. Ante un pedido de traer correo, `npm run local -- email-inbox --once` recibe adjuntos desde la fecha configurada y reutiliza documentos existentes; no envia comprobantes a Zeta. El trabajador existente consulta cada cuatro horas y un reinicio respeta la ultima lectura. Los XML se extraen sin IA; PDF/fotos usan la cola local. Conservar los pendientes de revision y sus originales, incluidos XML sin receptor, diferencias y ZIP no soportados. No borrar checkpoints ni ampliar el periodo historico por falta de datos. Un XML igual se agrega como evidencia de la foto existente; una fuente discordante bloquea un nuevo envio al ERP.
+
 ## Fuente de los informes y sincronizacion de Zeta
 
 Los informes, analisis y consultas administrativas deben leer la copia compartida en Supabase. No consultar directamente la API de Zeta para responder al usuario ni como reemplazo automatico si falta informacion en la copia.

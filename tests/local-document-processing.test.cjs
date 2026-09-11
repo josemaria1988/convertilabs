@@ -135,6 +135,17 @@ test("local enqueue uses shared atomic queue without Inngest or OpenAI configura
   });
 });
 
+test("XML deterministic drafts cannot be re-enqueued into visual or paid AI and keep their state", async () => {
+  for (const metadata of [{ processing_provider: "cfe_xml_local" }, { processing_provider: "openai" }]) {
+    await withPipeline({ document: { current_processing_run_id: null, status: "needs_review", current_draft_id: "draft-xml",
+      mime_type: "application/xml", metadata } }, async ({ processing, calls }) => {
+      const result = await processing.enqueueDocumentProcessing({ documentId: "doc-1", requestedBy: null, triggeredBy: "manual_retry" });
+      assert.equal(result.ok, false); assert.equal(result.status, "skipped"); assert.match(result.message, /determinista/);
+      assert.deepEqual(calls, [], "No enqueue, status changes, storage reads or paid calls");
+    });
+  }
+});
+
 test("misrouted Inngest event refuses a Codex local run before touching provider", async () => {
   await withPipeline({}, async ({ processing, calls }) => {
     const steps = [];

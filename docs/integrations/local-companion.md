@@ -53,6 +53,8 @@ No pegar tokens en el chat ni usar API keys para este proveedor. `forced_login_m
 
 ## Inicio, carga y parada
 
+La recepcion de facturas de Gmail se configura en un archivo privado separado y usa el mismo trabajador. Ver [correo de facturas](email-inbox.md) para configuracion, prueba manual, originales XML y recuperacion de pendientes.
+
 Después de activar la cola, doble clic en `Convertilabs Local.cmd` inicia el programa y el worker ocultos y abre la interfaz. Alternativa visible para diagnóstico:
 
 El trabajador consulta la cola al iniciarse y luego espera **4 horas entre revisiones automáticas**, también si hubo un error recuperable de conexión. Cada revisión toma como máximo una factura. Mientras espera no consulta Supabase ni llama a la IA; el log indica `nextCheckAt`. Las renovaciones de reserva cada 45 segundos sólo ocurren mientras se procesa una factura. `worker --once` permite pedir una revisión inmediata.

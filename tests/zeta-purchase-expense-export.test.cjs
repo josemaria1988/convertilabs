@@ -299,6 +299,10 @@ function createFakeSupabase(options = {}) {
     }
 
     execute() {
+      if (this.table === "document_source_refs" && options.failEmailSourceRead
+        && this.filters.some((entry) => entry.field === "provider" && entry.value === "email_inbox")) {
+        return { data: null, error: { message: "private source read failure" } };
+      }
       if (this.operation === "update") {
         if (this.table === "documents" && options.failPriceReviewCas && this.payload.metadata?.zeta_purchase_price_input_review) {
           return { data: [], error: null };
@@ -592,6 +596,79 @@ function successfulEmptyClient(calls) {
         : { AgregarOut: { Succeed: true, Response: { Succeed: true, Mensaje: "OK" }, Error: null } } };
   });
 }
+
+const matchingEmailSource = (extra = {}) => ({ id: "email-source", organization_id: "org-1", document_id: "doc-1",
+  provider: "email_inbox", source_kind: "cfe_xml_email", drift_status: "none",
+  metadata_json: { differences_pending_review: false }, current_payload_hash: "a".repeat(64), payload_hash_at_materialization: "a".repeat(64), ...extra });
+
+test("XML igual conserva payload y confirmacion puntual de IVA previamente aprobada", async () => {
+  const { confirmZetaPurchaseExpensePriceInputReview } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = priceReviewFixture();
+  const prepared = await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams(), { supabase });
+  await confirmZetaPurchaseExpensePriceInputReview(priceReviewParams({ dryRun: false, humanConfirmed: true,
+    expectedScopeFingerprint: prepared.review.scopeFingerprint }), { supabase });
+  const before = await exportReady(supabase);
+  const document = structuredClone(supabase.state.documents), draft = structuredClone(supabase.state.document_drafts);
+  supabase.state.document_source_refs.push(matchingEmailSource(),
+    matchingEmailSource({ id: "foreign-source", organization_id: "another-org", drift_status: "source_changed_pending_review" }),
+    matchingEmailSource({ id: "another-document", document_id: "doc-other", drift_status: "source_changed_pending_review" }));
+  const after = await exportReady(supabase);
+  assert.equal(after.exportable, true); assert.deepEqual(after.payload, before.payload);
+  assert.deepEqual(after.preview.priceInputReview, before.preview.priceInputReview);
+  assert.equal(after.fiscalFingerprint, before.fiscalFingerprint);
+  assert.deepEqual(supabase.state.documents, document); assert.deepEqual(supabase.state.document_drafts, draft);
+});
+
+test("fuente email discordante o incompleta bloquea antes de consultas Zeta y reservas", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const patch of [{ drift_status: "source_changed_pending_review" }, { metadata_json: { differences_pending_review: true } },
+    { current_payload_hash: "b".repeat(64) }, { current_payload_hash: null },
+    { current_payload_hash: "x", payload_hash_at_materialization: "x" }, { metadata_json: {} },
+    { metadata_json: { differences_pending_review: "false" } }]) {
+    const supabase = createFakeSupabase(); supabase.state.document_source_refs.push(matchingEmailSource(patch));
+    const before = structuredClone(supabase.state); let calls = 0;
+    const client = zetaClient(async () => { calls++; throw new Error("No preflight or Agregar expected"); });
+    for (const dryRun of [true, false]) {
+      const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1",
+        actorProfileId: "user-1", humanConfirmed: true, dryRun }, { supabase, client });
+      assert.equal(result.status, "blocked"); assert.equal(result.exportable, false); assert.equal(result.payload, null);
+      assert.ok(result.blockers.some((entry) => entry.code.startsWith("zeta_email_source_review_")));
+    }
+    assert.equal(calls, 0); assert.deepEqual(supabase.state, before);
+  }
+});
+
+test("lectura incompleta de fuentes falla cerrada y el guard revisa tambien la segunda pagina", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  for (const failEmailSourceRead of [true, false]) {
+    const supabase = createFakeSupabase({ failEmailSourceRead });
+    if (!failEmailSourceRead) {
+      for (let i = 0; i < 200; i++) supabase.state.document_source_refs.push(matchingEmailSource({ id: `source-${i}` }));
+      supabase.state.document_source_refs.push(matchingEmailSource({ id: "last-source", metadata_json: { differences_pending_review: true } }));
+    }
+    let calls = 0;
+    const client = zetaClient(async () => { calls++; throw new Error("No ERP calls"); });
+    const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1",
+      actorProfileId: "user-1", humanConfirmed: true }, { supabase, client });
+    assert.equal(result.status, "blocked"); assert.equal(calls, 0);
+    assert.ok(result.blockers.some((entry) => entry.code === (failEmailSourceRead ? "zeta_email_source_review_unavailable" : "zeta_email_source_review_pending")));
+  }
+});
+
+test("XML discordante recibido durante preflight impide Agregar sin adquirir una reserva", async () => {
+  const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
+  const supabase = createFakeSupabase(); let calls = 0;
+  const client = zetaClient(async (url) => {
+    calls++; assert.ok(url.endsWith("RESTFacturaProveedorV1QueryCompras"));
+    supabase.state.document_source_refs.push(matchingEmailSource({ drift_status: "source_changed_pending_review" }));
+    return { ok: true, status: 200, json: async () => ({ QueryComprasOut: { Succeed: true, Response: [], IsLastPage: true } }) };
+  });
+  const result = await exportPurchaseExpenseInvoiceToZeta({ organizationId: "org-1", documentId: "doc-1",
+    actorProfileId: "user-1", humanConfirmed: true }, { supabase, client });
+  assert.equal(result.status, "blocked"); assert.equal(calls, 1);
+  assert.ok(result.blockers.some((entry) => entry.code === "zeta_email_source_review_pending"));
+  assert.equal(supabase.state.integration_raw_records.some((row) => row.entity_type === "purchase_expense_export_claim"), false);
+});
 
 test("IVA incluido bloquea dry-run y envio confirmado antes de HTTP o reservas", async () => {
   const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");

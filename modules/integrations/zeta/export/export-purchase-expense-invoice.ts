@@ -474,6 +474,40 @@ async function isFiscalIdentityTrusted(input: {
   return hasCfeSource || identityConfirmed;
 }
 
+/** A later email can supply conflicting evidence without mutating a human's
+ * draft. It still must stop a new ERP submission until that source is reviewed. */
+async function loadEmailSourceExportBlockers(input: {
+  supabase: SupabaseClient; organizationId: string; documentId: string;
+}): Promise<ZetaPurchaseExportBlocker[]> {
+  const unavailable = () => [blocker("zeta_email_source_review_unavailable",
+    "No se pudo comprobar completamente la evidencia recibida por correo. No se envia hasta verificar sus fuentes.")];
+  const conflict = () => [blocker("zeta_email_source_review_pending",
+    "Un adjunto recibido por correo tiene diferencias pendientes con esta factura. Revisa esa evidencia antes de enviarla a Zeta.")];
+  try {
+    const pageSize = 200;
+    for (let page = 0; page < 25; page++) {
+      const result = await input.supabase.from(integrationTables.documentSourceRefs)
+        .select("id, drift_status, metadata_json, current_payload_hash, payload_hash_at_materialization")
+        .eq("organization_id", input.organizationId).eq("document_id", input.documentId)
+        .eq("provider", "email_inbox").order("id", { ascending: true })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+      if (result.error || !Array.isArray(result.data)) return unavailable();
+      for (const source of result.data as Array<Record<string, unknown>>) {
+        if (!source.metadata_json || typeof source.metadata_json !== "object" || Array.isArray(source.metadata_json)
+          || typeof source.current_payload_hash !== "string" || !/^[a-f0-9]{64}$/.test(source.current_payload_hash)
+          || typeof source.payload_hash_at_materialization !== "string" || !/^[a-f0-9]{64}$/.test(source.payload_hash_at_materialization)) return unavailable();
+        const metadata = asRecord(source.metadata_json);
+        if (typeof metadata.differences_pending_review !== "boolean") return unavailable();
+        if (source.drift_status !== "none"
+          || metadata.differences_pending_review !== false
+          || source.current_payload_hash !== source.payload_hash_at_materialization) return conflict();
+      }
+      if (result.data.length < pageSize) return [];
+    }
+    return unavailable();
+  } catch { return unavailable(); }
+}
+
 async function buildDocumentInput(input: {
   supabase: SupabaseClient;
   organizationId: string;
@@ -1291,7 +1325,7 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
     };
   }
 
-  const [document, catalogs] = await Promise.all([
+  const [document, catalogs, emailSourceBlockers] = await Promise.all([
     buildDocumentInput({
       supabase,
       organizationId: params.organizationId,
@@ -1302,11 +1336,18 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       organizationId: params.organizationId,
       connection,
     }),
+    loadEmailSourceExportBlockers({ supabase, organizationId: params.organizationId, documentId: params.documentId }),
   ]);
   let resolution = resolveZetaPurchaseExpenseInvoicePayload({
     document,
     catalogs,
   });
+
+  if (emailSourceBlockers.length) return {
+    ...resolution, payload: null, exportable: false, status: "blocked", mode: "blocked",
+    blockers: [...resolution.blockers, ...emailSourceBlockers], dryRun: params.dryRun === true,
+    duplicate: null, attemptRawRecordId: previous?.id ?? null,
+  };
 
   const candidate = resolution.payload?.Data.Movimiento[0];
   if (candidate) {
@@ -1601,6 +1642,15 @@ export async function exportPurchaseExpenseInvoiceToZeta(params: {
       attemptRawRecordId: String(raw.id),
     };
   }
+
+  // Email receipt may complete while the indispensable ERP preflight runs.
+  const latestEmailBlockers = await loadEmailSourceExportBlockers({
+    supabase, organizationId: params.organizationId, documentId: params.documentId,
+  });
+  if (latestEmailBlockers.length) return withResult(resolution, {
+    status: "blocked", payload: null, exportable: false, mode: "blocked",
+    blockers: [...resolution.blockers, ...latestEmailBlockers], attemptRawRecordId: previous?.id ?? null,
+  });
 
   // This insert is the durable, organization-wide point of no return. The
   // existing unique constraint elects one caller for the immutable identity

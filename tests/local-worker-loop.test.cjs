@@ -21,12 +21,26 @@ test("quota pauses the whole worker and leaves subsequent invoices unclaimed", a
   let claims = 0;
   const run = worker(who, controller.signal, {
     doctor: async () => ({ ready: true }), context,
+    emailPoll: async () => ({ status: "disabled" }),
     processNext: async () => { claims++; return { claimed: true, status: "error", code: "quota", retryable: false }; },
     report(value) { messages.push(value); if (value.status === "paused") controller.abort(); },
   });
   await run;
   assert.equal(claims, 1);
   assert.ok(messages.some((message) => message.status === "paused"));
+});
+
+test("email configuration and connection failures do not stop existing document processing", async () => {
+  for (const emailPoll of [async () => ({ status: "pending_configuration" }), async () => { throw new Error("private protocol failure"); }]) {
+    let claims = 0;
+    const messages = [];
+    await worker({ ...who, once: true }, new AbortController().signal, {
+      doctor: async () => ({ ready: true }), context, emailPoll,
+      processNext: async () => { claims++; return { claimed: false, status: "idle" }; }, report: (value) => messages.push(value),
+    });
+    assert.equal(claims, 1);
+    assert.ok(!JSON.stringify(messages).includes("private protocol failure"));
+  }
 });
 
 test("worker fails before claiming when the shared queue migration is absent", async () => {
