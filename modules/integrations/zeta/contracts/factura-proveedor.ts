@@ -8,7 +8,8 @@ export interface ZetaFacturaProveedorAgregarIn {
   AgregarIn: {
     Connection: ZetaConnectionPayload;
     Data: {
-      Movimiento: ZetaFacturaProveedorMovimiento[];
+      // REST wire shape; reviewed and persisted exports retain their internal array.
+      Movimiento: ZetaFacturaProveedorMovimiento;
     };
   };
 }

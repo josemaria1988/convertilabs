@@ -3,7 +3,8 @@
 # Contrato REST Zetasoftware PR-01
 
 Fuente: `docs/Api ZetaSoftware collection.json`, coleccion Postman oficial descargada de Zetasoftware.  
-Revision local: 2026-04-19.  
+Revision inicial: 2026-04-19; correccion de alta de proveedores confirmada por soporte: 2026-09-11.
+
 Conteo observado: 262 endpoints REST.
 
 ## Reglas comunes
@@ -92,6 +93,14 @@ Facturas de Clientes usa wrappers propios:
 - `VentaDetalladaIn` -> `VentaDetalladaOut`
 - `VentasDetalladasIn` -> `VentasDetalladasOut`
 - `URLPDFIn` -> `URLPDFOut`
+
+## Alta de proveedores: Movimiento como objeto
+
+El soporte de Zeta confirmo, en la respuesta aportada por el usuario el 2026-09-11, que **solo para `RESTFacturaProveedorV1Agregar`, `AgregarIn.Data.Movimiento` se envia como un objeto unico, sin los corchetes exteriores**. `Lineas` y `FormasPago` conservan sus arrays. La coleccion Postman REST del 11/05/2026 muestra Movimiento como array; para esta operacion prevalece la aclaracion especifica de soporte.
+
+El cliente REST adapta el movimiento unico al serializar el request HTTP. La representacion interna y los requests historicos conservan su array para no alterar huellas, evidencia ni reservas fiscales. Un array vacio, con mas de un movimiento o con un valor invalido se rechaza antes de HTTP: nunca se elige silenciosamente la primera factura de un lote. El cambio no se aplica a consultas ni a otros endpoints.
+
+Esta correccion del formato no demuestra por si sola un alta exitosa en el servidor. Las pruebas locales deben verificar el JSON efectivamente serializado, la conservacion de sus importes y arrays internos, y que no se muta el request revisado. El tratamiento del IVA y la confirmacion humana siguen siendo controles separados. Las facturas ya conciliadas no se reenvian para probar el nuevo formato.
 
 ## Registry Convertilabs
 

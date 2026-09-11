@@ -91,6 +91,37 @@ function coerceBoolean(value: unknown) {
   throw new ZetaIntegrationError({ code: "zeta_pagination_invalid", message: "Zeta no confirmo IsLastPage; no se puede considerar completa la consulta." });
 }
 
+function isJsonRecord(value: unknown): value is ZetaJsonRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function serializeRequestData(key: ZetaEndpointKey, data: ZetaJsonRecord): ZetaJsonRecord {
+  if (key !== "facturaProveedorAgregar") return data;
+
+  const requestData = isJsonRecord(data) && isJsonRecord(data.Data) ? data.Data : null;
+  const movements = requestData?.Movimiento;
+  const movement = Array.isArray(movements) && movements.length === 1 ? movements[0] : null;
+  const validLines = isJsonRecord(movement)
+    && Array.isArray(movement.Lineas)
+    && movement.Lineas.length > 0
+    && Array.from<unknown>(movement.Lineas).every(isJsonRecord);
+  const validPayments = isJsonRecord(movement)
+    && (movement.FormasPago === undefined
+      || (Array.isArray(movement.FormasPago) && Array.from<unknown>(movement.FormasPago).every(isJsonRecord)));
+
+  if (!requestData || !isJsonRecord(movement) || !validLines || !validPayments) {
+    throw new ZetaIntegrationError({
+      code: "zeta_purchase_movement_invalid",
+      endpointName: getZetaEndpoint(key).endpointName,
+      message: "El envio de factura de proveedor requiere un unico movimiento interno, con Lineas y FormasPago validas.",
+    });
+  }
+
+  // REST requires a singular Movimiento (confirmed by Zeta support). Keep the
+  // reviewed/persisted singleton array intact: hashes and replay guards use it.
+  return { ...data, Data: { ...requestData, Movimiento: movement } };
+}
+
 async function parseResponseJson(response: ZetaFetchResponse, endpointName: string) {
   try {
     return await response.json();
@@ -124,12 +155,13 @@ export async function callZetaEndpoint<TResponse = unknown>(
   await authorizeZetaRequest(client, key);
   const endpoint = getZetaEndpoint(key);
   const url = buildZetaEndpointUrl(client.baseUrl, key);
+  const requestData = serializeRequestData(key, data);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), client.timeoutMs);
   const body = {
     [endpoint.inputWrapper]: {
       Connection: client.credentials,
-      ...data,
+      ...requestData,
     },
   };
 

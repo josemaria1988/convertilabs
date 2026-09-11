@@ -868,15 +868,21 @@ test("export service hace preflight, envia FacturaProveedorAgregar y guarda snap
 
   assert.equal(result.status, "success_pending_reconciliation");
   assert.equal(calls.length, 3);
-  assert.equal(calls[1].body.AgregarIn.Data.Movimiento[0].CodigoProveedor, "PR0031");
+  assert.equal(calls[1].body.AgregarIn.Data.Movimiento.CodigoProveedor, "PR0031");
   assert.equal(
-    calls[1].body.AgregarIn.Data.Movimiento[0].Lineas[0].CodigoArticulo,
+    calls[1].body.AgregarIn.Data.Movimiento.Lineas[0].CodigoArticulo,
     "GASTOSVAR",
   );
   const exportRecord = supabase.state.integration_raw_records.find((row) =>
     row.entity_type === "purchase_expense_export_attempt");
   assert.ok(exportRecord);
   assert.equal(exportRecord.metadata_json.status, "success_pending_reconciliation");
+  assert.equal(Array.isArray(result.payload.Data.Movimiento), true);
+  assert.equal(result.payload.Data.Movimiento.length, 1);
+  assert.deepEqual(exportRecord.payload_json.request, result.payload);
+  assert.deepEqual(calls[1].body.AgregarIn.Data.Movimiento, result.payload.Data.Movimiento[0]);
+  assert.equal(exportRecord.payload_json.fiscal_fingerprint, result.fiscalFingerprint);
+  assert.deepEqual(exportRecord.payload_json.fiscal_identity, result.fiscalIdentity);
   assert.equal(supabase.state.audit_log.some((row) => row.action === "zeta_purchase_expense_export_completed"), true);
 });
 
@@ -1361,6 +1367,19 @@ test("reconciliacion inmediata confirma found_in_zeta y RegistroId", async () =>
   const exportRecord = supabase.state.integration_raw_records.find((row) =>
     row.entity_type === "purchase_expense_export_attempt");
   assert.equal(exportRecord.metadata_json.status, "found_in_zeta");
+  const savedState = structuredClone(supabase.state);
+  let replayCalls = 0;
+  const replay = await exportPurchaseExpenseInvoiceToZeta({
+    organizationId: "org-1", documentId: "doc-1", actorProfileId: "user-1",
+    humanConfirmed: true, forceResend: true,
+  }, { supabase, client: zetaClient(async () => {
+    replayCalls++;
+    throw new Error("Un comprobante conciliado no puede volver a enviarse.");
+  }) });
+  assert.equal(replay.status, "found_in_zeta");
+  assert.equal(replayCalls, 0);
+  assert.equal(Array.isArray(exportRecord.payload_json.request.Data.Movimiento), true);
+  assert.deepEqual(supabase.state, savedState);
 });
 
 test("falla de QueryCompras posterior no reenvia una factura ya aceptada", async () => {
@@ -1595,7 +1614,8 @@ test("HTTP 400 conserva diagnostico saneado, reserva e incertidumbre sin reenvio
   const { exportPurchaseExpenseInvoiceToZeta } = require("@/modules/integrations/zeta/export/export-purchase-expense-invoice");
   const supabase = createFakeSupabase();
   let agregarCalls = 0;
-  const client = zetaClient(async (url) => {
+  let wireMovement;
+  const client = zetaClient(async (url, init) => {
     if (url.endsWith("RESTFacturaProveedorV1QueryCompras")) {
       return {
         ok: true, status: 200, statusText: "OK",
@@ -1603,6 +1623,7 @@ test("HTTP 400 conserva diagnostico saneado, reserva e incertidumbre sin reenvio
       };
     }
     agregarCalls++;
+    wireMovement = JSON.parse(init.body).AgregarIn.Data.Movimiento;
     return new Response(JSON.stringify({ Message: "Error field Tipo", Connection: { EmpresaClave: "secret" } }), {
       status: 400, headers: { "content-type": "application/json" },
     });
@@ -1616,11 +1637,21 @@ test("HTTP 400 conserva diagnostico saneado, reserva e incertidumbre sin reenvio
   assert.doesNotMatch(JSON.stringify(result.zetaResponse), /secret/);
   const attempt = supabase.state.integration_raw_records.find((row) => row.entity_type === "purchase_expense_export_attempt");
   assert.deepEqual(attempt.payload_json.response, result.zetaResponse);
+  assert.equal(Array.isArray(wireMovement), false);
+  assert.equal(Array.isArray(result.payload.Data.Movimiento), true);
+  assert.deepEqual(attempt.payload_json.request, result.payload);
+  assert.deepEqual(wireMovement, result.payload.Data.Movimiento[0]);
+  assert.equal(attempt.payload_json.fiscal_fingerprint, result.fiscalFingerprint);
+  assert.deepEqual(attempt.payload_json.fiscal_identity, result.fiscalIdentity);
+  const savedAttempt = structuredClone(attempt);
+  const savedClaims = structuredClone(supabase.state.integration_raw_records.filter((row) => row.entity_type === "purchase_expense_export_claim"));
   const audit = supabase.state.audit_log.find((row) => row.action === "zeta_purchase_expense_export_timeout_unknown");
   assert.equal(audit.after_json.status, 400);
   const retry = await exportPurchaseExpenseInvoiceToZeta({ ...input, forceResend: true }, { supabase, client });
   assert.equal(retry.status, "timeout_unknown");
   assert.equal(agregarCalls, 1);
+  assert.deepEqual(supabase.state.integration_raw_records.find((row) => row.entity_type === "purchase_expense_export_attempt"), savedAttempt);
+  assert.deepEqual(supabase.state.integration_raw_records.filter((row) => row.entity_type === "purchase_expense_export_claim"), savedClaims);
 });
 
 test("Succeed ausente es incierto y otros errores no persisten Detail arbitrario", async () => {

@@ -33,6 +33,136 @@ function dailySyncFixture(reserveRequest = async () => {}) {
   };
 }
 
+function humanExportFixture() {
+  const { createHumanExportZetaRequestPolicy } = require("@/modules/integrations/zeta/client/read-policy");
+  return { organizationId: "org-1", requestPolicy: createHumanExportZetaRequestPolicy("org-1") };
+}
+
+function purchaseMovement() {
+  return {
+    CodigoComprobante: 28, Serie: "A", Numero: 123, Fecha: "20260909",
+    CodigoProveedor: "PR0001", CodigoMoneda: 1, CodigoLocal: 1, CodigoUsuario: 4, CodigoCaja: 1,
+    Lineas: [
+      { CodigoArticulo: "005128", Cantidad: 1, PrecioUnitario: 100, CodigoIVA: 0, CodigoLocalLinea: 1 },
+      { CodigoArticulo: "005110", Cantidad: 2, PrecioUnitario: 50, CodigoIVA: 0, CodigoLocalLinea: 1 },
+    ],
+    FormasPago: [
+      { CodigoFormaPago: 1, CodigoMonedaPago: 1, MontoMonedaPago: 100, MontoMonedaMovimiento: 100 },
+      { CodigoFormaPago: 10, CodigoMonedaPago: 1, MontoMonedaPago: 100, MontoMonedaMovimiento: 100 },
+    ],
+  };
+}
+
+function deepFreeze(value) {
+  if (value && typeof value === "object") {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+test("FacturaProveedorAgregar serializes one internal movement as an object without mutating the reviewed payload", async () => {
+  const { createZetaRestClient, callZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const { createHash } = require("node:crypto");
+  const input = deepFreeze({ Data: { Movimiento: [purchaseMovement()] } });
+  const original = JSON.stringify(input);
+  const fingerprint = createHash("sha256").update(original).digest("hex");
+  const calls = [];
+  const client = createZetaRestClient({
+    ...humanExportFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return createJsonResponse({ AgregarOut: { Succeed: true, Response: { RegistroId: 123 } } });
+    },
+  });
+
+  await callZetaEndpoint(client, "facturaProveedorAgregar", input);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.zeta.example/APIs/RESTFacturaProveedorV1Agregar");
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(body, { AgregarIn: { Connection: credentials(), Data: { Movimiento: input.Data.Movimiento[0] } } });
+  assert.equal(Array.isArray(body.AgregarIn.Data.Movimiento), false);
+  assert.equal(Array.isArray(body.AgregarIn.Data.Movimiento.Lineas), true);
+  assert.equal(Array.isArray(body.AgregarIn.Data.Movimiento.FormasPago), true);
+  assert.equal(body.AgregarIn.Data.Movimiento.Lineas.length, 2);
+  assert.equal(body.AgregarIn.Data.Movimiento.FormasPago.length, 2);
+  assert.equal(JSON.stringify(input), original);
+  assert.equal(createHash("sha256").update(JSON.stringify(input)).digest("hex"), fingerprint);
+});
+
+test("FacturaProveedorAgregar preserves omitted or empty payment lists", async () => {
+  const { createZetaRestClient, callZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  for (const omit of [true, false]) {
+    const movement = purchaseMovement();
+    if (omit) delete movement.FormasPago;
+    else movement.FormasPago = [];
+    const client = createZetaRestClient({
+      ...humanExportFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+      fetchImpl: async (_url, init) => {
+        const sent = JSON.parse(init.body).AgregarIn.Data.Movimiento;
+        assert.deepEqual(sent, movement);
+        assert.equal(Object.hasOwn(sent, "FormasPago"), !omit);
+        return createJsonResponse({ AgregarOut: { Succeed: true, Response: {} } });
+      },
+    });
+    await callZetaEndpoint(client, "facturaProveedorAgregar", { Data: { Movimiento: [movement] } });
+  }
+});
+
+test("FacturaProveedorAgregar rejects empty, multiple or malformed internal movements before fetch", async () => {
+  const { createZetaRestClient, callZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const movement = purchaseMovement();
+  const invalidInputs = [
+    null, [], {}, { Data: null }, { Data: [] }, { Data: "invalid" }, { Data: {} },
+    ...[null, false, "invalid", {}, movement, [], [movement, movement], [null], [[]], [{}]]
+      .map((Movimiento) => ({ Data: { Movimiento } })),
+    ...[null, {}, [], [null], [false], [[]], Array(1)]
+      .map((Lineas) => ({ Data: { Movimiento: [{ ...movement, Lineas }] } })),
+    ...[null, {}, [null], [false], [[]], Array(1)]
+      .map((FormasPago) => ({ Data: { Movimiento: [{ ...movement, FormasPago }] } })),
+  ];
+  let calls = 0;
+  const client = createZetaRestClient({
+    ...humanExportFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => { calls++; throw new Error("Invalid payload must not reach HTTP"); },
+  });
+  for (const input of invalidInputs) {
+    await assert.rejects(callZetaEndpoint(client, "facturaProveedorAgregar", input), (error) => {
+      assert.equal(error.code, "zeta_purchase_movement_invalid");
+      assert.equal(error.endpointName, "RESTFacturaProveedorV1Agregar");
+      return true;
+    });
+  }
+  assert.equal(calls, 0);
+});
+
+test("FacturaProveedorAgregar serialization does not bypass read policy", async () => {
+  const { createZetaRestClient, callZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  let calls = 0, reservations = 0;
+  const client = createZetaRestClient({
+    ...dailySyncFixture(async () => { reservations++; }), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async () => { calls++; throw new Error("Daily sync must not write"); },
+  });
+  await assert.rejects(callZetaEndpoint(client, "facturaProveedorAgregar", { Data: { Movimiento: [purchaseMovement()] } }),
+    (error) => error.code === "zeta_daily_write_blocked");
+  assert.equal(calls, 0);
+  assert.equal(reservations, 0);
+});
+
+test("other REST endpoints retain their input shape without movement adaptation", async () => {
+  const { createZetaRestClient, callZetaEndpoint } = require("@/modules/integrations/zeta/client/rest-client");
+  const input = { Data: { Movimiento: [purchaseMovement(), purchaseMovement()] } };
+  const client = createZetaRestClient({
+    ...humanExportFixture(), baseUrl: "https://api.zeta.example", credentials: credentials(),
+    fetchImpl: async (_url, init) => {
+      assert.deepEqual(JSON.parse(init.body).QueryComprasIn.Data, input.Data);
+      return createJsonResponse({ QueryComprasOut: { Succeed: true, Response: [] } });
+    },
+  });
+  await callZetaEndpoint(client, "facturaProveedorQueryCompras", input);
+});
+
 test("Zeta REST client posts QueryIn payloads to the official endpoint URL", async () => {
   const {
     createZetaRestClient,

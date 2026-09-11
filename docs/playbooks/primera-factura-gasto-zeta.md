@@ -1,7 +1,7 @@
 # Primera factura de gasto: foto a ZetaSoftware
 
 Estado: piloto controlado para Rontil S.A.
-Ultima revision: 2026-08-20.
+Ultima revision: 2026-09-11.
 
 ## Objetivo
 
@@ -81,6 +81,12 @@ Ante timeout o respuesta ambigua, consultar primero Zeta. Nunca repetir el envio
 Antes de llamar `Agregar`, Convertilabs crea una reserva durable por proveedor Zeta exacto y serie/numero normalizados. Fecha, moneda, importe y tipo interno no cambian esa identidad; la huella de contenido se conserva aparte para auditoria. Esa reserva no se borra automaticamente aunque falle una operacion local posterior o Zeta rechace expresamente el alta. Las reservas de versiones anteriores tambien se comprueban y una identidad antigua no verificable bloquea el envio. No eliminar la reserva para "probar de nuevo"; cualquier liberacion requiere revision manual auditada y verificacion previa en Zeta.
 
 Para Rontil, conservar el trabajo/proyecto en Convertilabs sin enviar su codigo como centro de costos Zeta. Combustible/otros gastos pagados con tarjeta usan la forma confirmada `10 - Tarjeta Emitida`, sin exigir banco o titular. El aviso habitual de documentos de tarjeta pendientes se deja para la conciliacion posterior; no confundirlo con un rechazo de la API ni con una compra ya conciliada. El efectivo mantiene su forma de pago propia.
+
+### Formato REST confirmado por soporte
+
+La respuesta de soporte recibida el 2026-09-11 aclara que `RESTFacturaProveedorV1Agregar` requiere `Data.Movimiento` como objeto, aunque el ejemplo de Postman lo mostraba como array. Solo se quitan los corchetes de Movimiento; `Lineas` y `FormasPago` siguen siendo listas. El cliente hace esa conversion al construir el pedido HTTP y conserva sin cambios el payload interno revisado y las reservas. No acepta lotes de multiples movimientos por este camino.
+
+Los tres comprobantes del piloto anterior ya se registraron desde la interfaz y se conciliaron con sus identificadores reales. La correccion no los vuelve a habilitar ni libera reservas. La siguiente validacion real necesita un documento nuevo revisado y autorizado; el resultado debe comprobarse en Zeta. La confirmacion del formato no resuelve por si sola la interpretacion del IVA indicada a continuacion.
 
 ### Precio digitado y tratamiento del IVA
 
