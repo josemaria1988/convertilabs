@@ -1462,7 +1462,7 @@ export function DocumentReviewWorkspace({
 
           {pageData.draft.lineItems.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+              <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
                 <thead>
                   <tr className="text-left uppercase tracking-[0.18em] text-[11px] text-[color:var(--color-muted)]">
                     <th className="pr-4">Linea</th>
@@ -1797,7 +1797,7 @@ export function DocumentReviewWorkspace({
           </p>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+            <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
               <thead>
                 <tr className="text-left uppercase tracking-[0.18em] text-[11px] text-[color:var(--color-muted)]">
                   <th className="pr-4">Cuenta</th>

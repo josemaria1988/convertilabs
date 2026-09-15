@@ -223,7 +223,7 @@ export function DocumentAuditUploadPanel({
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="min-w-[220px]">
+        <label className="w-full min-w-0 sm:w-auto sm:min-w-[220px]">
           <span className="mb-2 block text-[13px] font-medium uppercase tracking-[0.18em] text-[color:var(--color-muted)]">
             Importar como
           </span>

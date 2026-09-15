@@ -148,7 +148,7 @@ export default async function OrganizationTrialBalancePage({
                 <span className="ui-filter">Read model</span>
               </div>
 
-              <form className="mt-4 grid gap-3 lg:grid-cols-[180px_200px_200px_minmax(0,1fr)_120px]">
+              <form className="ui-filter-grid mt-4">
                 <label className="space-y-2 text-sm">
                   <span className="font-medium text-white">Periodo</span>
                   <select

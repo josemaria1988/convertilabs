@@ -26,6 +26,7 @@ export const canonicalFileOrder = [
   "db/schema/16_local_document_worker.sql",
   "db/schema/17_zeta_daily_cache.sql",
   "db/schema/18_document_upload_identity.sql",
+  "db/schema/19_web_push.sql",
   "db/rls/supabase_rls_policies.sql",
 ];
 

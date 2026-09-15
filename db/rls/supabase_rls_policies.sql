@@ -4305,3 +4305,13 @@ with check (
     ]
   )
 );
+-- Web Push: only the member's own devices/results are visible. Mutations use
+-- narrowly scoped RPCs; delivery claims and outcomes are service-role only.
+alter table public.web_push_subscriptions enable row level security;
+alter table public.web_push_deliveries enable row level security;
+drop policy if exists web_push_subscriptions_own_select on public.web_push_subscriptions;
+create policy web_push_subscriptions_own_select on public.web_push_subscriptions
+  for select to authenticated using (user_id=auth.uid() and public.is_active_member(organization_id));
+drop policy if exists web_push_deliveries_own_select on public.web_push_deliveries;
+create policy web_push_deliveries_own_select on public.web_push_deliveries
+  for select to authenticated using (user_id=auth.uid() and public.is_active_member(organization_id));

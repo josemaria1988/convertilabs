@@ -1,5 +1,6 @@
 import { LoadingLink } from "@/components/ui/loading-link";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { AgendaPushSettings } from "@/components/pwa/agenda-push-settings";
 import type {
   AgendaDashboardData,
   EntityOption,
@@ -237,6 +238,7 @@ export function AgendaDashboard({
 
   return (
     <div className="space-y-4">
+      <AgendaPushSettings slug={slug} />
       <section className="ui-panel">
         <div className="ui-panel-header">
           <div>

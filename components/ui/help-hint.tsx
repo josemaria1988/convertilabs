@@ -115,13 +115,13 @@ export function HelpHint({
       </span>
 
       {shouldShowPreview && !isPinned ? (
-        <span className="absolute left-1/2 top-[calc(100%+8px)] z-20 min-w-[220px] max-w-[280px] -translate-x-1/2 rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(20,27,40,0.98)] px-3 py-2 text-xs leading-5 text-[color:var(--color-muted)] shadow-[0_18px_40px_rgba(7,9,14,0.35)]">
+        <span className="ui-help-preview absolute left-1/2 top-[calc(100%+8px)] z-20 min-w-[220px] max-w-[280px] -translate-x-1/2 rounded-[10px] border border-[color:var(--color-border)] bg-[rgba(20,27,40,0.98)] px-3 py-2 text-xs leading-5 text-[color:var(--color-muted)] shadow-[0_18px_40px_rgba(7,9,14,0.35)]">
           {resolvedContent.shortLabel}
         </span>
       ) : null}
 
       {isPinned ? (
-        <div className="absolute left-1/2 top-[calc(100%+8px)] z-30 w-[min(340px,calc(100vw-40px))] -translate-x-1/2 rounded-[14px] border border-[color:var(--color-border)] bg-[linear-gradient(180deg,rgba(35,43,58,0.99),rgba(28,35,49,1))] p-4 shadow-[0_18px_40px_rgba(7,9,14,0.35)]">
+        <div className="ui-help-popover absolute left-1/2 top-[calc(100%+8px)] z-30 w-[min(340px,calc(100vw-40px))] -translate-x-1/2 rounded-[14px] border border-[color:var(--color-border)] bg-[linear-gradient(180deg,rgba(35,43,58,0.99),rgba(28,35,49,1))] p-4 shadow-[0_18px_40px_rgba(7,9,14,0.35)]">
           <div className="space-y-3 text-sm">
             <div>
               <p className="font-semibold text-white">{resolvedContent.title}</p>

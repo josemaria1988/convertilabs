@@ -55,10 +55,26 @@ input::placeholder, textarea::placeholder { color: var(--muted-soft); }
 input[type="checkbox"] { accent-color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 ::selection { background: #dbeafe; }
+/* Nested grid/flex items must be allowed to shrink around a locally scrolling
+   table. Keep these defaults below explicit Tailwind sizing utilities. */
+@layer base {
+  .private-app :where(.grid, .flex) > :where(div, section, article, aside, form, fieldset, details) {
+    min-width: 0;
+  }
+  .private-app :where(input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .private-app :where(h1, h2, h3, h4, p, dt, dd, label) {
+    overflow-wrap: anywhere;
+  }
+}
+.private-app :is(.overflow-x-auto, .overflow-auto) { min-width: 0; max-width: 100%; }
+.private-app pre { max-width: 100%; overflow-x: auto; }
 .mobile-nav { scrollbar-width: none; }
 .mobile-nav::-webkit-scrollbar { display: none; }
 .page-shell { margin: 0 auto; width: 100%; max-width: 92rem; padding: 2rem 1.25rem 3rem; }
-.panel, .ui-panel, .surface-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px rgb(36 50 71 / 3%); }
+.panel, .ui-panel, .surface-card { min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 1px 2px rgb(36 50 71 / 3%); }
 .surface-card { padding: 16px; }
 .surface-card-dark, .surface-card-dark-soft, .surface-card-dark-subtle { background: var(--surface-soft); }
 .surface-card-state-success { background: var(--success-soft); }
@@ -103,7 +119,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .app-topbar__section { font-size: 16px; font-weight: 600; }
 .app-topbar__section-icon { color: var(--muted); flex: none; }
 .app-topbar__organization { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
-.app-content { display: flex; width: 100%; flex-direction: column; gap: 24px; padding: 28px; }
+.app-content { display: flex; min-width: 0; width: 100%; flex-direction: column; gap: 24px; padding: 28px; }
 .app-content > * { min-width: 0; }
 .app-content:focus { outline: none; }
 .app-skip-link { position: fixed; z-index: 200; left: 16px; top: 12px; padding: 12px 16px; transform: translateY(-160%); border-radius: 6px; background: var(--surface); color: var(--accent-strong); }
@@ -124,7 +140,17 @@ input[type="checkbox"] { accent-color: var(--accent); }
   gap: 12px;
 }
 
+.document-tray-layout > *,
+.document-tray-expanded > *,
+.review-rule-grid > *,
+.review-rule-panels > *,
+.review-rule-detail-grid > * {
+  min-width: 0;
+}
+
 .document-tray-table {
+  container-type: inline-size;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -134,12 +160,13 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .document-tray-table__head,
 .document-tray-table__row {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.15fr) 96px 100px 102px 142px 120px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: center;
 }
 
 .document-tray-table__head {
+  display: none;
   border-bottom: 1px solid var(--border);
   background: var(--surface-muted);
   padding: 10px 12px;
@@ -151,7 +178,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 }
 
 .document-tray-table__body {
-  max-height: 520px;
   overflow: auto;
 }
 
@@ -175,11 +201,49 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .document-tray-table__cell {
   min-width: 0;
-  font-size: 13px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
 }
 
-.document-tray-table__cell > * {
-  overflow-wrap: anywhere;
+.document-tray-table__cell--wide {
+  grid-column: 1 / -1;
+}
+
+.document-tray-table__label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.document-tray-table__cell--action {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* The tray can sit beside an assistant rail even on a wide screen. Switch to
+   columns only when the tray itself has enough room, not at a viewport width. */
+@container (min-width: 1120px) {
+  .document-tray-table__head,
+  .document-tray-table__row {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.15fr) 90px 118px 128px 100px 140px 120px;
+  }
+  .document-tray-table__head { display: grid; }
+  .document-tray-table__body { max-height: 520px; }
+  .document-tray-table__cell--wide { grid-column: auto; }
+  .document-tray-table__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@container (max-width: 280px) {
+  .document-tray-table__row { grid-template-columns: minmax(0, 1fr); }
 }
 
 .document-tray-table__expanded {
@@ -190,15 +254,17 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .document-tray-expanded {
   display: grid;
-  grid-template-columns: minmax(240px, 0.74fr) minmax(0, 1fr) minmax(240px, 0.78fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 12px;
 }
 
 .document-tray-expanded--original {
-  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
 }
 
 .document-tray-expanded__card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
@@ -593,7 +659,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .review-rule-panels {
   display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -1081,6 +1147,8 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .status-pill {
   display: inline-flex;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
@@ -1154,16 +1222,19 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .ui-button {
   display: inline-flex;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
   align-items: center;
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0 14px;
+  padding: 8px 14px;
   font-size: 14px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.3;
   min-height: 36px;
   transition:
     border-color 0.18s ease,
@@ -1253,18 +1324,20 @@ input[type="reset"]:not(:disabled) {
 .ui-filter,
 .ui-tab {
   display: inline-flex;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   min-height: 30px;
   align-items: center;
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 0 11px;
+  padding: 6px 11px;
   background: var(--surface);
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.3;
 }
 
 .ui-tab[data-current="true"] {
@@ -1277,11 +1350,28 @@ input[type="reset"]:not(:disabled) {
   padding: 13px 14px;
 }
 
+.ui-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+}
+
+.ui-filter-grid > * { min-width: 0; }
+
 .ui-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.document-tray-expanded__facts > * { min-width: 0; overflow-wrap: anywhere; }
+
+.review-rule-table__mobile-label { display: none; }
+
+.ui-panel-header > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ui-subtle-row {
@@ -2000,10 +2090,6 @@ input[type="reset"]:not(:disabled) {
     max-height: none;
   }
 
-  .document-tray-table__row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .metric-card {
     min-height: 88px;
     padding: 10px 12px 11px;
@@ -2033,12 +2119,12 @@ input[type="reset"]:not(:disabled) {
   }
 
   .ui-button {
-    min-height: 38px;
+    min-height: 44px;
   }
 
   .ui-filter,
   .ui-tab {
-    min-height: 34px;
+    min-height: 40px;
   }
 
   .field-shell {
@@ -2096,6 +2182,7 @@ input[type="reset"]:not(:disabled) {
 
   .review-rule-table__row {
     grid-template-columns: 1fr;
+    min-width: 0;
   }
 
   .review-rule-actions {
@@ -2104,10 +2191,6 @@ input[type="reset"]:not(:disabled) {
 
   .review-rule-inline-actions {
     flex-direction: column;
-  }
-
-  .document-tray-table__row {
-    grid-template-columns: 1fr;
   }
 
   .field-shell__header,
@@ -2132,6 +2215,45 @@ input[type="reset"]:not(:disabled) {
 
   .field-shell__nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  .app-content .truncate {
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .private-app :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    font-size: 16px;
+  }
+  .field-guide-dialog,
+  .field-sheet {
+    max-height: calc(100dvh - 48px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .ui-help-preview,
+  .ui-help-popover {
+    position: fixed;
+    z-index: 90;
+    inset: auto 12px calc(12px + env(safe-area-inset-bottom));
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: calc(100dvh - 48px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    transform: none;
+    translate: none;
+    white-space: normal;
+  }
+  .review-rule-table__mobile-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
   }
 }
 

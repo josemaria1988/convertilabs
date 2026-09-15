@@ -1,5 +1,5 @@
 export const buttonBaseClassName =
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-[6px] border text-[12px] font-semibold transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-70";
+  "inline-flex min-w-0 max-w-full cursor-pointer items-center justify-center gap-2 whitespace-normal break-words rounded-[6px] border text-[12px] font-semibold transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-70";
 
 export const buttonPrimaryChromeClassName =
   "ui-button--primary border-[color:var(--color-accent)] bg-[color:var(--color-accent)] text-white hover:bg-[color:var(--color-accent-strong)]";

@@ -168,7 +168,7 @@ export default async function OrganizationJournalEntriesPage({
                 <span className="ui-filter">Read model</span>
               </div>
 
-              <form className="mt-4 grid gap-3 lg:grid-cols-[170px_170px_170px_170px_minmax(0,1fr)_120px]">
+              <form className="ui-filter-grid mt-4">
                 <label className="space-y-2 text-sm">
                   <span className="font-medium text-white">Estado</span>
                   <select

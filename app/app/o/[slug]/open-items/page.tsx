@@ -158,7 +158,7 @@ export default async function OrganizationOpenItemsPage({
                 <span className="ui-filter">Subledger</span>
               </div>
 
-              <form className="mt-4 grid gap-3 lg:grid-cols-[170px_170px_170px_170px_minmax(0,1fr)_140px_120px]">
+              <form className="ui-filter-grid mt-4">
                 <label className="space-y-2 text-sm">
                   <span className="font-medium text-white">Periodo</span>
                   <select

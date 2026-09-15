@@ -112,14 +112,6 @@ function buildTrayHref(slug: string, documentId: string) {
   return `/app/o/${slug}/documents?documentId=${documentId}`;
 }
 
-const trayRowGridStyle = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1.45fr) minmax(0, 1.15fr) 90px 118px 128px 100px 140px 120px",
-  gap: "12px",
-  alignItems: "center",
-  width: "100%",
-} as const;
-
 function buildDocumentReference(input: {
   documentNumber: string | null | undefined;
   documentSeries: string | null | undefined;
@@ -284,7 +276,7 @@ export function DocumentOperationalTray({
 
         <section className="ui-panel">
           <div className="document-tray-table">
-            <div className="document-tray-table__head" style={trayRowGridStyle}>
+            <div className="document-tray-table__head" aria-hidden="true">
               <span>Documento</span>
               <span>Contraparte</span>
               <span>Confianza</span>
@@ -303,11 +295,11 @@ export function DocumentOperationalTray({
                     <Link
                       href={buildTrayHref(slug, document.id)}
                       className="document-tray-table__row"
-                      style={trayRowGridStyle}
                       data-current={isCurrent ? "true" : undefined}
                       aria-current={isCurrent ? "page" : undefined}
                     >
-                      <div className="document-tray-table__cell">
+                      <div className="document-tray-table__cell document-tray-table__cell--wide">
+                        <span className="document-tray-table__label">Documento</span>
                         <p className="font-semibold text-white">{document.originalFilename}</p>
                         <p className="mt-1 text-[12px] text-[color:var(--color-muted)]">
                           {buildDocumentReference({
@@ -317,27 +309,40 @@ export function DocumentOperationalTray({
                           })}
                         </p>
                       </div>
-                      <div className="document-tray-table__cell">
+                      <div className="document-tray-table__cell document-tray-table__cell--wide">
+                        <span className="document-tray-table__label">Contraparte</span>
                         <p className="text-white">{document.counterpartyName ?? "Contraparte pendiente"}</p>
                         <p className="mt-1 text-[12px] text-[color:var(--color-muted)]">
                           {document.decisionSource ? formatDecisionSourceLabel(document.decisionSource) : "Sin origen visible"}
                         </p>
                       </div>
-                      <div className="document-tray-table__cell text-white">{formatConfidence(document.certaintyConfidence)}</div>
-                      <div className="document-tray-table__cell text-white">{formatMoney(document.totalAmount)}</div>
-                      <div className="document-tray-table__cell text-white text-[12px] leading-5">
+                      <div className="document-tray-table__cell text-white">
+                        <span className="document-tray-table__label">Confianza</span>
+                        {formatConfidence(document.certaintyConfidence)}
+                      </div>
+                      <div className="document-tray-table__cell text-white">
+                        <span className="document-tray-table__label">Total</span>
+                        {formatMoney(document.totalAmount)}
+                      </div>
+                      <div className="document-tray-table__cell document-tray-table__cell--wide text-white leading-5">
+                        <span className="document-tray-table__label">IVA</span>
                         {formatTaxBreakdown({
                           sourceTaxBreakdown: document.sourceTaxBreakdown,
                           taxAmount: document.taxAmount,
                         })}
                       </div>
-                      <div className="document-tray-table__cell text-white">{formatDate(document.documentDate ?? document.createdAt)}</div>
+                      <div className="document-tray-table__cell text-white">
+                        <span className="document-tray-table__label">Fecha</span>
+                        {formatDate(document.documentDate ?? document.createdAt)}
+                      </div>
                       <div className="document-tray-table__cell">
+                        <span className="document-tray-table__label">Estado</span>
                         <span className={getDocumentOperationalStatusVariant(document.canonicalState)}>
                           {formatDocumentOperationalStatusLabel(document.canonicalState)}
                         </span>
                       </div>
-                      <div className="document-tray-table__cell text-white">
+                      <div className="document-tray-table__cell document-tray-table__cell--wide document-tray-table__cell--action">
+                        <span className="document-tray-table__label">Acción</span>
                         {document.nextPrimaryActionLabel ?? "Abrir documento"}
                       </div>
                     </Link>

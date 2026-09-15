@@ -2030,11 +2030,18 @@ export function DocumentReviewRuleWorkspace({
                         </select>
                       </div>
 
-                      <div className="review-rule-table__side">{row.side}</div>
+                      <div className="review-rule-table__side">
+                        <span className="review-rule-table__mobile-label">Lado</span>
+                        {row.side}
+                      </div>
                       <div className="review-rule-table__amount">
+                        <span className="review-rule-table__mobile-label">Monto</span>
                         {formatMoney(row.amount, currencyCode)}
                       </div>
-                      <div className="review-rule-table__note">{row.note}</div>
+                      <div className="review-rule-table__note">
+                        <span className="review-rule-table__mobile-label">Glosa</span>
+                        {row.note}
+                      </div>
 
                       <button
                         type="button"
@@ -2326,10 +2333,22 @@ export function DocumentReviewRuleWorkspace({
                         </span>
                         <span>{line.conceptName ?? "Concepto de gasto"}</span>
                       </div>
-                      <div className="review-rule-table__side">{line.ivaCode ?? "-"}</div>
-                      <div className="review-rule-table__amount">{formatMoney(line.netAmount, currencyCode)}</div>
-                      <div className="review-rule-table__amount">{formatMoney(line.totalAmount, currencyCode)}</div>
-                      <div className="review-rule-table__note">{line.description}</div>
+                      <div className="review-rule-table__side">
+                        <span className="review-rule-table__mobile-label">IVA</span>
+                        {line.ivaCode ?? "-"}
+                      </div>
+                      <div className="review-rule-table__amount">
+                        <span className="review-rule-table__mobile-label">Neto</span>
+                        {formatMoney(line.netAmount, currencyCode)}
+                      </div>
+                      <div className="review-rule-table__amount">
+                        <span className="review-rule-table__mobile-label">Total</span>
+                        {formatMoney(line.totalAmount, currencyCode)}
+                      </div>
+                      <div className="review-rule-table__note">
+                        <span className="review-rule-table__mobile-label">Detalle</span>
+                        {line.description}
+                      </div>
                     </div>
                   )) : (
                     <div className="review-rule-search-empty">

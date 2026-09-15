@@ -145,7 +145,7 @@ export function DocumentSpreadsheetImportNotifier({
   }
 
   return (
-    <div className="pointer-events-none fixed right-5 top-5 z-[1200] flex w-full max-w-[380px] flex-col gap-3">
+    <div className="pointer-events-none fixed right-3 top-3 z-[1200] flex w-[calc(100%-24px)] max-w-[380px] flex-col gap-3 sm:right-5 sm:top-5">
       {toasts.map((toast) => (
         <div
           key={toast.id}
