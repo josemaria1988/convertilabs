@@ -13,6 +13,24 @@ export type SupplierInvoiceItem = {
   amount: string | null;
   reviewHref: string;
   reason?: string | null;
+  observedBalance?: {
+    source: "zeta" | "ledger";
+    amount: string;
+    currency: string;
+    asOf: string | null;
+    beforeHumanReview: boolean;
+  };
+  administrativeReview?: {
+    comment: string;
+    reviewedAt: string;
+    paymentStatus: "paid" | "unpaid" | "unknown";
+    method: string | null;
+    paymentDate: string | null;
+    paidAmount: string | null;
+    paidCurrency: string | null;
+    classificationStatus: "confirmed" | "needs_review";
+    valid: boolean;
+  };
 };
 
 export type SupplierInvoiceGroup = {
@@ -27,6 +45,9 @@ export type SupplierInvoiceGroup = {
 export type SupplierInvoicesBoardProps = {
   confirmed: SupplierInvoiceGroup[];
   unconfirmed: SupplierInvoiceGroup[];
+  /** Human declarations remain visible separately from ERP/ledger balances. */
+  humanPaid?: SupplierInvoiceGroup[];
+  humanUnpaid?: SupplierInvoiceGroup[];
   updatedAt: string | null;
   coverage: { status: "complete" | "partial" | "unavailable"; message?: string };
   error?: string | null;

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const { test } = require("./testkit.cjs");
-const { validateSyncConfig, parseCommand, reportFilters, manualSyncAuthorization } = require("../scripts/local-companion/cli.cjs");
+const { validateSyncConfig, parseCommand, reportFilters, manualSyncAuthorization, historicalSyncFrom } = require("../scripts/local-companion/cli.cjs");
 
 test("daily config preserves exact price codes and rejects requests outside its declared limits", () => {
   const config = validateSyncConfig({ pricePairs: [{ articleCode: "000001", priceBaseCode: "LP" }] });
@@ -52,4 +52,19 @@ test("sales price CLI filters keep article identifiers exact and reject malforme
     assert.throws(() => parseCommand(args));
   }
   assert.throws(() => reportFilters({}, null), /objeto JSON/);
+});
+
+
+test("historical CLI refresh requires one-shot human authorization and a valid month boundary", () => {
+  const reason = "El usuario pide importar las compras y ventas de 2026";
+  const values = { now: true, reason, "history-from": "2026-01-01" };
+  assert.equal(historicalSyncFrom(values, "2026-09-12"), "2026-01-01");
+  assert.equal(historicalSyncFrom({}, "2026-09-12"), undefined);
+  assert.equal(parseCommand(["sync-zeta", "--now", "--reason", reason, "--history-from", "2026-01-01", "--dry-run"]).values["history-from"], "2026-01-01");
+  for (const from of ["2026-02-30", "2026-13-01", "2026-01-02", "2027-01-01", "", " 2026-01-01"]) {
+    assert.throws(() => historicalSyncFrom({ ...values, "history-from": from }, "2026-09-12"));
+  }
+  assert.throws(() => historicalSyncFrom({ "history-from": "2026-01-01" }));
+  assert.throws(() => parseCommand(["report", "sales", "--history-from", "2026-01-01", "--now", "--reason", reason]));
+  assert.throws(() => validateSyncConfig({ historyFrom: "2026-01-01" }));
 });

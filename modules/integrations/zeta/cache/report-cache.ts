@@ -41,6 +41,7 @@ export type LocalZetaReport = {
     priceStatus?: "available" | "no_price_at_source"; price?: null;
     pricingScope?: "generic_list_without_customer_conditions";
     incremental?: ZetaInvoiceIncrementalMetadata;
+    purchasesBalanceCoverage?: unknown;
   };
   columns: string[]; rows: ReportRow[];
 };
@@ -171,7 +172,7 @@ function filteredRows(m: ZetaReportSnapshotManifest, rows: ReportRow[], filters:
   }));
 }
 
-type CachedRun = { id: string; status: string; started_at: string; finished_at: string | null; summary_json: { schemaVersion?: number; reports?: unknown[]; pricesCoverage?: unknown }; metadata_json: Record<string, unknown> };
+type CachedRun = { id: string; status: string; started_at: string; finished_at: string | null; summary_json: { schemaVersion?: number; reports?: unknown[]; pricesCoverage?: unknown; purchasesBalanceCoverage?: unknown; mastersRunId?: unknown; mastersWarnings?: unknown }; metadata_json: Record<string, unknown> };
 
 async function completedRuns(supabase: SupabaseClient, organizationId: string): Promise<CachedRun[]> {
   const { data, error } = await supabase.from("integration_sync_runs")
@@ -200,6 +201,24 @@ async function loadSnapshotRows(input: { supabase: SupabaseClient; organizationI
   });
   if (rows.length !== m.rowCount || reportHash({ columns: m.columns, rows }) !== m.sha256) fail("zeta_cache_corrupt", "Las filas del snapshot no coinciden con su manifiesto.");
   return rows;
+}
+
+/** Historical invoice refreshes retain unrelated datasets with their original
+ * timestamps and validated hashes; copying does not claim fresh ERP data. */
+export async function loadZetaRetainedNonInvoiceSnapshots(input: { supabase: SupabaseClient; organizationId: string }) {
+  const run = (await completedRuns(input.supabase, input.organizationId))[0];
+  if (!run) return null;
+  if (run.summary_json?.schemaVersion !== 1 || !Array.isArray(run.summary_json.reports)) fail("zeta_cache_corrupt", "La copia anterior no conserva un manifiesto valido.");
+  const manifests = run.summary_json.reports.map(readManifest).filter((m) => m.report !== "sales" && m.report !== "purchases");
+  if (!["articles", "stock"].every((report) => manifests.some((m) => m.report === report))) fail("zeta_cache_incomplete", "Faltan articulos o stock en la copia anterior; no se publica una copia historica incompleta.");
+  const snapshots: ZetaReportSnapshotInput[] = [];
+  for (const manifest of manifests) {
+    const rows = await loadSnapshotRows({ ...input, runId: run.id, manifest });
+    snapshots.push({ report: manifest.report, filters: manifest.filters, endpoint: manifest.endpoint,
+      startedAt: manifest.startedAt, completedAt: manifest.completedAt, pages: manifest.pages, columns: manifest.columns, rows });
+  }
+  return { snapshots, sourceRunId: run.id, pricesCoverage: run.summary_json.pricesCoverage ?? { mode: "not_available", allArticlesCovered: false },
+    mastersRunId: run.summary_json.mastersRunId ?? null, mastersWarnings: run.summary_json.mastersWarnings ?? [] };
 }
 
 export async function loadCachedZetaReport(input: LocalCompanionContext & {
@@ -234,6 +253,7 @@ export async function loadCachedZetaReport(input: LocalCompanionContext & {
       sha256: reportHash({ columns: m.columns, rows: resultRows }), snapshotRunId: run.id, snapshotKey: m.snapshotKey,
       dataAsOf: m.completedAt, cacheAgeSeconds: age, stale: age > 86400,
       ...(m.incremental ? { incremental: m.incremental } : {}),
+      ...(m.report === "purchases" ? { purchasesBalanceCoverage: run.summary_json.purchasesBalanceCoverage ?? { mode: "not_available" } } : {}),
       csvTextProtection: "CSV protege identificadores y formulas; campos compuestos contienen JSON. JSON conserva valores originales.",
       ...(m.report === "base-prices" || m.report === "sales-prices" ? { priceStatus: resultRows.length ? "available" as const : "no_price_at_source" as const,
         ...(!resultRows.length ? { price: null } : {}) } : {}),
@@ -256,6 +276,7 @@ export async function loadZetaCacheStatus(input: { supabase: SupabaseClient; org
       scheduledDay: data.metadata_json?.scheduledDay, requestsUsed: data.metadata_json?.requestsUsed, maxRequests: data.metadata_json?.maxRequests, errorCode: data.error_code } : null,
     lastCompleteRunId: latest?.id ?? null, dataAsOf: latest?.finished_at ?? null, retainedCopies: 2,
     pricesCoverage: latest?.summary_json.pricesCoverage ?? { mode: "not_available", allArticlesCovered: false },
+    purchasesBalanceCoverage: latest?.summary_json.purchasesBalanceCoverage ?? { mode: "not_available" },
     reports: reports.map((m) => ({ report: m.report, filters: m.filters, rows: m.rowCount, dataAsOf: m.completedAt,
       stale: (input.now ?? new Date()).getTime() - Date.parse(m.completedAt) > 86400000,
       ...(m.incremental ? { incremental: m.incremental } : {}),

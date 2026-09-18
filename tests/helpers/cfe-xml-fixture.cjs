@@ -6,4 +6,12 @@ function cfe(options = {}) {
 function envelope(entries, extra = "") {
   return `<EnvioCFE_entreEmpresas xmlns="http://cfe.dgi.gub.uy"><Caratula><RutReceptor>213554700012</RutReceptor><RUCEmisor>220918880014</RUCEmisor><CantCFE>${entries.length}</CantCFE></Caratula>${entries.map((entry) => `<CFE_Adenda>${entry}<Adenda>${extra}</Adenda></CFE_Adenda>`).join("")}</EnvioCFE_entreEmpresas>`;
 }
-module.exports = { cfe, envelope };
+function secretCfe(options = {}) {
+  return cfe(options).replace(/<Receptor>.*?<\/Receptor>/, "").replace("</IdDoc>", "<SecProf>1</SecProf></IdDoc>");
+}
+function secretAdenda(options = {}) {
+  const { number = "200", series = "A", type = "111", rut = "213554700012", name = "Empresa receptora", documentType = "2", bankWrapper = false } = options;
+  const block = `<?xml version="1.0" encoding="utf-16"?><SecretoProfesional><TipoCFE>${type}</TipoCFE><Serie>${series}</Serie><Nro>${number}</Nro><Receptor><TipoDocRecep>${documentType}</TipoDocRecep><CodPaisRecep>UY</CodPaisRecep><DocRecep>${rut}</DocRecep><RznSocRecep>${name}</RznSocRecep></Receptor><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><Reference URI="https://invalid.example/signature"/></SignedInfo></Signature></SecretoProfesional>`;
+  return `<![CDATA[${bankWrapper ? `<AdendaBancos>${block}<LeyendasObligatorias/><LeyendasMisc/></AdendaBancos>` : `Texto bancario que no prueba identidad.\n${block}`}]]>`;
+}
+module.exports = { cfe, envelope, secretCfe, secretAdenda };

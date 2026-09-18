@@ -22,10 +22,22 @@ export function createDailyZetaRequestPolicy(input: {
   organizationId: string;
   reserveRequest: (endpoint: string) => Promise<void>;
   minIntervalMs?: number;
+  /** Exact month count supplied only by an explicitly authorized historical invoice run. */
+  purchaseMonthBatches?: number;
+  /** Monthly summary calls for balances of current and already cached invoices. */
+  purchaseBalanceMonthBatches?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => number;
 }): ZetaRequestPolicy {
   const interval = input.minIntervalMs ?? 1000;
+  const purchaseMonthBatches = input.purchaseMonthBatches ?? 1;
+  const purchaseBalanceMonthBatches = input.purchaseBalanceMonthBatches ?? 1;
+  if (!Number.isSafeInteger(purchaseBalanceMonthBatches) || purchaseBalanceMonthBatches < 1 || purchaseBalanceMonthBatches > 200) {
+    throw new Error("La politica diaria requiere entre 1 y 200 lotes mensuales de saldos de compras.");
+  }
+  if (!Number.isSafeInteger(purchaseMonthBatches) || purchaseMonthBatches < 1 || purchaseMonthBatches > 200) {
+    throw new Error("La politica diaria requiere entre 1 y 200 lotes mensuales de compras.");
+  }
   if (!input.organizationId || !Number.isSafeInteger(interval) || interval < 1000 || interval > 60000) {
     throw new Error("La politica diaria requiere organizacion e intervalo entre 1000 y 60000 ms.");
   }
@@ -34,6 +46,8 @@ export function createDailyZetaRequestPolicy(input: {
   let lastRequestAt: number | null = null;
   let queue = Promise.resolve();
   const usedDailyBulkEndpoints = new Set<ZetaEndpointKey>();
+  let purchaseMonthsUsed = 0;
+  let purchaseBalanceMonthsUsed = 0;
   return {
     organizationId: input.organizationId,
     purpose: "daily_sync",
@@ -43,7 +57,15 @@ export function createDailyZetaRequestPolicy(input: {
         if (endpoint.kind !== "query" && endpoint.kind !== "load") {
           throw new ZetaReadPolicyError("zeta_daily_write_blocked", "La actualizacion diaria no puede escribir en Zeta.");
         }
-        if (key === "salesInvoicesDetailedDaily" || key === "facturaProveedorComprasDetalladas") {
+        if (key === "facturaProveedorComprasDetalladas") {
+          if (purchaseMonthsUsed >= purchaseMonthBatches) throw new ZetaReadPolicyError("zeta_daily_bulk_already_used", "Este detalle masivo ya se consulto para todos los lotes mensuales de compras autorizados.");
+          purchaseMonthsUsed += 1;
+        }
+        if (key === "facturaProveedorCompras") {
+          if (purchaseBalanceMonthsUsed >= purchaseBalanceMonthBatches) throw new ZetaReadPolicyError("zeta_daily_bulk_already_used", "Ya se consultaron los encabezados de todos los meses de compras previstos.");
+          purchaseBalanceMonthsUsed += 1;
+        }
+        if (key === "salesInvoicesDetailedDaily") {
           if (usedDailyBulkEndpoints.has(key)) throw new ZetaReadPolicyError("zeta_daily_bulk_already_used", "Este detalle masivo ya se consulto en la actualizacion diaria.");
           usedDailyBulkEndpoints.add(key);
         }

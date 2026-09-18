@@ -1279,21 +1279,21 @@ export const zetaEndpointRegistry = {
     httpMethod: "POST",
     inputWrapper: "ComprasIn",
     outputWrapper: "ComprasOut",
-    kind: "query",
+    kind: "load",
     stream: "zeta.documents.purchase_invoices",
-    description: "Supplier purchase movements query for purchase-side reconciliation.",
+    description: "Monthly all-supplier purchase headers with explicit invoice totals and balances.",
     requestShape: {
       Data: {
-        ProveedorCodigo: "",
         Mes: 0,
         Anio: 0,
-        FechaDesde: "",
-        FechaHasta: "",
+        Moneda: 0,
       },
     },
     responseShape: {
       Response: {
-        ListaMovimientos: [],
+        Compras: [],
+        Succeed: true,
+        Mensaje: "",
       },
     },
   },

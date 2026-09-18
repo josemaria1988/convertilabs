@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { test, assert } = require("./testkit.cjs");
-const { stageZetaReportSnapshot, loadZetaCacheStatus, loadZetaInvoiceCacheBase, mergeZetaInvoiceDelta } = require("@/modules/integrations/zeta/cache/report-cache");
+const { stageZetaReportSnapshot, loadZetaCacheStatus, loadZetaInvoiceCacheBase, mergeZetaInvoiceDelta, loadZetaRetainedNonInvoiceSnapshots } = require("@/modules/integrations/zeta/cache/report-cache");
 const { exportZetaReport, serializeZetaReportCsv } = require("@/modules/local-companion/zeta-reports");
 
 const org = "10000000-0000-0000-0000-000000000001";
@@ -279,4 +279,26 @@ test("incremental invoice replacement handles changed dates by source ID and con
   assert.equal(result.rows.length, 2); assert.equal(result.rows[0].Fecha, "2026-08-15");
   assert.equal(result.rows[1].Fecha, "2026-09-01"); assert.equal(result.rows[1].Total, 25);
   assert.equal(result.filters.FechaDesde, "2026-08-01"); assert.equal(result.incremental.updatedRows, 1);
+});
+
+
+test("historical invoice refresh retains unrelated validated snapshots without changing their dates or source", async () => {
+  const f = fixture();
+  assert.equal(await loadZetaRetainedNonInvoiceSnapshots({ supabase: f.supabase, organizationId: org }), null);
+  await f.snapshot("sales", [], { FechaDesde: "2026-09-01", FechaHasta: "2026-09-09" });
+  await f.snapshot("articles", [{ Codigo: "0001" }]);
+  await assert.rejects(loadZetaRetainedNonInvoiceSnapshots({ supabase: f.supabase, organizationId: org }), /stock/);
+  await f.snapshot("stock", [{ ArticuloCodigo: "0001", StockActual: 12 }]);
+  await f.snapshot("base-prices", [{ ArticuloCodigo: "0001", Precio: 9 }], { PrecioBaseCodigo: "LP" });
+  f.state.runs[0].summary_json.pricesCoverage = { mode: "fixture", allArticlesCovered: false };
+  const writes = f.state.writes;
+  const retained = await loadZetaRetainedNonInvoiceSnapshots({ supabase: f.supabase, organizationId: org });
+  assert.equal(retained.sourceRunId, runId);
+  assert.deepEqual(retained.snapshots.map((x) => x.report), ["articles", "stock", "base-prices"]);
+  assert.equal(retained.snapshots[0].completedAt, "2026-09-09T21:03:00Z");
+  assert.equal(retained.snapshots[0].rows[0].Codigo, "0001");
+  assert.deepEqual(retained.pricesCoverage, { mode: "fixture", allArticlesCovered: false });
+  assert.equal(f.state.writes, writes);
+  f.state.pages.find((p) => p.metadata_json.report === "stock").payload_hash = "0".repeat(64);
+  await assert.rejects(loadZetaRetainedNonInvoiceSnapshots({ supabase: f.supabase, organizationId: org }), /evidencia/);
 });

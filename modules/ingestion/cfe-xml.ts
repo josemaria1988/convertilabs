@@ -8,13 +8,18 @@ const namespace = "http://cfe.dgi.gub.uy";
 const signatureNamespace = "http://www.w3.org/2000/09/xmldsig#";
 export const maxCfeXmlBytes = 5 * 1024 * 1024;
 type XmlNode = { name: string; uri: string; text: string; children: XmlNode[] };
+export type CfeXmlReceiverEvidence = {
+  source: "Encabezado/Receptor" | "Adenda/SecretoProfesional/Receptor";
+  fiscalKey: string; documentType: string; country: string; taxId: string; name: string;
+  sameCfeWrapper: boolean; adendaCorroborated: boolean; signatureVerified: false;
+};
 export type CfeXmlInvoice = {
   fiscalKey: string; semanticHash: string; typeCode: string; documentType: "invoice" | "purchase_payment_support"; facts: DocumentIntakeFactMap;
   amountBreakdown: DocumentIntakeAmountBreakdown[]; lineItems: DocumentIntakeLineItem[];
   warnings: string[]; amountsRequireReview: boolean; paymentTerms: "cash" | "credit" | "unknown";
   source: { cfeIndex: number; amountsIncludeVat: boolean; total: number; payable: number | null;
     nonBillable: number | null; exchangeRate: number | null; totals: Record<string, string>;
-    lines: Array<Record<string, string>>; paymentEvidence: string[]; signatureVerified: false };
+    lines: Array<Record<string, string>>; paymentEvidence: string[]; receiverIdentity: CfeXmlReceiverEvidence; signatureVerified: false };
 };
 export type CfeXmlResult = { invoices: CfeXmlInvoice[]; pending: Array<{ cfeIndex?: number; reason: string }> };
 
@@ -26,6 +31,9 @@ function parseTree(bytes: Buffer) {
   let xml: string;
   try { xml = new TextDecoder(declaration === "iso-8859-1" ? "iso-8859-1" : "utf-8", { fatal: true }).decode(bytes); }
   catch { fail("encoding_invalid"); }
+  return parseXmlText(xml);
+}
+function parseXmlText(xml: string, secretAdenda = false) {
   if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml)) fail("dtd_forbidden");
   const parser = new SaxesParser({ xmlns: true });
   const stack: XmlNode[] = []; let root: XmlNode | null = null; let nodes = 0;
@@ -33,9 +41,11 @@ function parseTree(bytes: Buffer) {
   parser.on("error", () => fail("malformed"));
   parser.on("opentag", (tag) => {
     if (++nodes > 30_000 || stack.length >= 48 || Object.keys(tag.attributes).length > 30) fail("structure_limit");
-    // Vendor-specific Adenda children are opaque evidence, never fiscal fields.
+    // Vendor-specific children stay opaque. A separate, bounded parser handles
+    // only the explicitly bound SecretoProfesional receiver in an Adenda string.
     const withinAdenda = stack.some((entry) => entry.uri === namespace && entry.name === "Adenda");
-    if (tag.uri !== namespace && tag.uri !== signatureNamespace && !withinAdenda) fail("namespace_invalid");
+    if (secretAdenda ? tag.uri !== "" && tag.uri !== signatureNamespace
+      : tag.uri !== namespace && tag.uri !== signatureNamespace && !withinAdenda) fail("namespace_invalid");
     const node: XmlNode = { name: tag.local, uri: tag.uri, text: "", children: [] };
     if (stack.length) stack[stack.length - 1].children.push(node);
     else { if (root) fail("multiple_roots"); root = node; }
@@ -51,14 +61,14 @@ function parseTree(bytes: Buffer) {
   if (!root) fail("empty");
   return root as XmlNode;
 }
-function children(node: XmlNode, name: string) { return node.children.filter((entry) => entry.uri === namespace && entry.name === name); }
-function one(node: XmlNode, name: string, required = true): XmlNode | null {
-  const found = children(node, name);
+function children(node: XmlNode, name: string, uri = namespace) { return node.children.filter((entry) => entry.uri === uri && entry.name === name); }
+function one(node: XmlNode, name: string, required = true, uri = namespace): XmlNode | null {
+  const found = children(node, name, uri);
   if (found.length > 1 || (required && found.length !== 1)) fail(`field_${name}`);
   return found[0] ?? null;
 }
-function value(node: XmlNode, name: string, required = false): string | null {
-  const entry = one(node, name, required);
+function value(node: XmlNode, name: string, required = false, uri = namespace): string | null {
+  const entry = one(node, name, required, uri);
   if (!entry) return null;
   if (entry.children.length) fail(`scalar_${name}`);
   const result = entry.text.trim();
@@ -92,18 +102,62 @@ function rut(node: XmlNode, name: string) {
   return result;
 }
 
-function extractInvoice(cfe: XmlNode, index: number, expectedRut: string): CfeXmlInvoice {
+function receiverFields(receiver: XmlNode, uri = namespace) {
+  const documentType = value(receiver, "TipoDocRecep", true, uri)!;
+  const country = value(receiver, "CodPaisRecep", true, uri)!;
+  if (!(uri === "" ? ["2", "02"] : ["2"]).includes(documentType) || country !== "UY") fail("recipient_unverified");
+  const taxId = value(receiver, "DocRecep", true, uri)!;
+  if (!/^\d{12}$/.test(taxId)) fail("rut_DocRecep");
+  return { documentType, country, taxId, name: value(receiver, "RznSocRecep", true, uri)! };
+}
+
+function secretAdendaReceiver(adenda: XmlNode | null, id: XmlNode) {
+  const containsBlock = (node: XmlNode): boolean => node.name === "SecretoProfesional" || node.children.some(containsBlock);
+  if (!adenda || (!/<\/?(?:[^\s<>/]+:)?SecretoProfesional(?=[\s/>])/u.test(adenda.text) && !adenda.children.some(containsBlock))) return null;
+  if (adenda.children.length || value(id, "SecProf") !== "1") fail("adenda_recipient_structure");
+  // The vendor's nested declaration describes an already decoded string. Never
+  // reinterpret its encoding or fetch its signature/reference. Parse the whole
+  // payload so a block hidden in a comment/other CFE cannot be selected by regex.
+  const declarations = adenda.text.match(/<\?xml\b[\s\S]*?\?>/g) ?? [];
+  if (declarations.length > 1) fail("adenda_recipient_ambiguous");
+  const embedded = adenda.text.replace(/<\?xml\s+version\s*=\s*["']1\.0["'](?:\s+encoding\s*=\s*["'](?:utf-8|utf-16|iso-8859-1)["'])?\s*\?>/gi, "");
+  const payload = parseXmlText(`<AdendaPayload>${embedded}</AdendaPayload>`, true);
+  const descendants = (node: XmlNode): XmlNode[] => node.children.flatMap((child) => [child, ...descendants(child)]);
+  const allBlocks = descendants(payload).filter((node) => node.name === "SecretoProfesional");
+  if (allBlocks.length !== 1 || payload.children.length !== 1) fail("adenda_recipient_ambiguous");
+  const container = payload.children[0].name === "AdendaBancos" && payload.children[0].uri === "" ? payload.children[0] : payload;
+  const block = one(container, "SecretoProfesional", true, "")!;
+  if (block !== allBlocks[0] || block.children.some((node) => node.uri !== signatureNamespace
+    && (node.uri !== "" || !["TipoCFE", "Serie", "Nro", "Receptor"].includes(node.name)))) fail("adenda_recipient_structure");
+  for (const field of ["TipoCFE", "Serie", "Nro"] as const) {
+    if (value(block, field, true, "") !== value(id, field, true)) fail("adenda_fiscal_identity_mismatch");
+  }
+  return receiverFields(one(block, "Receptor", true, "")!, "");
+}
+
+function extractInvoice(cfe: XmlNode, index: number, expectedRut: string, adenda: XmlNode | null): CfeXmlInvoice {
   const bodies = cfe.children.filter((entry) => entry.uri === namespace);
   if (bodies.length !== 1 || !["eFact", "eTck"].includes(bodies[0].name)) fail("type_unsupported");
   const body = bodies[0], header = one(body, "Encabezado")!, id = one(header, "IdDoc")!;
   const typeCode = value(id, "TipoCFE", true)!;
   if ((body.name === "eFact" && typeCode !== "111") || (body.name === "eTck" && typeCode !== "101")) fail("type_unsupported");
-  const issuer = one(header, "Emisor")!, receiver = one(header, "Receptor")!;
-  if (value(receiver, "TipoDocRecep", true) !== "2" || value(receiver, "CodPaisRecep", true) !== "UY") fail("recipient_unverified");
-  const receiverRut = rut(receiver, "DocRecep"), issuerRut = rut(issuer, "RUCEmisor");
-  if (receiverRut !== expectedRut || issuerRut === expectedRut) fail("recipient_mismatch");
+  const issuer = one(header, "Emisor")!, issuerRut = rut(issuer, "RUCEmisor");
   const series = value(id, "Serie", true)!, number = value(id, "Nro", true)!;
   if (!/^[A-Z]{1,2}$/.test(series) || !/^\d{1,7}$/.test(number) || Number(number) <= 0) fail("identity_invalid");
+  const fiscalKey = [issuerRut, typeCode, series, String(Number(number))].join("|");
+  const headerReceiver = one(header, "Receptor", false);
+  // A present but invalid header is never repaired with an Adenda fallback.
+  const headerIdentity = headerReceiver ? receiverFields(headerReceiver) : null;
+  const adendaIdentity = secretAdendaReceiver(adenda, id);
+  if (headerIdentity && adendaIdentity && (headerIdentity.taxId !== adendaIdentity.taxId
+    || headerIdentity.name.normalize("NFKC").replace(/\s+/g, " ").toUpperCase()
+      !== adendaIdentity.name.normalize("NFKC").replace(/\s+/g, " ").toUpperCase())) fail("adenda_recipient_conflict");
+  const receiver = headerIdentity ?? adendaIdentity;
+  if (!receiver) fail("field_Receptor");
+  if (receiver.taxId !== expectedRut || issuerRut === expectedRut) fail("recipient_mismatch");
+  const receiverIdentity: CfeXmlReceiverEvidence = { ...receiver, fiscalKey,
+    source: headerIdentity ? "Encabezado/Receptor" : "Adenda/SecretoProfesional/Receptor",
+    sameCfeWrapper: Boolean(adendaIdentity), adendaCorroborated: Boolean(headerIdentity && adendaIdentity), signatureVerified: false };
   const totals = one(header, "Totales")!, currency = value(totals, "TpoMoneda", true)!;
   if (!/^[A-Z]{3}$/.test(currency)) fail("currency_invalid");
   const total = decimal(totals, "MntTotal", true)!, payable = decimal(totals, "MntPagar", false, true);
@@ -112,6 +166,7 @@ function extractInvoice(cfe: XmlNode, index: number, expectedRut: string): CfeXm
   // Other gross modes are retained for review, never treated as ordinary VAT.
   const amountsIncludeVat = bruto === "1";
   const warnings = ["XML recibido por correo: firma electrónica no verificada; requiere revisión humana."];
+  if (!headerIdentity) warnings.push("Receptor extraído de SecretoProfesional en la adenda del mismo CFE, con tipo, serie y número coincidentes; firma no verificada, requiere revisión de identidad.");
   let amountsRequireReview = bruto !== null && bruto !== "1";
   if (amountsRequireReview) warnings.push("Indicador de montos brutos especial: revisar importes antes de registrar.");
   const breakdown: DocumentIntakeAmountBreakdown[] = [];
@@ -165,13 +220,12 @@ function extractInvoice(cfe: XmlNode, index: number, expectedRut: string): CfeXm
     issuer_name: value(issuer, "RznSoc", true), issuer_tax_id: issuerRut, issuer_address_raw: value(issuer, "DomFiscal"),
     issuer_department: value(issuer, "Departamento"), issuer_city: value(issuer, "Ciudad"), issuer_branch_code: value(issuer, "CdgDGISucur"),
     merchant_category_hints: [], location_extraction_confidence: null,
-    receiver_name: value(receiver, "RznSocRecep", true), receiver_tax_id: receiverRut,
+    receiver_name: receiver.name, receiver_tax_id: receiver.taxId,
     document_number: String(Number(number)), series, currency_code: currency, document_date: date(id, "FchEmis", true), due_date: date(id, "FchVenc"),
     subtotal: net, tax_amount: tax, total_amount: total, purchase_category_candidate: null, sale_category_candidate: null,
   };
-  const fiscalKey = [issuerRut, typeCode, series, String(Number(number))].join("|");
   const source = { cfeIndex: index, amountsIncludeVat, total, payable, nonBillable, exchangeRate: decimal(totals, "TpoCambio"),
-    totals: scalarFields(totals), lines: rawLines, paymentEvidence, signatureVerified: false as const };
+    totals: scalarFields(totals), lines: rawLines, paymentEvidence, receiverIdentity, signatureVerified: false as const };
   const semanticHash = createHash("sha256").update(JSON.stringify({ typeCode, facts, lines: rawLines, totals: source.totals, paymentEvidence, bruto })).digest("hex");
   return { fiscalKey, semanticHash, typeCode, documentType, facts, amountBreakdown: breakdown, lineItems, warnings, amountsRequireReview,
     paymentTerms: payment === "1" ? "cash" : payment === "2" ? "credit" : "unknown", source };
@@ -181,21 +235,21 @@ function extractInvoice(cfe: XmlNode, index: number, expectedRut: string): CfeXm
 export function parseCfeXml(bytes: Buffer, expectedReceiverTaxId: string): CfeXmlResult {
   if (!/^\d{12}$/.test(expectedReceiverTaxId)) fail("organization_rut_missing");
   const root = parseTree(bytes); if (root.uri !== namespace) fail("namespace_invalid");
-  let cfes: XmlNode[];
-  if (root.name === "CFE") cfes = [root];
+  let cfes: Array<{ cfe: XmlNode; adenda: XmlNode | null }>;
+  if (root.name === "CFE") cfes = [{ cfe: root, adenda: null }];
   else if (root.name === "EnvioCFE_entreEmpresas") {
     const cover = one(root, "Caratula")!;
     if (rut(cover, "RutReceptor") !== expectedReceiverTaxId) fail("envelope_recipient_mismatch");
     const wrappers = children(root, "CFE_Adenda");
-    cfes = wrappers.map((wrapper) => one(wrapper, "CFE")!);
+    cfes = wrappers.map((wrapper) => ({ cfe: one(wrapper, "CFE")!, adenda: one(wrapper, "Adenda", false) }));
     if (root.children.some((child) => child.uri === namespace && !["Caratula", "CFE_Adenda"].includes(child.name))) fail("envelope_structure");
     if (decimal(cover, "CantCFE", true) !== cfes.length) fail("envelope_count_mismatch");
   } else fail("root_unsupported");
   if (!cfes.length || cfes.length > 100) fail("cfe_count_limit");
   const result: CfeXmlResult = { invoices: [], pending: [] }; const seen = new Set<string>();
-  cfes.forEach((cfe, index) => {
+  cfes.forEach(({ cfe, adenda }, index) => {
     try {
-      const invoice = extractInvoice(cfe, index, expectedReceiverTaxId);
+      const invoice = extractInvoice(cfe, index, expectedReceiverTaxId, adenda);
       if (seen.has(invoice.fiscalKey)) {
         // Conflicting versions in one envelope cannot make the first version authoritative.
         result.invoices = result.invoices.filter((entry) => entry.fiscalKey !== invoice.fiscalKey);

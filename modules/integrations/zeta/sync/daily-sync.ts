@@ -5,9 +5,10 @@ import { getZetaEndpoint, type ZetaEndpointKey } from "../client/endpoint-regist
 import { callZetaEndpoint, createZetaRestClient, type ZetaFetch, type ZetaRestClient } from "../client/rest-client";
 import { createDailyZetaRequestPolicy } from "../client/read-policy";
 import { runZetaSync } from "../services/sync-service";
-import { stageZetaReportSnapshot, validateZetaSnapshotRows, loadZetaInvoiceCacheBase, mergeZetaInvoiceDelta } from "../cache/report-cache";
+import { stageZetaReportSnapshot, validateZetaSnapshotRows, loadZetaInvoiceCacheBase, mergeZetaInvoiceDelta, loadZetaRetainedNonInvoiceSnapshots, type ZetaReportSnapshotInput } from "../cache/report-cache";
 import { reportHash, type ReportRow } from "../cache/report-contracts";
 import { calculateGenericSalesPrices, exactPriceCode, indexPriceArticles, selectSalesPriceRules, validateBasePriceRows, validateSalesPriceLists } from "./price-calculation";
+import { applyPurchaseBalanceMonths, planPurchaseBalanceMonths, type PurchaseBalanceMonth } from "./purchase-balances";
 
 export type DailyZetaReportKind = "sales" | "purchases" | "articles" | "stock" | "base-prices" | "sales-prices";
 type Scalar = string | number | boolean | null;
@@ -34,7 +35,18 @@ export type DailyZetaSyncInput = {
   salesPriceLists?: number[];
   /** Explicit human request only; advances today's single slot, never permits a second attempt. */
   manualAuthorization?: { reason: string };
+  /** Explicit one-shot historical invoice range, in complete monthly batches. */
+  historyFrom?: string;
 };
+export type DailyZetaSyncProgress = {
+  phase: "batch_started" | "batch_completed" | "report_staged" | "masters_started" | "published";
+  report?: DailyZetaReportKind; from?: string; to?: string; pages?: number; rows?: number;
+  requestsUsed?: number; retained?: boolean;
+};
+type ProgressCallback = (event: DailyZetaSyncProgress) => void | Promise<void>;
+async function emitProgress(callback: ProgressCallback | undefined, event: DailyZetaSyncProgress) {
+  try { await callback?.(event); } catch { /* observational callback only */ }
+}
 type DailyDependencies = {
   runtime?: ZetaRuntimeConfig;
   fetchImpl?: ZetaFetch;
@@ -43,6 +55,8 @@ type DailyDependencies = {
   stageSnapshot?: typeof stageZetaReportSnapshot;
   runMasters?: typeof runZetaSync;
   loadInvoiceBase?: typeof loadZetaInvoiceCacheBase;
+  loadRetainedSnapshots?: typeof loadZetaRetainedNonInvoiceSnapshots;
+  onProgress?: ProgressCallback;
 };
 
 function strictBoolean(value: unknown, label: string) {
@@ -137,7 +151,7 @@ export function groupZetaPurchaseDetailRows(rows: ReportRow[], requestedMonth: s
 async function fetchPurchaseMonth(input: { client: ZetaRestClient; filters: Record<string, Scalar>; now: () => number }): Promise<DailyZetaReportSnapshot> {
   const from = String(input.filters.FechaDesde ?? ""), to = String(input.filters.FechaHasta ?? "");
   if (!isDate(from) || !isDate(to) || from.slice(0, 7) !== to.slice(0, 7) || !from.endsWith("-01") || from > to) {
-    throw new Error("Compras requiere una sola consulta del mes actual, desde su primer dia.");
+    throw new Error("Cada lote de compras requiere un solo mes, desde su primer dia.");
   }
   const startedAt = new Date(input.now()).toISOString();
   const output = await callZetaEndpoint(input.client, "facturaProveedorComprasDetalladas", {
@@ -160,6 +174,7 @@ export async function fetchDailyZetaReport(input: {
   filters: Record<string, Scalar>;
   maxPages: number;
   now?: () => number;
+  onProgress?: ProgressCallback;
 }): Promise<DailyZetaReportSnapshot> {
   const keys: Partial<Record<DailyZetaReportKind, ZetaEndpointKey>> = {
     sales: "salesInvoicesQuery", purchases: "facturaProveedorComprasDetalladas", articles: "articlesQuery",
@@ -168,7 +183,26 @@ export async function fetchDailyZetaReport(input: {
   const key = keys[input.report];
   if (!key) throw new Error("Reporte diario no soportado.");
   const now = input.now ?? Date.now;
-  if (input.report === "purchases") return fetchPurchaseMonth({ client: input.client, filters: input.filters, now });
+  if (input.report === "purchases") {
+    const batches = monthlyQueryFilters(input.filters);
+    if (!String(input.filters.FechaDesde).endsWith("-01") || batches.length > input.maxPages) {
+      throw new Error("Compras requiere iniciar el primer dia del mes y respetar el limite de lotes.");
+    }
+    const startedAt = new Date(now()).toISOString();
+    const rows: ReportRow[] = [];
+    let pages = 0;
+    for (const batch of batches) {
+      const filters = { FechaDesde: batch.FechaDesde, FechaHasta: batch.FechaHasta };
+      await emitProgress(input.onProgress, { phase: "batch_started", report: "purchases", from: String(filters.FechaDesde), to: String(filters.FechaHasta) });
+      const snapshot = await fetchPurchaseMonth({ client: input.client, filters, now });
+      pages += snapshot.pages;
+      rows.push(...snapshot.rows);
+      validateZetaSnapshotRows(rows);
+      await emitProgress(input.onProgress, { phase: "batch_completed", report: "purchases", from: String(filters.FechaDesde), to: String(filters.FechaHasta), pages: snapshot.pages, rows: snapshot.rows.length });
+    }
+    return { report: "purchases", filters: input.filters, endpoint: getZetaEndpoint("facturaProveedorComprasDetalladas").endpointName,
+      startedAt, completedAt: new Date(now()).toISOString(), pages, columns: [...new Set(rows.flatMap(Object.keys))], rows };
+  }
   const startedAt = new Date(now()).toISOString();
   const rows: ReportRow[] = [];
   const hashes = new Set<string>();
@@ -176,6 +210,9 @@ export async function fetchDailyZetaReport(input: {
   const queryFilters = input.report === "sales"
     ? monthlyQueryFilters(input.filters) : [input.filters];
   for (const filters of queryFilters) {
+    const batchRowsBefore = rows.length;
+    await emitProgress(input.onProgress, { phase: "batch_started", report: input.report,
+      ...(input.report === "sales" ? { from: String(filters.FechaDesde), to: String(filters.FechaHasta) } : {}) });
     let complete = false;
     let queryPage = 0;
     while (!complete && pages < input.maxPages) {
@@ -218,6 +255,8 @@ export async function fetchDailyZetaReport(input: {
     if (rows.length > 100000) throw new Error("El reporte supera el limite interno de 100000 filas.");
     }
     if (!complete) throw new Error(`El reporte supera el limite interno de ${input.maxPages} paginas; no se publica parcialmente.`);
+    await emitProgress(input.onProgress, { phase: "batch_completed", report: input.report,
+      ...(input.report === "sales" ? { from: String(filters.FechaDesde), to: String(filters.FechaHasta) } : {}), pages: queryPage, rows: rows.length - batchRowsBefore });
   }
   return {
     report: input.report, filters: input.filters, endpoint: getZetaEndpoint(key).endpointName,
@@ -273,11 +312,23 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
     || /[\u0000-\u001f]/.test(manualAuthorization.reason))) {
     throw new Error("La autorizacion manual requiere un motivo explicito de 12 a 500 caracteres sin controles ni espacios extremos.");
   }
+  const historyFrom = input.historyFrom;
+  if (historyFrom !== undefined) {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date((deps.now ?? Date.now)()));
+    const datePart = (name: string) => parts.find((part) => part.type === name)?.value;
+    const today = [datePart("year"), datePart("month"), datePart("day")].join("-");
+    if (!manualAuthorization || typeof historyFrom !== "string" || !isDate(historyFrom) || !historyFrom.endsWith("-01") || historyFrom > today) {
+      throw new Error("La carga historica requiere autorizacion humana y una fecha inicial valida en el primer dia de un mes, no futura.");
+    }
+    const months = monthlyQueryFilters({ FechaDesde: historyFrom, FechaHasta: today }).length;
+    if (months > maxPages || months * 3 > maxRequests) throw new Error("El periodo historico supera el minimo de consultas permitido por los limites actuales; no se reservo la corrida.");
+  }
   const claim = await dailyRpc(input.supabase, "claim_zeta_daily_sync", {
     p_organization_id: input.organizationId, p_actor_user_id: input.actorProfileId,
     p_max_requests: maxRequests,
-    p_input: { invoiceMode: "incremental_sales_monthly_purchases", pricePairs: uniquePairs, salesPriceLists, maxPages, minIntervalMs, timeZone: "America/Montevideo", scheduledHour: 18,
-      ...(manualAuthorization ? { manualAuthorization } : {}) },
+    p_input: { invoiceMode: historyFrom ? "authorized_historical_monthly_batches" : "incremental_sales_monthly_purchases", pricePairs: uniquePairs, salesPriceLists, maxPages, minIntervalMs, timeZone: "America/Montevideo", scheduledHour: 18,
+      ...(manualAuthorization ? { manualAuthorization } : {}), ...(historyFrom ? { historyFrom } : {}) },
   });
   if (claim.claimed !== true) {
     return { status: "skipped" as const, runId: claim.runId ?? null, reason: claim.reason ?? "daily_not_due", scheduledDay: claim.scheduledDay ?? null };
@@ -292,8 +343,20 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
     const loadBase = deps.loadInvoiceBase ?? loadZetaInvoiceCacheBase;
     const salesBase = await loadBase({ supabase: input.supabase, organizationId: input.organizationId, report: "sales" });
     const purchasesBase = await loadBase({ supabase: input.supabase, organizationId: input.organizationId, report: "purchases" });
-    const dateFrom = salesBase ? String(salesBase.manifest.filters.FechaHasta) : scheduledDay;
-    const purchaseFrom = `${scheduledDay.slice(0, 7)}-01`;
+    const retained = historyFrom ? await (deps.loadRetainedSnapshots ?? loadZetaRetainedNonInvoiceSnapshots)({ supabase: input.supabase, organizationId: input.organizationId }) : null;
+    const activePairs = retained ? [] : uniquePairs;
+    const activeSalesPriceLists = retained ? [] : salesPriceLists;
+    const dateFrom = historyFrom ?? (salesBase ? String(salesBase.manifest.filters.FechaHasta) : scheduledDay);
+    const purchaseFrom = historyFrom ?? `${scheduledDay.slice(0, 7)}-01`;
+    const purchaseMonthBatches = monthlyQueryFilters({ FechaDesde: purchaseFrom, FechaHasta: scheduledDay }).length;
+    const purchaseBalanceMonths = planPurchaseBalanceMonths(purchasesBase?.rows ?? [], purchaseFrom, scheduledDay);
+    if (purchaseBalanceMonths.length > maxPages || purchaseBalanceMonths.length + purchaseMonthBatches + 1 > maxRequests) {
+      throw new Error("Los meses de saldos conocidos superan el presupuesto diario minimo; no se consulto Zeta.");
+    }
+    if (salesBase && (!isDate(String(salesBase.manifest.filters.FechaHasta)) || String(salesBase.manifest.filters.FechaHasta) > scheduledDay)) {
+      throw new Error("La copia anterior conserva una fecha de actualizacion invalida.");
+    }
+    if (purchaseMonthBatches > maxPages) throw new Error("El periodo de compras supera el limite de lotes mensuales.");
     if (!isDate(dateFrom) || dateFrom > scheduledDay) throw new Error("La copia anterior conserva una fecha de actualizacion invalida.");
     if (purchasesBase) {
       const previousTo = String(purchasesBase.manifest.filters.FechaHasta);
@@ -311,6 +374,8 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
     }
     const requestPolicy = createDailyZetaRequestPolicy({
       organizationId: input.organizationId, minIntervalMs, sleep: deps.sleep, now: deps.now,
+      ...(historyFrom ? { purchaseMonthBatches } : {}),
+      purchaseBalanceMonthBatches: purchaseBalanceMonths.length,
       async reserveRequest(endpoint) {
         const result = await dailyRpc(input.supabase, "reserve_zeta_daily_request", { ...scope, p_endpoint: endpoint });
         requestCount = Number(result.requestNumber);
@@ -318,28 +383,50 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
       },
     });
     const client = createZetaRestClient({ ...runtime, organizationId: input.organizationId, requestPolicy, fetchImpl: deps.fetchImpl });
+    const progress: ProgressCallback = (event) => emitProgress(deps.onProgress, { ...event, requestsUsed: requestCount });
     const definitions: Array<{ report: DailyZetaReportKind; filters: Record<string, Scalar> }> = [
       { report: "sales", filters: { FechaDesde: dateFrom, FechaHasta: scheduledDay } },
       { report: "purchases", filters: { FechaDesde: purchaseFrom, FechaHasta: scheduledDay } },
-      { report: "articles", filters: {} },
-      { report: "stock", filters: {} },
+      ...(!retained ? [{ report: "articles" as const, filters: {} }, { report: "stock" as const, filters: {} }] : []),
     ];
     const manifests = [];
+    let purchasesBalanceCoverage: ReturnType<typeof applyPurchaseBalanceMonths>["coverage"] | null = null;
     let articleSnapshot: DailyZetaReportSnapshot | null = null;
-    const stage = (snapshot: DailyZetaReportSnapshot) => (deps.stageSnapshot ?? stageZetaReportSnapshot)({
+    const stage = (snapshot: ZetaReportSnapshotInput) => (deps.stageSnapshot ?? stageZetaReportSnapshot)({
       supabase: input.supabase, organizationId: input.organizationId,
       connectionId: typeof claim.connectionId === "string" ? claim.connectionId : null, runId, snapshot,
     });
     for (const definition of definitions) {
-      const fetched = await fetchDailyZetaReport({ client, ...definition, maxPages, now: deps.now });
+      const fetched = await fetchDailyZetaReport({ client, ...definition, maxPages, now: deps.now, onProgress: progress });
       if (definition.report === "articles") articleSnapshot = fetched;
-      const snapshot = definition.report === "sales" || definition.report === "purchases"
+      let snapshot = definition.report === "sales" || definition.report === "purchases"
         ? mergeZetaInvoiceDelta({ previous: definition.report === "sales" ? salesBase : purchasesBase, delta: fetched }) : fetched;
+      if (definition.report === "purchases") {
+        const balanceSnapshots: PurchaseBalanceMonth[] = [];
+        for (const month of purchaseBalanceMonths) {
+          const output = await callZetaEndpoint(client, "facturaProveedorCompras", {
+            Data: { Mes: Number(month.slice(5, 7)), Anio: Number(month.slice(0, 4)) },
+          });
+          const response = output.Response as Record<string, unknown> | null;
+          if (!strictBoolean(output.Succeed, "Succeed=true") || !response || typeof response !== "object"
+            || !strictBoolean(response.Succeed, "Response.Succeed=true")) throw new Error("Zeta rechazo los encabezados mensuales de compras.");
+          balanceSnapshots.push({ month, dataAsOf: new Date((deps.now ?? Date.now)()).toISOString(), rawRows: jsonRows(response.Compras) });
+        }
+        const balanced = applyPurchaseBalanceMonths(snapshot.rows, balanceSnapshots, scheduledDay);
+        purchasesBalanceCoverage = balanced.coverage;
+        snapshot = { ...snapshot, rows: balanced.rows, pages: snapshot.pages + balanceSnapshots.length,
+          completedAt: new Date((deps.now ?? Date.now)()).toISOString(), columns: [...new Set([...snapshot.columns, ...balanced.rows.flatMap(Object.keys)])] };
+      }
       manifests.push(await stage(snapshot));
+      await progress({ phase: "report_staged", report: snapshot.report, rows: snapshot.rows.length, pages: snapshot.pages });
     }
-    const articles = indexPriceArticles(salesPriceLists.length || uniquePairs.length ? articleSnapshot?.rows ?? [] : []);
-    const priceRules = salesPriceLists.length ? await fetchSalesPriceRules({ client, maxPages, now: deps.now }) : null;
-    const selectedRules = priceRules ? selectSalesPriceRules(priceRules.rows, salesPriceLists, scheduledDay) : [];
+    for (const snapshot of retained?.snapshots ?? []) {
+      manifests.push(await stage(snapshot));
+      await progress({ phase: "report_staged", report: snapshot.report, rows: snapshot.rows.length, pages: snapshot.pages, retained: true });
+    }
+    const articles = indexPriceArticles(activeSalesPriceLists.length || activePairs.length ? articleSnapshot?.rows ?? [] : []);
+    const priceRules = activeSalesPriceLists.length ? await fetchSalesPriceRules({ client, maxPages, now: deps.now }) : null;
+    const selectedRules = priceRules ? selectSalesPriceRules(priceRules.rows, activeSalesPriceLists, scheduledDay) : [];
     const bulkBaseCodes = [...new Set(selectedRules.map((rule) => exactPriceCode(rule.PrecioBaseCodigo, "PrecioBaseCodigo")))];
     const bulkBases = new Map<string, DailyZetaReportSnapshot>();
     for (const baseCode of bulkBaseCodes) {
@@ -348,7 +435,7 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
       bulkBases.set(baseCode, snapshot);
       manifests.push(await stage(snapshot));
     }
-    for (const pair of uniquePairs) {
+    for (const pair of activePairs) {
       // A selected sale-price rule may already cover this entire base; never repeat that HTTP request.
       if (bulkBases.has(pair.priceBaseCode)) continue;
       const snapshot = await fetchDailyZetaReport({ client, report: "base-prices",
@@ -366,16 +453,19 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
         pages: 1, columns: [...new Set(rows.flatMap((row) => Object.keys(row)))], rows,
       }));
     }
-    const masters = await (deps.runMasters ?? runZetaSync)({
+    if (!retained) await progress({ phase: "masters_started" });
+    const masters = retained ? { runId: retained.mastersRunId, warnings: retained.mastersWarnings, recordsFailed: 0 }
+      : await (deps.runMasters ?? runZetaSync)({
       supabase: input.supabase, organizationId: input.organizationId, actorUserId: input.actorProfileId,
       stream: "masters", runKind: "scheduled", testMode: false, maxPages, requestPolicy, fetchImpl: deps.fetchImpl,
     });
     if (masters.recordsFailed > 0) throw new Error("La actualizacion de maestros tuvo errores; se conserva la copia anterior de reportes.");
     const summary = {
       schemaVersion: 1, reports: manifests, requestsUsed: requestCount, limits: { maxRequests, minIntervalMs, maxPages, officialVendorQuota: false },
-      salesCoverage: { mode: "incremental", from: dateFrom, to: scheduledDay, historicalEditsOutsideDeltaCovered: false },
-      purchasesCoverage: { mode: "monthly_api_required", from: purchaseFrom, to: scheduledDay, sourceGrain: "detail_lines_grouped_by_invoice", invoiceTotals: "not_supplied_by_source", originalLineAmountsPreserved: true },
-      pricesCoverage: {
+      salesCoverage: { mode: historyFrom ? "authorized_historical_monthly_batches" : "incremental", from: dateFrom, to: scheduledDay, historicalEditsOutsideDeltaCovered: false },
+      purchasesCoverage: { mode: historyFrom ? "authorized_historical_monthly_batches" : "monthly_api_required", batches: purchaseMonthBatches, from: purchaseFrom, to: scheduledDay, sourceGrain: "detail_lines_grouped_by_invoice", invoiceTotals: "available_in_matched_balance_headers", originalLineAmountsPreserved: true },
+      purchasesBalanceCoverage,
+      pricesCoverage: retained ? retained.pricesCoverage : {
         mode: salesPriceLists.length ? "selected_sales_lists_and_explicit_pairs" : "explicit_pairs",
         pairs: uniquePairs, salesPriceLists, bulkBaseCodes, allArticlesCovered: salesPriceLists.length > 0,
         genericOnly: true, customerOrPaymentTermsApplied: false,
@@ -385,6 +475,7 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
           : "Solo los pares de precios base configurados tienen cobertura. Un precio no consultado no equivale a cero ni a ausencia confirmada.",
       },
       mastersRunId: masters.runId, mastersWarnings: masters.warnings,
+      ...(retained ? { retainedDataFromRun: retained.sourceRunId } : {}),
     };
     try {
       await dailyRpc(input.supabase, "publish_zeta_daily_sync", { ...scope, p_summary: summary });
@@ -393,6 +484,7 @@ export async function runDailyZetaSync(input: DailyZetaSyncInput, deps: DailyDep
       // is lost. No Zeta request or snapshot fetch is repeated.
       await dailyRpc(input.supabase, "publish_zeta_daily_sync", { ...scope, p_summary: summary });
     }
+    await progress({ phase: "published" });
     return { status: "completed" as const, runId, scheduledDay, ...summary };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Fallo la actualizacion diaria de Zeta.";

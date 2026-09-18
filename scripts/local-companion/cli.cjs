@@ -26,8 +26,12 @@ function parseCommand(argv) {
     "app-url": { type: "string" }, port: { type: "string" }, once: { type: "boolean" },
     cloud: { type: "boolean" }, "with-worker": { type: "boolean" },
     "dry-run": { type: "boolean" }, "sync-config": { type: "string" },
-    now: { type: "boolean" }, reason: { type: "string" },
+    now: { type: "boolean" }, reason: { type: "string" }, "history-from": { type: "string" },
   } });
+  if (!parsed.values.help && parsed.values["history-from"] !== undefined) {
+    if (parsed.positionals[0] !== "sync-zeta") throw new Error("--history-from solo se admite para sync-zeta.");
+    historicalSyncFrom(parsed.values);
+  }
   if (!parsed.values.help && (parsed.values.now !== undefined || parsed.values.reason !== undefined)) {
     if (parsed.positionals[0] !== "sync-zeta") throw new Error("--now y --reason sólo se admiten para sync-zeta.");
     manualSyncAuthorization(parsed.values);
@@ -51,6 +55,7 @@ function help() {
   npm run local -- email-inbox --once
   npm run local -- sync-zeta [--dry-run] [--sync-config "configuracion.json"]
   npm run local -- sync-zeta --now --reason "Solicitud explícita del usuario para adelantar la corrida de hoy"
+  npm run local -- sync-zeta --history-from 2026-01-01 --now --reason "Pedido humano de importar compras y ventas historicas por mes"
   npm run local -- cache-status
   npm run local -- report sales --from YYYY-MM-DD --to YYYY-MM-DD --out "ventas.json"
   npm run local -- report purchases --from YYYY-MM-DD --to YYYY-MM-DD --out "compras.json"
@@ -130,17 +135,34 @@ function manualSyncAuthorization(values) {
   return { reason };
 }
 
+function historicalSyncFrom(values, today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())) {
+  const from = values["history-from"];
+  if (from === undefined) return undefined;
+  if (!manualSyncAuthorization(values)) throw new Error("La importacion historica requiere --now y --reason con autorizacion humana explicita.");
+  if (typeof from !== "string" || !/^\d{4}-\d{2}-01$/.test(from)
+    || !Number.isFinite(Date.parse(from)) || new Date(from).toISOString().slice(0, 10) !== from || from > today) {
+    throw new Error("--history-from requiere el primer dia de un mes valido, sin fechas futuras.");
+  }
+  return from;
+}
+
 async function syncZeta(values, who) {
   const file = values["sync-config"] ? path.resolve(values["sync-config"]) : path.join(stateDirectory, "zeta-daily.json");
   const config = validateSyncConfig(await readJSON(file, values["sync-config"] ? null : {}));
   const manualAuthorization = manualSyncAuthorization(values);
+  const historyFrom = historicalSyncFrom(values);
   if (values["dry-run"]) {
     return print({ status: "dry_run", organization: who.slug, apiRequests: 0, databaseWrites: 0,
       schedule: { time: "18:00", timeZone: "America/Montevideo", maxAttemptsPerDay: 1 },
       ...(manualAuthorization ? { manualAuthorization, execution: "advance_today_once", repeatsAtScheduledTime: false } : {}),
-      reports: ["sales", "purchases", "articles", "stock", ...(config.pricePairs.length || config.salesPriceLists.length ? ["base-prices"] : []), ...(config.salesPriceLists.length ? ["sales-prices"] : [])], masters: true,
-      salesWindow: "Desde el último día sincronizado; primera ejecución desde hoy",
-      purchasesWindow: "Mes actual completo, con historial acumulado por identificador", ...config,
+      reports: historyFrom ? ["sales", "purchases"] : ["sales", "purchases", "articles", "stock", ...(config.pricePairs.length || config.salesPriceLists.length ? ["base-prices"] : []), ...(config.salesPriceLists.length ? ["sales-prices"] : [])],
+      masters: historyFrom ? "only_if_no_previous_complete_copy" : true,
+      ...(historyFrom ? { otherDatasets: "Retain verified previous snapshots and original dates; fetch only if no complete copy exists" } : {}),
+      salesWindow: historyFrom ? `Desde ${historyFrom} hasta hoy, por mes y paginas de Zeta` : "Desde el último día sincronizado; primera ejecución desde hoy",
+      purchasesWindow: historyFrom ? `Desde ${historyFrom} hasta hoy, una consulta por mes y todas las monedas` : "Mes actual completo, con historial acumulado por identificador", ...config,
+      purchasesBalanceCoverage: { plan: "Una consulta mensual de encabezados Compras por cada mes ya presente en la copia de compras, incluido el actual; conserva monedas y saldo explicito", sameDailyBudget: true,
+        pendingSynchronization: true, missingIsNotZero: true, paymentDatesOrMethodsIncluded: false },
+      ...(historyFrom ? { historyFrom, historicalRefresh: true } : {}),
       pricesCoverage: { mode: config.salesPriceLists.length ? "configured_sales_lists" : "explicit_pairs", salesPriceLists: config.salesPriceLists,
         allArticlesCovered: false, pendingSynchronization: true, pricingScope: "generic_list_without_customer_conditions" },
       message: "Los límites son internos, no la cuota oficial de Zeta. Las listas seleccionadas requieren sus reglas y las bases completas correspondientes, dentro del mismo presupuesto diario. Este plan no confirma precios actuales ni cobertura publicada; ausencia confirmada y falta de cobertura son estados diferentes." });
@@ -148,8 +170,10 @@ async function syncZeta(values, who) {
   const { resolveLocalCompanionContext } = require("@/modules/local-companion/context");
   const context = await resolveLocalCompanionContext({ ...who, requireWrite: true });
   const { runDailyZetaSync } = require("@/modules/integrations/zeta/sync/daily-sync");
-  return print(await runDailyZetaSync({ ...config, ...(manualAuthorization ? { manualAuthorization } : {}), supabase: context.supabase,
-    organizationId: context.organization.id, actorProfileId: who.actorProfileId }));
+  return print(await runDailyZetaSync({ ...config, ...(manualAuthorization ? { manualAuthorization } : {}), ...(historyFrom ? { historyFrom } : {}), supabase: context.supabase,
+    organizationId: context.organization.id, actorProfileId: who.actorProfileId }, historyFrom ? {
+    onProgress: (event) => process.stderr.write(`${JSON.stringify({ at: new Date().toISOString(), source: "zeta_history", ...event })}\n`),
+  } : {}));
 }
 
 async function identity(values) {
@@ -413,4 +437,4 @@ if (require.main === module) main().catch((error) => {
   process.exitCode = 1;
 });
 
-module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters, manualSyncAuthorization, emailInbox };
+module.exports = { parseCommand, main, worker, validateSyncConfig, reportFilters, manualSyncAuthorization, historicalSyncFrom, emailInbox };

@@ -117,6 +117,7 @@ function fakeReadOnly(data, failedTable) {
     const query = { select() { return query; }, order() { return query; },
       eq(key, value) { filters.push(row => row[key] === value); return query; },
       in(key, values) { filters.push(row => values.includes(row[key])); return query; },
+      limit(n) { return query.range(0, n - 1); },
       async range(from, to) { return table === failedTable ? { data: null, error: { message: "fixture unavailable" } }
         : { data: (tables[table] ?? []).filter(row => filters.every(filter => filter(row))).slice(from, to + 1), error: null }; },
       insert() { assert.fail("Read-only board must not mutate"); }, update() { assert.fail("Read-only board must not mutate"); }, delete() { assert.fail("Read-only board must not mutate"); },

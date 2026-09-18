@@ -58,9 +58,9 @@ test("supplier board keeps available rows when a source fails and never reveals 
   assert.doesNotMatch(html, /password|secret|database/);
 });
 test("supplier board only displays paid and inbox counts when the read model explicitly provides them", () => {
-  const base = render(props()); assert.doesNotMatch(base, /pago registrado|antes de aparecer aquí/);
+  const base = render(props()); assert.doesNotMatch(base, /sin saldo observado|antes de aparecer aquí/);
   const html = render(props({ excludedPaidCount: 3, inboxPendingCount: 1, inboxPendingHref: "/app/o/demo/documents" }));
-  assert.match(html, /3 facturas con pago registrado/); assert.match(html, /1 comprobante recibido necesita/);
+  assert.match(html, /3 facturas sin saldo observado/); assert.match(html, /1 comprobante recibido necesita/);
   assert.match(html, /href="\/app\/o\/demo\/documents"/); assert.match(html, /Revisar recibidos/);
 });
 test("supplier board escapes source strings and refuses non-internal review links", () => {
@@ -85,4 +85,12 @@ test("supplier board uses full-width expandable supplier rows with confirmed fir
   assert.doesNotMatch(both, /(?:md|lg):grid-cols-2/);
   assert.match(both, /<summary/); assert.match(both, /Comprobante/);
   assert.doesNotMatch(both, /status-pill|text-white|text-amber-100/);
+});
+
+test("supplier board displays human declarations distinctly with comments and missing payment details", () => {
+  const administrativeReview = { comment: "Comida del personal, caja.", reviewedAt: "2026-09-18T14:00:00Z", paymentStatus: "paid", method: "Caja", paymentDate: null, paidAmount: null, paidCurrency: null, classificationStatus: "confirmed", valid: true };
+  const html = render(props({ humanPaid: [group({ invoices: [invoice({ administrativeReview })] })], humanUnpaid: [group({ id: "other", invoices: [invoice({ administrativeReview: { ...administrativeReview, paymentStatus: "unpaid", method: null } })] })] }));
+  assert.match(html, /Pagadas según tu revisión/); assert.match(html, /Pendientes según tu revisión/); assert.match(html, /Comida del personal, caja/);
+  assert.match(html, /no se generaron pagos contables ni cambios en Zeta/); assert.match(html, /no se usa como importe pagado/);
+  assert.match(html, /2 grupos de proveedores/); assert.doesNotMatch(html, /Fecha de pago: 18\/09/);
 });

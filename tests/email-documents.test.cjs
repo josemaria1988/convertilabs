@@ -2,7 +2,7 @@
 const fs = require("node:fs"), os = require("node:os"), path = require("node:path"), crypto = require("node:crypto");
 const { test, assert } = require("./testkit.cjs");
 const { ingestEmailAttachments, normalizeCfeDocumentNumber } = require("@/modules/local-companion/email-documents");
-const { cfe, envelope } = require("./helpers/cfe-xml-fixture.cjs");
+const { cfe, envelope, secretCfe, secretAdenda } = require("./helpers/cfe-xml-fixture.cjs");
 const org = "10000000-0000-0000-0000-000000000001", actor = "20000000-0000-0000-0000-000000000001";
 const message = { mailboxAddress: "example@gmail.com", mailbox: "INBOX", uidValidity: "1", uid: 23, messageId: "test@example.com", receivedAt: "2026-09-11T16:00:00Z" };
 function database() {
@@ -153,5 +153,37 @@ test("invoice identity matches are always scoped to the target organization", as
   await attachments([["factura.xml", cfe()]], async (input) => {
     const result = await ingestEmailAttachments(input, db); assert.equal(result.documents.length, 1); assert.notEqual(result.documents[0].documentId, "other-document");
     assert.ok(db.tables.document_source_refs.every((source) => source.organization_id === org && source.document_id !== "other-document"));
+  });
+});
+
+test("secret bank XML materializes once with original email and receiver provenance, still requiring review", async () => {
+  const db = database(); const xml = envelope([secretCfe()], secretAdenda({bankWrapper:true,documentType:"02"}));
+  await attachments([["bank.xml", xml]], async input => {
+    const first = await ingestEmailAttachments(input, db);
+    const second = await ingestEmailAttachments(input, db);
+    assert.deepEqual(first.pending, []); assert.deepEqual(second.pending, []);
+    assert.equal(first.documents[0].documentId, second.documents[0].documentId);
+    assert.equal(second.documents[0].duplicate, true);
+    assert.equal(db.tables.documents.length, 1); assert.equal(db.tables.document_drafts.length, 1);
+    assert.equal(db.tables.document_source_refs.length, 1); assert.equal(db.tables.integration_raw_records.length, 1);
+    const draft = db.tables.document_drafts[0], source = db.tables.document_source_refs[0];
+    assert.equal(draft.intake_context_json.cfe_xml.receiverIdentity.source, "Adenda/SecretoProfesional/Receptor");
+    assert.equal(source.metadata_json.parsed_cfe.source.receiverIdentity.taxId, "213554700012");
+    assert.deepEqual(source.metadata_json.message, message);
+    assert.equal(source.metadata_json.signature_verified, false); assert.equal(source.metadata_json.requires_review, true);
+    assert.equal(draft.confirmed_at, undefined); assert.equal(draft.status, "open");
+    assert.equal(draft.intake_context_json.settlement_hints.settlement_method_explicit, "unknown");
+    assert.equal(Buffer.from(db.tables.integration_raw_records[0].payload_json.original_base64,"base64").toString(), xml);
+    assert.ok(!db.writes.some(write => /payment|journal|processing_run/.test(write.table)));
+  });
+});
+
+test("wrong bank Adenda identity is retained as raw evidence without document materialization", async () => {
+  const db = database();
+  await attachments([["bank.xml", envelope([secretCfe()], secretAdenda({number:"201"}))]], async input => {
+    const result = await ingestEmailAttachments(input, db);
+    assert.equal(result.documents.length, 0); assert.match(result.pending[0].reason, /adenda_fiscal_identity_mismatch/);
+    assert.equal(db.tables.integration_raw_records.length, 1); assert.equal(db.tables.documents.length, 0);
+    assert.equal(db.tables.document_drafts.length, 0); assert.equal(db.tables.document_source_refs.length, 0);
   });
 });

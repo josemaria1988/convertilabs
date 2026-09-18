@@ -3,6 +3,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SupplierInvoiceGroup, SupplierInvoiceItem, SupplierInvoicesBoardProps } from "./supplier-invoice-types";
+import { parseAdministrativeReview, validateAdministrativeReviewBinding } from "@/modules/documents/administrative-review";
+import { loadZetaInvoiceCacheBase } from "@/modules/integrations/zeta/cache/report-cache";
+import { readPurchaseBalanceEvidence } from "@/modules/integrations/zeta/sync/purchase-balances";
+import type { ReportRow } from "@/modules/integrations/zeta/cache/report-contracts";
 
 export type SupplierInvoicesBoardData = SupplierInvoicesBoardProps;
 type Row = Record<string, unknown>;
@@ -19,6 +23,7 @@ export type SupplierInvoicesSnapshot = {
   now?: Date;
   coverage?: SupplierInvoicesBoardData["coverage"];
   evidenceIncomplete?: boolean;
+  cachedPurchases?: { organizationId: string; rows: Row[]; contacts: Row[]; currencies: Row[] };
 };
 
 const rec = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
@@ -70,6 +75,42 @@ function sum(values: unknown[]): bigint | null {
 
 type Candidate = { doc: Row; draft: Row; facts: Row; party: Row; taxId: string | null; groupId: string; name: string; fiscalKey: string | null; item: SupplierInvoiceItem; total: bigint | null; reasons: string[] };
 type BalanceEvidence = { balance: bigint; currency: string; at: string | null; source: "ledger" | "zeta"; dueAt?: string | null };
+
+function cachedZetaEvidence(candidate: Candidate, input: SupplierInvoicesSnapshot): { evidence: BalanceEvidence | null; conflict: boolean } {
+  const cache = input.cachedPurchases;
+  if (!cache || cache.organizationId !== input.organizationId || !candidate.taxId || !candidate.item.currency) return { evidence: null, conflict: false };
+  const supplierCodes = new Set(cache.contacts.filter(row => rut(row.RUT ?? row.Documento ?? row.DocumentoNumero) === candidate.taxId)
+    .map(row => token(row.Codigo ?? row.ProveedorCodigo)).filter((v): v is string => !!v));
+  const balances: BalanceEvidence[] = [];
+  let conflict = false;
+  for (const row of cache.rows) {
+    if (!supplierCodes.has(token(row.ProveedorCodigo) ?? "") || serial(row.Serie) !== serial(candidate.facts.series)
+      || numberKey(row.Numero) !== numberKey(candidate.facts.document_number)) continue;
+    const supplierRuts = new Set(cache.contacts.filter(contact => token(contact.Codigo ?? contact.ProveedorCodigo) === token(row.ProveedorCodigo))
+      .map(contact => rut(contact.RUT ?? contact.Documento ?? contact.DocumentoNumero)).filter((v): v is string => !!v));
+    if (supplierRuts.size !== 1 || !supplierRuts.has(candidate.taxId)) { conflict = true; continue; }
+    const evidence = readPurchaseBalanceEvidence(row as ReportRow);
+    if (!evidence) continue; // Historical detail alone is not balance evidence.
+    const header = evidence.raw, isoCodes = new Set(cache.currencies.filter(c => token(c.Codigo) === token(header.MonedaCodigo))
+      .map(c => currency(c.CodigoISO ?? c.ISO ?? c.Abreviacion)).filter((v): v is string => !!v));
+    if (isoCodes.size !== 1) { conflict = true; continue; }
+    const iso = [...isoCodes][0];
+    if (iso !== candidate.item.currency) continue;
+    const issued = date(`${String(header.FacturaAnio).padStart(4, "0")}-${String(header.FacturaMes).padStart(2, "0")}-${String(header.FacturaDia).padStart(2, "0")}`);
+    const total = cents(header.FacturaTotal), balance = cents(header.FacturaSaldo), at = instant(evidence.dataAsOf);
+    const payable = cents(rec(rec(candidate.draft.intake_context_json).cfe_xml).payable);
+    const difference = payable !== null && candidate.total !== null ? payable - candidate.total : null;
+    const matchesTotal = total !== null && (total === candidate.total || (total === payable && difference !== null && difference >= -BigInt(50) && difference <= BigInt(50)));
+    if (token(row.RegistroId) !== token(header.FacturaId) || token(row.ProveedorCodigo) !== token(header.ProveedorCodigo)
+      || token(row.MonedaCodigo) !== token(header.MonedaCodigo) || token(row.ComprobanteCodigo) !== token(header.ComprobanteCodigo)
+      || serial(header.FacturaSerie) !== serial(candidate.facts.series) || numberKey(header.FacturaNumero) !== numberKey(candidate.facts.document_number)
+      || issued !== candidate.item.issuedAt || date(row.Fecha) !== issued || !matchesTotal || balance === null || balance < BigInt(0)
+      || total === null || balance > total || !at || Date.parse(at) > (input.now ?? new Date()).getTime()) { conflict = true; continue; }
+    balances.push({ balance, currency: iso, at, source: "zeta" });
+  }
+  if (balances.length > 1) return { evidence: null, conflict: true };
+  return { evidence: balances[0] ?? null, conflict };
+}
 
 /** Binds the stored export to the unchanged fiscal content, including the ISO currency.
  * This reproduces the export's versionless historical fingerprint; a mismatch only
@@ -194,6 +235,7 @@ export function buildSupplierInvoicesBoard(input: SupplierInvoicesSnapshot): Sup
         dueState: dueState(due, today), currency: iso, amount: shown === null ? null : amount(shown), reviewHref: `${root}/documents/${encodeURIComponent(String(doc.id))}` } });
   }
   const confirmed: Array<{ candidate: Candidate; item: SupplierInvoiceItem }> = [], unconfirmed: typeof confirmed = [];
+  const humanPaid: typeof confirmed = [], humanUnpaid: typeof confirmed = [];
   let excludedPaidCount = 0;
   const seenFiscal = new Set<string>();
   for (const candidate of candidates) {
@@ -203,11 +245,43 @@ export function buildSupplierInvoicesBoard(input: SupplierInvoicesSnapshot): Sup
     if (duplicates.length > 1) {
       unconfirmed.push({ candidate, item: { ...candidate.item, amount: null, reason: "Existen varios documentos con la misma identidad fiscal; revisar duplicados e importes antes de contar la deuda." } }); continue;
     }
-    const ledger = ledgerEvidence(candidate, openItems, contexts), zeta = zetaEvidence(candidate, attempts);
+    const ledger = ledgerEvidence(candidate, openItems, contexts), historicalZeta = zetaEvidence(candidate, attempts), cachedZeta = cachedZetaEvidence(candidate, input);
+    const zeta = cachedZeta.evidence && (!historicalZeta.evidence?.at || cachedZeta.evidence.at! >= historicalZeta.evidence.at)
+      ? cachedZeta : { evidence: historicalZeta.evidence, conflict: historicalZeta.conflict || cachedZeta.conflict };
     const sourceConflict = sources.some(row => row.document_id === candidate.doc.id && row.provider === "email_inbox" && hasEmailConflict(row));
+    const rawReview = rec(candidate.doc.metadata).administrative_review;
+    const review = parseAdministrativeReview(rawReview);
+    const bindingValid = validateAdministrativeReviewBinding(review, { organizationId: org, documentId: String(candidate.doc.id), currentDraftId: String(candidate.draft.id), facts: candidate.facts });
+    const validReview = bindingValid && review && Date.parse(review.reviewedAt) <= (input.now ?? new Date()).getTime() ? review : null;
     let evidence = ledger.evidence ?? zeta.evidence;
-    const conflict = input.evidenceIncomplete || ledger.conflict || zeta.conflict || sourceConflict || (!!ledger.evidence && !!zeta.evidence && ledger.evidence.balance !== zeta.evidence.balance);
+    const reviewConflict = !!validReview && [ledger.evidence, zeta.evidence].some(e => e && (!e.at || e.at >= validReview.reviewedAt)
+      && ((validReview.payment.status === "paid" && e.balance > BigInt(0)) || (validReview.payment.status === "unpaid" && e.balance === BigInt(0))));
+    const sourceDisagreement = !!ledger.evidence && !!zeta.evidence && ledger.evidence.balance !== zeta.evidence.balance;
+    const historicalDisagreement = sourceDisagreement && !!validReview && !!ledger.evidence?.at && !!zeta.evidence?.at
+      && ledger.evidence.at < validReview.reviewedAt && zeta.evidence.at < validReview.reviewedAt;
+    const conflict = input.evidenceIncomplete || ledger.conflict || zeta.conflict || sourceConflict || reviewConflict || (!!rawReview && !validReview)
+      || (sourceDisagreement && !historicalDisagreement);
+    if (review) candidate.item.administrativeReview = { comment: review.comment, reviewedAt: review.reviewedAt,
+      paymentStatus: review.payment.status, method: review.payment.method, paymentDate: review.payment.date, paidAmount: review.payment.amount,
+      paidCurrency: review.payment.currency, classificationStatus: review.classificationStatus, valid: !!validReview && !conflict };
+    if (rawReview && !validReview) candidate.reasons.push("La revisión administrativa no corresponde al borrador fiscal actual; reconfirmar sus instrucciones y el pago.");
+    if (reviewConflict) candidate.reasons.push("Un saldo posterior contradice el pago declarado; revisar antes de darlo por resuelto.");
+    if (historicalDisagreement) candidate.reasons.push("Zeta y las cuentas por pagar conservan saldos anteriores diferentes; tu declaración posterior se mantiene y la discrepancia histórica queda pendiente de conciliación.");
+    if (validReview) dates.push(validReview.reviewedAt);
     if (conflict) evidence = null;
+    if (validReview && !conflict && ["paid", "unpaid"].includes(validReview.payment.status)) {
+      const paid = validReview.payment.status === "paid";
+      const observed = zeta.evidence ?? ledger.evidence;
+      if (observed?.at) dates.push(observed.at);
+      const beforeReview = !!observed?.at && observed.at < validReview.reviewedAt;
+      const balanceReason = observed
+        ? ` ${observed.balance === BigInt(0) ? "Sin saldo observado" : `Saldo observado ${amount(observed.balance)} ${observed.currency}`} en ${observed.source === "zeta" ? "Zeta" : "cuentas por pagar de Convertilabs"}${observed.at ? ` el ${new Date(observed.at).toLocaleString("es-UY", { timeZone: "America/Montevideo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}` : " (fecha no disponible)"}.${beforeReview ? " Ese saldo es anterior a tu revisión." : ""}`
+        : "";
+      (paid ? humanPaid : humanUnpaid).push({ candidate, item: { ...candidate.item,
+        ...(observed ? { observedBalance: { source: observed.source, amount: amount(observed.balance), currency: observed.currency, asOf: observed.at, beforeHumanReview: beforeReview } } : {}),
+        reason: `${paid ? "Pago" : "Pendiente de pago"} declarado en la revisión humana.${balanceReason} ${candidate.reasons.join(" ").replace("Importe del documento; falta confirmar si continúa pendiente de pago.", "Importe fiscal de referencia.").replace("Importe informado a pagar en el CFE; no es un saldo confirmado.", "Importe a pagar informado en el CFE; no es un saldo conciliado.")} Esta declaración no registra un pago contable ni modifica Zeta.` } });
+      continue;
+    }
     if (evidence) {
       if (evidence.at) dates.push(evidence.at);
       if (evidence.balance === BigInt(0)) { excludedPaidCount++; continue; }
@@ -242,7 +316,7 @@ export function buildSupplierInvoicesBoard(input: SupplierInvoicesSnapshot): Sup
     (valid ? confirmed : unconfirmed).push({ candidate, item }); const at = instant(row.updated_at); if (at) dates.push(at);
   }
   const pending = documents.filter(doc => !inactiveDocuments.has(String(doc.status)) && !drafts.some(d => d.id === doc.current_draft_id && d.document_id === doc.id)).length;
-  return { confirmed: groups(confirmed), unconfirmed: groups(unconfirmed), excludedPaidCount, updatedAt: dates.sort().at(-1) ?? null,
+  return { confirmed: groups(confirmed), unconfirmed: groups(unconfirmed), humanPaid: groups(humanPaid), humanUnpaid: groups(humanUnpaid), excludedPaidCount, updatedAt: dates.sort().at(-1) ?? null,
     coverage: input.coverage ?? { status: "complete", message: "Documentos y saldos disponibles en Convertilabs; los CFE recibidos no confirman deuda ni pago." },
     error: null, inboxPendingCount: pending, inboxPendingHref: `${root}/documents` };
 }
@@ -250,15 +324,15 @@ export function buildSupplierInvoicesBoard(input: SupplierInvoicesSnapshot): Sup
 const PAGE_SIZE = 200, MAX_ROWS = 5000, CHUNK_SIZE = 100;
 type PageQuery = { data: unknown; error: unknown };
 type ReadResult = { rows: Row[]; complete: boolean; available: boolean };
-async function readPages(make: (from: number, to: number) => PromiseLike<PageQuery>): Promise<ReadResult> {
+async function readPages(make: (from: number, to: number) => PromiseLike<PageQuery>, maxRows = MAX_ROWS, pageSize = PAGE_SIZE): Promise<ReadResult> {
   const rows: Row[] = [];
   try {
-    for (let from = 0; from <= MAX_ROWS; from += PAGE_SIZE) {
-      const { data, error } = await make(from, Math.min(from + PAGE_SIZE - 1, MAX_ROWS));
+    for (let from = 0; from <= maxRows; from += pageSize) {
+      const { data, error } = await make(from, Math.min(from + pageSize - 1, maxRows));
       if (error || !Array.isArray(data)) return { rows, complete: false, available: false };
-      if (from === MAX_ROWS) return { rows, complete: data.length === 0, available: true };
+      if (from === maxRows) return { rows, complete: data.length === 0, available: true };
       rows.push(...data.map(rec));
-      if (data.length < PAGE_SIZE) return { rows, complete: true, available: true };
+      if (data.length < pageSize) return { rows, complete: true, available: true };
     }
   } catch { return { rows, complete: false, available: false }; }
   return { rows, complete: false, available: true };
@@ -268,9 +342,11 @@ async function readPages(make: (from: number, to: number) => PromiseLike<PageQue
 export async function loadSupplierInvoicesBoard(supabase: SupabaseClient, input: { organizationId: string; organizationSlug: string }): Promise<SupplierInvoicesBoardData> {
   if (!txt(input.organizationId) || !txt(input.organizationSlug)) throw new Error("supplier_board_organization_required");
   const org = input.organizationId;
-  const [documents, openItems] = await Promise.all([
-    readPages((from, to) => supabase.from("documents").select("id,organization_id,party_id,current_draft_id,direction,document_type,status,document_date,updated_at").eq("organization_id", org).order("id").range(from, to)),
+  let cacheReadFailed = false;
+  const [documents, openItems, purchaseCache] = await Promise.all([
+    readPages((from, to) => supabase.from("documents").select("id,organization_id,party_id,current_draft_id,direction,document_type,status,document_date,metadata,updated_at").eq("organization_id", org).order("id").range(from, to)),
     readPages((from, to) => supabase.from("ledger_open_items").select("id,organization_id,party_id,source_document_id,document_role,document_type,counterparty_type,currency_code,original_amount,settled_amount,outstanding_amount,status,metadata,issue_date,due_date,updated_at").eq("organization_id", org).eq("document_role", "purchase").order("id").range(from, to)),
+    loadZetaInvoiceCacheBase({ supabase, organizationId: org, report: "purchases" }).catch(() => { cacheReadFailed = true; return null; }),
   ]);
   const states = [documents, openItems];
   const details = async (table: string, columns: string, key: string, ids: string[], filters: Record<string, string> = {}) => {
@@ -298,8 +374,16 @@ export async function loadSupplierInvoicesBoard(supabase: SupabaseClient, input:
     details("parties", "id,organization_id,display_name,tax_id_normalized", "id", partyIds),
     details("document_accounting_contexts", "id,organization_id,draft_id,structured_context_json", "draft_id", draftIds),
   ]);
-  const available = documents.available && openItems.available, complete = states.every(state => state.complete && state.available);
+  const masterRows = purchaseCache ? await readPages((from, to) => supabase.from("integration_raw_records")
+    .select("id,entity_type,codigo:payload_json->row->>Codigo,proveedor_codigo:payload_json->row->>ProveedorCodigo,rut:payload_json->row->>RUT,documento:payload_json->row->>Documento,documento_numero:payload_json->row->>DocumentoNumero,codigo_iso:payload_json->row->>CodigoISO,iso:payload_json->row->>ISO,abreviacion:payload_json->row->>Abreviacion")
+    .eq("organization_id", org).eq("provider", "zetasoftware").eq("test_mode", false)
+    .in("entity_type", ["contact", "currency"]).order("id").range(from, to), 10000, 1000) : null;
+  if (masterRows) states.push(masterRows);
+  const available = documents.available && openItems.available, complete = !cacheReadFailed && states.every(state => state.complete && state.available);
   const data = buildSupplierInvoicesBoard({ ...input, documents: documents.rows, drafts, openItems: openItems.rows, parties: [...new Map([...byRut, ...byId].map(p => [p.id, p])).values()], contexts, emailSources, exportAttempts, evidenceIncomplete: !complete,
+    ...(purchaseCache && masterRows ? { cachedPurchases: { organizationId: org, rows: purchaseCache.rows,
+      contacts: masterRows.rows.filter(row => row.entity_type === "contact").map(row => ({ Codigo: row.codigo, ProveedorCodigo: row.proveedor_codigo, RUT: row.rut, Documento: row.documento, DocumentoNumero: row.documento_numero })),
+      currencies: masterRows.rows.filter(row => row.entity_type === "currency").map(row => ({ Codigo: row.codigo, CodigoISO: row.codigo_iso, ISO: row.iso, Abreviacion: row.abreviacion })) } } : {}),
     coverage: { status: !available && !documents.rows.length && !openItems.rows.length ? "unavailable" : complete ? "complete" : "partial",
       message: complete ? "Documentos y saldos disponibles en Convertilabs. Los importes por confirmar no son deuda confirmada ni un saldo actualizado de todos los proveedores de Zeta."
         : "Cobertura incompleta: alguna fuente no respondió o supera el límite visible de 5.000 filas por lectura. No usar estos totales como saldo completo." } });

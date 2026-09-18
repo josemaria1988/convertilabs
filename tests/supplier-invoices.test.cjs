@@ -131,11 +131,16 @@ test("supplier board source conflict or incomplete reads do not hide a possibly 
 function fakeDb(tables, failures = new Set()) {
   const calls = [];
   return { calls, from(table) {
-    let selected = tables[table] ?? [], from = 0, to = Infinity; const filters = [];
+    let selected = tables[table] ?? [], from = 0, to = Infinity, columns = null; const filters = [];
     const query = {
-      select() { return query; }, eq(key, val) { filters.push([key, val]); selected = selected.filter(r => r[key] === val); return query; },
-      in(key, vals) { selected = selected.filter(r => vals.includes(r[key])); return query; }, order() { return query; }, range(a, b) { from = a; to = b; return query; },
-      then(resolve, reject) { calls.push({ table, from, to, filters }); return Promise.resolve(failures.has(table) ? { data: null, error: { message: "SQL private" } } : { data: selected.slice(from, to + 1), error: null }).then(resolve, reject); },
+      select(value) { columns = value; return query; }, eq(key, val) { filters.push([key, val]); selected = selected.filter(r => r[key] === val); return query; },
+      in(key, vals) { selected = selected.filter(r => vals.includes(r[key])); return query; }, order() { return query; }, range(a, b) { from = a; to = b; return query; }, limit(n) { to = n - 1; return query; },
+      then(resolve, reject) { calls.push({ table, from, to, filters, columns }); let data = selected.slice(from, to + 1);
+        if (columns?.includes("codigo:payload_json")) data = data.map(source => Object.fromEntries(columns.split(",").map(column => {
+          const match = column.match(/^(\w+):payload_json->row->>(\w+)$/);
+          return match ? [match[1], source.payload_json?.row?.[match[2]] === undefined ? null : String(source.payload_json.row[match[2]])] : [column, source[column]];
+        })));
+        return Promise.resolve(failures.has(table) ? { data: null, error: { message: "SQL private" } } : { data, error: null }).then(resolve, reject); },
     }; return query;
   } };
 }
@@ -163,4 +168,25 @@ test("supplier board loader reports its explicit 5000-row safety limit instead o
   const board = await loadSupplierInvoicesBoard(db, { organizationId: org, organizationSlug: "rontil" });
   assert.equal(board.coverage.status, "partial"); assert.match(board.coverage.message, /5\.000/); assert.equal(board.inboxPendingCount, 5000);
   assert.ok(db.calls.some(call => call.table === "documents" && call.from === 5000 && call.to === 5000));
+});
+
+test("supplier board projects only identity fields and reads 5343 masters in six pages without losing duplicate codes", async () => {
+  const cache = require("@/modules/integrations/zeta/cache/report-cache"), original = cache.loadZetaInvoiceCacheBase;
+  const f = fixture(), raw = values => row({ provider: "zetasoftware", test_mode: false, entity_type: "contact", ...values });
+  const masters = Array.from({ length: 5340 }, (_, i) => raw({ id: `master-${i}`, payload_json: { row: { Codigo: `OTHER${i}`, RUT: "210000000010", private_unused_field: "must not load" } } }));
+  masters[5339].payload_json.row = { Codigo: "PR00155", RUT: "220918880014" };
+  masters.push(raw({ id: "currency1", entity_type: "currency", payload_json: { row: { Codigo: 9, CodigoISO: "UYU" } } }), raw({ id: "currency2", entity_type: "currency", payload_json: { row: { Codigo: 10, CodigoISO: "USD" } } }), raw({ id: "currency3", entity_type: "currency", payload_json: { row: { Codigo: 11, CodigoISO: "EUR" } } }));
+  cache.loadZetaInvoiceCacheBase = async () => ({ rows: [{ RegistroId: 99, ProveedorCodigo: "PR00155", Serie: "A", Numero: 200, Fecha: "2026-09-11", MonedaCodigo: 9, ComprobanteCodigo: 28,
+    _balance: { schemaVersion: 1, endpoint: "RESTFacturaProveedorV1Compras", dataAsOf: "2026-09-11T21:00:00Z", raw: { FacturaId: 99, ProveedorCodigo: "PR00155", FacturaSerie: "A", FacturaNumero: 200, FacturaDia: 11, FacturaMes: 9, FacturaAnio: 2026, MonedaCodigo: 9, ComprobanteCodigo: 28, FacturaTotal: 690, FacturaSaldo: 0 } } }] });
+  try {
+    const tables = { documents: f.documents, document_drafts: f.drafts, parties: f.parties, integration_raw_records: masters }, db = fakeDb(tables);
+    const board = await loadSupplierInvoicesBoard(db, { organizationId: org, organizationSlug: "rontil" });
+    assert.equal(board.coverage.status, "complete"); assert.equal(board.excludedPaidCount, 1);
+    const queries = db.calls.filter(call => call.columns?.includes("codigo:payload_json"));
+    assert.equal(queries.length, 6); assert.ok(queries.every(call => call.to - call.from === 999));
+    assert.ok(queries.every(call => !call.columns.split(",").includes("payload_json")));
+    masters[0].payload_json.row = { Codigo: "PR00155", RUT: "213554700012" };
+    const ambiguous = await loadSupplierInvoicesBoard(fakeDb(tables), { organizationId: org, organizationSlug: "rontil" });
+    assert.equal(ambiguous.excludedPaidCount, 0); assert.equal(ambiguous.unconfirmed.length, 1);
+  } finally { cache.loadZetaInvoiceCacheBase = original; }
 });
